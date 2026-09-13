@@ -5,6 +5,7 @@ import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 import { assessModelDownloadFit } from '../../shared/model-download-fit';
 import { assessPullById, normalizeModelId } from '../../shared/model-pull-guard';
+import { knownModelsFor, CURATED_METERED_MODELS } from '../../shared/subscription-models';
 
 interface OllamaModel {
   name: string;
@@ -34,6 +35,7 @@ interface ModelSelectorProps {
   currentModel: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
+  providerApiKeys?: Record<string, string>;
   /** provider is REQUIRED for cloud models: saving a model id without its
    *  provider leaves a config like { provider: 'google-ai-studio', model:
    *  'opus' } — Gemini's endpoint asked for a Claude model. It fails, and the
@@ -108,6 +110,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   currentModel,
   customLLM,
   useCustomLLM,
+  providerApiKeys,
   onModelChange,
   onConfigureCustom,
   locked = false,
@@ -218,6 +221,19 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     r => !installedModels.some(m => normalizeModelId(m.name) === normalizeModelId(r.id))
   ).map(r => ({ ...r, installed: false }));
 
+  const hasConfiguredApi = Boolean(
+    (customLLM?.apiKey && customLLM.apiKey.trim().length > 0) ||
+    (customLLM?.provider && customLLM.provider.trim().length > 0 && customLLM?.model && customLLM.model.trim().length > 0) ||
+    (providerApiKeys && Object.values(providerApiKeys).some(k => typeof k === 'string' && k.trim().length > 0))
+  );
+
+  function getFallbackModelsFor(provider: string | undefined): CustomModelInfo[] {
+    if (!provider) return [];
+    const cliModels = knownModelsFor(provider);
+    if (cliModels.length > 0) return cliModels;
+    return CURATED_METERED_MODELS[provider] || [];
+  }
+
   // Build cloud model list from fetched provider models
   const customModelInfos: ModelInfo[] = cloudModels.map(cm => ({
     id: cm.id,
@@ -230,17 +246,60 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     costHint: cm.costHint,
   }));
 
-  // Fallback: if cloud fetch returned nothing but we have a configured model, show it
-  if (customModelInfos.length === 0 && customLLM?.enabled) {
-    customModelInfos.push({
-      id: customLLM.model || 'custom',
-      name: customLLM.name || 'Custom API',
-      shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
-      description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model || 'Not configured'}`,
-      type: 'custom',
-      provider: customLLM.provider,
-      installed: true,
-    });
+  // Fallback: when an API is entered, it should remain an option in the model picker:
+  // if network fetch hasn't populated models yet, populate from known models
+  // for this provider or use the configured model.
+  if (customModelInfos.length === 0 && (hasConfiguredApi || customLLM?.enabled)) {
+    if (customLLM?.model) {
+      customModelInfos.push({
+        id: customLLM.model,
+        name: customLLM.name || customLLM.model,
+        shortName: customLLM.model.split('/').pop()?.split(':')[0] || 'API',
+        description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model}`,
+        type: 'custom',
+        provider: customLLM.provider,
+        installed: true,
+      });
+    }
+    const known = getFallbackModelsFor(customLLM?.provider);
+    for (const km of known) {
+      if (!customModelInfos.some(m => m.id === km.id)) {
+        customModelInfos.push({
+          id: km.id,
+          name: km.name || km.id,
+          shortName: km.name ? km.name.split(' ')[0] : km.id,
+          description: km.description || `${customLLM?.provider?.toUpperCase() || 'Cloud'} model`,
+          type: 'custom' as const,
+          provider: customLLM?.provider,
+          installed: true,
+          costHint: km.costHint,
+        });
+      }
+    }
+  }
+
+  // Also include models for any other provider with a key saved in providerApiKeys
+  if (providerApiKeys) {
+    const activeProvider = customLLM?.provider;
+    for (const [provider, key] of Object.entries(providerApiKeys)) {
+      if (provider !== activeProvider && typeof key === 'string' && key.trim().length > 0) {
+        const otherKnown = getFallbackModelsFor(provider);
+        for (const km of otherKnown) {
+          if (!customModelInfos.some(m => m.id === km.id && m.provider === provider)) {
+            customModelInfos.push({
+              id: km.id,
+              name: km.name || km.id,
+              shortName: km.name ? km.name.split(' ')[0] : km.id,
+              description: km.description || `${provider.toUpperCase()} model`,
+              type: 'custom',
+              provider,
+              installed: true,
+              costHint: km.costHint,
+            });
+          }
+        }
+      }
+    }
   }
 
   const allModels = [...customModelInfos, ...installedModelInfos];
@@ -526,7 +585,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
           <div className="model-list">
             {/* Cloud API models */}
-            {customLLM?.enabled && filtered(customModelInfos).length > 0 && (
+            {(customLLM?.enabled || hasConfiguredApi) && filtered(customModelInfos).length > 0 && (
               <>
                 <div className="model-section-label">
                   ☁️ {providerLabel}
@@ -670,7 +729,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
             {/* No models at all. This used to read "No models found. Is Ollama
                 running?" — a question the user cannot answer, in vocabulary
                 they never chose. Say what is true and what to do. */}
-            {installedModelInfos.length === 0 && !customLLM?.enabled && (
+            {installedModelInfos.length === 0 && !customLLM?.enabled && !hasConfiguredApi && (
               <div className="model-option-empty">
                 No AI models are available yet. Use the ▶ Start button at the top of
                 the window to launch the AI on this PC, or add an online service in
