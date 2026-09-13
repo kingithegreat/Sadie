@@ -9,7 +9,7 @@
  *
  * Deliberately has NO dependency on Electron, n8n, or any provider. It is pure
  * data and rules, so it can be tested exhaustively without a running app —
- * which matters because every later phase (TTS, Remotion, YouTube publishing)
+ * which matters because every later phase (TTS, FFmpeg rendering, YouTube publishing)
  * trusts these transitions to be enforced.
  *
  * The single most important rule here: nothing reaches `published` without
