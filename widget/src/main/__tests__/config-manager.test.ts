@@ -154,6 +154,24 @@ describe('config-manager integration tests', () => {
     expect(loaded.tavilyApiKey).toBe('tvly-SECRETKEY123');
     expect(loaded.openaiApiKey).toBe('sk-openai-test');
   });
+
+  test.each([
+    ['anthropic', 'claude-3-5-sonnet-20241022', 'claude-sonnet-5'],
+    ['deepseek', 'deepseek-chat', 'deepseek-v4-flash'],
+    ['deepseek', 'deepseek-reasoner', 'deepseek-v4-flash'],
+    ['google-ai-studio', 'gemini-2.0-flash', 'gemini-2.5-flash'],
+  ])('a saved %s model the provider shut down (%s) loads as %s', (provider, retired, current) => {
+    // The picker used to save these; the request is built from what loads.
+    const settings = getSettings();
+    saveSettings({
+      ...settings,
+      useCustomLLM: true,
+      customLLM: { name: 't', apiUrl: 'https://example.invalid/v1', model: retired, provider: provider as any, enabled: true },
+    });
+    const loaded = getSettings();
+    expect(loaded.customLLM?.model).toBe(current);
+    expect(loaded.customLLM?.provider).toBe(provider);
+  });
 });
 
 // ── applyHardwareProfile ──────────────────────────────────────────────────────

@@ -30,6 +30,16 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   'claude-3-haiku': 'claude-haiku-4-5',
   'claude-opus-4': 'claude-opus-5',
   'claude-sonnet-4': 'claude-sonnet-5',
+  // Google — Gemini 2.0 Flash / Flash-Lite were shut down on 1 June 2026.
+  'gemini-2.0-flash': 'gemini-2.5-flash',
+  'gemini-2.0-flash-001': 'gemini-2.5-flash',
+  'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite',
+  'gemini-2.0-flash-lite-001': 'gemini-2.5-flash-lite',
+  // DeepSeek — both legacy names were discontinued on 24 July 2026. They had
+  // pointed at V4 Flash (reasoner = its thinking mode), so they land there
+  // rather than on a pricier tier the user never chose.
+  'deepseek-chat': 'deepseek-v4-flash',
+  'deepseek-reasoner': 'deepseek-v4-flash',
 };
 
 export interface ModelMigration {
