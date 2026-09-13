@@ -370,4 +370,50 @@ describe('ModelSelector — custom LLM', () => {
     await renderSelector({ customLLM, useCustomLLM: true });
     expect(screen.getAllByText('☁️').length).toBeGreaterThan(0);
   });
+
+  test('configured cloud model remains an option when useCustomLLM is false', async () => {
+    const onModelChange = jest.fn();
+    await renderSelector({
+      customLLM: {
+        ...customLLM,
+        apiKey: 'sk-test-key',
+        enabled: false,
+      },
+      useCustomLLM: false,
+      currentModel: 'qwen2.5:7b',
+      onModelChange,
+    });
+    await act(async () => {
+      fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
+    });
+    // Cloud section is present even though local model is currently active
+    expect(screen.getAllByText(/Openai/i).length).toBeGreaterThan(0);
+    expect(screen.getByText('My GPT-4')).toBeInTheDocument();
+
+    // Selecting it activates the cloud model
+    fireEvent.click(screen.getByText('My GPT-4'));
+    expect(onModelChange).toHaveBeenCalledWith('gpt-4', true, 'openai');
+  });
+
+  test('providers with keys in providerApiKeys appear in the dropdown even when local model is active', async () => {
+    const onModelChange = jest.fn();
+    await renderSelector({
+      useCustomLLM: false,
+      currentModel: 'qwen2.5:7b',
+      providerApiKeys: {
+        openai: 'sk-proj-test1234567890',
+      },
+      onModelChange,
+    });
+    await act(async () => {
+      fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
+    });
+    // Fallback curated OpenAI model appears in the dropdown
+    expect(screen.getByText('GPT-4o')).toBeInTheDocument();
+
+    // Selecting it enables cloud with the chosen model and provider
+    fireEvent.click(screen.getByText('GPT-4o'));
+    expect(onModelChange).toHaveBeenCalledWith('gpt-4o', true, 'openai');
+  });
 });
+
