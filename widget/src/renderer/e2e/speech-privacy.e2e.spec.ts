@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 
-test('Studio default voice preview respects Online off through real IPC', async () => {
+test('Studio default voice preview respects Online off through real IPC', async ({}, testInfo) => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-speech-e2e-'));
   const jobsPath = path.join(profile, 'media-jobs.json');
   const job = {
@@ -64,6 +64,15 @@ test('Studio default voice preview respects Online off through real IPC', async 
     expect(voices.error).toContain('Online is off');
     expect(await app.evaluate(() => (globalThis as any).__speechRequests)).toEqual([]);
     expect(JSON.parse(fs.readFileSync(jobsPath, 'utf8'))).toEqual([job]);
+  } catch (error) {
+    fs.writeFileSync(testInfo.outputPath('failure-window.json'), JSON.stringify({
+      windows: await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => ({
+        title: window.getTitle(), visible: window.isVisible(), focused: window.isFocused(), minimized: window.isMinimized(), bounds: window.getBounds() }))),
+      document: await page.evaluate(() => ({ visibility: document.visibilityState, focus: document.hasFocus(),
+        buttons: [...document.querySelectorAll('button.mode-btn')].map(button => ({ text: button.textContent, bounds: button.getBoundingClientRect().toJSON() })) })),
+    }, null, 2));
+    await page.screenshot({ path: testInfo.outputPath('failure-window.png'), timeout: 5000 }).catch(() => {});
+    throw error;
   } finally {
     await app.close();
   }

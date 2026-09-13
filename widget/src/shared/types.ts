@@ -518,6 +518,7 @@ export interface ElectronAPI {
   // Every mutation returns { ok, job } or { ok: false, error } so the panel can
   // show the state machine's own refusal text rather than inventing one.
   mediaList?: () => Promise<any[]>;
+  mediaGetExportState?: (id: string) => Promise<import('./media-output').StudioExportState>;
   youtubeConnectionStatus?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeImportCredentials?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeConnect?: (options?: { upload?: boolean }) => Promise<import('./youtube-connection').YouTubeConnectionReply>;
@@ -541,7 +542,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
-  mediaApprove?: (id: string, note?: string) =>
+  mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -916,7 +917,7 @@ export interface ElectronAPI {
   // Analytics summary (aggregated conversation + event stats)
   getAnalyticsSummary?: () => Promise<{ success: boolean; summary?: any; error?: string }>;
   // Shell file helpers
-  showInFolder?: (filePath: string) => void;
+  showInFolder?: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   openFile?: (filePath: string) => void;
   openExternalUrl?: (url: string) => Promise<{ success: boolean; error?: string }>;
   // MCP server management

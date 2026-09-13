@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 
@@ -134,8 +134,13 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     expect(reviewJob?.outputSpec?.variants[0]).toMatchObject({ aspectRatio: '16:9', width: 1920, height: 1080 });
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).burnSubtitles).toBe(burnSubtitles);
     expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', exportRecord.filename));
+    const reviewState = await page.evaluate(id => window.electron.mediaGetExportState!(id), reviewJob.id);
+    expect(reviewState.sourceRevision).toBeNull(); // Only the board owns its current-source comparison.
+    expect(reviewState.outputs).toEqual([expect.objectContaining({ moviePath: reviewJob.renderPath,
+      sourceRevision: exportRecord.sourceRevision, sha256: exportRecord.sha256 })]);
     await page.getByRole('button', { name: /Review & Publish/ }).click();
     await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(`[data-job-id="${reviewJob.id}"]`).getByText('Saved movie — current source cannot be verified')).toBeVisible();
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await expect(page.getByLabel('Exported storyboard video')).toBeVisible();
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_02', 'shot_01', 'prompt.json'), 'utf8')).durationSec).toBe(4);

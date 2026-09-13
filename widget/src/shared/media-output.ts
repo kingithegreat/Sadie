@@ -48,6 +48,8 @@ export interface StudioRenderedOutput {
   sha256?: string;
   sceneId?: string;
   motion?: boolean;
+  /** Ordinary-job input plates frozen for this exact export; absent on older files. */
+  scenePaths?: Array<string | null>;
 }
 
 export interface StudioExportAttempt {

@@ -58,8 +58,10 @@ import { renderVideo } from '../media-render';
 import { generateSceneImages } from '../media-visuals';
 import { createJob } from '../media-studio';
 import { createStudioOutputSpec } from '../../shared/media-output';
+import { mediaScriptDigest } from '../media-job-export-state';
 import {
   __resetMediaJobsForTests,
+  getMediaJobExportState,
   mediaToolHandlers,
   readJobs,
   writeJobs,
@@ -114,6 +116,188 @@ afterEach(() => {
 });
 
 describe('media_render output trust', () => {
+  const goodFacts = { hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+    durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null };
+
+  it('keeps immutable legacy history and compares content, not save timestamps', async () => {
+    const job = writeReadyJob('Immutable legacy history');
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    const first = readJobs()[0];
+    const bytes = fs.readFileSync(first.renderPath!);
+    let state = await getMediaJobExportState(job.id);
+    expect(state.outputs).toHaveLength(1);
+    expect(state.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.outputs[0].sourceRevision).toBe(state.sourceRevision);
+    writeJobs([{ ...first, updatedAt: '2026-09-13T12:00:00Z' }]);
+    expect((await getMediaJobExportState(job.id)).sourceRevision).toBe(state.sourceRevision);
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    expect(readJobs()[0].renderPath).not.toBe(first.renderPath);
+    expect(fs.readFileSync(first.renderPath!).equals(bytes)).toBe(true);
+    state = await getMediaJobExportState(job.id);
+    expect(state.outputs).toHaveLength(2);
+    expect(new Set(state.outputs.map(item => item.exportId)).size).toBe(2);
+    const savedAudioTime = fs.statSync(narrationPath).mtime;
+    fs.writeFileSync(narrationPath, 'different spoken content');
+    fs.utimesSync(narrationPath, savedAudioTime, savedAudioTime);
+    expect((await getMediaJobExportState(job.id)).sourceRevision).not.toBe(state.sourceRevision);
+    expect((await call('media_advance_job', { job: job.id, to: 'awaiting_approval' })).success).toBe(false);
+  });
+
+  it('freezes audio, captions and image bytes and preserves later edits plus another job', async () => {
+    const job = writeReadyJob('Frozen inputs');
+    const originalAudio = fs.readFileSync(narrationPath);
+    const originalCaptions = fs.readFileSync(captionsPath);
+    const originalImage = fs.readFileSync(scenePath);
+    const other = { ...job, id: 'other-job', title: 'Other project' };
+    writeJobs([job, other]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    (renderVideo as jest.Mock).mockImplementationOnce(async (options) => {
+      fs.writeFileSync(narrationPath, 'later narration');
+      fs.writeFileSync(captionsPath, 'later captions');
+      fs.writeFileSync(scenePath, 'later artwork');
+      expect(fs.readFileSync(options.audioPath)).toEqual(originalAudio);
+      expect(fs.readFileSync(options.captionsPath)).toEqual(originalCaptions);
+      expect(fs.readFileSync(options.imagePath)).toEqual(originalImage);
+      writeJobs(readJobs().map(item => item.id === job.id ? { ...item, title: 'Later saved title' } : { ...item, brief: 'Other edit' }));
+      fs.writeFileSync(options.outputPath, Buffer.alloc(12_000, 1));
+      return { path: options.outputPath, bytes: 12_000, args: [] };
+    });
+    expect((await call('media_render', { job: job.id, image: scenePath })).success).toBe(true);
+    expect(readJobs()[0].title).toBe('Later saved title');
+    expect(readJobs()[1].brief).toBe('Other edit');
+    const state = await getMediaJobExportState(job.id);
+    expect(state.outputs[0].sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+    expect(state.sourceRevision).not.toBe(state.outputs[0].sourceRevision);
+  });
+
+  it('persists early and encoder failures without losing an earlier success', async () => {
+    const job = writeReadyJob('Early failure');
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    await call('media_render', { job: job.id, visuals: 'plain' });
+    const good = readJobs()[0];
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    (renderVideo as jest.Mock).mockRejectedValueOnce(new Error('Encoder stopped'));
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(false);
+    expect(readJobs()[0]).toMatchObject({ renderPath: good.renderPath, latestExportAttempt: { status: 'failed', error: expect.stringContaining('Encoder stopped') } });
+    fs.unlinkSync(narrationPath);
+    expect((await call('media_render', { job: job.id })).success).toBe(false);
+    expect(readJobs()[0]).toMatchObject({ renderPath: good.renderPath, latestExportAttempt: { status: 'failed', error: expect.stringContaining('no narration') } });
+  });
+
+  it('recovers a saved interrupted attempt once without starting another render', () => {
+    const job = writeReadyJob('Restart recovery');
+    writeJobs([{ ...job, renderPath: 'existing-good.mp4', latestExportAttempt: {
+      id: 'stopped-attempt', status: 'rendering', sourceRevision: null, startedAt: '2026-09-13T00:00:00Z' } }]);
+    const renderCount = (renderVideo as jest.Mock).mock.calls.length;
+    const first = readJobs()[0];
+    expect(first).toMatchObject({ renderPath: 'existing-good.mp4', latestExportAttempt: { status: 'interrupted' } });
+    expect(readJobs()[0].latestExportAttempt).toEqual(first.latestExportAttempt);
+    expect(renderVideo).toHaveBeenCalledTimes(renderCount);
+  });
+
+  it('does not claim a script revision for old narration and refuses a known mismatched script', async () => {
+    const job = writeReadyJob('Script provenance');
+    writeJobs([{ ...job, script: 'Original words' }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    expect((await getMediaJobExportState(job.id)).sourceRevision).toBeNull();
+    writeJobs([{ ...readJobs()[0], state: 'media_production', narrationScriptHash: mediaScriptDigest('Original words'), script: 'Changed words' }]);
+    const result = await call('media_render', { job: job.id, visuals: 'plain' });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/script changed/i);
+  });
+
+  it('keeps the last successful movie selected when its replacement fails QA', async () => {
+    const job = writeReadyJob('Previous success stays selected');
+    mockedInspectRender.mockResolvedValue({ hasVideo: true, hasAudio: true, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    const good = readJobs()[0];
+    const goodBytes = fs.readFileSync(good.renderPath!);
+    expect((await call('media_advance_job', { job: job.id, to: 'needs_revision' })).success).toBe(true);
+    expect((await call('media_advance_job', { job: job.id, to: 'media_production' })).success).toBe(true);
+    mockedInspectRender.mockResolvedValue({ hasVideo: true, hasAudio: false, width: 1080, height: 1920,
+      durationSeconds: 3, meanVolumeDb: null, maxVolumeDb: null, frameSamples: null });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(false);
+    const failed = readJobs()[0] as any;
+    expect(fs.readFileSync(good.renderPath!).equals(goodBytes)).toBe(true);
+    expect(failed.renderPath).toBe(good.renderPath);
+    expect(failed.rejectedRenderPath).not.toBe(good.renderPath);
+    expect(fs.existsSync(failed.rejectedRenderPath)).toBe(true);
+    expect(failed.latestExportAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/audio/i) });
+    expect((await call('media_advance_job', { job: job.id, to: 'awaiting_approval' })).success).toBe(false);
+  });
+
+  it('retries unchanged scenes from saved plates without another generator call', async () => {
+    const job = writeReadyJob('Reuse scene inputs');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const first = readJobs()[0];
+    const calls = (generateSceneImages as jest.Mock).mock.calls.length;
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    expect(generateSceneImages).toHaveBeenCalledTimes(calls);
+    expect(readJobs()[0].renderedOutput?.sourceRevision).toBe(first.renderedOutput?.sourceRevision);
+    expect(readJobs()[0].scenePaths![0]).not.toBe(first.scenePaths![0]);
+    expect(fs.readFileSync(readJobs()[0].scenePaths![0]!)).toEqual(fs.readFileSync(first.scenePaths![0]!));
+    expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(2);
+  });
+
+  it('keeps the saved music choice on retry and snapshots its bytes', async () => {
+    const job = writeReadyJob('Saved music');
+    const music = path.join(testRoot, 'music.wav');
+    fs.writeFileSync(music, 'chosen track');
+    writeJobs([{ ...job, renderInputs: { imagePath: null, scenePaths: [], musicPath: music, zoom: true, visuals: 'plain' } }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const options = (renderVideo as jest.Mock).mock.calls.at(-1)![0];
+    expect(options.musicPath).not.toBe(music);
+    expect(fs.readFileSync(options.musicPath, 'utf8')).toBe('chosen track');
+    expect(readJobs()[0].renderInputs?.musicPath).toBe(music);
+  });
+
+  it('keeps the good pointer when writing the new export record fails', async () => {
+    const job = writeReadyJob('Record write failure');
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    await call('media_render', { job: job.id, visuals: 'plain' });
+    const good = readJobs()[0];
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    const originalWrite = fs.writeFileSync;
+    const write = jest.spyOn(require('fs') as typeof fs, 'writeFileSync').mockImplementation((file, ...args) => {
+      if (String(file).endsWith('.mp4.json')) throw new Error('Export record disk write failed');
+      return originalWrite(file, ...args);
+    });
+    try {
+      const result = await call('media_render', { job: job.id, visuals: 'plain' });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/record disk write failed/);
+      expect(readJobs()[0]).toMatchObject({ renderPath: good.renderPath, latestExportAttempt: { status: 'failed' } });
+      expect(fs.existsSync(good.renderPath!)).toBe(true);
+    } finally { write.mockRestore(); }
+  });
+
+  it('does not recreate a job removed while encoding finishes', async () => {
+    const job = writeReadyJob('Removed while rendering');
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    (renderVideo as jest.Mock).mockImplementationOnce(async ({ outputPath }) => {
+      writeJobs([]);
+      fs.writeFileSync(outputPath, Buffer.alloc(12_000, 1));
+      return { path: outputPath, bytes: 12_000, args: [] };
+    });
+    const result = await call('media_render', { job: job.id, visuals: 'plain' });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/removed while rendering/);
+    expect(readJobs()).toEqual([]);
+    expect(fs.readdirSync(path.join(testRoot, 'media-assets', job.id)).filter(file => /^video-legacy-.*\.mp4$/.test(file))).toHaveLength(1);
+  });
+
   it('uses measured fractional narration length and rejects an encoder tail beyond it', async () => {
     const job = writeReadyJob('Fractional narration');
     writeJobs([{ ...job, outputSpec: createStudioOutputSpec(), burnSubtitles: false }]);
@@ -274,8 +458,9 @@ describe('media_render output trust', () => {
     expect(persisted.state).toBe('needs_revision');
     // A rejected render is parked under its own name rather than claiming
     // video.mp4, so it stays inspectable without overwriting a good export.
-    expect(persisted.renderPath).toBe(path.join(testRoot, 'media-assets', persisted.id, 'video.rejected.mp4'));
-    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
+    expect(persisted.renderPath).toBeUndefined();
+    expect(persisted.rejectedRenderPath).toMatch(/video-[\w-]+\.rejected\.mp4$/);
+    expect(fs.statSync(persisted.rejectedRenderPath!).size).toBe(12_000);
     expect(persisted.narrationPath).toBe(narrationPath);
     expect(persisted.captionsPath).toBe(captionsPath);
     expect(persisted.scenePaths).toEqual([scenePath]);
@@ -310,7 +495,8 @@ describe('media_render output trust', () => {
     expect(result.error).toMatch(/audio/i);
     expect(persisted.state).toBe('needs_revision');
     expect(persisted.history.at(-1)).toMatchObject({ from: 'render_qa', to: 'needs_revision', by: 'render QA' });
-    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
+    expect(persisted.renderPath).toBeUndefined();
+    expect(fs.statSync(persisted.rejectedRenderPath!).size).toBe(12_000);
     expect(persisted.narrationPath).toBe(narrationPath);
   });
 
@@ -339,8 +525,9 @@ describe('media_render output trust', () => {
     expect(fs.readFileSync(goodVideo).equals(goodBytes)).toBe(true);
     // And the rejected attempt is still on disk under its own name.
     const persisted = readJobs()[0];
-    expect(persisted.renderPath).toBe(path.join(assetDir, 'video.rejected.mp4'));
-    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
+    expect(persisted.renderPath).toBeUndefined();
+    expect(persisted.rejectedRenderPath).toMatch(/video-[\w-]+\.rejected\.mp4$/);
+    expect(fs.statSync(persisted.rejectedRenderPath!).size).toBe(12_000);
   });
 
   it('keeps a measured QA success and warning on the existing render_qa path', async () => {
@@ -363,11 +550,11 @@ describe('media_render output trust', () => {
     expect(String(result.result)).toMatch(/checks passed, with a note/i);
     expect(String(result.result)).toMatch(/narration peaks/i);
     expect(persisted.state).toBe('render_qa');
-    expect(persisted.renderPath).toBe(path.join(testRoot, 'media-assets', persisted.id, 'video.mp4'));
+    expect(persisted.renderPath).toMatch(/video-legacy-[\w-]+\.mp4$/);
     expect(fs.existsSync(persisted.renderPath!)).toBe(true);
     expect(persisted.narrationPath).toBe(narrationPath);
     expect(persisted.captionsPath).toBe(captionsPath);
-    expect(persisted.scenePaths).toEqual([scenePath]);
+    expect(persisted.scenePaths).toEqual([]); // Plain output must not display obsolete plates.
     expect(persisted.state).not.toBe('approved');
   });
 
@@ -398,6 +585,7 @@ describe('media_render output trust', () => {
     expect(String(result.error)).toMatch(/flat color|placeholder/i);
     expect(persisted.state).toBe('needs_revision');
     // The render itself is preserved, same as every other QA failure here.
-    expect(fs.statSync(persisted.renderPath!).size).toBe(12_000);
+    expect(persisted.renderPath).toBeUndefined();
+    expect(fs.statSync(persisted.rejectedRenderPath!).size).toBe(12_000);
   });
 });

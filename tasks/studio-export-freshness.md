@@ -136,3 +136,25 @@ and lint pass again (zero errors/eight existing warnings). The main bundle hash
 above is unchanged; the prior 15 actual Electron cases still cover the exact
 production/E2E source. Red, intermediate and corrected logs are retained in the
 same artifact directory. Auto-merge was disabled pending corrected-head CI.
+
+## Merged and content-verified — #321
+
+Merged at 2026-09-13 00:55:50 UTC as
+`3e1fe559252c3b4b0537cd0b2fa5555d90cd312f`. Main and final published
+`ef78173a050ea6b9d9012700a8a1b2429dd3cfab` have identical complete tree
+`3ce22c54dca0586568bc147f8ffc38c8d94042a8`; both remote refs were confirmed.
+All six freshly read required contexts are present and successful.
+
+Both corrected Windows CI logs (34728477372 and 34728478715) execute 4,228
+widget tests, 227 root tests and 13 real overlays. Matrix 34728478766 executes
+56 cases per OS and intentionally skips 13 opt-in media cases. Linux/macOS
+pass 23+22+11 without retries; Windows passes 22 plus one media-feed case on
+its allowed retry after a 60-second timeout, then 22+11. All nine first outer
+attempts exit zero. The complete matrix is therefore not retry-free.
+
+The storyboard checkpoint claim is released. Ordinary-job recovery/identity
+continues from fresh main; multi-output, source-generation/stage parity,
+workspace, full approved pilot and installed/owner visual gates stay open.
+The separately approved local preview launcher now points to
+`codex-episode-progress/widget` at b5aa5cf with its unchanged ui-preview profile,
+as confirmed read-only. It is not #321 and was not repointed by this task.
