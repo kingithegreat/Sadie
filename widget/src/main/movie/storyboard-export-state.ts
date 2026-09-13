@@ -143,9 +143,16 @@ export async function readStoryboardExportState(projectDir: string, meta: Record
     const moviePath = resolveStoryboardExportPath(projectDir, filename);
     return moviePath ? [{ filename, moviePath }] : [];
   }) : [];
-  try { sourceRevision = await storyboardSourceRevision(scenes ?? assembleStoryboardScenes(projectDir), meta); }
+  const sceneRevisions: Record<string, string> = {};
+  try {
+    const savedScenes = scenes ?? assembleStoryboardScenes(projectDir);
+    sourceRevision = await storyboardSourceRevision(savedScenes, meta);
+    for (const sceneId of new Set(outputs.map(output => output.sceneId).filter((id): id is string => !!id))) {
+      if (savedScenes.some(scene => scene.sceneId === sceneId)) sceneRevisions[sceneId] = await storyboardSourceRevision(savedScenes, meta, { sceneId });
+    }
+  }
   catch { warnings.push('The current source revision could not be verified.'); }
-  return { sourceRevision, sourceSavedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : null, latestAttempt,
+  return { sourceRevision, sceneRevisions, sourceSavedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : null, latestAttempt,
     outputs: outputs.sort((a, b) => b.createdAt.localeCompare(a.createdAt)), untrackedOutputs,
     ...(warnings.length ? { warning: [...new Set(warnings)].join(' ') } : {}) };
 }

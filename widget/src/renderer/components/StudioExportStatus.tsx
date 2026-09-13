@@ -17,8 +17,9 @@ const revision = (value: string | null | undefined) => value ? value.slice(0, 12
 export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering, onSelect }: Props) {
   const output = state?.outputs.find(item => item.moviePath === moviePath);
   const attempt = state?.latestAttempt;
-  const known = !!output?.sourceRevision && !!state?.sourceRevision;
-  const stale = unsaved || (known && output!.sourceRevision !== state!.sourceRevision);
+  const currentRevision = output?.sceneId ? state?.sceneRevisions?.[output.sceneId] : state?.sourceRevision;
+  const known = !!output?.sourceRevision && !!currentRevision;
+  const stale = unsaved || (known && output!.sourceRevision !== currentRevision);
   const failed = attempt?.status === 'failed' || attempt?.status === 'interrupted';
   const variant = output?.outputSpec.variants[0];
   const heading = rendering ? 'Export in progress — previous movies are kept'
@@ -26,14 +27,16 @@ export function StudioExportStatus({ state, moviePath, unsaved, busy, rendering,
     : moviePath && failed ? `Unverified older file — latest attempt ${attempt.status}`
     : moviePath && stale ? 'Preview out of date'
       : moviePath && known ? 'Preview matches the saved revision'
-        : moviePath ? 'Saved movie — source revision unknown' : 'No movie selected';
+        : moviePath && output?.sourceRevision ? 'Saved movie — current source cannot be verified'
+          : moviePath ? 'Saved movie — source revision unknown' : 'No movie selected';
   return <section className="ms-export-status" aria-label="Export freshness" aria-live="polite">
     <strong>{heading}</strong>
     {unsaved && <p>Unsaved edits — Save Board keeps your changes; Render Movie saves and exports them.</p>}
     {moviePath && stale && failed && <p>Preview out of date — the previous good movie is still available.</p>}
-    {moviePath && !known && <p>This older export has no verified source revision. Render again to record one; the old file will be kept.</p>}
+    {moviePath && !known && <p>{output?.sourceRevision ? 'The current source could not be compared with this export. Check the saved project before rendering again.'
+      : 'This older export has no verified source revision. Render again to record one; the old file will be kept.'}</p>}
     <dl>
-      <div><dt>Saved source</dt><dd title={state?.sourceRevision ?? undefined}>{revision(state?.sourceRevision)} · {date(state?.sourceSavedAt)}</dd></div>
+      <div><dt>Saved source{output?.sceneId ? ` (scene ${output.sceneId})` : ''}</dt><dd title={currentRevision ?? undefined}>{revision(currentRevision)} · {date(state?.sourceSavedAt)}</dd></div>
       {moviePath && <div><dt>Displayed export</dt><dd title={output?.sourceRevision}>{revision(output?.sourceRevision)} · {date(output?.createdAt)}</dd></div>}
       {output && <div><dt>File details</dt><dd>{variant?.width} × {variant?.height} · {output.durationSeconds.toFixed(2)} seconds · {output.fileSizeBytes === undefined ? 'Size unknown' : `${(output.fileSizeBytes / 1024 / 1024).toFixed(2)} MB`}{output.sceneId ? ` · Scene ${output.sceneId}` : ''}</dd></div>}
       {attempt && <div><dt>{rendering ? 'Previous recorded attempt' : 'Latest attempt'}{attempt.sceneId ? ` (scene ${attempt.sceneId})` : ''}</dt><dd>{attempt.status} · started {date(attempt.startedAt)}{attempt.finishedAt ? ` · finished ${date(attempt.finishedAt)}` : ''}</dd></div>}

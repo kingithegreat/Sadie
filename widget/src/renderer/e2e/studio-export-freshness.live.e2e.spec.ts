@@ -121,8 +121,17 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
     expect((await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.renderPath === replacementB)?.state).toBe('awaiting_approval');
     await page.getByRole('tab', { name: /Storyboard/ }).click();
+    const sceneExport = await page.evaluate(() => window.electron.mediaStoryboardRender!({ projectId: 'freshness-b', sceneId: 'scene_01' }));
+    expect(sceneExport.ok).toBe(true);
+    expect(movie('freshness-b')).toBe(replacementB); // A scene never becomes the whole-movie pointer.
+    await choose('freshness-a');
+    await choose('freshness-b');
+    await page.getByLabel('Export history').selectOption(sceneExport.moviePath!);
+    await expect(page.getByText('Preview matches the saved revision')).toBeVisible();
+    await expect(page.getByText('Saved source (scene scene_01)')).toBeVisible();
+    await page.getByLabel('Export history').selectOption(replacementB);
     await page.getByRole('region', { name: 'Export freshness' }).screenshot({ path: testInfo.outputPath('recovered-b-preview.png'), animations: 'disabled' });
-    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({ profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB), projectA: meta('freshness-a'), projectB: meta('freshness-b'), historicalOpenRevealIpcVerified: true, osLaunchTrapped: true, openFailureVisible: true, reviewWithoutApproval: true }, null, 2));
+    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({ profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB), sceneExport, projectA: meta('freshness-a'), projectB: meta('freshness-b'), historicalOpenRevealIpcVerified: true, osLaunchTrapped: true, openFailureVisible: true, reviewWithoutApproval: true }, null, 2));
   } catch (error) {
     fs.writeFileSync(testInfo.outputPath('failure-surface.json'), JSON.stringify(await page.evaluate(() => ({
       title: document.title, body: document.body.innerText, viewport: { width: innerWidth, height: innerHeight },

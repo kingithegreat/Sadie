@@ -76,3 +76,9 @@ from a short duration. A red handler assertion reproduced this. The bridge now
 passes the actual output spec into the review record and IPC response; it does
 not change the saved legacy project or encoder filters. The local narrated
 caption pair additionally checks that exact review geometry.
+
+Scene-only export history also needs its own source comparison. A red regression
+showed that comparing a scene movie with the full-project hash always reported
+it stale. History now uses the matching saved-scene revision, without moving
+the complete-project pointer. An edit to another scene leaves that comparison
+alone. The actual A/B test now selects both complete and scene exports.

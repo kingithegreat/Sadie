@@ -63,6 +63,7 @@ export interface StudioExportAttempt {
 
 export interface StudioExportState {
   sourceRevision: string | null;
+  sceneRevisions?: Record<string, string>;
   sourceSavedAt: string | null;
   latestAttempt?: StudioExportAttempt;
   outputs: Array<StudioRenderedOutput & { moviePath: string }>;

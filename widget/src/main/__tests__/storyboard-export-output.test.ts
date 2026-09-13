@@ -484,6 +484,20 @@ describe('storyboard export output contract', () => {
     expect(fs.readFileSync(output, 'utf8')).toBe('complete project movie');
   });
 
+  test('scene-only history compares the saved scene rather than the whole project revision', async () => {
+    const ending = path.join(path.dirname(scene), 'scene_02');
+    fs.cpSync(scene, ending, { recursive: true });
+    const result = await renderStoryboardMovie({ projectId: 'export-check', sceneId: 'scene_01' });
+    expect(result.ok).toBe(true);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.sceneRevisions?.scene_01).toBe(result.renderedOutput?.sourceRevision);
+    expect(reopened.exportState.sourceRevision).not.toBe(result.renderedOutput?.sourceRevision);
+    fs.writeFileSync(path.join(ending, shots[0].shotId, 'script.txt'), 'Changed only the other scene.');
+    const changed = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(changed.exportState.sceneRevisions.scene_01).toBe(result.renderedOutput?.sourceRevision);
+    expect(changed.exportState.sourceRevision).not.toBe(reopened.exportState.sourceRevision);
+  });
+
   test('an explicit scene export cannot replace the complete movie review job', async () => {
     const completeJob = { id: 'sb_export-check', renderPath: output, state: 'awaiting_approval' };
     (readJobs as jest.Mock).mockReturnValue([completeJob]);
