@@ -113,6 +113,14 @@ describe('deferred providers (Colab)', () => {
     expect(d.chosen?.providerId).toBe('local');
     expect(d.fallbacks.map((f) => f.providerId)).toContain('colab');
   });
+
+  it('prioritizes preferredProvider when explicitly requested and eligible', async () => {
+    const r = new GenerationRouter()
+      .register(colab)
+      .register(stub('local', baseCap({ maxWidth: 512, maxHeight: 512 })));
+    const d = await r.route(req({ allowDeferred: true, width: 512, height: 512 }), { preferredProvider: 'colab' });
+    expect(d.chosen?.providerId).toBe('colab');
+  });
 });
 
 describe('resolution and duration are checked against the request', () => {

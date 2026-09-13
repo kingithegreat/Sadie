@@ -156,11 +156,16 @@ const ImageGenerator: React.FC = () => {
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="style">Style:</label>
-            <select id="style" value={style} onChange={(e) => setStyle(e.target.value)}>
-              <option value="realistic">Realistic</option>
-              <option value="artistic">Artistic</option>
-              <option value="cartoon">Cartoon</option>
-              <option value="anime">Anime</option>
+            <select
+              id="style"
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+              title="Select the visual artistic style for the generated image"
+            >
+              <option value="realistic" title="Photorealistic rendering with lifelike lighting, textures, and details">Realistic</option>
+              <option value="artistic" title="Painterly digital art with rich brush strokes and expressive palettes">Artistic</option>
+              <option value="cartoon" title="Vibrant 2D illustration with bold outlines and flat shading">Cartoon</option>
+              <option value="anime" title="Japanese animation aesthetic with stylized eyes and clean line work">Anime</option>
             </select>
           </div>
 
@@ -169,10 +174,15 @@ const ImageGenerator: React.FC = () => {
             {/* The pixel dimensions stay as the value — they are what the
                 backend needs — but the label says what the choice means to
                 someone who does not think in pixels. */}
-            <select id="resolution" value={resolution} onChange={(e) => setResolution(e.target.value)}>
-              <option value="256x256">Small — fastest</option>
-              <option value="512x512">Medium — recommended</option>
-              <option value="1024x1024">Large — slowest, most detail</option>
+            <select
+              id="resolution"
+              value={resolution}
+              onChange={(e) => setResolution(e.target.value)}
+              title="Select canvas pixel dimensions and generation fidelity"
+            >
+              <option value="256x256" title="256x256: Ultra-fast generation, lower fidelity preview">Small — fastest</option>
+              <option value="512x512" title="512x512: Balanced resolution and render speed (recommended)">Medium — recommended</option>
+              <option value="1024x1024" title="1024x1024: Maximum clarity, finest textures, takes longer to generate">Large — slowest, most detail</option>
             </select>
           </div>
 
@@ -181,11 +191,16 @@ const ImageGenerator: React.FC = () => {
                 only (free)". Three words a non-technical person does not have,
                 for a choice that is really about privacy vs. needing internet. */}
             <label htmlFor="backend">Where to make it:</label>
-            <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
-              <option value="hybrid">Best available</option>
-              <option value="imagen">Google Imagen 3 — high quality (Gemini key)</option>
-              <option value="local">Only on this PC — private</option>
-              <option value="cloud">Online — free, no account</option>
+            <select
+              id="backend"
+              value={backend}
+              onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}
+              title="Choose where to generate: local GPU/CPU or zero-VRAM cloud backends"
+            >
+              <option value="hybrid" title="Automatically tries local Stable Diffusion first, then falls back to cloud providers if unavailable">Best available</option>
+              <option value="imagen" title="Google Imagen 3 via Gemini API: Ultra-crisp photorealistic cloud renders (15 RPM free tier, 0 VRAM)">Google Imagen 3 — high quality (Gemini key)</option>
+              <option value="local" title="Runs locally on this PC using sd.exe (completely private, offline, requires GPU/RAM)">Only on this PC — private</option>
+              <option value="cloud" title="Free cloud generation via Pollinations AI (instant, no setup, 0 VRAM)">Online — free, no account</option>
             </select>
           </div>
         </div>
@@ -256,6 +271,7 @@ const ImageGenerator: React.FC = () => {
           onClick={handleGenerate}
           disabled={loading || !prompt.trim()}
           className="generate-btn"
+          title="Synthesize image using the selected style, size, and backend"
         >
           {loading ? 'Generating...' : 'Generate Image'}
         </button>

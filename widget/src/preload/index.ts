@@ -804,6 +804,19 @@ const electronAPI: ElectronAPI = {
     name: string;
   }) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-showrunner', options),
+  mediaAncientPathwaysGetAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-anchors', character),
+  mediaAncientPathwaysGetSprite: async (character: string, group: string, pose: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-sprite', character, group, pose),
+  mediaAncientPathwaysSaveAnchor: async (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+  }) => ipcRenderer.invoke('homebot:media:ancient-pathways-save-anchor', args),
+  mediaAncientPathwaysSuggestAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-suggest-anchors', character),
   onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
     const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
@@ -824,7 +837,16 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:list'),
   mediaStoryboardGet: async (projectId: string) =>
     ipcRenderer.invoke('homebot:media:storyboard:get', projectId),
-  mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
+  mediaStoryboardGenerateFrame: async (args: {
+    projectId: string;
+    sceneId?: string;
+    shotId: string;
+    prompt?: string;
+    provider?: string;
+    allowDeferred?: boolean;
+    freeOnly?: boolean;
+    allowWatermark?: boolean;
+  }) =>
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),

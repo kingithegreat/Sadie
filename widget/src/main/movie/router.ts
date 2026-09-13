@@ -37,6 +37,8 @@ const AVAILABILITY_SCORE: Record<GenerationCapability['availability'], number> =
 export interface RouteOptions {
   /** Overrides req.freeOnly. Used by tests and by an explicit paid override. */
   freeOnly?: boolean;
+  /** Preferred provider id to prioritize when eligible. */
+  preferredProvider?: string;
 }
 
 export class GenerationRouter {
@@ -90,7 +92,17 @@ export class GenerationRouter {
       }),
     );
 
-    const eligible = scored.filter((s) => s.eligible).sort((a, b) => b.score - a.score);
+    const eligible = scored
+      .filter((s) => s.eligible)
+      .sort((a, b) => {
+        if (opts.preferredProvider) {
+          const aPref = a.providerId === opts.preferredProvider;
+          const bPref = b.providerId === opts.preferredProvider;
+          if (aPref && !bPref) return -1;
+          if (!aPref && bPref) return 1;
+        }
+        return b.score - a.score;
+      });
     const rejected = scored.filter((s) => !s.eligible);
     const chosen = eligible[0] ?? null;
 

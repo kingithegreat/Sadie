@@ -365,6 +365,22 @@ export const mediaGenerateStoryboardFrameDef: ToolDefinition = {
         type: 'string',
         description: 'Optional override prompt for image generation.',
       },
+      provider: {
+        type: 'string',
+        description: 'Optional generation provider override (e.g. "imagen-3", "pollinations", "colab-worker", or "auto").',
+      },
+      allowDeferred: {
+        type: 'boolean',
+        description: 'Whether to allow offloading to asynchronous/deferred workers such as Google Colab T4.',
+      },
+      freeOnly: {
+        type: 'boolean',
+        description: 'Strictly enforce zero-cost generation (defaults to true).',
+      },
+      allowWatermark: {
+        type: 'boolean',
+        description: 'Whether to allow watermarked fallback providers (defaults to false).',
+      },
     },
     required: ['projectId', 'shotId'],
   },
@@ -405,6 +421,12 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
       return { success: false, error: 'No prompt available for shot frame generation.' };
     }
 
+    const rawProvider = String(args.provider || 'auto').trim();
+    const provider = rawProvider === 'colab' ? 'colab-worker' : rawProvider;
+    const allowDeferred = args.allowDeferred !== undefined ? Boolean(args.allowDeferred) : (provider === 'colab-worker');
+    const freeOnly = args.freeOnly !== undefined ? Boolean(args.freeOnly) : true;
+    const allowWatermark = args.allowWatermark !== undefined ? Boolean(args.allowWatermark) : false;
+
     const router = createStandardRouter();
     const req: GenerationRequest = {
       kind: 'image',
@@ -413,12 +435,16 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
       height: 576,
       shotId,
       shotDir,
-      freeOnly: true,
-      allowWatermark: false,
-      allowDeferred: false,
+      freeOnly,
+      allowWatermark,
+      allowDeferred,
     };
 
-    const { decision, result: res } = await router.generate(req);
+    const preferredProvider = provider !== 'auto' ? provider : undefined;
+    const { decision, result: res } = await router.generate(req, {
+      preferredProvider,
+      freeOnly,
+    });
     if (res.status === 'failed') {
       return { success: false, error: res.error || `Frame generation failed: ${decision.summary}` };
     }
@@ -429,13 +455,14 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     const statusFile = path.join(shotDir, 'status.json');
     const statusData: any = {
       shotId,
-      status: ShotStatus.IMAGE_GENERATED,
+      status: res.status === 'deferred' ? ShotStatus.AWAITING_WORKER : ShotStatus.IMAGE_GENERATED,
       attempts: 1,
       updatedAt: new Date().toISOString(),
       provider: res.provider || decision.chosen?.providerId || 'free-router',
       // The exact prompt this frame was generated from — lets assembleScene
       // flag the frame as stale if the shot's prompt changes afterward.
       generatedPrompt: prompt,
+      ...(res.status === 'deferred' ? { ticket: (res as any).ticket, where: (res as any).where } : {}),
     };
     fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf-8');
 
@@ -447,7 +474,12 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
         shotId,
         provider: res.provider || decision.chosen?.providerId || 'free-router',
         frameImagePath: imgPath,
-        message: `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`,
+        deferred: res.status === 'deferred',
+        ticket: res.status === 'deferred' ? (res as any).ticket : undefined,
+        where: res.status === 'deferred' ? (res as any).where : undefined,
+        message: res.status === 'deferred'
+          ? `Offloaded to Colab T4 worker ticket ${(res as any).ticket}. Process via notebooks/colab_sdxl_ipadapter.ipynb`
+          : `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`,
       },
     };
   } catch (err: any) {

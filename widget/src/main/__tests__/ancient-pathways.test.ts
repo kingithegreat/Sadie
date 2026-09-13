@@ -10,6 +10,9 @@ import {
   runEpisodePipeline,
   runDoctorChecks,
   scanReachability,
+  getCharacterAnchors,
+  getCharacterPoseSprite,
+  saveCharacterAnchor,
 } from '../ancient-pathways';
 
 describe('ancient-pathways main module', () => {
@@ -269,6 +272,121 @@ describe('ancient-pathways main module', () => {
     it('returns empty array when no pipeline directory exists', () => {
       const findings = scanReachability(tmpDir);
       expect(findings).toEqual([]);
+    });
+  });
+
+  describe('character anchor calibration', () => {
+    let mockApDir: string;
+    let charsDir: string;
+
+    beforeEach(() => {
+      mockApDir = path.join(tmpDir, 'mock-ap');
+      charsDir = path.join(mockApDir, 'workspace', 'branding', 'characters');
+      fs.mkdirSync(path.join(charsDir, 'leila', 'pose_a'), { recursive: true });
+      fs.mkdirSync(path.join(charsDir, 'leila', 'mouth'), { recursive: true });
+
+      // Create a dummy sprite
+      fs.writeFileSync(path.join(charsDir, 'leila', 'pose_a', 'idle.png'), 'fake-png-bytes');
+      fs.writeFileSync(path.join(charsDir, 'leila', 'mouth', 'A.png'), 'fake-mouth-bytes');
+
+      const manifest = {
+        pose_a: {
+          idle: 'pose_a/idle.png',
+          walking: 'pose_a/walking.png',
+        },
+        mouth: {
+          A: 'mouth/A.png',
+        },
+        _head_boxes: {
+          pose_a: {
+            idle: [7, 0, 70, 75],
+          },
+        },
+        _mouth_anchors: {
+          pose_a: {
+            idle: [32, 55, 20, 14],
+          },
+        },
+        _mouth_anchors_suggested: {
+          pose_a: {
+            walking: [30, 54, 20, 14],
+          },
+        },
+      };
+      fs.writeFileSync(
+        path.join(charsDir, 'leila', 'manifest.json'),
+        JSON.stringify(manifest, null, 2),
+      );
+    });
+
+    it('getCharacterAnchors parses character library and computes stats accurately', async () => {
+      const res = await getCharacterAnchors('leila', mockApDir);
+      expect(res.ok).toBe(true);
+      expect(res.characters?.length).toBe(1);
+      expect(res.characters?.[0].slug).toBe('leila');
+      expect(res.characters?.[0].totalPoses).toBe(2);
+      expect(res.characters?.[0].handPlacedMouthAnchors).toBe(1);
+      expect(res.characters?.[0].headBoxes).toBe(1);
+      expect(res.characters?.[0].suggestedMouthAnchors).toBe(1);
+      expect(res.characters?.[0].missingMouthAnchors).toBe(0);
+
+      expect(res.selected).toBeDefined();
+      expect(res.selected?.mouthVisemes['A']).toContain('data:image/png;base64,');
+    });
+
+    it('getCharacterPoseSprite loads sprite as base64 data URL and guards against traversal', async () => {
+      const okRes = await getCharacterPoseSprite('leila', 'pose_a', 'idle', mockApDir);
+      expect(okRes.ok).toBe(true);
+      expect(okRes.dataUrl).toContain('data:image/png;base64,');
+
+      const badRes = await getCharacterPoseSprite('..', 'pose_a', 'idle', mockApDir);
+      expect(badRes.ok).toBe(false);
+      expect(badRes.error).toContain('Invalid');
+    });
+
+    it('saveCharacterAnchor updates manifest, cleans up suggestions, and creates backup', async () => {
+      const saveRes = await saveCharacterAnchor(
+        {
+          character: 'leila',
+          group: 'pose_a',
+          pose: 'walking',
+          anchorType: 'mouth',
+          box: [33, 56, 22, 16],
+        },
+        mockApDir,
+      );
+
+      expect(saveRes.ok).toBe(true);
+      expect(saveRes.box).toEqual([33, 56, 22, 16]);
+
+      // Check manifest was updated
+      const updatedManifest = JSON.parse(
+        fs.readFileSync(path.join(charsDir, 'leila', 'manifest.json'), 'utf8'),
+      );
+      expect(updatedManifest._mouth_anchors.pose_a.walking).toEqual([33, 56, 22, 16]);
+      // Suggested should be removed
+      expect(updatedManifest._mouth_anchors_suggested).toBeUndefined();
+
+      // Backup file should exist in .backups
+      const backupDir = path.join(charsDir, 'leila', '.backups');
+      expect(fs.existsSync(backupDir)).toBe(true);
+      const backups = fs.readdirSync(backupDir);
+      expect(backups.length).toBeGreaterThan(0);
+    });
+
+    it('saveCharacterAnchor rejects invalid boxes', async () => {
+      const badRes = await saveCharacterAnchor(
+        {
+          character: 'leila',
+          group: 'pose_a',
+          pose: 'idle',
+          anchorType: 'mouth',
+          box: [-5, 10, 20, 10],
+        },
+        mockApDir,
+      );
+      expect(badRes.ok).toBe(false);
+      expect(badRes.error).toContain('non-negative');
     });
   });
 });

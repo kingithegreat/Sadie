@@ -23,6 +23,7 @@ import { MultiPlaneStage } from './MultiPlaneStage';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
+import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import {
   type CameraMotion,
   type StageFraming,
@@ -310,6 +311,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   // "From Ancient Pathways…" — 2D animated history series
   const [apOpen, setApOpen] = useState(false);
+  const [apTab, setApTab] = useState<'episodes' | 'anchors'>('episodes');
   const [apLoading, setApLoading] = useState(false);
   const [apError, setApError] = useState<string | null>(null);
   const [apEpisodes, setApEpisodes] = useState<Array<{
@@ -342,6 +344,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [movieRunning, setMovieRunning] = useState(false);
   const [movieResult, setMovieResult] = useState<string | null>(null);
   const [movieError, setMovieError] = useState<string | null>(null);
+  const [movieAllowDeferred, setMovieAllowDeferred] = useState(true);
+  const [movieFreeOnly, setMovieFreeOnly] = useState(true);
+  const [movieAllowWatermark, setMovieAllowWatermark] = useState(false);
 
   // Visual Storyboard Deck State
   const [storyboardProjects, setStoryboardProjects] = useState<Array<{
@@ -389,6 +394,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [isCreatingStoryboard, setIsCreatingStoryboard] = useState<boolean>(false);
   const [storyboardMessage, setStoryboardMessage] = useState<string | null>(null);
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
+  const [storyboardProvider, setStoryboardProvider] = useState<string>('auto');
+  const [storyboardAllowDeferred, setStoryboardAllowDeferred] = useState<boolean>(true);
 
   // Script-to-Storyboard Director State
   const [directorOpen, setDirectorOpen] = useState(false);
@@ -893,12 +900,30 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
-  const runMovieRouter = async (projectDir: string) => {
+  const runMovieRouter = async (
+    projectDir: string,
+    options?: { allowDeferred?: boolean; freeOnly?: boolean; allowWatermark?: boolean }
+  ) => {
     setMovieRunning(true);
     setMovieError(null);
     setMovieResult(null);
     try {
-      const res = await api()?.mediaMovieRun?.({ projectDir });
+      const payload: {
+        projectDir: string;
+        allowDeferred?: boolean;
+        freeOnly?: boolean;
+        allowWatermark?: boolean;
+      } = { projectDir };
+      if (options?.allowDeferred !== undefined) {
+        payload.allowDeferred = options.allowDeferred;
+      }
+      if (options?.freeOnly !== undefined) {
+        payload.freeOnly = options.freeOnly;
+      }
+      if (options?.allowWatermark !== undefined) {
+        payload.allowWatermark = options.allowWatermark;
+      }
+      const res = await api()?.mediaMovieRun?.(payload);
       if (res?.ok && res.report) {
         const r = res.report;
         const msg = [];
@@ -1137,18 +1162,32 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     if (!res?.ok) throw new Error(res?.error || 'The board was saved, but export freshness could not be refreshed. Reopen it to check.');
   };
 
-  const handleGenerateFrame = async (shotId: string, prompt?: string) => {
+  const handleGenerateFrame = async (
+    shotId: string,
+    prompt?: string,
+    providerOverride?: string,
+    allowDeferredOverride?: boolean
+  ) => {
     if (!selectedStoryboardId) return;
     setGeneratingShotId(shotId);
     setStoryboardError(null);
     try {
+      const activeProv = providerOverride ?? storyboardProvider;
       const res = await api()?.mediaStoryboardGenerateFrame?.({
         projectId: selectedStoryboardId,
         sceneId: activeStoryboardScene?.sceneId || 'scene_01',
         shotId,
         prompt,
+        provider: activeProv !== 'auto' ? activeProv : undefined,
+        allowDeferred: allowDeferredOverride ?? (activeProv === 'colab-worker' ? true : storyboardAllowDeferred),
       });
-      if (res?.ok && res.result?.frameImagePath) {
+      if (res?.ok && res.result?.deferred) {
+        handleUpdateShot(shotId, {
+          status: 'AWAITING_WORKER',
+        });
+        setStoryboardMessage(`Offloaded shot ${shotId} to Colab T4 worker ticket (${res.result.ticket || 'staged'}). Run Colab notebook to generate image.`);
+        setTimeout(() => setStoryboardMessage(null), 5000);
+      } else if (res?.ok && res.result?.frameImagePath) {
         handleUpdateShot(shotId, {
           frameImagePath: res.result.frameImagePath,
           status: 'COMPLETED',
@@ -2071,9 +2110,16 @@ ${shots.map((s, idx) => `
                 value={narrateEngine}
                 onChange={e => changeNarrateEngine(e.target.value as '' | 'edge' | 'kokoro')}
                 aria-label="Narration engine"
+                title="Select Text-to-Speech narration engine: Microsoft Edge TTS (cloud, wide voice variety) or Kokoro TTS (local neural)"
               >
                 {NARRATION_ENGINES.map(e => (
-                  <option key={e.label} value={e.value}>{e.label}</option>
+                  <option
+                    key={e.label}
+                    value={e.value}
+                    title={e.value === 'kokoro' ? 'Kokoro: Local neural speech generation with high emotional inflection' : 'Microsoft Edge: Cloud-based realistic natural speech synthesis (requires internet)'}
+                  >
+                    {e.label}
+                  </option>
                 ))}
               </select>
             )}
@@ -2084,10 +2130,11 @@ ${shots.map((s, idx) => `
                 onChange={e => setNarrateVoice(e.target.value)}
                 onFocus={ensureVoices}
                 aria-label="Narration voice"
+                title="Choose Microsoft Edge natural voice speaker"
               >
-                <option value="">Default voice</option>
+                <option value="" title="Use default voice (typically English US natural)">Default voice</option>
                 {(voices || []).map(v => (
-                  <option key={v.name} value={v.name}>{v.friendlyName || v.name}</option>
+                  <option key={v.name} value={v.name} title={`Speaker: ${v.friendlyName || v.name} (${v.locale || 'en'})`}>{v.friendlyName || v.name}</option>
                 ))}
               </select>
             )}
@@ -2097,10 +2144,11 @@ ${shots.map((s, idx) => `
                 value={narrateVoice}
                 onChange={e => setNarrateVoice(e.target.value)}
                 aria-label="Kokoro narration voice"
+                title="Choose Kokoro neural voice personality"
               >
-                <option value="">Heart (default)</option>
+                <option value="" title="Heart: balanced natural storytelling voice (default)">Heart (default)</option>
                 {KOKORO_VOICES.map(v => (
-                  <option key={v.name} value={v.name}>{v.label}</option>
+                  <option key={v.name} value={v.name} title={`Kokoro Voice: ${v.label}`}>{v.label}</option>
                 ))}
               </select>
             )}
@@ -2109,6 +2157,7 @@ ${shots.map((s, idx) => `
                 className="ms-btn"
                 disabled={sampling !== null}
                 onClick={() => sampleVoice(narrateVoice)}
+                title="Preview and play a short audio sample of the selected voice"
               >
                 {sampling !== null ? 'Rendering…' : '▶ Sample'}
               </button>
@@ -2275,15 +2324,20 @@ ${shots.map((s, idx) => `
                         className="ms-select"
                         value={uploadPrivacy}
                         onChange={e => setUploadPrivacy(e.target.value as any)}
+                        title="Set video publication privacy on YouTube"
+                        aria-label="YouTube video privacy"
                       >
-                        <option value="private">Private (Only you)</option>
-                        <option value="unlisted">Unlisted (Anyone with link)</option>
-                        <option value="public">Public (Everyone)</option>
+                        <option value="private" title="Only you and designated accounts can watch this video">Private (Only you)</option>
+                        <option value="unlisted" title="Anyone with the link can watch, but it will not show in YouTube search">Unlisted (Anyone with link)</option>
+                        <option value="public" title="Publicly viewable, discoverable, and searchable by everyone on YouTube">Public (Everyone)</option>
                       </select>
                     </label>
                   </div>
                   {j.scenePaths?.[0] && (
-                    <label className="ms-checkbox-label">
+                    <label
+                      className="ms-checkbox-label"
+                      title="Use the first scene visual frame as the YouTube video's custom thumbnail image"
+                    >
                       <input
                         type="checkbox"
                         checked={uploadUseThumbnail}
@@ -2582,11 +2636,13 @@ ${shots.map((s, idx) => `
                 setInPoint(null);
                 setOutPoint(null);
               }}
+              title="Select an active video rendering project to inspect, trim, or cut in the timeline editor"
+              aria-label="Active Project"
             >
               {jobs.map(j => (
-                <option key={j.id} value={j.id}>{j.title} ({label(j.state)})</option>
+                <option key={j.id} value={j.id} title={`Project: ${j.title} (${label(j.state)})`}>{j.title} ({label(j.state)})</option>
               ))}
-              {jobs.length === 0 && <option value="">No Active Projects</option>}
+              {jobs.length === 0 && <option value="" title="No active video projects available">No Active Projects</option>}
             </select>
           </div>
 
@@ -3358,10 +3414,11 @@ ${shots.map((s, idx) => `
               value={selectedSettingId}
               onChange={e => handleSelectSetting(e.target.value)}
               style={{ maxWidth: '200px', fontSize: '0.8rem', padding: '4px 8px' }}
+              title="Choose background setting plate (single background or multi-layer with foreground occlusion)"
             >
-              <option value="">Virtual Ancient Stage (Default)</option>
+              <option value="" title="Default virtual stage environment">Virtual Ancient Stage (Default)</option>
               {availableSettings.map(s => (
-                <option key={s.id} value={s.id}>
+                <option key={s.id} value={s.id} title={`${s.name} (${s.hasForeground ? '2-Plate BG+FG depth' : '1-Plate flat background'})`}>
                   {s.name} ({s.hasForeground ? '2-Plate BG+FG' : '1-Plate BG'})
                 </option>
               ))}
@@ -3616,14 +3673,28 @@ ${shots.map((s, idx) => `
               historical backgrounds, and sound design in 1 click.
             </p>
           </div>
-          {showClose && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button
               type="button"
               className="ms-btn"
-              onClick={() => { setApOpen(false); setApError(null); }}
-              aria-label="Close Ancient Pathways section"
-            >✕ Close</button>
-          )}
+              onClick={() => {
+                setActiveWorkspace('ap');
+                setApTab('anchors');
+              }}
+              style={{ borderColor: '#ffd700', color: '#ffd700' }}
+              title="Open Character Anchor & Viseme Calibration Workbench"
+            >
+              🎭 Character Anchors
+            </button>
+            {showClose && (
+              <button
+                type="button"
+                className="ms-btn"
+                onClick={() => { setApOpen(false); setApError(null); }}
+                aria-label="Close Ancient Pathways section"
+              >✕ Close</button>
+            )}
+          </div>
         </div>
 
         {/* Showrunner: free-first autonomous prompt-to-movie production */}
@@ -3865,18 +3936,42 @@ ${shots.map((s, idx) => `
             <h3>🏛️ Ancient Pathways 2D Animation Showrunner</h3>
             <p className="ms-router-subtitle">
               Broadcast-grade 2D motion comic engine starring Leila &amp; Flappy. Generate scenes autonomously,
-              audit character sheets and viseme sync with Preflight Doctor, and produce 4K episodes.
+              calibrate character anchors &amp; visemes, and produce 4K episodes.
             </p>
           </div>
-          <button
-            type="button"
-            className="ms-btn ms-btn-back"
-            onClick={() => setActiveWorkspace('director')}
-          >
-            ← Back to Director
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div className="ms-btn-group" style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                className={`ms-btn ${apTab === 'episodes' ? 'ms-btn--primary' : ''}`}
+                onClick={() => setApTab('episodes')}
+              >
+                🎬 Episodes &amp; Showrunner
+              </button>
+              <button
+                type="button"
+                className={`ms-btn ${apTab === 'anchors' ? 'ms-btn--primary' : ''}`}
+                onClick={() => setApTab('anchors')}
+              >
+                🎭 Character Anchor Workbench
+              </button>
+            </div>
+            <button
+              type="button"
+              className="ms-btn ms-btn-back"
+              onClick={() => setActiveWorkspace('director')}
+            >
+              ← Back to Director
+            </button>
+          </div>
         </div>
-        {renderAncientPathwaysShowcase(false)}
+        {apTab === 'anchors' ? (
+          <div style={{ padding: '10px 0' }}>
+            <CharacterAnchorWorkbench />
+          </div>
+        ) : (
+          renderAncientPathwaysShowcase(false)
+        )}
       </div>
     );
   };
@@ -3974,9 +4069,66 @@ ${shots.map((s, idx) => `
               className="ms-btn ms-btn--primary"
               disabled={movieRunning}
               onClick={loadMovieProjects}
+              title="Scan project folders for movie scripts, scene files, and shot manifests ready for autonomous routing"
             >
               {movieProjects ? '↻ Refresh Projects' : (movieRunning ? 'Loading…' : 'Scan & Load Projects')}
             </button>
+          </div>
+
+          {/* Offload & Compute Policy Deck */}
+          <div className="ms-offload-deck" style={{
+            background: 'rgba(30, 41, 59, 0.6)',
+            border: '1px solid rgba(56, 189, 248, 0.2)',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#38bdf8' }}>
+                ⚙️ Offload &amp; Hardware Acceleration Controls (4GB VRAM Protection)
+              </span>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                Zero-VRAM Cloud &amp; Serverless Routing
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', fontSize: '0.78rem' }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                title="Offload heavy SDXL and IP-Adapter character generation to Google Colab T4 worker queue tickets (notebooks/colab_sdxl_ipadapter.ipynb). Eliminates local GPU VRAM pressure on 4GB hardware."
+              >
+                <input
+                  type="checkbox"
+                  checked={movieAllowDeferred}
+                  onChange={e => setMovieAllowDeferred(e.target.checked)}
+                />
+                <span>☁️ Offload to Cloud Workers (Colab T4 Serverless — Zero Local VRAM)</span>
+              </label>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                title="Strict zero-dollar budget enforcement. Completely refuses any provider that charges API fees, ensuring all movie shots generate at $0.00 cost."
+              >
+                <input
+                  type="checkbox"
+                  checked={movieFreeOnly}
+                  onChange={e => setMovieFreeOnly(e.target.checked)}
+                />
+                <span>⚡ 100% Free Only ($0.00 Spend Limit)</span>
+              </label>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                title="Allow providers that embed subtle watermarks as a secondary fallback if clean, free providers are temporarily rate-limited or offline."
+              >
+                <input
+                  type="checkbox"
+                  checked={movieAllowWatermark}
+                  onChange={e => setMovieAllowWatermark(e.target.checked)}
+                />
+                <span>Allow Watermarked Fallbacks</span>
+              </label>
+            </div>
           </div>
 
           {movieProjects && movieProjects.length > 0 ? (
@@ -3996,7 +4148,12 @@ ${shots.map((s, idx) => `
                       type="button"
                       className="ms-btn ms-btn--primary"
                       disabled={movieRunning}
-                      onClick={() => runMovieRouter((p as any).projectDir || p.id)}
+                      title="Run autonomous 5-provider generation router across all shots in this movie project using your selected offload & compute policy."
+                      onClick={() => runMovieRouter((p as any).projectDir || p.id, {
+                        allowDeferred: movieAllowDeferred,
+                        freeOnly: movieFreeOnly,
+                        allowWatermark: movieAllowWatermark,
+                      })}
                     >
                       {movieRunning ? 'Routing…' : '⚡ Route & Generate'}
                     </button>
@@ -4062,9 +4219,10 @@ ${shots.map((s, idx) => `
                     loadStoryboard(id);
                   }
                 }}
+                title="Choose an existing visual storyboard sequence project to view and edit"
               >
                 {storyboardProjects.map(p => (
-                  <option key={p.projectId} value={p.projectId}>
+                  <option key={p.projectId} value={p.projectId} title={`Open ${p.title || p.projectId} (${p.totalShots} shots)`}>
                     {p.title || p.projectId} ({p.totalShots} shots)
                   </option>
                 ))}
@@ -4100,6 +4258,7 @@ ${shots.map((s, idx) => `
                 if (directorOpen) setDirectorOpen(false);
               }}
               disabled={storyboardBusy}
+              title={isCreatingStoryboard ? 'Close storyboard creation form' : 'Create a new blank storyboard project for planning shot sequences'}
             >
               {isCreatingStoryboard ? '✕ Cancel' : '+ New Storyboard'}
             </button>
@@ -4122,6 +4281,7 @@ ${shots.map((s, idx) => `
               className="ms-btn ms-btn--primary"
               disabled={storyboardBusy || !activeStoryboard}
               onClick={() => handleSaveStoryboard()}
+              title="Save all changes to shot prompts, camera framing, lens focal length, motion, and pacing directly to scene manifests."
             >
               {storyboardSaving ? 'Saving…' : '💾 Save Board'}
             </button>
@@ -4136,17 +4296,44 @@ ${shots.map((s, idx) => `
                 setAnimaticPlaying(true);
                 setAnimaticOpen(true);
               }}
-              title="Play fullscreen animatic preview with real-time sequence pacing"
+              title="Play fullscreen animatic preview with real-time sequence pacing and audio narration"
             >
               ▶ Play Animatic
             </button>
+
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <select
+                className="ms-input"
+                style={{ fontSize: '0.75rem', height: '28px', padding: '0 8px' }}
+                value={storyboardProvider}
+                onChange={e => setStoryboardProvider(e.target.value)}
+                title="Select generation backend or cloud offload provider: Auto-Router, Google Imagen 3 (Gemini Key), Pollinations AI, or Google Colab T4"
+                aria-label="Generation provider"
+              >
+                <option value="auto" title="Autonomous 5-provider router: Automatically selects the best free model based on speed, resolution, and availability.">✨ Auto-Router ($0.00 Free)</option>
+                <option value="imagen-3" title="Google Imagen 3 via Google AI Studio: Ultra-crisp photorealistic 2048x2048 renders using your Gemini API key (15 RPM free tier, zero local VRAM).">🎨 Google Imagen 3 (Cloud · 0 VRAM)</option>
+                <option value="pollinations" title="Pollinations AI: Instant zero-configuration cloud image synthesis. 100% free with zero local GPU load.">⚡ Pollinations AI (Cloud · 0 VRAM)</option>
+                <option value="colab-worker" title="Google Colab T4 GPU Worker: Generates tickets for notebooks/colab_sdxl_ipadapter.ipynb with character consistency and 16GB VRAM power.">☁️ Google Colab T4 (Worker · 0 VRAM)</option>
+              </select>
+              <label
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#94a3b8', cursor: 'pointer' }}
+                title="Enable asynchronous worker offloading. Allows dispatching heavy character-conditioned frames to Google Colab T4 queue tickets instead of local generation."
+              >
+                <input
+                  type="checkbox"
+                  checked={storyboardAllowDeferred}
+                  onChange={e => setStoryboardAllowDeferred(e.target.checked)}
+                />
+                <span>☁️ Offload</span>
+              </label>
+            </div>
 
             <button
               type="button"
               className="ms-btn ms-btn--secondary"
               disabled={storyboardBusy || !activeStoryboard || shots.length === 0}
               onClick={handleGenerateAllMissingFrames}
-              title="Generate keyframes for all shots without images using free AI ($0.00)"
+              title="Generate visual keyframe images for all shots currently missing artwork using the selected provider ($0.00 free policy)."
             >
               ⚡ Generate Frames
             </button>
@@ -4333,14 +4520,15 @@ ${shots.map((s, idx) => `
                 value={directorGenre}
                 onChange={e => setDirectorGenre(e.target.value)}
                 aria-label="Cinematic genre"
+                title="Cinematic visual genre: guides lighting, lens choices, color grading, and prompt stylization."
               >
-                <option value="auto">✨ Auto-Detect Genre</option>
-                <option value="historical_epic">🏛️ Historical Epic</option>
-                <option value="cyberpunk_scifi">🤖 Cyberpunk / Sci-Fi</option>
-                <option value="noir_thriller">🕵️ Neo-Noir Thriller</option>
-                <option value="documentary_nature">🐆 Nature Documentary</option>
-                <option value="fantasy_myth">🐉 Mythic Fantasy</option>
-                <option value="action_cinematic">💥 Action Blockbuster</option>
+                <option value="auto" title="Automatically detect scene genre from dialogue, keywords, and narrative mood.">✨ Auto-Detect Genre</option>
+                <option value="historical_epic" title="Grand scale, warm natural lighting, golden hour palettes, period architecture, and anamorphic depth.">🏛️ Historical Epic</option>
+                <option value="cyberpunk_scifi" title="High-contrast neon lighting, chromatic aberration, holographic elements, and futuristic technology.">🤖 Cyberpunk / Sci-Fi</option>
+                <option value="noir_thriller" title="Chiaroscuro lighting, heavy shadows, muted palette, high suspense, and dramatic angles.">🕵️ Neo-Noir Thriller</option>
+                <option value="documentary_nature" title="Photorealistic natural lighting, telephoto macro details, observational camera movement.">🐆 Nature Documentary</option>
+                <option value="fantasy_myth" title="Ethereal glow, mystical atmosphere, rich ancient world textures, and magical realism.">🐉 Mythic Fantasy</option>
+                <option value="action_cinematic" title="Dynamic kinetic angles, intense motion blur, bold contrast, and high-impact framing.">💥 Action Blockbuster</option>
               </select>
 
               <select
@@ -4348,14 +4536,18 @@ ${shots.map((s, idx) => `
                 value={directorShotCount}
                 onChange={e => setDirectorShotCount(Number(e.target.value) || 4)}
                 aria-label="Shot count"
+                title="Number of storyboard shots to break the scene into."
               >
-                <option value={3}>3 Shots (Quick Beat)</option>
-                <option value={4}>4 Shots (Standard Scene)</option>
-                <option value={5}>5 Shots (Dramatic Arc)</option>
-                <option value={6}>6 Shots (Extended Sequence)</option>
+                <option value={3} title="3 Shots: Establishing shot, focal dialogue beat, resolution. Ideal for fast pacing.">3 Shots (Quick Beat)</option>
+                <option value={4} title="4 Shots: Classic cinematic scene structure (establishing, medium reaction, close-up, exit/cutaway).">4 Shots (Standard Scene)</option>
+                <option value={5} title="5 Shots: Extended drama with reverse-angle dialogue coverage and emotional resonance.">5 Shots (Dramatic Arc)</option>
+                <option value={6} title="6 Shots: Multi-character ensemble coverage or complex multi-phase action sequence.">6 Shots (Extended Sequence)</option>
               </select>
 
-              <label className="ms-director-checkbox-label">
+              <label
+                className="ms-director-checkbox-label"
+                title="Automatically generate AI visual keyframes for each directed shot immediately after script breakdown."
+              >
                 <input
                   type="checkbox"
                   checked={directorAutoFrames}
@@ -4639,6 +4831,20 @@ ${shots.map((s, idx) => `
                             <span className="ms-working">
                               <span className="ms-spinner" /> Generating AI frame ($0.00)…
                             </span>
+                          ) : shot.status === 'AWAITING_WORKER' ? (
+                            <>
+                              <span style={{ fontSize: '1.8rem' }}>☁️</span>
+                              <span style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: 600 }}>Offloaded to Colab T4</span>
+                              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Awaiting Colab notebook run</span>
+                              <button
+                                type="button"
+                                className="ms-btn ms-btn--primary"
+                                style={{ fontSize: '0.76rem', padding: '4px 10px', marginTop: 4 }}
+                                onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
+                              >
+                                ↻ Retry Frame
+                              </button>
+                            </>
                           ) : (
                             <>
                               <span style={{ fontSize: '1.8rem' }}>🖼️</span>
@@ -4663,16 +4869,25 @@ ${shots.map((s, idx) => `
                       <div className="ms-shot-pills-row">
                         <span className="ms-shot-pill-label">Camera Shot Size</span>
                         <div className="ms-shot-pills">
-                          {framingPills.map(f => (
-                            <button
-                              key={f}
-                              type="button"
-                              className={`ms-shot-pill ${shot.framing === f ? 'active' : ''}`}
-                              onClick={() => handleUpdateShot(shot.shotId, { framing: f })}
-                            >
-                              {f.replace('_', ' ')}
-                            </button>
-                          ))}
+                          {framingPills.map(f => {
+                            const desc: Record<string, string> = {
+                              wide: 'Wide shot: establishes scene geometry, environment, and spatial context.',
+                              medium: 'Medium shot: waist-up framing focusing on character action and body language.',
+                              close: 'Close-up: chest/head framing emphasizing facial expression and dialogue.',
+                              extreme_close: 'Extreme close-up: dramatic detail shot on eyes, hands, or focal artifacts.',
+                            };
+                            return (
+                              <button
+                                key={f}
+                                type="button"
+                                className={`ms-shot-pill ${shot.framing === f ? 'active' : ''}`}
+                                title={desc[f] || `Set framing to ${f}`}
+                                onClick={() => handleUpdateShot(shot.shotId, { framing: f })}
+                              >
+                                {f.replace('_', ' ')}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -4680,26 +4895,45 @@ ${shots.map((s, idx) => `
                       <div className="ms-shot-pills-row">
                         <span className="ms-shot-pill-label">Focal Length &amp; Motion</span>
                         <div className="ms-shot-pills">
-                          {lensPills.map(l => (
-                            <button
-                              key={l}
-                              type="button"
-                              className={`ms-shot-pill ${shot.lens === l ? 'active' : ''}`}
-                              onClick={() => handleUpdateShot(shot.shotId, { lens: l })}
-                            >
-                              {l}
-                            </button>
-                          ))}
-                          {motionPills.map(m => (
-                            <button
-                              key={m}
-                              type="button"
-                              className={`ms-shot-pill ${shot.movement === m ? 'active' : ''}`}
-                              onClick={() => handleUpdateShot(shot.shotId, { movement: m })}
-                            >
-                              {m}
-                            </button>
-                          ))}
+                          {lensPills.map(l => {
+                            const desc: Record<string, string> = {
+                              '24mm': '24mm Wide Angle: Deep field of view, environmental emphasis, subtle perspective exaggeration.',
+                              '35mm': '35mm Classic Narrative: Natural human perspective for documentary and cinematic dialogue.',
+                              '50mm': '50mm Standard Prime: True-to-life focal perspective with balanced background separation.',
+                              '85mm': '85mm Portrait Telephoto: Compressed depth of field, pleasing bokeh, and intimate focus.',
+                            };
+                            return (
+                              <button
+                                key={l}
+                                type="button"
+                                className={`ms-shot-pill ${shot.lens === l ? 'active' : ''}`}
+                                title={desc[l] || `Set lens focal length to ${l}`}
+                                onClick={() => handleUpdateShot(shot.shotId, { lens: l })}
+                              >
+                                {l}
+                              </button>
+                            );
+                          })}
+                          {motionPills.map(m => {
+                            const desc: Record<string, string> = {
+                              static: 'Static: Locked-off camera on tripod with zero movement.',
+                              'pan right': 'Pan Right: Smooth horizontal camera rotation to track scene development.',
+                              'slow push in': 'Slow Push In: Slow dolly forward to heighten dramatic intensity.',
+                              'tilt up': 'Tilt Up: Vertical tilt revealing towering architecture or character grandeur.',
+                              tracking: 'Tracking: Smooth lateral dolly movement accompanying character movement.',
+                            };
+                            return (
+                              <button
+                                key={m}
+                                type="button"
+                                className={`ms-shot-pill ${shot.movement === m ? 'active' : ''}`}
+                                title={desc[m] || `Set motion to ${m}`}
+                                onClick={() => handleUpdateShot(shot.shotId, { movement: m })}
+                              >
+                                {m}
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -5160,11 +5394,17 @@ ${shots.map((s, idx) => `
               value={format}
               onChange={e => setFormat(e.target.value as 'short' | 'long')}
               aria-label="Video format"
+              title="Select video duration and structure format"
             >
-              <option value="short">Short (30–60s)</option>
-              <option value="long">Long (5–12 min)</option>
+              <option value="short" title="Short form: 30–60 seconds, fast-paced vertical or square clip">Short (30–60s)</option>
+              <option value="long" title="Long form: 5–12 minutes, full documentary or cinematic sequence">Long (5–12 min)</option>
             </select>
-            <button className="ms-btn ms-btn--primary" onClick={create} disabled={!title.trim() || busy === 'new'}>
+            <button
+              className="ms-btn ms-btn--primary"
+              onClick={create}
+              disabled={!title.trim() || busy === 'new'}
+              title="Create a new video pipeline project with the selected format and output settings"
+            >
               Add video
             </button>
           </div>

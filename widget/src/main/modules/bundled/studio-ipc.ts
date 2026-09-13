@@ -575,6 +575,26 @@ export function registerStudioIpc(
     }
   });
 
+  ipcMain.handle('homebot:media:ancient-pathways-get-anchors', async (_e, character?: string) => {
+    const { getCharacterAnchors } = await import('../../ancient-pathways');
+    return getCharacterAnchors(character);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-get-sprite', async (_e, character: string, group: string, pose: string) => {
+    const { getCharacterPoseSprite } = await import('../../ancient-pathways');
+    return getCharacterPoseSprite(character, group, pose);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-save-anchor', async (_e, args: any) => {
+    const { saveCharacterAnchor } = await import('../../ancient-pathways');
+    return saveCharacterAnchor(args);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-suggest-anchors', async (_e, character?: string) => {
+    const { suggestCharacterAnchors } = await import('../../ancient-pathways');
+    return suggestCharacterAnchors(character);
+  });
+
   // ── Movie Generation Router ────────────────────────────────────────────────
   // Wires MovieProjectRunner.runProject() (which uses GenerationRouter + all 5
   // providers, including the Ancient Pathways local 2D adapter) behind an IPC
@@ -674,7 +694,16 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:generate-frame', async (_ev, args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => {
+  ipcMain.handle('homebot:media:storyboard:generate-frame', async (_ev, args: {
+    projectId: string;
+    sceneId?: string;
+    shotId: string;
+    prompt?: string;
+    provider?: string;
+    allowDeferred?: boolean;
+    freeOnly?: boolean;
+    allowWatermark?: boolean;
+  }) => {
     const res = await invokeTool(_ev, 'media_generate_storyboard_frame', args || {});
     return { ok: res.success, result: res.result, error: res.error };
   });

@@ -420,7 +420,6 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
     });
   });
 }
-
 export interface RunEpisodeOptions {
   episodeId: string;
   dir?: string;
@@ -689,6 +688,385 @@ export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerRes
         ok: true,
         outputPath,
         log: stdout,
+      });
+    });
+  });
+}
+
+export interface CharacterSummary {
+  slug: string;
+  name: string;
+  totalPoses: number;
+  handPlacedMouthAnchors: number;
+  headBoxes: number;
+  suggestedMouthAnchors: number;
+  missingMouthAnchors: number;
+}
+
+export interface CharacterDetail {
+  slug: string;
+  name: string;
+  manifest: any;
+  groups: string[];
+  mouthVisemes: Record<string, string>;
+  stats: {
+    totalPoses: number;
+    handPlacedMouthAnchors: number;
+    headBoxes: number;
+    suggestedMouthAnchors: number;
+    missingMouthAnchors: number;
+  };
+}
+
+export interface GetCharacterAnchorsResult {
+  ok: boolean;
+  characters?: CharacterSummary[];
+  selected?: CharacterDetail;
+  error?: string;
+}
+
+export interface SaveAnchorArgs {
+  character: string;
+  group: string;
+  pose: string;
+  anchorType: 'mouth' | 'head';
+  box: [number, number, number, number];
+}
+
+export interface SaveAnchorResult {
+  ok: boolean;
+  message?: string;
+  box?: [number, number, number, number];
+  error?: string;
+}
+
+export interface GetPoseSpriteResult {
+  ok: boolean;
+  dataUrl?: string;
+  group?: string;
+  pose?: string;
+  character?: string;
+  error?: string;
+}
+
+export interface SuggestAnchorsResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Reads character manifests and anchor stats from Ancient Pathways.
+ */
+export async function getCharacterAnchors(charSlug?: string, dirOverride?: string): Promise<GetCharacterAnchorsResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const charsDir = path.join(dir, 'workspace', 'branding', 'characters');
+  if (!fs.existsSync(charsDir)) {
+    return { ok: false, error: 'Characters directory not found in workspace/branding/characters.' };
+  }
+
+  try {
+    const entries = fs.readdirSync(charsDir, { withFileTypes: true });
+    const summaries: CharacterSummary[] = [];
+    let selectedDetail: CharacterDetail | undefined;
+
+    for (const ent of entries) {
+      if (!ent.isDirectory() || ent.name.startsWith('.') || ent.name.endsWith('_parts')) {
+        continue;
+      }
+      const slug = ent.name;
+      const manifestPath = path.join(charsDir, slug, 'manifest.json');
+      if (!fs.existsSync(manifestPath)) {
+        continue;
+      }
+
+      let manifest: any;
+      try {
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      } catch {
+        continue;
+      }
+
+      // Count poses across standard pose groups
+      const poseGroupKeys = Object.keys(manifest).filter((k) => {
+        if (k.startsWith('_') || k === 'mouth' || k === 'palette') return false;
+        const val = manifest[k];
+        return val && typeof val === 'object' && !Array.isArray(val);
+      });
+
+      let totalPoses = 0;
+      for (const gk of poseGroupKeys) {
+        totalPoses += Object.keys(manifest[gk] || {}).length;
+      }
+
+      let handPlacedMouthAnchors = 0;
+      const mouthAnchors = manifest._mouth_anchors || {};
+      for (const gk of Object.keys(mouthAnchors)) {
+        handPlacedMouthAnchors += Object.keys(mouthAnchors[gk] || {}).length;
+      }
+
+      let headBoxes = 0;
+      const headBoxesObj = manifest._head_boxes || {};
+      for (const gk of Object.keys(headBoxesObj)) {
+        headBoxes += Object.keys(headBoxesObj[gk] || {}).length;
+      }
+
+      let suggestedMouthAnchors = 0;
+      const suggestedObj = manifest._mouth_anchors_suggested || {};
+      for (const gk of Object.keys(suggestedObj)) {
+        suggestedMouthAnchors += Object.keys(suggestedObj[gk] || {}).length;
+      }
+
+      const missingMouthAnchors = Math.max(0, totalPoses - handPlacedMouthAnchors - suggestedMouthAnchors);
+      const name = slug
+        .split('_')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+
+      const stats = {
+        totalPoses,
+        handPlacedMouthAnchors,
+        headBoxes,
+        suggestedMouthAnchors,
+        missingMouthAnchors,
+      };
+
+      summaries.push({
+        slug,
+        name,
+        ...stats,
+      });
+
+      if (charSlug && slug.toLowerCase() === charSlug.toLowerCase()) {
+        const mouthVisemes: Record<string, string> = {};
+        const mouthObj = manifest.mouth || {};
+        for (const [visemeKey, relPath] of Object.entries(mouthObj)) {
+          if (typeof relPath === 'string') {
+            const vPath = path.join(charsDir, slug, relPath);
+            if (fs.existsSync(vPath)) {
+              try {
+                const b64 = fs.readFileSync(vPath).toString('base64');
+                mouthVisemes[visemeKey] = `data:image/png;base64,${b64}`;
+              } catch {
+                /* ignore unreadable viseme tile */
+              }
+            }
+          }
+        }
+
+        selectedDetail = {
+          slug,
+          name,
+          manifest,
+          groups: poseGroupKeys,
+          mouthVisemes,
+          stats,
+        };
+      }
+    }
+
+    // Sort summaries: Leila first, then alphabetical
+    summaries.sort((a, b) => {
+      if (a.slug === 'leila') return -1;
+      if (b.slug === 'leila') return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      ok: true,
+      characters: summaries,
+      selected: selectedDetail,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Loads a single character pose sprite as a base64 data URL for preview and calibration.
+ */
+export async function getCharacterPoseSprite(
+  character: string,
+  group: string,
+  pose: string,
+  dirOverride?: string
+): Promise<GetPoseSpriteResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  // Sanity check parameters to avoid path traversal
+  if (
+    !character || !group || !pose ||
+    character.includes('..') || group.includes('..') || pose.includes('..')
+  ) {
+    return { ok: false, error: 'Invalid character, group, or pose parameter.' };
+  }
+
+  const charsDir = path.join(dir, 'workspace', 'branding', 'characters');
+  const manifestPath = path.join(charsDir, character, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, error: `Manifest for character '${character}' not found.` };
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const relPath = manifest?.[group]?.[pose];
+    if (!relPath || typeof relPath !== 'string') {
+      return { ok: false, error: `Pose '${pose}' in group '${group}' not defined in manifest.` };
+    }
+
+    const spritePath = path.join(charsDir, character, relPath);
+    if (!fs.existsSync(spritePath)) {
+      return { ok: false, error: `Sprite image not found at ${relPath}.` };
+    }
+
+    const b64 = fs.readFileSync(spritePath).toString('base64');
+    return {
+      ok: true,
+      dataUrl: `data:image/png;base64,${b64}`,
+      character,
+      group,
+      pose,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Saves a hand-calibrated anchor (mouth anchor or head box) to the character manifest,
+ * creating an automatic timestamped backup first.
+ */
+export async function saveCharacterAnchor(
+  args: SaveAnchorArgs,
+  dirOverride?: string
+): Promise<SaveAnchorResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const { character, group, pose, anchorType, box } = args;
+  if (!character || !group || !pose || !['mouth', 'head'].includes(anchorType)) {
+    return { ok: false, error: 'Invalid anchor arguments.' };
+  }
+
+  if (!Array.isArray(box) || box.length !== 4 || box.some((n) => typeof n !== 'number' || isNaN(n) || n < 0)) {
+    return { ok: false, error: 'Anchor box must be 4 non-negative numbers [x, y, w, h].' };
+  }
+
+  const charsDir = path.join(dir, 'workspace', 'branding', 'characters');
+  const manifestPath = path.join(charsDir, character, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, error: `Manifest for character '${character}' not found.` };
+  }
+
+  try {
+    // 1. Create a timestamped backup before modifying
+    const backupDir = path.join(charsDir, character, '.backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    fs.copyFileSync(manifestPath, path.join(backupDir, `manifest_backup_${Date.now()}.json`));
+
+    // 2. Read and update manifest
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const roundedBox: [number, number, number, number] = [
+      Math.round(box[0]),
+      Math.round(box[1]),
+      Math.round(box[2]),
+      Math.round(box[3]),
+    ];
+
+    if (anchorType === 'mouth') {
+      if (!manifest._mouth_anchors) manifest._mouth_anchors = {};
+      if (!manifest._mouth_anchors[group]) manifest._mouth_anchors[group] = {};
+      manifest._mouth_anchors[group][pose] = roundedBox;
+
+      // Clean up suggestion if this pose was previously suggested
+      if (manifest._mouth_anchors_suggested?.[group]?.[pose]) {
+        delete manifest._mouth_anchors_suggested[group][pose];
+        if (Object.keys(manifest._mouth_anchors_suggested[group]).length === 0) {
+          delete manifest._mouth_anchors_suggested[group];
+        }
+        if (Object.keys(manifest._mouth_anchors_suggested).length === 0) {
+          delete manifest._mouth_anchors_suggested;
+        }
+      }
+    } else {
+      if (!manifest._head_boxes) manifest._head_boxes = {};
+      if (!manifest._head_boxes[group]) manifest._head_boxes[group] = {};
+      manifest._head_boxes[group][pose] = roundedBox;
+    }
+
+    // 3. Write back formatted JSON
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+
+    return {
+      ok: true,
+      message: `Successfully saved ${anchorType} anchor for ${character} [${group}/${pose}].`,
+      box: roundedBox,
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Runs learn_from_anchors.py with --suggest --apply to fill missing anchors
+ * from per-character priors. Existing hand-placed anchors are strictly preserved.
+ */
+export async function suggestCharacterAnchors(
+  _character?: string,
+  dirOverride?: string
+): Promise<SuggestAnchorsResult> {
+  const dir = dirOverride || resolveAncientPathwaysDir();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, error: 'Ancient Pathways directory not found.' };
+  }
+
+  const scriptPath = path.join(dir, 'scripts', 'learn_from_anchors.py');
+  if (!fs.existsSync(scriptPath)) {
+    return { ok: false, error: 'learn_from_anchors.py script not found.' };
+  }
+
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  return new Promise((resolve) => {
+    const child = spawn(python, ['scripts/learn_from_anchors.py', '--suggest', '--apply'], {
+      cwd: dir,
+      windowsHide: true,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
+    child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
+
+    child.on('close', (code) => {
+      if (code !== 0) {
+        resolve({
+          ok: false,
+          error: `Auto-suggest failed (code ${code}): ${stderr || stdout}`,
+        });
+        return;
+      }
+      resolve({
+        ok: true,
+        message: stdout.trim(),
+      });
+    });
+
+    child.on('error', (err) => {
+      resolve({
+        ok: false,
+        error: `Could not launch Python: ${err.message}`,
       });
     });
   });

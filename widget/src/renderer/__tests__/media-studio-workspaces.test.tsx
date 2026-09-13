@@ -191,4 +191,47 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     expect(screen.getByLabelText('Studio Quick Launch')).toBeInTheDocument();
   });
+
+  test('Stage Viewport applies landscape and portrait aspect choices to the visible canvas', async () => {
+    setup();
+    const { container } = render(<MediaStudioPanel />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+    });
+
+    const viewport = () => container.querySelector('.ms-viewport-screen');
+    expect(viewport()).toHaveClass('ms-viewport-screen--landscape');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '9:16 Shorts (TikTok / Reels)' }));
+    });
+    expect(viewport()).toHaveClass('ms-viewport-screen--portrait');
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '16:9 Landscape (YouTube)' }));
+    });
+    expect(viewport()).toHaveClass('ms-viewport-screen--landscape');
+  });
+
+  test('Ancient Pathways exposes the reachable Character Anchor Workbench', async () => {
+    setup({
+      mediaAncientPathwaysGetAnchors: jest.fn().mockResolvedValue({ ok: true, characters: [] }),
+      mediaAncientPathwaysGetSprite: jest.fn(),
+      mediaAncientPathwaysSaveAnchor: jest.fn(),
+      mediaAncientPathwaysSuggestAnchors: jest.fn(),
+    });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Ancient Pathways/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Character Anchor Workbench/i }));
+    });
+
+    expect(screen.getByText(/Character Anchor & Viseme Calibration Workbench/i)).toBeInTheDocument();
+  });
 });

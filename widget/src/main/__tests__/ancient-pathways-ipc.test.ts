@@ -59,11 +59,19 @@ jest.mock('../window-manager', () => ({
 const mockRunEpisodePipeline = jest.fn();
 const mockRunShowrunner = jest.fn();
 const mockResolveAncientPathwaysDir = jest.fn();
+const mockGetCharacterAnchors = jest.fn();
+const mockGetCharacterPoseSprite = jest.fn();
+const mockSaveCharacterAnchor = jest.fn();
+const mockSuggestCharacterAnchors = jest.fn();
 jest.mock('../ancient-pathways', () => ({
   ...jest.requireActual('../ancient-pathways'),
   runEpisodePipeline: (...args: any[]) => mockRunEpisodePipeline(...args),
   runShowrunner: (...args: any[]) => mockRunShowrunner(...args),
   resolveAncientPathwaysDir: () => mockResolveAncientPathwaysDir(),
+  getCharacterAnchors: (...args: any[]) => mockGetCharacterAnchors(...args),
+  getCharacterPoseSprite: (...args: any[]) => mockGetCharacterPoseSprite(...args),
+  saveCharacterAnchor: (...args: any[]) => mockSaveCharacterAnchor(...args),
+  suggestCharacterAnchors: (...args: any[]) => mockSuggestCharacterAnchors(...args),
 }));
 
 jest.mock('../ffmpeg-setup', () => ({
@@ -220,5 +228,48 @@ describe('ancient-pathways-run — fast-forward and real QA', () => {
     const res: any = await run('not-a-real-episode');
     expect(res.ok).toBe(false);
     expect(String(res.error)).toMatch(/unknown episode/i);
+  });
+
+  describe('ancient-pathways anchor IPC handlers', () => {
+    beforeEach(() => {
+      ensureStudioEnabled();
+    });
+
+    test('homebot:media:ancient-pathways-get-anchors delegates to getCharacterAnchors', async () => {
+      mockGetCharacterAnchors.mockResolvedValue({ ok: true, characters: [] });
+      const handler = handlers['homebot:media:ancient-pathways-get-anchors'];
+      expect(handler).toBeDefined();
+      const res = await handler(trustedEvent(), 'leila');
+      expect(mockGetCharacterAnchors).toHaveBeenCalledWith('leila');
+      expect(res.ok).toBe(true);
+    });
+
+    test('homebot:media:ancient-pathways-get-sprite delegates to getCharacterPoseSprite', async () => {
+      mockGetCharacterPoseSprite.mockResolvedValue({ ok: true, dataUrl: 'data:image/png;base64,123' });
+      const handler = handlers['homebot:media:ancient-pathways-get-sprite'];
+      expect(handler).toBeDefined();
+      const res = await handler(trustedEvent(), 'leila', 'pose_a', 'idle');
+      expect(mockGetCharacterPoseSprite).toHaveBeenCalledWith('leila', 'pose_a', 'idle');
+      expect(res.ok).toBe(true);
+    });
+
+    test('homebot:media:ancient-pathways-save-anchor delegates to saveCharacterAnchor', async () => {
+      mockSaveCharacterAnchor.mockResolvedValue({ ok: true, message: 'Saved' });
+      const handler = handlers['homebot:media:ancient-pathways-save-anchor'];
+      expect(handler).toBeDefined();
+      const payload = { character: 'leila', group: 'pose_a', pose: 'idle', anchorType: 'mouth', box: [1, 2, 3, 4] };
+      const res = await handler(trustedEvent(), payload);
+      expect(mockSaveCharacterAnchor).toHaveBeenCalledWith(payload);
+      expect(res.ok).toBe(true);
+    });
+
+    test('homebot:media:ancient-pathways-suggest-anchors delegates to suggestCharacterAnchors', async () => {
+      mockSuggestCharacterAnchors.mockResolvedValue({ ok: true, message: 'Done' });
+      const handler = handlers['homebot:media:ancient-pathways-suggest-anchors'];
+      expect(handler).toBeDefined();
+      const res = await handler(trustedEvent(), 'leila');
+      expect(mockSuggestCharacterAnchors).toHaveBeenCalledWith('leila');
+      expect(res.ok).toBe(true);
+    });
   });
 });

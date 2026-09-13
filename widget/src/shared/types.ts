@@ -616,6 +616,62 @@ export interface ElectronAPI {
     renderPath?: string;
     error?: string;
   }>;
+  mediaAncientPathwaysGetAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    characters?: Array<{
+      slug: string;
+      name: string;
+      totalPoses: number;
+      handPlacedMouthAnchors: number;
+      headBoxes: number;
+      suggestedMouthAnchors: number;
+      missingMouthAnchors: number;
+    }>;
+    selected?: {
+      slug: string;
+      name: string;
+      manifest: any;
+      groups: string[];
+      mouthVisemes: Record<string, string>;
+      stats: {
+        totalPoses: number;
+        handPlacedMouthAnchors: number;
+        headBoxes: number;
+        suggestedMouthAnchors: number;
+        missingMouthAnchors: number;
+      };
+    };
+    error?: string;
+  }>;
+  mediaAncientPathwaysGetSprite?: (
+    character: string,
+    group: string,
+    pose: string
+  ) => Promise<{
+    ok: boolean;
+    dataUrl?: string;
+    character?: string;
+    group?: string;
+    pose?: string;
+    error?: string;
+  }>;
+  mediaAncientPathwaysSaveAnchor?: (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+  }) => Promise<{
+    ok: boolean;
+    message?: string;
+    box?: [number, number, number, number];
+    error?: string;
+  }>;
+  mediaAncientPathwaysSuggestAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;
@@ -669,7 +725,16 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardGenerateFrame?: (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => Promise<{
+  mediaStoryboardGenerateFrame?: (args: {
+    projectId: string;
+    sceneId?: string;
+    shotId: string;
+    prompt?: string;
+    provider?: string;
+    allowDeferred?: boolean;
+    freeOnly?: boolean;
+    allowWatermark?: boolean;
+  }) => Promise<{
     ok: boolean;
     result?: any;
     error?: string;

@@ -1,0 +1,549 @@
+/* CharacterAnchorWorkbench.css — Visual Anchor Calibration & Viseme Workbench */
+
+.caw-container {
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  color: #c9d1d9;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  min-height: 700px;
+  max-height: 88vh;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Header */
+.caw-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+.caw-title-group h3 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #f0f6fc;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caw-subtitle {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #8b949e;
+}
+
+.caw-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Main Layout */
+.caw-main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Sidebar */
+.caw-sidebar {
+  width: 280px;
+  border-right: 1px solid #30363d;
+  background: #11161d;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.caw-sidebar-section {
+  padding: 12px 14px;
+  border-bottom: 1px solid #21262d;
+}
+
+.caw-section-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: #8b949e;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.caw-char-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.caw-char-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #c9d1d9;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.caw-char-btn:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+}
+
+.caw-char-btn.active {
+  background: rgba(56, 139, 253, 0.15);
+  border-color: #58a6ff;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.caw-badge {
+  font-size: 0.68rem;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.caw-badge-green {
+  background: rgba(46, 160, 67, 0.2);
+  color: #3fb950;
+  border: 1px solid rgba(46, 160, 67, 0.3);
+}
+
+.caw-badge-amber {
+  background: rgba(210, 153, 34, 0.2);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.caw-badge-red {
+  background: rgba(248, 81, 73, 0.2);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.caw-badge-cyan {
+  background: rgba(0, 229, 255, 0.15);
+  color: #00e5ff;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+}
+
+/* Pose Tree */
+.caw-pose-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.caw-group-title {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #58a6ff;
+  margin: 10px 0 6px;
+  text-transform: capitalize;
+}
+
+.caw-pose-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.caw-pose-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  color: #8b949e;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.12s;
+}
+
+.caw-pose-btn:hover {
+  background: #161b22;
+  color: #c9d1d9;
+}
+
+.caw-pose-btn.active {
+  background: #21262d;
+  color: #ffffff;
+  border-color: #388bfd;
+  font-weight: 600;
+}
+
+/* Viewport Area */
+.caw-viewport-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #090d13;
+  overflow: hidden;
+  position: relative;
+}
+
+.caw-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  font-size: 0.8rem;
+}
+
+.caw-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.caw-canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 24px;
+  position: relative;
+  background: radial-gradient(circle, #1a2230 1px, #090d13 1px);
+  background-size: 20px 20px;
+}
+
+.caw-canvas-stage {
+  position: relative;
+  display: inline-block;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #121820;
+  user-select: none;
+}
+
+.caw-sprite-img {
+  display: block;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+
+/* Box Overlays */
+.caw-box-overlay {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: all;
+  cursor: move;
+  transition: box-shadow 0.1s;
+}
+
+.caw-box-head {
+  border: 2px solid #00e5ff;
+  background: rgba(0, 229, 255, 0.12);
+}
+
+.caw-box-mouth {
+  border: 2px solid #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+}
+
+.caw-box-mouth.suggested {
+  border-style: dashed;
+  background: rgba(210, 153, 34, 0.18);
+}
+
+.caw-box-overlay:hover,
+.caw-box-overlay.active {
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+}
+
+.caw-box-label {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.caw-box-head .caw-box-label {
+  background: #00e5ff;
+  color: #000;
+}
+
+.caw-box-mouth .caw-box-label {
+  background: #ffd700;
+  color: #000;
+}
+
+/* Center Crosshair for Mouth */
+.caw-mouth-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.caw-mouth-crosshair::before,
+.caw-mouth-crosshair::after {
+  content: '';
+  position: absolute;
+  background: #ffd700;
+}
+
+.caw-mouth-crosshair::before {
+  top: 5px;
+  left: 0;
+  width: 12px;
+  height: 2px;
+}
+
+.caw-mouth-crosshair::after {
+  top: 0;
+  left: 5px;
+  width: 2px;
+  height: 12px;
+}
+
+/* Resize Handles */
+.caw-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border: 1px solid #000000;
+  border-radius: 1px;
+}
+
+.caw-handle-tl { top: -4px; left: -4px; cursor: nwse-resize; }
+.caw-handle-tr { top: -4px; right: -4px; cursor: nesw-resize; }
+.caw-handle-bl { bottom: -4px; left: -4px; cursor: nesw-resize; }
+.caw-handle-br { bottom: -4px; right: -4px; cursor: nwse-resize; }
+
+/* Mouth Viseme Live Preview */
+.caw-viseme-preview {
+  position: absolute;
+  pointer-events: none;
+  image-rendering: pixelated;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
+}
+
+/* Calibration Controls Drawer (Right) */
+.caw-controls-panel {
+  width: 310px;
+  border-left: 1px solid #30363d;
+  background: #11161d;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 16px;
+}
+
+.caw-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.caw-card-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.caw-coords-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.caw-coord-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.caw-coord-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #8b949e;
+  width: 14px;
+}
+
+.caw-coord-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-family: monospace;
+  outline: none;
+}
+
+/* Viseme selector grid */
+.caw-viseme-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.caw-viseme-btn {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #c9d1d9;
+  padding: 6px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.12s;
+}
+
+.caw-viseme-btn:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+}
+
+.caw-viseme-btn.active {
+  background: rgba(255, 215, 0, 0.2);
+  border-color: #ffd700;
+  color: #ffd700;
+}
+
+.caw-save-btn {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+
+.caw-save-btn--mouth {
+  background: #ffd700;
+  color: #0d1117;
+}
+
+.caw-save-btn--mouth:hover:not(:disabled) {
+  background: #ffea70;
+}
+
+.caw-save-btn--head {
+  background: transparent;
+  border-color: #00e5ff;
+  color: #00e5ff;
+}
+
+.caw-save-btn--head:hover:not(:disabled) {
+  background: rgba(0, 229, 255, 0.15);
+}
+
+.caw-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Lip sync preview control */
+.caw-lipsync-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.caw-lipsync-btn {
+  flex: 1;
+  padding: 6px 10px;
+  background: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #c9d1d9;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.caw-lipsync-btn:hover {
+  background: #30363d;
+}
+
+.caw-lipsync-btn.playing {
+  background: rgba(56, 139, 253, 0.2);
+  border-color: #388bfd;
+  color: #58a6ff;
+}
+
+/* Toast Message */
+.caw-toast {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f6feb;
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  animation: caw-fadein 0.2s ease-out;
+  z-index: 100;
+}
+
+.caw-toast.success {
+  background: #238636;
+}
+
+.caw-toast.error {
+  background: #da3633;
+}
+
+@keyframes caw-fadein {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
