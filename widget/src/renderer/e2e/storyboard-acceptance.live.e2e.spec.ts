@@ -209,13 +209,14 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
     await expect(page.getByRole('button', { name: /Generate Frames/ })).toBeDisabled();
     for (const button of await page.getByRole('button', { name: /Generate Frame$/ }).all()) await expect(button).toBeDisabled();
     await expect(board()).not.toContainText('$0.00');
-    // Choosing Imagen without Online or a key explains what is missing and makes no call.
-    await picker().selectOption('imagen');
+    // Retired Imagen is not offered; choosing Online while Online is off explains what is missing.
+    expect(await picker().locator('option').allInnerTexts()).not.toContainEqual(expect.stringMatching(/Imagen/));
+    await picker().selectOption('online');
     await expect(frameNote()).toContainText('Online is off. Turn on Online in Settings to use this.');
     await expect(page.getByRole('button', { name: /Generate Frames/ })).toBeDisabled();
     evidence.ordinaryPcState = { note: await frameNote().innerText(), generateDisabled: true };
     await page.screenshot({ path: out('a2-ordinary-pc-frame-choice.png'), fullPage: true });
-    await picker().selectOption({ index: 0 }).catch(() => {}); // placeholder is disabled; keep imagen saved
+    await picker().selectOption({ index: 0 }).catch(() => {}); // placeholder is disabled; keep the saved choice
     await page.getByRole('group', { name: 'Frame images' }).screenshot({ path: out('a3-frame-picker-ordinary-pc.png') });
     expect(await attempts()).toEqual([]);
     await app.close();
@@ -238,7 +239,7 @@ test('Storyboard acceptance: create 5 shots, generate frames, animatic, 16:9 exp
 
     // The saved choice survived the restart; switch to this PC's image server.
     const picker2 = page.getByRole('combobox', { name: 'How to make frame images' });
-    await expect(picker2).toHaveValue('imagen');
+    await expect(picker2).toHaveValue('online');
     await picker2.selectOption('this-pc');
     await expect(page.getByRole('note', { name: 'Frame image status' })).toContainText('No charge. Runs on this computer; nothing is sent online.');
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).frameProvider).toBe('this-pc');

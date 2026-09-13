@@ -132,47 +132,6 @@ export function buildCharacterSpritePrompt(description: string, styleOverride?: 
   );
 }
 
-function httpPostJson(urlStr: string, body: unknown, timeoutMs = 90000): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const isHttps = urlStr.startsWith('https');
-    const lib = isHttps ? https : http;
-    const url = new URL(urlStr);
-    const payload = JSON.stringify(body);
-    const req = lib.request(
-      {
-        hostname: url.hostname,
-        port: url.port || (isHttps ? 443 : 80),
-        path: url.pathname + url.search,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload),
-        },
-        timeout: timeoutMs,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8');
-          try {
-            resolve(JSON.parse(text));
-          } catch {
-            resolve({ _raw: text, statusCode: res.statusCode });
-          }
-        });
-      }
-    );
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Imagen 3 request timed out'));
-    });
-    req.write(payload);
-    req.end();
-  });
-}
-
 function httpGetBuffer(urlStr: string, timeoutMs = 60000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const isHttps = urlStr.startsWith('https');
@@ -199,36 +158,14 @@ function httpGetBuffer(urlStr: string, timeoutMs = 60000): Promise<Buffer> {
 }
 
 /**
- * Generates the sheet via Google AI Studio's Imagen 3 API, or falls back to Pollinations FLUX.
+ * Generates the sheet via Pollinations FLUX. Google's Imagen 3, previously tried
+ * first when a Gemini key was saved, was retired by Google on 10 November 2025,
+ * so no request is sent to it (and no key leaves the machine).
  */
 export async function generateSpriteSheetImage(
   prompt: string,
-  geminiKey?: string
+  _geminiKey?: string
 ): Promise<{ buffer: Buffer; source: 'imagen-3' | 'pollinations-flux' }> {
-  if (geminiKey) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${encodeURIComponent(
-        geminiKey
-      )}`;
-      const payload = {
-        instances: [{ prompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: '16:9',
-          outputOptions: { mimeType: 'image/png' },
-        },
-      };
-      const res = await httpPostJson(endpoint, payload, 90000);
-      const b64 = res?.predictions?.[0]?.bytesBase64Encoded;
-      if (b64 && typeof b64 === 'string') {
-        return { buffer: Buffer.from(b64, 'base64'), source: 'imagen-3' };
-      }
-      console.warn('[CharacterSprites] Imagen 3 response missing prediction buffer, falling back to Pollinations:', res?.error || res);
-    } catch (err: any) {
-      console.warn('[CharacterSprites] Imagen 3 generation error, falling back to Pollinations:', err?.message);
-    }
-  }
-
   // Fallback to Pollinations FLUX
   const encoded = encodeURIComponent(prompt);
   const pollUrl = `https://image.pollinations.ai/prompt/${encoded}?width=3072&height=2048&model=flux&nologo=true`;

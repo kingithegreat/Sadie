@@ -25,7 +25,7 @@ import { OverlayPortal } from './anchoredOverlay';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
-import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
+import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import {
   type CameraMotion,
   type StageFraming,
@@ -429,7 +429,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
-  const frameChoice = activeStoryboard?.project?.frameProvider as StoryboardFrameProviderId | undefined;
+  // A saved choice that is no longer offered (e.g. retired Imagen) reads as not chosen yet.
+  const frameChoice: StoryboardFrameProviderId | undefined = isStoryboardFrameProviderId(activeStoryboard?.project?.frameProvider)
+    ? activeStoryboard?.project?.frameProvider : undefined;
   const frameStatus = frameProviders?.find(p => p.id === frameChoice) ?? null;
   const frameReady = !!frameStatus?.ready;
   const noFrameProviderReady = !!frameProviders && !frameProviders.some(p => p.ready);

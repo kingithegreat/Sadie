@@ -20,7 +20,6 @@ import {
 import { GenerationRouter, evaluate } from './router';
 import { pollinationsProvider } from './pollinations-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
-import { imagen3Provider } from './imagen3-adapter';
 import type { GenerationProvider, GenerationRequest } from './types';
 
 /** Storyboard frames are 16:9 stills. */
@@ -29,7 +28,6 @@ export const STORYBOARD_FRAME_SIZE = { width: 1024, height: 576 } as const;
 const ADAPTERS: Record<StoryboardFrameProviderOption['routerProviderId'], GenerationProvider> = {
   pollinations: pollinationsProvider,
   comfyui: comfyUIProvider,
-  'imagen-3': imagen3Provider,
 };
 
 /** The request policy a chosen option runs under. */
@@ -74,7 +72,6 @@ export async function describeStoryboardFrameProvider(option: StoryboardFramePro
   }
   if (!score.eligible) {
     if (option.id === 'this-pc') return blocked('comfyui', 'ComfyUI is not running on this PC.');
-    if (option.id === 'imagen' && /API_KEY|key/i.test(score.reason ?? '')) return blocked('gemini-key', 'Add a Gemini API key in Settings. Google bills that account per image.');
     return blocked(null, 'This option cannot make frames right now.');
   }
   if (option.paid && !hasPaidFrameConfirmation(option.id)) {

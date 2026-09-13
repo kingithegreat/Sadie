@@ -240,11 +240,11 @@ describe('ImageGenerator — select controls', () => {
     expect(select.value).toBe('local');
   });
 
-  test('backend can be changed to Google Imagen 3', () => {
+  test('does not offer Google Imagen 3, which Google retired in November 2025', () => {
     render(<ImageGenerator />);
     const select = screen.getByLabelText(/Where to make it/i) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'imagen' } });
-    expect(select.value).toBe('imagen');
+    expect([...select.options].map(o => o.value)).toEqual(['hybrid', 'local', 'cloud']);
+    expect(screen.queryByText(/Imagen/i)).toBeNull();
   });
 
   test('selected style and resolution are passed in the payload', async () => {

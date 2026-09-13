@@ -792,8 +792,8 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       },
       frameProvider: {
         type: 'string',
-        enum: ['online', 'this-pc', 'imagen'],
-        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI), or "imagen" (Google, paid per image; refused until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
+        enum: ['online', 'this-pc'],
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark) or "this-pc" (local ComfyUI). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],
