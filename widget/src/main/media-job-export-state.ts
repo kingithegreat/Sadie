@@ -72,13 +72,31 @@ export async function readMediaJobExportState(job: MediaJob, dir: string): Promi
   const outputs: StudioExportState['outputs'] = [];
   const warnings: string[] = [];
   const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+  const candidates: Array<{ data: StudioRenderedOutput; moviePath: string }> = [];
   for (const name of names.filter(name => name.endsWith('.mp4.json'))) {
     try {
       const file = path.join(dir, name);
       if (fs.realpathSync(file) !== path.join(fs.realpathSync(dir), name)) throw new Error('Invalid metadata path');
       const data: StudioRenderedOutput = JSON.parse(fs.readFileSync(file, 'utf8'));
       const moviePath = resolveJobMovie(dir, data.filename);
-      if (!moviePath || name !== `${data.filename}.json` || typeof data.exportId !== 'string' || !data.outputSpec ||
+      if (!moviePath || name !== `${data.filename}.json`) throw new Error('Invalid export metadata path');
+      candidates.push({ data, moviePath });
+    } catch { warnings.push('Some export records are missing or unreadable. No files were removed.'); }
+  }
+  // A storyboard review job points outside media-assets to ONE immutable export.
+  // Retain its verified metadata, without scanning that other project's history
+  // or claiming the ordinary-job source algorithm can compare its current board.
+  if (job.renderedOutput && job.renderPath && !candidates.some(item => item.moviePath === job.renderPath)) {
+    try {
+      if (/\.rejected\.|\.rendering-/.test(path.basename(job.renderPath)) ||
+          path.basename(job.renderPath) !== job.renderedOutput.filename || !fs.lstatSync(job.renderPath).isFile() ||
+          fs.realpathSync(job.renderPath) !== path.resolve(job.renderPath)) throw new Error('Invalid review movie path');
+      candidates.push({ data: job.renderedOutput, moviePath: job.renderPath });
+    } catch { warnings.push('The saved review movie is missing or unreadable. No files were changed.'); }
+  }
+  for (const { data, moviePath } of candidates) {
+    try {
+      if (typeof data.exportId !== 'string' || !data.outputSpec ||
           typeof data.burnSubtitles !== 'boolean' || !Number.isFinite(data.durationSeconds) || data.durationSeconds <= 0 ||
           typeof data.createdAt !== 'string' || !Number.isFinite(Date.parse(data.createdAt))) throw new Error('Invalid export metadata');
       const verified = typeof data.sha256 === 'string' && /^[a-f0-9]{64}$/.test(data.sha256) &&

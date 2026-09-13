@@ -68,3 +68,13 @@ test('an immutable storyboard review keeps its own source contract and exact fil
   await expect(assertMediaJobReviewable(reviewJob, file)).resolves.toBeUndefined();
   await expect(assertMediaJobReviewable(reviewJob, 'different.mp4')).rejects.toThrow(/current movie changed/);
 });
+
+test('a storyboard review keeps verified export metadata without inventing its current source revision', async () => {
+  const { file, metadata } = await output();
+  const ordinaryDirectory = path.join(dir, 'ordinary-job-assets');
+  fs.mkdirSync(ordinaryDirectory);
+  const state = await readMediaJobExportState({ ...job, id: 'sbexport_example', renderPath: file, renderedOutput: metadata }, ordinaryDirectory);
+  expect(state.sourceRevision).toBeNull();
+  expect(state.outputs).toHaveLength(1);
+  expect(state.outputs[0]).toMatchObject({ moviePath: file, sourceRevision: metadata.sourceRevision, sha256: metadata.sha256 });
+});

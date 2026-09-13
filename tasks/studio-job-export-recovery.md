@@ -110,3 +110,16 @@ is now shared by these seven Studio compatibility files, with window diagnostics
 retained for a privacy failure. Generic app launch, production code, assertions,
 privacy gates and the owner's preview are unchanged. The next batch stops on its
 first failure, has zero retries, and retains separate reports/results.
+
+## Cross-source review metadata regression
+
+The ordinary history reader initially omitted known metadata for an immutable
+storyboard review job because its exact movie lives outside media-assets.
+An added regression records one failure/five passes, then six passes after the
+shared candidate validator preserves that exact verified movie without scanning
+another project's history. Its saved export revision remains known; only the
+board can compare its current source. The actual narrated storyboard cases now
+check the IPC record and Director message too. This production correction follows
+aa864ba; that running compatibility batch is intermediate, not final-source proof.
+Red/green logs are retained in its artifact directory. A rebuilt final run is
+required before publication of the branch.
