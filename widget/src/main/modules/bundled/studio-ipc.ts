@@ -391,7 +391,18 @@ export function registerStudioIpc(
     const { readJobs, writeJobs } = await import('../../tools/media');
     const { createJob, transition, fastForwardToMediaProduction } = await import('../../media-studio');
 
-    const ep = ANCIENT_PATHWAYS_EPISODES.find(x => x.id.toLowerCase() === String(episodeId || '').toLowerCase());
+    const ep = ANCIENT_PATHWAYS_EPISODES.find(x => x.id.toLowerCase() === String(episodeId || '').toLowerCase())
+      || (String(episodeId || '').toLowerCase() === 'acceptance' ? {
+        id: 'acceptance',
+        code: 'TEST',
+        season: 1,
+        title: 'Acceptance Test',
+        era: 'Modern (Ancient Pathways Lab)',
+        mainCharacter: 'Leila',
+        sceneCount: 1,
+        emoji: '🧪',
+        summary: 'Short acceptance test scene validating Leila single-character placement, poses, and mouth viseme sync.',
+      } : undefined);
     if (!ep) return { ok: false, error: `Unknown episode '${episodeId}'.` };
 
     const dir = resolveAncientPathwaysDir();

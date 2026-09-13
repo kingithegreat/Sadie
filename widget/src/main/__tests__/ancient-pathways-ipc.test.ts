@@ -191,6 +191,21 @@ describe('ancient-pathways-run — fast-forward and real QA', () => {
     expect(jobs[0].renderPath).toBe(renderPath);
   });
 
+  test('acceptance test episode runs and reaches render_qa', async () => {
+    mockRunEpisodePipeline.mockResolvedValue({ ok: true, renderPath });
+    mockInspectRender.mockResolvedValue(REAL_FACTS(REAL_FRAMES));
+
+    const res: any = await run('acceptance');
+
+    expect(res.ok).toBe(true);
+    expect(res.job.state).toBe('render_qa');
+    expect(res.job.title).toBe('Ancient Pathways: Acceptance Test');
+    const jobs = readBack();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].state).toBe('render_qa');
+    expect(jobs[0].renderPath).toBe(renderPath);
+  });
+
   test('a flat placeholder episode render is rejected to needs_revision', async () => {
     mockRunEpisodePipeline.mockResolvedValue({ ok: true, renderPath });
     mockInspectRender.mockResolvedValue(REAL_FACTS(FLAT_FRAMES));

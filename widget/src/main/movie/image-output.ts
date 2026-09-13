@@ -61,6 +61,12 @@ export function saveMovieShotImage(req: GenerationRequest, base64: string): stri
   try {
     fs.writeFileSync(temporary, bytes, { flag: 'wx' });
     fs.renameSync(temporary, output);
+    // A provider can change image format on a retry. Keep one canonical active
+    // frame so assembly never selects an arbitrary older extension.
+    for (const otherExtension of ['png', 'jpg'] as const) {
+      const stale = path.join(imageDir, `${req.shotId}.${otherExtension}`);
+      if (stale !== output && fs.existsSync(stale)) fs.unlinkSync(stale);
+    }
   } finally {
     if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
   }

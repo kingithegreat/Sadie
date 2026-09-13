@@ -379,6 +379,13 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.getByText(/✓ \$0\.00 Free Policy/)).toBeInTheDocument();
   });
 
+  test('does not let a storyboard send prompts to retired Imagen 3', async () => {
+    setup();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+    expect(screen.getByRole('option', { name: /Google Imagen 3 \(Retired\)/i })).toBeDisabled();
+  });
+
   test('displays shot cards with camera framing pills and allows changing shot attributes', async () => {
     setup();
     await act(async () => {

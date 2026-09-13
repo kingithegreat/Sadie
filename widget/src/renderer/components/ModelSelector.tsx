@@ -5,6 +5,7 @@ import type { CustomLLMConfig, CustomModelInfo } from '../../shared/types';
 import { recommendedModelIdsForVram } from '../../shared/hardware-presets';
 import { assessModelDownloadFit } from '../../shared/model-download-fit';
 import { assessPullById, normalizeModelId } from '../../shared/model-pull-guard';
+import { knownModelsFor } from '../../shared/subscription-models';
 
 interface OllamaModel {
   name: string;
@@ -34,6 +35,11 @@ interface ModelSelectorProps {
   currentModel: string;
   customLLM?: CustomLLMConfig;
   useCustomLLM?: boolean;
+  providerApiKeys?: Record<string, string>;
+  anthropicApiKey?: string;
+  openaiApiKey?: string;
+  geminiApiKey?: string;
+  moonshotApiKey?: string;
   /** provider is REQUIRED for cloud models: saving a model id without its
    *  provider leaves a config like { provider: 'google-ai-studio', model:
    *  'opus' } — Gemini's endpoint asked for a Claude model. It fails, and the
@@ -108,6 +114,11 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
   currentModel,
   customLLM,
   useCustomLLM,
+  providerApiKeys,
+  anthropicApiKey,
+  openaiApiKey,
+  geminiApiKey,
+  moonshotApiKey,
   onModelChange,
   onConfigureCustom,
   locked = false,
@@ -149,9 +160,24 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     } catch { /* Ollama offline */ }
   }, []);
 
+  // When an API is entered, it should remain an option even if local model is currently active
+  const hasConfiguredApi = Boolean(
+    (customLLM?.apiKey && customLLM.apiKey.trim()) ||
+    (customLLM?.apiUrl && customLLM.apiUrl.trim()) ||
+    customLLM?.provider === 'claude-code' ||
+    customLLM?.provider === 'codex' ||
+    customLLM?.enabled ||
+    (customLLM?.model && customLLM.model.trim()) ||
+    (providerApiKeys && Object.values(providerApiKeys).some(k => typeof k === 'string' && k.trim().length > 0)) ||
+    anthropicApiKey?.trim() ||
+    openaiApiKey?.trim() ||
+    geminiApiKey?.trim() ||
+    moonshotApiKey?.trim()
+  );
+
   // Fetch available cloud models for configured provider
   const fetchCloudModels = useCallback(async () => {
-    if (!customLLM?.enabled || !customLLM.apiUrl) return;
+    if (!hasConfiguredApi || !customLLM?.apiUrl) return;
     setCloudLoading(true);
     try {
       const result = await window.electron?.listCustomLLMModels?.({
@@ -164,7 +190,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       }
     } catch { /* failed to fetch */ }
     setCloudLoading(false);
-  }, [customLLM?.enabled, customLLM?.apiUrl, customLLM?.apiKey, customLLM?.provider]);
+  }, [hasConfiguredApi, customLLM?.apiUrl, customLLM?.apiKey, customLLM?.provider]);
 
   useEffect(() => {
     fetchModels();
@@ -174,16 +200,16 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
   // Fetch cloud models on mount if provider is configured
   useEffect(() => {
-    if (customLLM?.enabled) fetchCloudModels();
-  }, [customLLM?.enabled, fetchCloudModels]);
+    if (hasConfiguredApi) fetchCloudModels();
+  }, [hasConfiguredApi, fetchCloudModels]);
 
   // Refresh both when dropdown opens
   useEffect(() => {
     if (isOpen) {
       fetchModels();
-      if (customLLM?.enabled) fetchCloudModels();
+      if (hasConfiguredApi) fetchCloudModels();
     }
-  }, [isOpen, fetchModels, fetchCloudModels, customLLM?.enabled]);
+  }, [isOpen, fetchModels, fetchCloudModels, hasConfiguredApi]);
 
   // Probe free disk space once (lazily, on first open) so the "Available to
   // Download" rows can warn / block when a pull would not fit. Reuses the
@@ -230,17 +256,75 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     costHint: cm.costHint,
   }));
 
-  // Fallback: if cloud fetch returned nothing but we have a configured model, show it
-  if (customModelInfos.length === 0 && customLLM?.enabled) {
-    customModelInfos.push({
-      id: customLLM.model || 'custom',
-      name: customLLM.name || 'Custom API',
-      shortName: customLLM.model?.split('/').pop()?.split(':')[0] || 'API',
-      description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${customLLM.model || 'Not configured'}`,
-      type: 'custom',
-      provider: customLLM.provider,
-      installed: true,
-    });
+  // Fallback: when an API is entered, it should remain an option in the model picker:
+  // if network fetch hasn't populated models yet, populate from known models
+  // for this provider or use the configured model.
+  if (customModelInfos.length === 0 && (hasConfiguredApi || customLLM?.enabled)) {
+    const known = knownModelsFor(customLLM?.provider);
+    if (known.length > 0) {
+      customModelInfos.push(...known.map(km => ({
+        id: km.id,
+        name: km.name || km.id,
+        shortName: (km.name || km.id).split('/').pop()?.split(':')[0] || km.id,
+        description: [km.description, km.costHint].filter(Boolean).join(' — '),
+        type: 'custom' as const,
+        provider: km.provider || customLLM?.provider,
+        installed: true,
+        costHint: km.costHint,
+      })));
+    }
+    if (customLLM?.model || customLLM?.name) {
+      const configuredId = customLLM.model || 'custom';
+      const existing = customModelInfos.find(m => m.id === configuredId);
+      if (existing) {
+        if (customLLM.name) existing.name = customLLM.name;
+      } else {
+        customModelInfos.unshift({
+          id: configuredId,
+          name: customLLM.name || configuredId,
+          shortName: (customLLM.name || configuredId).split('/').pop()?.split(':')[0] || configuredId,
+          description: `${customLLM.provider?.toUpperCase() || 'Custom'} — ${configuredId}`,
+          type: 'custom',
+          provider: customLLM.provider,
+          installed: true,
+        });
+      }
+    }
+    if (customModelInfos.length === 0) {
+      customModelInfos.push({
+        id: customLLM?.model || 'custom',
+        name: customLLM?.name || (customLLM?.provider ? `${customLLM.provider.toUpperCase()} API` : 'Custom API'),
+        shortName: customLLM?.model?.split('/').pop()?.split(':')[0] || 'API',
+        description: `${customLLM?.provider?.toUpperCase() || 'Custom'} — ${customLLM?.model || 'Not configured'}`,
+        type: 'custom',
+        provider: customLLM?.provider,
+        installed: true,
+      });
+    }
+  }
+
+  // Also include models for other providers that have a saved key in providerApiKeys
+  if (providerApiKeys) {
+    const activeProvider = customLLM?.provider;
+    for (const [provider, key] of Object.entries(providerApiKeys)) {
+      if (provider !== activeProvider && typeof key === 'string' && key.trim().length > 0) {
+        const otherKnown = knownModelsFor(provider);
+        for (const km of otherKnown) {
+          if (!customModelInfos.some(m => m.id === km.id && m.provider === provider)) {
+            customModelInfos.push({
+              id: km.id,
+              name: km.name || km.id,
+              shortName: (km.name || km.id).split('/').pop()?.split(':')[0] || km.id,
+              description: [km.description, km.costHint].filter(Boolean).join(' — '),
+              type: 'custom' as const,
+              provider,
+              installed: true,
+              costHint: km.costHint,
+            });
+          }
+        }
+      }
+    }
   }
 
   const allModels = [...customModelInfos, ...installedModelInfos];
@@ -526,7 +610,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
 
           <div className="model-list">
             {/* Cloud API models */}
-            {customLLM?.enabled && filtered(customModelInfos).length > 0 && (
+            {(hasConfiguredApi || customLLM?.enabled) && filtered(customModelInfos).length > 0 && (
               <>
                 <div className="model-section-label">
                   ☁️ {providerLabel}

@@ -396,6 +396,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [storyboardError, setStoryboardError] = useState<string | null>(null);
   const [storyboardProvider, setStoryboardProvider] = useState<string>('auto');
   const [storyboardAllowDeferred, setStoryboardAllowDeferred] = useState<boolean>(true);
+  const [storyboardFreeOnly, setStoryboardFreeOnly] = useState<boolean>(true);
 
   // Script-to-Storyboard Director State
   const [directorOpen, setDirectorOpen] = useState(false);
@@ -1180,6 +1181,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         prompt,
         provider: activeProv !== 'auto' ? activeProv : undefined,
         allowDeferred: allowDeferredOverride ?? (activeProv === 'colab-worker' ? true : storyboardAllowDeferred),
+        freeOnly: storyboardFreeOnly,
       });
       if (res?.ok && res.result?.deferred) {
         handleUpdateShot(shotId, {
@@ -4307,11 +4309,13 @@ ${shots.map((s, idx) => `
                 style={{ fontSize: '0.75rem', height: '28px', padding: '0 8px' }}
                 value={storyboardProvider}
                 onChange={e => setStoryboardProvider(e.target.value)}
-                title="Select generation backend or cloud offload provider: Auto-Router, Google Imagen 3 (Gemini Key), Pollinations AI, or Google Colab T4"
+                title="Select a generation backend. Imagen 3 is retired; use Auto-Router, Pollinations, or the Colab worker."
                 aria-label="Generation provider"
               >
                 <option value="auto" title="Autonomous 5-provider router: Automatically selects the best free model based on speed, resolution, and availability.">✨ Auto-Router ($0.00 Free)</option>
-                <option value="imagen-3" title="Google Imagen 3 via Google AI Studio: Ultra-crisp photorealistic 2048x2048 renders using your Gemini API key (15 RPM free tier, zero local VRAM).">🎨 Google Imagen 3 (Cloud · 0 VRAM)</option>
+                <option value="gemini-image" title="Google Gemini Image requires a configured Gemini API key. It may use quota or incur provider charges; Free only blocks it.">Google Gemini Image (API)</option>
+                <option value="chatgpt-image" title="ChatGPT Image uses an OpenAI API key, not a ChatGPT subscription. It may incur API charges; Free only blocks it.">ChatGPT Image (OpenAI API)</option>
+                <option value="imagen-3" disabled title="Google retired Imagen 3 on 17 August 2026. This option cannot send prompts or incur charges.">🎨 Google Imagen 3 (Retired)</option>
                 <option value="pollinations" title="Pollinations AI: Instant zero-configuration cloud image synthesis. 100% free with zero local GPU load.">⚡ Pollinations AI (Cloud · 0 VRAM)</option>
                 <option value="colab-worker" title="Google Colab T4 GPU Worker: Generates tickets for notebooks/colab_sdxl_ipadapter.ipynb with character consistency and 16GB VRAM power.">☁️ Google Colab T4 (Worker · 0 VRAM)</option>
               </select>
@@ -4325,6 +4329,10 @@ ${shots.map((s, idx) => `
                   onChange={e => setStoryboardAllowDeferred(e.target.checked)}
                 />
                 <span>☁️ Offload</span>
+              </label>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.72rem', color: '#94a3b8', cursor: 'pointer' }} title="Block providers that report a non-zero API cost. Turn this off only when you accept the provider's current billing.">
+                <input type="checkbox" checked={storyboardFreeOnly} onChange={e => setStoryboardFreeOnly(e.target.checked)} />
+                <span>Free only</span>
               </label>
             </div>
 

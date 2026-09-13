@@ -1469,6 +1469,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         useCustomLLM={settings.useCustomLLM}
         uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
+        providerApiKeys={settings.providerApiKeys}
         onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
           // Cloud picks must carry their provider. Saving only the id left configs
           // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint

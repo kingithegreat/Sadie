@@ -12,6 +12,7 @@
 
 import { useSettingsCtx } from './SettingsContext';
 import { apiKeyForProvider } from '../../../shared/cloud-llm';
+import { knownModelsFor } from '../../../shared/subscription-models';
 
 // Short human name for the "couldn't reach X" warning below — the dropdown
 // options carry marketing copy (parentheticals, taglines) that doesn't read
@@ -84,6 +85,7 @@ export default function CloudProviderSection() {
                 // the new provider. Convenience is not worth misrouting a
                 // credential.
                 const autoFillKey = apiKeyForProvider(localSettings as any, newProvider);
+                const known = knownModelsFor(newProvider);
                 setLocalSettings({
                   ...localSettings,
                   customLLM: { 
@@ -91,12 +93,16 @@ export default function CloudProviderSection() {
                     provider: newProvider,
                     apiUrl: getDefaultApiUrl(newProvider),
                     apiKey: autoFillKey,
-                    model: '',
-                    enabled: false
+                    model: known.length > 0 ? known[0].id : '',
+                    enabled: !!autoFillKey || isSubscriptionCli
                   },
-                  useCustomLLM: false
+                  useCustomLLM: !!autoFillKey || isSubscriptionCli
                 });
-                setAvailableModels([]);
+                if (known.length > 0) {
+                  setAvailableModels(known);
+                } else {
+                  setAvailableModels([]);
+                }
                 setModelFetchError(null);
                 setModelsFetchedAt(null);
               }}

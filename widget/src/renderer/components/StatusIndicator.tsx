@@ -33,6 +33,7 @@ interface StatusIndicatorProps {
   onModelChange?: (model: string, useCustom: boolean, provider?: string) => void;
   uncensoredModel?: string;
   vramGB?: number | null;
+  providerApiKeys?: Record<string, string>;
 }
 
 interface UncensoredToggleProps {
@@ -62,6 +63,7 @@ interface HeaderModelProps {
   uncensoredModel: string;
   useCustomLLM: boolean;
   vramGB?: number | null;
+  providerApiKeys?: Record<string, string>;
 }
 
 
@@ -286,7 +288,8 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
   uncensoredMode,
   uncensoredModel,
   useCustomLLM,
-  vramGB
+  vramGB,
+  providerApiKeys
 }) => (
   <div className="header-model">
     {uncensoredMode ? (
@@ -316,6 +319,7 @@ const HeaderModel: React.FC<HeaderModelProps> = ({
         onConfigureCustom={onSettingsClick}
         locked={false}
         vramGB={vramGB}
+        providerApiKeys={providerApiKeys}
       />
     ) : null}
   </div>
@@ -434,7 +438,8 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
   useCustomLLM = false,
   onModelChange,
   uncensoredModel = 'dolphin:7b',
-  vramGB
+  vramGB,
+  providerApiKeys
 }) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const [uncensoredMode, setUncensoredMode] = useState(true);
@@ -487,6 +492,7 @@ const StatusIndicator: React.FC<StatusIndicatorProps> = ({
           uncensoredModel={uncensoredModel}
           useCustomLLM={useCustomLLM}
           vramGB={vramGB}
+          providerApiKeys={providerApiKeys}
         />
 
         <UncensoredToggle uncensoredMode={uncensoredMode} onToggle={handleUncensoredToggle} />

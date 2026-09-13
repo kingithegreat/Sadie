@@ -363,11 +363,52 @@ describe('ModelSelector — custom LLM', () => {
     await act(async () => {
       fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
     });
-    expect(screen.getByText('My GPT-4')).toBeInTheDocument();
+    expect(screen.getAllByText('My GPT-4').length).toBeGreaterThan(0);
   });
 
   test('shows cloud icon when useCustomLLM is true', async () => {
     await renderSelector({ customLLM, useCustomLLM: true });
     expect(screen.getAllByText('☁️').length).toBeGreaterThan(0);
   });
+
+  test('cloud models remain an option when API key is entered even if customLLM.enabled is false', async () => {
+    const disabledWithKey = {
+      ...customLLM,
+      enabled: false,
+      apiKey: 'sk-test-key-12345',
+    };
+    const onModelChange = jest.fn();
+    await renderSelector({ customLLM: disabledWithKey, useCustomLLM: false, onModelChange });
+    await act(async () => {
+      fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
+    });
+
+    // Cloud section is visible
+    expect(screen.getAllByText(/Openai/i).length).toBeGreaterThan(0);
+    // Known models for OpenAI are rendered
+    const gpt4o = screen.getByText('GPT-4o');
+    expect(gpt4o).toBeInTheDocument();
+
+    // Selecting a cloud model calls onModelChange with useCustom = true and provider
+    fireEvent.click(gpt4o);
+    expect(onModelChange).toHaveBeenCalledWith('gpt-4o', true, 'openai');
+  });
+
+  test('cloud models remain an option when providerApiKeys contains saved keys', async () => {
+    const onModelChange = jest.fn();
+    await renderSelector({
+      customLLM: { enabled: false, provider: 'openai', apiKey: '' },
+      useCustomLLM: false,
+      providerApiKeys: { groq: 'gsk-test', openai: 'sk-test' },
+      onModelChange,
+    });
+    await act(async () => {
+      fireEvent.click(document.querySelector('.model-selector-button') as HTMLElement);
+    });
+
+    // Both OpenAI and Groq models should be options
+    expect(screen.getByText('GPT-4o')).toBeInTheDocument();
+    expect(screen.getByText('Llama 3.3 (70B)')).toBeInTheDocument();
+  });
 });
+

@@ -35,7 +35,13 @@ const ImageGenerator: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [style, setStyle] = useState('realistic');
   const [resolution, setResolution] = useState('512x512');
-  const [backend, setBackend] = useState('hybrid');
+  const [backend, setBackend] = useState(() => {
+    try {
+      return localStorage.getItem('homebot_image_backend') || 'hybrid';
+    } catch {
+      return 'hybrid';
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   /** Where the durable copy lives on disk — null only if persistence failed. */
@@ -194,7 +200,14 @@ const ImageGenerator: React.FC = () => {
             <select
               id="backend"
               value={backend}
-              onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}
+              onChange={(e) => {
+                const next = e.target.value;
+                setBackend(next);
+                setSetupInfo(null);
+                try {
+                  localStorage.setItem('homebot_image_backend', next);
+                } catch { /* ignore quota */ }
+              }}
               title="Choose where to generate: local GPU/CPU or zero-VRAM cloud backends"
             >
               <option value="hybrid" title="Automatically tries local Stable Diffusion first, then falls back to cloud providers if unavailable">Best available</option>
