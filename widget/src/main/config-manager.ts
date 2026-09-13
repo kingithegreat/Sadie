@@ -87,6 +87,9 @@ export interface Settings {
   // same ONNX stack Whisper already uses (English only). Kokoro failures fall
   // back to Edge — the job records which engine actually narrated.
   narrationEngine?: 'edge' | 'kokoro';
+  // Storyboard frame providers the owner has confirmed paying for, keyed by
+  // provider id → ISO time of the confirmation. Written only by the Storyboard UI.
+  paidFrameConfirmations?: Record<string, string>;
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;

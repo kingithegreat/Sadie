@@ -7,7 +7,9 @@
  * Adapted from `generateSpriteSheetImage` in character-sprites.ts but returns a
  * single image (not a sprite sheet). The model is Imagen 3.0 Generate 002.
  *
- * Google AI Studio offers Imagen 3 free with rate limits (15 RPM documented).
+ * Imagen 3 on the Gemini API is billed per image (US$0.03, paid tier only), so it
+ * reports that cost: every FREE ONLY route excludes it and only an explicit,
+ * confirmed paid choice can reach it.
  * If the key is missing or invalid, the adapter reports canGenerate: false.
  */
 
@@ -16,6 +18,9 @@ import { getSettings } from '../config-manager';
 import { apiKeyForProvider } from '../../shared/cloud-llm';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 import { saveMovieShotImage } from './image-output';
+
+/** Gemini API list price per Imagen 3 image (US$0.03). */
+export const IMAGEN3_COST_MICRO_USD = 30_000;
 
 
 // ---------------------------------------------------------------------------
@@ -51,7 +56,7 @@ export async function probeImagen3(
   // will be caught during generate() and turned into rejections.
   return {
     canGenerate: true,
-    costMicroUsd: 0, // free with key
+    costMicroUsd: IMAGEN3_COST_MICRO_USD,
     maxDurationSec: 300,
     maxWidth: 2048,
     maxHeight: 2048,
@@ -60,7 +65,7 @@ export async function probeImagen3(
     watermark: 'unknown',
     availability: 'ready', // optimistic; generate() will discover rate limits
     deferred: false,
-    throughputPerMin: 15, // documented free tier RPM
+    throughputPerMin: 15,
   };
 }
 
@@ -87,7 +92,7 @@ export async function generateImagen3Shot(req: GenerationRequest): Promise<Gener
   try {
     const { base64 } = await generateImagen3(req.prompt, req.width, req.height);
     const file = saveMovieShotImage(req, base64);
-    return { status: 'done', provider: 'imagen-3', files: [file], costMicroUsd: 0 };
+    return { status: 'done', provider: 'imagen-3', files: [file], costMicroUsd: IMAGEN3_COST_MICRO_USD };
   } catch (err) {
     const msg = (err as Error).message || String(err);
     if (msg.includes('not configured') || msg.includes('API key')) {

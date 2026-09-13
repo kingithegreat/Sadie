@@ -18,6 +18,7 @@ const signatures: Record<string, string[]> = {
   'movie:run': ['object'], 'movie:list-projects': [], 'storyboard:create': ['object'], 'storyboard:list': [],
   'storyboard:get': ['string'], 'storyboard:generate-frame': ['object'], 'storyboard:save': ['object'],
   'storyboard:render': ['object'], 'storyboard:breakdown': ['object'],
+  'storyboard:frame-providers': [], 'storyboard:set-frame-provider': ['object'], 'storyboard:confirm-paid-frames': ['string'],
   'youtube:status': [], 'youtube:import': [], 'youtube:connect': [],
   'youtube:connect-upload': [], 'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
   'youtube:upload': ['string', 'object'],

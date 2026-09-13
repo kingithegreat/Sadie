@@ -670,6 +670,24 @@ export function registerStudioIpc(
     return { ok: res.success, storyboards: (res.result as any)?.storyboards || [], error: res.error };
   });
 
+  // The Storyboard's explicit frame provider choice: status, per-project choice,
+  // and the first-use confirmation a paid provider needs. None generates anything.
+  ipcMain.handle('homebot:media:storyboard:frame-providers', async () => {
+    const { describeStoryboardFrameProviders } = await import('../../movie/storyboard-frame-providers');
+    return { ok: true, providers: await describeStoryboardFrameProviders() };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:set-frame-provider', async (_ev, args: { projectId: string; frameProvider: string }) => {
+    const { setStoryboardFrameProvider } = await import('../../tools/media-storyboard');
+    const res = await setStoryboardFrameProvider(args || {});
+    return res.success ? { ok: true, frameProvider: (res.result as any).frameProvider } : { ok: false, error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:confirm-paid-frames', async (_ev, frameProvider: string) => {
+    const { recordPaidFrameConfirmation } = await import('../../movie/storyboard-frame-providers');
+    return recordPaidFrameConfirmation(frameProvider);
+  });
+
   ipcMain.handle('homebot:media:storyboard:get', async (_ev, projectId: string) => {
     const res = await invokeTool(_ev, 'media_get_storyboard', { projectId });
     return { ok: res.success, result: res.result, error: res.error };
@@ -708,12 +726,17 @@ export function registerStudioIpc(
     }
   });
 
-  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) => {
+  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: string }) => {
     try {
       const res = await invokeTool(_ev, 'media_breakdown_script', args || {});
       if (!res.success) return { ok: false, error: res.error, code: res.code };
-      const { projectId, title, genre, shots, totalDurationSec, projectDir } = res.result;
-      return { ok: true, projectId, title, genre, shots, totalDurationSec, projectDir };
+      const { projectId, title, genre, shots, totalDurationSec, projectDir, framesGenerated, framesSkipped } = res.result;
+      return {
+        ok: true, projectId, title, genre, shots, totalDurationSec, projectDir,
+        // Present only when frames were requested, keeping the legacy result shape otherwise.
+        ...(framesGenerated !== undefined ? { framesGenerated } : {}),
+        ...(framesSkipped ? { framesSkipped } : {}),
+      };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
     }
