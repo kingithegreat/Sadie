@@ -3803,12 +3803,12 @@ ${shots.map((s, idx) => `
           </div>
         </div>
 
-        {/* Generation Router -- shot-level routing through all 6 providers */}
+        {/* Generation Router -- shot-level routing through the movie providers */}
         <div className="ms-ap-movie-router">
           <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>Generation Router</h4>
           <p style={{ margin: '0 0 12px', fontSize: '0.8rem', color: '#888' }}>
-            Route individual shots through the best-available free provider:
-            Ancient Pathways 2D, Colab T4 IP-Adapter, ComfyUI, Pollinations, Imagen 3, or Local SD 1.5.
+            Route each shot to the best provider that is ready: Ancient Pathways 2D, ComfyUI or
+            Stable Diffusion 1.5 on this PC, Colab (needs setup), or Pollinations online (may add a watermark).
           </p>
           <button
             type="button"
@@ -4022,16 +4022,16 @@ ${shots.map((s, idx) => `
     );
   };
 
-  /* 6-Tier Movie Generation Router Workspace View */
+  /* Movie Generation Router Workspace View. No provider count in the copy:
+     a hard-coded "6" kept advertising Imagen 3 after Google retired it. */
   const renderMovieRouterWorkspace = () => {
     return (
       <div className="ms-workspace-view">
         <div className="ms-router-header">
           <div className="ms-router-title-group">
-            <h3>⚡ 6-Tier Autonomous Movie Generation Router</h3>
+            <h3>⚡ Autonomous Movie Generation Router</h3>
             <p className="ms-router-subtitle">
-              Dynamic shot-level routing across cloud GPU clusters, local neural weights, node-based ComfyUI, and vector pipelines.
-              Automatically selects the fastest, zero-cost pipeline for each scene.
+              Picks, for each shot, the best provider that is ready right now: on this PC, in Colab, or online.
             </p>
           </div>
           <button
@@ -4043,7 +4043,7 @@ ${shots.map((s, idx) => `
           </button>
         </div>
 
-        {/* 6-Engine Tier Grid */}
+        {/* Provider tier grid: one card per provider that can generate a shot */}
         <div className="ms-provider-grid">
           <div className="ms-provider-card">
             <span className="ms-provider-badge">Tier 1 · Primary</span>
@@ -4093,16 +4093,6 @@ ${shots.map((s, idx) => `
               Ultra-fast zero-configuration cloud image synthesis fallback for rapid background prototyping.
             </div>
             <div className="ms-provider-cost">⚡ Free Cloud Endpoint</div>
-          </div>
-
-          <div className="ms-provider-card">
-            <span className="ms-provider-badge">Tier 6 · Cinematic</span>
-            <div className="ms-provider-icon">✨</div>
-            <div className="ms-provider-name">Google Imagen 3</div>
-            <div className="ms-provider-desc">
-              Hyper-photorealistic cinematic renders via Google Cloud Vertex/Gemini for master keyframes.
-            </div>
-            <div className="ms-provider-cost">🔑 Cloud API Key</div>
           </div>
         </div>
 
@@ -5108,7 +5098,7 @@ ${shots.map((s, idx) => `
             <h2>🎬 Media Studio &amp; Movie Engine</h2>
             <div className="ms-dcc-pill-row">
               <span className="ms-dcc-chip ms-chip--orange">Showrunner 2D</span>
-              <span className="ms-dcc-chip ms-chip--cyan">6-Tier Router</span>
+              <span className="ms-dcc-chip ms-chip--cyan">Shot Router</span>
               <span className="ms-dcc-chip ms-chip--purple">NLE CapCut</span>
               <span className="ms-dcc-chip ms-chip--green">Blender Stage</span>
               <span className="ms-dcc-chip ms-chip--amber">Storyboard Deck</span>
@@ -5251,10 +5241,10 @@ ${shots.map((s, idx) => `
             >
               <div className="ms-hub-icon">⚡</div>
               <div className="ms-hub-info">
-                <div className="ms-hub-title">6-Engine Movie Router</div>
-                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, ComfyUI, Local SD 1.5, Pollinations, Imagen 3</div>
+                <div className="ms-hub-title">Movie Router</div>
+                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, ComfyUI, Local SD 1.5, Pollinations</div>
               </div>
-              <span className="ms-hub-badge">6 Engines</span>
+              <span className="ms-hub-badge">Per shot</span>
             </div>
 
             <div

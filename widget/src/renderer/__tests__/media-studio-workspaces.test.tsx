@@ -73,7 +73,7 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     expect(screen.getByText('🎬 Media Studio & Movie Engine')).toBeInTheDocument();
     expect(screen.getByText('Showrunner 2D')).toBeInTheDocument();
-    expect(screen.getByText('6-Tier Router')).toBeInTheDocument();
+    expect(screen.getByText('Shot Router')).toBeInTheDocument();
     expect(screen.getByText('NLE CapCut')).toBeInTheDocument();
     expect(screen.getByText('Blender Stage')).toBeInTheDocument();
     expect(screen.getByText('ComfyUI Nodes')).toBeInTheDocument();
@@ -87,30 +87,35 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     const hub = screen.getByLabelText('Studio Quick Launch');
     expect(hub).toBeInTheDocument();
-    expect(within(hub).getByText('6-Engine Movie Router')).toBeInTheDocument();
+    expect(within(hub).getByText('Movie Router')).toBeInTheDocument();
+    // Google retired Imagen 3 (#334); the hub must not advertise it as an engine.
+    expect(hub.textContent).not.toMatch(/Imagen/);
     expect(within(hub).getByText('Ancient Pathways 2D')).toBeInTheDocument();
     expect(within(hub).getByText('CapCut Timeline')).toBeInTheDocument();
     expect(within(hub).getByText('Stage Viewport')).toBeInTheDocument();
   });
 
-  test('clicking Movie Router hub card switches to 6-tier Movie Router view and loads projects', async () => {
+  test('clicking Movie Router hub card switches to the Movie Router view and loads projects', async () => {
     const { mediaMovieListProjects } = setup();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('6-Engine Movie Router'));
+      // The workspace tab has the same name; click the hub card this test is about.
+      fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router'));
     });
 
-    // 6 Tier provider cards should be visible
-    expect(screen.getByText('⚡ 6-Tier Autonomous Movie Generation Router')).toBeInTheDocument();
+    // One card per provider that can actually generate a shot
+    expect(screen.getByText('⚡ Autonomous Movie Generation Router')).toBeInTheDocument();
     expect(screen.getByText('Ancient Pathways 2D')).toBeInTheDocument();
     expect(screen.getByText('Colab SDXL IP-Adapter')).toBeInTheDocument();
     expect(screen.getByText('ComfyUI (Local Port 8188)')).toBeInTheDocument();
     expect(screen.getByText('Local Stable Diffusion 1.5')).toBeInTheDocument();
     expect(screen.getByText('Pollinations AI')).toBeInTheDocument();
-    expect(screen.getByText('Google Imagen 3')).toBeInTheDocument();
+    // Google retired Imagen 3 (#334): no card, and no "6-tier" count that counted it.
+    expect(screen.queryByText(/Imagen/)).toBeNull();
+    expect(document.body.textContent).not.toMatch(/6-Tier|6-Engine|6 Engines/);
 
     // Projects should be loaded
     expect(mediaMovieListProjects).toHaveBeenCalled();
