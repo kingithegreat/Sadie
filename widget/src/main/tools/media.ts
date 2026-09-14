@@ -12,8 +12,12 @@
  */
 
 import * as fs from 'fs';
+import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../../shared/media-output';
+import { createStudioExportReview } from '../movie/studio-export-review';
+import { randomUUID } from 'crypto';
 import * as path from 'path';
 import { app } from 'electron';
+import { assertMediaJobReviewable, mediaFileDigest, mediaJobSourceRevision, mediaJobInputRevision, mediaScriptDigest, readMediaJobExportState, snapshotMediaFile } from '../media-job-export-state';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { homebotWebhookHeaders } from '../webhook-auth';
 import {
@@ -28,6 +32,7 @@ import {
 } from '../media-studio';
 
 // ---- Store (mirrors automation.ts: atomic write, corrupt-file backup) ----
+const renderingJobs = new Set<string>();
 
 function jobsFilePath(): string {
   try {
@@ -55,6 +60,29 @@ export function readJobs(): MediaJob[] {
         migrated = true;
       }
     }
+    for (const j of arr) {
+      for (const variant of ['landscape', 'portrait', 'square']) {
+        const saved = j?.variantExportAttempts?.[variant];
+        if (saved && ['preparing', 'rendering', 'validating'].includes(saved.status) && !renderingJobs.has(j.id)) {
+          j.variantExportAttempts[variant] = { ...saved, status: 'interrupted', finishedAt: new Date().toISOString(),
+            error: 'The app stopped before this format finished. Its previous movie and other formats are kept. Retry this format when ready.' };
+          migrated = true;
+        }
+      }
+      if (j?.latestExportAttempt && ['preparing', 'rendering', 'validating'].includes(j.latestExportAttempt.status) && !renderingJobs.has(j.id)) {
+        j.latestExportAttempt = { ...j.latestExportAttempt, status: 'interrupted', finishedAt: new Date().toISOString(),
+          error: 'The app stopped before this export finished. Your previous movie is kept. Render again when ready.' };
+        migrated = true;
+      }
+      if (typeof j?.renderPath === 'string' && /\.rejected\.mp4$/i.test(j.renderPath)) {
+        j.rejectedRenderPath = j.renderPath;
+        const name = j.renderedOutput?.filename;
+        const old = typeof name === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(name) && !name.includes('.rejected.')
+          ? path.join(mediaAssetsDir(j.id), name) : undefined;
+        j.renderPath = old && fs.existsSync(old) ? old : undefined;
+        migrated = true;
+      }
+    }
     if (migrated) {
       try { fs.copyFileSync(file, `${file}.analysing-backup-${Date.now()}`); } catch { /* best effort */ }
       writeJobs(arr);
@@ -70,6 +98,12 @@ export function readJobs(): MediaJob[] {
     console.error('[Media Studio] media-jobs.json unreadable:', e);
     return [];
   }
+}
+
+export async function getMediaJobExportState(id: string) {
+  const job = readJobs().find(item => item.id === id);
+  if (!job) throw new Error('That video is no longer in the list.');
+  return readMediaJobExportState(job, mediaAssetsDir(job.id));
 }
 
 export function writeJobs(jobs: MediaJob[]): void {
@@ -144,6 +178,7 @@ function findJob(idOrTitle: string): MediaJob | undefined {
  * sentence copied into six success messages would.
  */
 function nextStepFor(job: MediaJob): string {
+  if (job.reviewSource && job.state === 'needs_revision') return 'Changes requested. Open the source project to edit and export a new movie; this review keeps its original file.';
   switch (job.state) {
     case 'idea':
     case 'researching':
@@ -238,6 +273,8 @@ export const createMediaJobDef: ToolDefinition = {
       title: { type: 'string', description: 'Working title, e.g. "One-Minute Bible: Jonah"' },
       format: { type: 'string', description: '"short" (30-60s) or "long" (5-12 min). Defaults to short.', enum: ['short', 'long'] },
       brief: { type: 'string', description: 'Optional topic or angle for the video' },
+      burnSubtitles: { type: 'boolean', description: 'Burn captions into the video; defaults to off for a new production.' },
+      outputSpec: { type: 'object', description: 'Saved output: {schemaVersion:1,durationIntent:"short"|"long",variants:[{id:"landscape"|"portrait"|"square",aspectRatio:"16:9"|"9:16"|"1:1",width:1920,height:1080,fps:30,framing:{mode:"fit"|"crop",x:0.5,y:0.5}}]}. Use matching 1080p or 720p dimensions. Use one variant, or explicitly select landscape and portrait together; never infer both from content length. New jobs default landscape/fit independently of length.' },
     },
     required: ['title'],
   },
@@ -332,7 +369,9 @@ const createMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = createJob({
       title: String(args.title || ''),
-      format: (args.format === 'long' ? 'long' : 'short') as MediaFormat,
+      burnSubtitles: args.burnSubtitles,
+      outputSpec: args.outputSpec,
+      format: args.format === undefined ? undefined : (args.format === 'long' ? 'long' : 'short') as MediaFormat,
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
@@ -377,6 +416,10 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
     const { getSettings } = await import('../config-manager');
     const publishingEnabled = !!(getSettings() as any)?.mediaPublishingEnabled;
 
+    if (to === 'awaiting_approval' || to === 'approved') {
+      await assertMediaJobReviewable(job);
+      if (JSON.stringify(findJob(job.id)) !== JSON.stringify(job)) return err('This video changed during review. Reload it before continuing.');
+    }
     const moved = transition(job, to as MediaJobState, {
       by: 'chat',
       note: args.note ? String(args.note) : undefined,
@@ -397,6 +440,8 @@ const approveMediaJobHandler: ToolHandler = async (args) => {
     if (job.state !== 'awaiting_approval') {
       return err(`"${job.title}" is at ${describeProgress(job)}, not waiting for approval.`);
     }
+    await assertMediaJobReviewable(job);
+    if (JSON.stringify(findJob(job.id)) !== JSON.stringify(job)) return err('This video changed during review. Reload it before continuing.');
     const moved = transition(job, 'approved', {
       by: 'human', humanDecision: true, note: args.note ? String(args.note) : undefined,
     });
@@ -418,7 +463,7 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
     });
     upsert(moved);
     return ok(revise
-      ? `Sent "${moved.title}" back for revision.`
+      ? withNextStep([`Sent "${moved.title}" back for revision.`], moved)
       : `Rejected "${moved.title}".`);
   } catch (e: any) {
     return err(errText(e));
@@ -445,6 +490,7 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
+    if (job.reviewSource) return err('This review keeps one saved movie. Write the script on its source project instead.');
     // A job can reach script_draft WITHOUT a script: the panel's generic
     // "Move to …" button advances the state and does none of the work. That
     // left a job wedged with no way out — media_narrate refused for having no
@@ -550,6 +596,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
   try {
     const job = findJob(String(args.job || ''));
     if (!job) return err(`No media job matching "${args.job}".`);
+    if (job.reviewSource) return err('This review keeps one saved movie. Record narration on its source project instead.');
     if (!job.script?.trim()) {
       return err(`"${job.title}" has no script yet — run media_write_script first.`);
     }
@@ -613,6 +660,7 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     let updated: MediaJob = {
       ...job,
       narrationPath: audio.path,
+      narrationScriptHash: mediaScriptDigest(job.script),
       narratedWith: audio.engine,
       captionsPath: fs.existsSync(srtPath) ? srtPath : undefined,
       durationSeconds: Math.round(caps.durationSeconds),
@@ -736,6 +784,7 @@ const renderMediaJobDef: ToolDefinition = {
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       image: { type: 'string', description: 'Optional single background image path' },
+      variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved output format. Omit to encode all explicitly selected formats.' },
       visuals: {
         type: 'string',
         enum: ['scenes', 'plain'],
@@ -761,18 +810,83 @@ const renderMediaJobDef: ToolDefinition = {
 };
 
 const renderMediaJobHandler: ToolHandler = async (args) => {
+  const job = findJob(String(args.job || ''));
+  if (!job) return err(`No media job matching "${args.job}".`);
+  if (job.reviewSource) return err('This review keeps one saved movie. Render its source project to create a new review.');
+  if (job.state !== 'media_production') return err(`"${job.title}" is at ${describeProgress(job)} — rendering runs from media_production.`);
+  if (renderingJobs.has(job.id)) return err('This video is already rendering. Wait for its current export to finish.');
+  renderingJobs.add(job.id);
+  const batchId = randomUUID();
+  let attempt: StudioExportAttempt = { id: batchId, status: 'preparing', sourceRevision: null, startedAt: new Date().toISOString() };
+  let attempts: StudioExportAttempt[] = [];
+  const record = (status: StudioExportAttempt['status'], error?: string) => {
+    attempt.status = status;
+    if (error) attempt.error = error;
+    if (status === 'succeeded' || status === 'failed') attempt.finishedAt = new Date().toISOString();
+    const current = readJobs().find(item => item.id === job.id);
+    if (current) upsert({ ...current, latestExportAttempt: { ...attempt },
+      ...(attempt.variantId ? { variantExportAttempts: { ...current.variantExportAttempts, [attempt.variantId]: { ...attempt } } } : {}) });
+  };
   try {
-    const job = findJob(String(args.job || ''));
-    if (!job) return err(`No media job matching "${args.job}".`);
+    record('preparing');
+    const spec = job.outputSpec === undefined ? undefined : resolveStudioOutputSpec(job.outputSpec, job.format);
+    const variants = spec?.variants ?? [undefined];
+    if (args.variantId !== undefined && !variants.some(v => v?.id === args.variantId)) {
+      throw new Error('Choose a saved output format to retry.');
+    }
+    const selected = args.variantId === undefined ? variants : variants.filter(v => v?.id === args.variantId);
+    attempts = selected.map(v => ({ id: randomUUID(), status: 'preparing', sourceRevision: null,
+      startedAt: attempt.startedAt, ...(v ? { variantId: v.id } : {}), ...(variants.length > 1 ? { batchId } : {}) }));
+    for (const item of attempts) { attempt = item; record('preparing'); }
+    const prepared = await prepareMediaJobInputs(args, job, attempts[0]);
+    const results: ToolResult[] = [];
+    for (let i = 0; i < selected.length; i++) {
+      attempt = attempts[i];
+      const variantJob = spec ? { ...job, outputSpec: { ...spec, variants: [selected[i]!] } } : job;
+      const result = await renderMediaJobAttempt(variantJob, attempt, record, prepared, variants.length > 1 || !!job.perExportReview);
+      record(result.success ? 'succeeded' : 'failed', result.success ? undefined : String(result.error || 'The export did not finish.'));
+      results.push(result);
+    }
+    if (variants.length === 1) return results[0];
+    const success = results.every(result => result.success);
+    attempt = { id: batchId, status: 'preparing', sourceRevision: null, startedAt: attempts[0].startedAt };
+    const errors = results.filter(result => !result.success).map(result => result.error).join('\n');
+    record(success ? 'succeeded' : 'failed', success ? undefined : errors);
+    return { success, ...(success ? {} : { error: errors }), result: {
+      variants: results.map((result, i) => ({ variantId: selected[i]!.id, ...result })),
+      message: `${results.filter(result => result.success).length} of ${results.length} selected formats exported. Review each saved movie separately; nothing is approved or published automatically.`,
+    } };
+  } catch (e) {
+    const message = `Could not render the video: ${errText(e)}`;
+    try {
+      for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message); }
+      record('failed', message);
+    } catch { /* Preparing record recovers as interrupted after restart. */ }
+    return err(message);
+  } finally { renderingJobs.delete(job.id); }
+};
+
+async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, attempt: StudioExportAttempt) {
     if (!job.narrationPath || !fs.existsSync(job.narrationPath)) {
-      return err(`"${job.title}" has no narration audio yet — run media_narrate first.`);
+      throw new Error(`"${job.title}" has no narration audio yet — run media_narrate first.`);
     }
-    if (job.state !== 'media_production') {
-      return err(`"${job.title}" is at ${describeProgress(job)} — rendering runs from media_production.`);
+    if (job.script && job.narrationScriptHash && job.narrationScriptHash !== mediaScriptDigest(job.script)) {
+      throw new Error('The script changed after narration was recorded. Record narration again before rendering this revision.');
     }
+    const dir = mediaAssetsDir(job.id);
+    const snapshotDir = path.join(dir, `inputs-${attempt.id}`);
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    const audioPath = snapshotMediaFile(job.narrationPath, snapshotDir, 'narration');
+    const captionsPath = job.captionsPath && fs.existsSync(job.captionsPath) && fs.statSync(job.captionsPath).size > 0
+      ? snapshotMediaFile(job.captionsPath, snapshotDir, 'captions') : null;
+    const requestedImage = args.image ? String(args.image) : args.visuals !== undefined ? null : job.renderInputs?.imagePath ?? null;
+    if (requestedImage && !fs.existsSync(requestedImage)) throw new Error(`No image at ${requestedImage}.`);
+    const image = requestedImage ? snapshotMediaFile(requestedImage, snapshotDir, 'image') : null;
+    const outputSpec = job.outputSpec === undefined ? undefined : resolveStudioOutputSpec(job.outputSpec, job.format);
+    const outputVariant = outputSpec?.variants[0];
 
     const {
-      findFfmpeg, renderVideo, FFMPEG_MISSING_MESSAGE,
+      findFfmpeg, FFMPEG_MISSING_MESSAGE,
     } = await import('../media-render');
 
     // The copy "Set it up for me" downloads lives in userData, not on PATH, so
@@ -783,11 +897,19 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // Not an error in the job's sense: nothing is wrong with the video, a tool
     // is missing from the machine. Leave the job where it is so rendering can
     // simply be retried once ffmpeg is there.
-    if (!ffmpeg) return err(FFMPEG_MISSING_MESSAGE);
+    if (!ffmpeg) throw new Error(FFMPEG_MISSING_MESSAGE);
 
-    const image = args.image ? String(args.image) : null;
-    if (image && !fs.existsSync(image)) {
-      return err(`No image at ${image}.`);
+    const { inspectRender } = await import('../media-qa');
+    // Saved jobs historically round this value. Measuring before generation
+    // prevents both a silent tail and cutting fractional seconds off speech.
+    let narrationSeconds = job.durationSeconds || 60;
+    if (outputVariant) {
+      const sourceAudio = await inspectRender(ffmpeg, audioPath);
+      if (!sourceAudio.hasAudio || typeof sourceAudio.durationSeconds !== 'number' ||
+          !Number.isFinite(sourceAudio.durationSeconds) || sourceAudio.durationSeconds <= 0) {
+        throw new Error('Could not measure the narration length. Check the audio before exporting.');
+      }
+      narrationSeconds = sourceAudio.durationSeconds;
     }
 
     // Background music, from the user's own folder. Chosen by the job's seed so
@@ -821,6 +943,13 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       }
     }
 
+    if (job.renderInputs && args.music === undefined && args.track === undefined) {
+      if (job.renderInputs.musicPath && !fs.existsSync(job.renderInputs.musicPath)) {
+        throw new Error('The saved music track is missing. Restore it or explicitly choose different music before retrying.');
+      }
+      music = { path: job.renderInputs.musicPath, available: job.renderInputs.musicPath ? 1 : 0 };
+    }
+
     // A reason, never a failure: a silent video is a legitimate outcome, and
     // the point of saying so is that "I chose no music" is distinguishable from
     // "it tried and quietly gave up".
@@ -828,26 +957,13 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       ? `music: ${path.basename(music.path)}`
       : (music.reason ? `no music — ${music.reason}` : '');
 
-    const dir = mediaAssetsDir(job.id);
-    const finalOut = path.join(dir, 'video.mp4');
-    // Render to a sibling temp file and only swap it in once QA has passed.
-    //
-    // Rendering straight to video.mp4 meant a re-render that failed partway —
-    // or produced a file the QA below rejects — had already destroyed the good
-    // export the person already had. A replacement that does not work is not a
-    // reason to lose the thing it was replacing. The rename is same-directory,
-    // so it is atomic, matching the store's own write pattern above.
-    const out = path.join(dir, `video.rendering-${process.pid}.mp4`);
-    const shape = job.format === 'long' ? 'long' : 'short';
+    const musicPath = music.path ? snapshotMediaFile(music.path, snapshotDir, 'music') : null;
+    const shape = outputVariant?.aspectRatio ?? (job.format === 'long' ? 'long' : 'short');
     // An empty file (a script that produced zero cues, or a write that landed
     // partway) is not a usable captions track. Treating it as one used to hand
     // ffmpeg's subtitles filter a file it cannot parse — "Unable to open ...
     // Error initializing filters" — which crashed the WHOLE render instead of
     // failing the specific, nameable QA check below.
-    const captionsPath = job.captionsPath && fs.existsSync(job.captionsPath) && fs.statSync(job.captionsPath).size > 0
-      ? job.captionsPath
-      : null;
-
     // A picture per scene, unless asked for a plain backdrop or handed a
     // single image. Best-effort: every failure here degrades the look and
     // none of them stops the video being made.
@@ -856,7 +972,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     // Kept so the panel can show the slides. Declared out here because the
     // scene block below is conditional and the transition happens after it.
     let scenePaths: Array<string | null> | undefined;
-    const wantScenes = String(args.visuals ?? 'scenes') === 'scenes' && !image;
+    const visuals = String(args.visuals ?? job.renderInputs?.visuals ?? 'scenes');
+    const zoom = args.zoom === undefined ? job.renderInputs?.zoom ?? true : Boolean(args.zoom);
+    const style = args.style ? String(args.style) : job.renderInputs?.style;
+    const wantScenes = visuals === 'scenes' && !image;
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
       const { generateSceneImages, fillMissingImages, seedForVideo, defaultImageCacheDir } = await import('../media-visuals');
@@ -865,15 +984,20 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       const cues = parseSrtCues(fs.readFileSync(captionsPath, 'utf8'));
       const scenes = groupCues(cues, 5);
       if (scenes.length) {
-        const { w, h } = dimensionsFor(shape);
-        const images = await generateSceneImages({
+        const { w, h } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : dimensionsFor(shape);
+        const imageScale = Math.min(1, 1024 / Math.max(w, h));
+        const reusable = job.renderInputs?.scenePaths.length === scenes.length &&
+          args.visuals === undefined && args.style === undefined && args.image === undefined &&
+          (job.renderInputs?.inputRevision ? job.renderInputs.inputRevision === await mediaJobInputRevision(job)
+            : !!job.latestExportAttempt?.sourceRevision && job.latestExportAttempt.sourceRevision === await mediaJobSourceRevision(job));
+        const images = reusable ? job.renderInputs!.scenePaths.map((file, index) => ({ path: file, index })) : await generateSceneImages({
           scenes,
           videoTitle: job.title,
-          outDir: path.join(dir, 'scenes'),
+          outDir: path.join(snapshotDir, 'scenes'),
           // Generators cap at 1024; the renderer scales and crops to fill.
-          width: Math.min(w, 1024),
-          height: Math.min(h, 1024),
-          style: args.style ? String(args.style) : undefined,
+          width: outputVariant ? Math.round(w * imageScale) : Math.min(w, 1024),
+          height: outputVariant ? Math.round(h * imageScale) : Math.min(h, 1024),
+          style,
           // One seed for the whole video, derived from its identity, so the
           // scenes look like each other and a re-render reproduces them.
           seed: seedForVideo(job.id),
@@ -883,21 +1007,24 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
           cacheDir: defaultImageCacheDir(),
           fallbackPlates: true,
         });
-        const filled = fillMissingImages(images);
+        const frozenImages = images.map((entry, index) => ({ ...entry,
+          path: entry.path ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+        const filled = fillMissingImages(frozenImages);
         const made = filled.filter(Boolean).length;
         // Record the slides whether or not the concat file gets built: if every
         // image failed, an empty list is still the honest answer, and the panel
         // says so rather than showing nothing and looking broken.
-        scenePaths = images.map(i => i.path);
+        scenePaths = frozenImages.map(i => i.path);
         if (made) {
           // The narration length, so the scenes cover the pauses too and the
           // render is not trimmed back to the spoken total.
           const timeline = timelineFromCues(
             scenes,
             i => filled[i],
-            job.durationSeconds ? Math.round(job.durationSeconds * 1000) : undefined,
+            outputVariant ? Math.round(narrationSeconds * 1000)
+              : job.durationSeconds ? Math.round(job.durationSeconds * 1000) : undefined,
           );
-          concatPath = path.join(dir, 'scenes.txt');
+          concatPath = path.join(snapshotDir, 'scenes.txt');
           fs.writeFileSync(concatPath, buildConcatFileContent(timeline), 'utf8');
           const failed = images.filter(i => !i.path).length;
           visualNote = `${scenes.length} scenes` + (failed ? `, ${failed} image(s) failed and reuse a neighbour` : '');
@@ -907,17 +1034,49 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       }
     }
 
+    const renderInputs: NonNullable<MediaJob['renderInputs']> = { imagePath: requestedImage, scenePaths: scenePaths ?? [], musicPath: music.path, zoom, visuals, style };
+    renderInputs.inputRevision = await mediaJobInputRevision({ ...job, narrationPath: audioPath,
+      captionsPath: captionsPath ?? undefined }, { ...renderInputs, imagePath: image, musicPath }) ?? undefined;
+    const beforeEncode = readJobs().find(item => item.id === job.id);
+    if (!beforeEncode) throw new Error('This job was removed while preparing. No job was recreated.');
+    upsert({ ...beforeEncode, renderInputs });
+    return { dir, audioPath, captionsPath, image, musicPath, ffmpeg, narrationSeconds, music,
+      scenePaths, visualNote, musicNote, concatPath, zoom, renderInputs };
+}
+
+async function renderMediaJobAttempt(
+  job: MediaJob, attempt: StudioExportAttempt,
+  record: (status: StudioExportAttempt['status'], error?: string) => void,
+  prepared: Awaited<ReturnType<typeof prepareMediaJobInputs>>, batch: boolean,
+): Promise<ToolResult> {
+  try {
+    const { dir, audioPath, captionsPath, image, musicPath, ffmpeg, narrationSeconds, music,
+      scenePaths, visualNote, musicNote, concatPath, zoom, renderInputs } = prepared;
+    const { renderVideo } = await import('../media-render');
+    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
+    const outputSpec = job.outputSpec === undefined ? undefined : resolveStudioOutputSpec(job.outputSpec, job.format);
+    if (outputSpec && outputSpec.variants.length !== 1) throw new Error('Encode one selected format at a time.');
+    const outputVariant = outputSpec?.variants[0];
+    const shape = outputVariant?.aspectRatio ?? (job.format === 'long' ? 'long' : 'short');
+    const exportId = attempt.id;
+    attempt.exportId = exportId;
+    const finalOut = path.join(dir, `video-${outputVariant?.id ?? 'legacy'}-${exportId}.mp4`);
+    const out = path.join(dir, `video.rendering-${attempt.id}.mp4`);
+    attempt.sourceRevision = await mediaJobSourceRevision({ ...job, narrationPath: audioPath,
+      captionsPath: captionsPath ?? undefined }, { ...renderInputs, imagePath: image, musicPath });
+    record('rendering');
     const rendered = await renderVideo({
       ffmpeg,
-      audioPath: job.narrationPath,
+      audioPath,
       outputPath: out,
       shape,
+      outputVariant,
       imagePath: image,
-      captionsPath,
+      captionsPath: resolveBurnSubtitles(job.burnSubtitles) ? captionsPath : null,
       concatPath,
-      durationSeconds: job.durationSeconds || 60,
-      zoom: args.zoom === undefined ? true : Boolean(args.zoom),
-      musicPath: music.path,
+      durationSeconds: narrationSeconds,
+      zoom,
+      musicPath,
     });
 
     // The QA the `render_qa` state has always claimed and never done.
@@ -929,9 +1088,8 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     //
     // A failed check does NOT throw away the file — it is on disk and named in
     // the reply, so a false negative costs a click, not a re-render.
-    const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
     const { dimensionsFor: qaDimensions } = await import('../media-render');
-    const { w: qaW, h: qaH } = qaDimensions(shape);
+    const { w: qaW, h: qaH } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : qaDimensions(shape);
 
     // Captions are burned in when they exist, but nothing has ever checked
     // that they actually do or that they cover the video — an unreadable or
@@ -950,16 +1108,22 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       }
     }
 
+    record('validating');
     let qa: { ok: boolean; failures: string[]; warnings: string[] };
+    let measuredDuration: number | null = null;
     try {
       const facts = await inspectRender(ffmpeg, rendered.path);
+      measuredDuration = facts.durationSeconds;
       qa = evaluateRenderQa(facts, {
         width: qaW,
         height: qaH,
-        narrationSeconds: job.durationSeconds ?? null,
+        narrationSeconds: outputVariant ? narrationSeconds : job.durationSeconds ?? null,
         hasMusic: !!music.path,
-        captionCues,
+        captionCues: resolveBurnSubtitles(job.burnSubtitles) ? captionCues : undefined,
       });
+      if (outputVariant && (typeof facts.durationSeconds !== 'number' || !Number.isFinite(facts.durationSeconds) || Math.abs(facts.durationSeconds - narrationSeconds) > 0.15)) {
+        qa = { ...qa, ok: false, failures: [...qa.failures, 'The video duration does not match the measured narration.'] };
+      }
     } catch (qaErr: any) {
       // No measurements means there is no evidence that the render is usable.
       // Fail closed through the same needs_revision path as a measured fault;
@@ -981,21 +1145,47 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
     let finalPath = rendered.path;
     try {
       if (qa.ok) {
-        fs.renameSync(rendered.path, finalOut);
+        fs.copyFileSync(rendered.path, finalOut, fs.constants.COPYFILE_EXCL);
+        fs.unlinkSync(rendered.path);
         finalPath = finalOut;
       } else {
-        const rejected = path.join(dir, 'video.rejected.mp4');
-        if (fs.existsSync(rejected)) fs.unlinkSync(rejected);
-        fs.renameSync(rendered.path, rejected);
+        const rejected = path.join(dir, `video-${exportId}.rejected.mp4`);
+        fs.copyFileSync(rendered.path, rejected, fs.constants.COPYFILE_EXCL);
+        fs.unlinkSync(rendered.path);
         finalPath = rejected;
       }
-    } catch {
-      // The rename is a convenience, not the render. If it fails the temp file
-      // is still on disk and still named in the reply.
+    } catch (saveError) {
+      return err(`The export could not be saved: ${errText(saveError)}. Your previous successful video is unchanged.`);
     }
 
+    const renderedOutput: StudioRenderedOutput | undefined = qa.ok && measuredDuration !== null ? {
+      exportId, filename: path.basename(finalPath), createdAt: new Date().toISOString(), sourceSavedAt: job.updatedAt,
+      durationSeconds: measuredDuration, burnSubtitles: resolveBurnSubtitles(job.burnSubtitles),
+      outputSpec: outputSpec ?? resolveStudioOutputSpec(undefined, job.format, job.format === 'long' ? '16:9' : '9:16'),
+      fileSizeBytes: fs.statSync(finalPath).size,
+      sha256: await mediaFileDigest(finalPath),
+      scenePaths: scenePaths ?? (image ? [image] : []),
+      ...(attempt.sourceRevision ? { sourceRevision: attempt.sourceRevision } : {}),
+    } : undefined;
+    if (renderedOutput) fs.writeFileSync(`${finalPath}.json`, JSON.stringify(renderedOutput, null, 2), { encoding: 'utf8', flag: 'wx' });
+
+    const currentJob = readJobs().find(item => item.id === job.id);
+    if (!currentJob) return err('This job was removed while rendering. The output file is kept; no job was recreated.');
+    if (batch) {
+      if (!qa.ok || !renderedOutput) {
+        upsert({ ...currentJob, rejectedRenderPath: finalPath });
+        return err(`${outputVariant!.id} did not pass checks: ${qa.failures.join('; ')}. Other successful movies are kept. Diagnostic: ${finalPath}`);
+      }
+      upsert({ ...currentJob, perExportReview: true, renderPath: finalPath, renderedOutput, scenePaths: renderedOutput.scenePaths, rejectedRenderPath: undefined });
+      const reviewId = `jobexport_${renderedOutput.exportId}`;
+      const review = createStudioExportReview({ source: { type: 'job', id: job.id }, title: job.title,
+        moviePath: finalPath, output: renderedOutput, brief: job.brief }, readJobs().find(item => item.id === reviewId));
+      upsert(review);
+      return ok({ moviePath: finalPath, renderedOutput, jobId: review.id });
+    }
     const renderedForQa = transition(
-      { ...job, renderPath: finalPath, ...(scenePaths ? { scenePaths } : {}) },
+      { ...currentJob, ...(qa.ok ? { renderPath: finalPath, rejectedRenderPath: undefined, ...(renderedOutput ? { renderedOutput } : {}) }
+        : { rejectedRenderPath: finalPath }), ...(qa.ok ? { scenePaths: scenePaths ?? (image ? [image] : []) } : {}) },
       'render_qa',
       { by: 'render stage' },
     );
@@ -1011,7 +1201,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
         `Rendered "${blocked.title}", but it did not pass checks: ${qa.failures.join('; ')}.`,
         `video: ${finalPath}`,
         'The file is on disk if you want to look — but it is not worth approving as it stands.',
-        ...(fs.existsSync(finalOut) ? [`Your previous video is untouched: ${finalOut}`] : []),
+        ...(job.renderPath && fs.existsSync(job.renderPath) ? [`Your previous video is untouched: ${job.renderPath}`] : []),
       ].join('\n'));
     }
 
@@ -1030,7 +1220,7 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
   }
-};
+}
 
 const listMusicDef: ToolDefinition = {
   name: 'media_list_music',
@@ -1179,7 +1369,42 @@ const deleteMediaJobHandler: ToolHandler = async (args) => {
   }
 };
 
+const setMediaOutputDef: ToolDefinition = {
+  name: 'media_set_output',
+  description: 'Save captions and/or output format for an editable Media Studio video. Existing audio, timing cues and exports are preserved. Send reviewed or approved videos back for revision first.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      job: { type: 'string', description: 'Job id or title' },
+      burnSubtitles: { type: 'boolean', description: 'Whether to burn captions into the next video export' },
+      outputSpec: { type: 'object', description: 'Same versioned outputSpec as media_create_job. Saves the next export shape/size/framing independently of content length.' },
+    },
+    required: ['job'],
+  },
+};
+
+const setMediaOutputHandler: ToolHandler = async (args) => {
+  try {
+    const job = findJob(String(args.job || ''));
+    if (!job) return err('That video is no longer in the list.');
+    if (job.reviewSource) return err('This review belongs to one saved movie. Change output settings on its source project instead.');
+    if (hasExternalMediaRenderer(job)) return err('Caption settings for this video are controlled by Ancient Pathways. HomeBot cannot change that external export yet.');
+    if (renderingJobs.has(job.id)) return err('This video is rendering. Wait for its current export before changing output settings.');
+    if (!canEditMediaOutput(job.state)) return err('Send this video back for revision before changing its output. The reviewed export is unchanged.');
+    if (args.burnSubtitles === undefined && args.outputSpec === undefined) return err('Choose output settings to save.');
+    if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') return err('Choose whether captions are on or off.');
+    const outputSpec = args.outputSpec === undefined ? undefined : resolveStudioOutputSpec(args.outputSpec, job.format);
+    if (outputSpec && outputSpec.durationIntent !== job.format) return err('Output settings must retain this video’s content length. Shape is independent of length.');
+    upsert({ ...job,
+      ...(args.burnSubtitles === undefined ? {} : { burnSubtitles: args.burnSubtitles }),
+      ...(outputSpec ? { outputSpec } : {}), updatedAt: new Date().toISOString() });
+    return ok(`Output settings saved for the next export. Existing audio and video files are unchanged.`);
+  } catch (e) { return err(`Could not save output settings: ${errText(e)}`); }
+};
+
 export const mediaToolDefs: ToolDefinition[] = [
+  setMediaOutputDef,
   deleteMediaJobDef,
   listMusicDef,
   writeMediaScriptDef,
@@ -1194,6 +1419,7 @@ export const mediaToolDefs: ToolDefinition[] = [
 ];
 
 export const mediaToolHandlers: Record<string, ToolHandler> = {
+  media_set_output: setMediaOutputHandler,
   media_write_script: writeMediaScriptHandler,
   media_narrate: narrateMediaJobHandler,
   media_render: renderMediaJobHandler,

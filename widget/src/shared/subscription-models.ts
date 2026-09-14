@@ -61,3 +61,37 @@ export function hasKnownModels(provider: string | undefined): boolean {
 export function knownModelsFor(provider: string | undefined): CustomModelInfo[] {
   return (provider && SUBSCRIPTION_CLI_MODELS[provider]) || [];
 }
+
+/**
+ * Curated fallback models for metered cloud providers when an API key is present.
+ * These are NOT CLI subscription models, so knownModelsFor() remains empty for them.
+ *
+ * Every ID here must also be in the main-process list for its provider
+ * (custom-llm-client.ts), which is where retired models get pruned; this list
+ * once kept offering Claude 3.5, DeepSeek Chat/Reasoner and Gemini 2.0 Flash
+ * after their providers had shut them down. model-lifecycle.test.ts enforces it.
+ */
+export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
+  openai: [
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'Flagship omni model', provider: 'openai' },
+    { id: 'gpt-4o-mini', name: 'GPT-4o mini', description: 'Fast and affordable', provider: 'openai' },
+  ],
+  anthropic: [
+    { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', description: 'Best balance of speed and intelligence', provider: 'anthropic' },
+    { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fastest and most affordable', provider: 'anthropic' },
+  ],
+  deepseek: [
+    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+    { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
+  ],
+  'google-ai-studio': [
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Thinking + tools, free tier', provider: 'google-ai-studio' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Fast inference on Groq LPU', provider: 'groq' },
+  ],
+  openrouter: [
+    { id: 'auto', name: 'OpenRouter Auto', description: 'Best model for prompt', provider: 'openrouter' },
+  ],
+};
+

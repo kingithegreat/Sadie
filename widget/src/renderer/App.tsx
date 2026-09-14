@@ -1294,6 +1294,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               currentModel={activeModel.model || settings.chatModel || 'qwen2.5:7b'}
               customLLM={settings.customLLM}
               useCustomLLM={settings.useCustomLLM}
+              providerApiKeys={settings.providerApiKeys}
               onModelChange={async (model: string, useCustom: boolean, provider?: string) => {
                 // Cloud picks must carry their provider. Saving only the id left configs
                 // like { provider: 'google-ai-studio', model: 'opus' } — Gemini's endpoint
@@ -1467,6 +1468,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         currentModel={activeModel.model || settings.chatModel || 'qwen2.5:7b'}
         customLLM={settings.customLLM}
         useCustomLLM={settings.useCustomLLM}
+        providerApiKeys={settings.providerApiKeys}
         uncensoredModel={settings.uncensoredModel || 'dolphin-mistral:7b'}
         vramGB={vramGB}
         onModelChange={async (model: string, useCustom: boolean, provider?: string) => {

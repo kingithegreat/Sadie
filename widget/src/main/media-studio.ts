@@ -9,7 +9,7 @@
  *
  * Deliberately has NO dependency on Electron, n8n, or any provider. It is pure
  * data and rules, so it can be tested exhaustively without a running app —
- * which matters because every later phase (TTS, Remotion, YouTube publishing)
+ * which matters because every later phase (TTS, FFmpeg rendering, YouTube publishing)
  * trusts these transitions to be enforced.
  *
  * The single most important rule here: nothing reaches `published` without
@@ -17,6 +17,8 @@
  * human decision. The plan states that as a guardrail; this makes it
  * structural rather than a matter of remembering.
  */
+
+import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../shared/media-output';
 
 /** Pipeline states, in the order the plan defines them. */
 export const MEDIA_STATES = [
@@ -55,6 +57,17 @@ export interface MediaJobEvent {
   note?: string;
 }
 
+export interface MediaRenderInputs {
+  imagePath: string | null;
+  scenePaths: Array<string | null>;
+  musicPath: string | null;
+  zoom: boolean;
+  visuals: string;
+  style?: string;
+  /** Accepted input identity, excluding output framing/resolution. */
+  inputRevision?: string;
+}
+
 export interface MediaJob {
   id: string;
   title: string;
@@ -72,6 +85,23 @@ export interface MediaJob {
   narratedWith?: string;
   /** Absolute path to the SRT subtitles generated alongside the narration. */
   captionsPath?: string;
+  /** Explicit burn-in preference. Absent on legacy jobs means captions on. */
+  burnSubtitles?: boolean;
+  /** Absent on legacy jobs: preserve their original short/long geometry. */
+  outputSpec?: StudioOutputSpec;
+  renderedOutput?: StudioRenderedOutput;
+  renderInputs?: MediaRenderInputs;
+  narrationScriptHash?: string;
+  latestExportAttempt?: StudioExportAttempt;
+  variantExportAttempts?: Partial<Record<'landscape' | 'portrait' | 'square', StudioExportAttempt>>;
+  /** Review entries cannot be edited into a different movie. */
+  reviewSource?: { type: 'job' | 'storyboard'; id: string };
+  /** Once exports have independent reviews, narrowing future outputs cannot duplicate their approval on this parent. */
+  perExportReview?: boolean;
+  /** A QA-rejected diagnostic is never the successful movie in renderPath. */
+  rejectedRenderPath?: string;
+  /** External bridges have their own output settings, not HomeBot's renderer. */
+  externalRenderer?: 'ancient-pathways';
   /** True spoken length, measured from the audio rather than estimated. */
   durationSeconds?: number;
   /**
@@ -202,6 +232,12 @@ export interface TransitionOptions {
  * pipeline ends up with a job that looks published and is not.
  */
 export function transition(job: MediaJob, to: MediaJobState, opts: TransitionOptions = {}): MediaJob {
+  if ((job.perExportReview || job.outputSpec?.variants.length === 2) && ['awaiting_approval', 'approved', 'scheduled', 'published'].includes(to)) {
+    throw new Error('Review each exported format separately. This production cannot approve or publish both movies together.');
+  }
+  if (job.reviewSource && ['idea', 'researching', 'script_draft', 'script_qa', 'media_production'].includes(to)) {
+    throw new Error('This review belongs to one saved movie. Edit and render its source project to create a new review.');
+  }
   if (!isValidState(to)) throw new InvalidTransitionError(job.state, to as MediaJobState);
   if (!canTransition(job.state, to)) throw new InvalidTransitionError(job.state, to);
 
@@ -296,6 +332,8 @@ export function markPublished(
 
 export interface NewJobInput {
   title: string;
+  burnSubtitles?: boolean;
+  outputSpec?: unknown;
   format?: MediaFormat;
   brief?: string;
   id?: string;
@@ -306,11 +344,16 @@ export function createJob(input: NewJobInput): MediaJob {
   const title = (input.title || '').trim();
   if (!title) throw new Error('A media job needs a title.');
 
+  const outputSpec = resolveStudioOutputSpec(input.outputSpec, input.format ?? 'short');
+  if (input.format && input.format !== outputSpec.durationIntent) throw new Error('The content length and output settings disagree.');
+
   const at = (input.now?.() ?? new Date()).toISOString();
   return {
     id: input.id || `media_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     title,
-    format: input.format ?? 'short',
+    burnSubtitles: resolveBurnSubtitles(input.burnSubtitles, false),
+    format: outputSpec.durationIntent,
+    outputSpec,
     state: 'idea',
     brief: input.brief?.trim() || undefined,
     createdAt: at,

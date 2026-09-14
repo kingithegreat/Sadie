@@ -34,10 +34,13 @@ jest.mock('child_process', () => ({
   execFileSync: jest.fn(() => { throw new Error('no local backend in this test'); }),
 }));
 
-const mockGenerateImagen3 = jest.fn().mockResolvedValue(null);
-jest.mock('../tools/imagen', () => ({
-  generateImagen3: (...args: any[]) => mockGenerateImagen3(...args),
-}));
+// The real, retired Imagen client runs underneath; the spy only records calls.
+const mockGenerateImagen3 = jest.fn();
+jest.mock('../tools/imagen', () => {
+  const actual = jest.requireActual('../tools/imagen');
+  return { ...actual, generateImagen3: (...args: any[]) => mockGenerateImagen3(...args) };
+});
+const { generateImagen3: realGenerateImagen3, IMAGEN3_RETIRED_MESSAGE } = jest.requireActual('../tools/imagen');
 
 import { imageGenerateDef, imageGenerateHandler } from '../tools/web';
 import * as http from 'http';
@@ -68,6 +71,7 @@ function mockN8nResponse(body: object, statusCode = 200) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockGenerateImagen3.mockReset().mockImplementation(realGenerateImagen3);
 });
 
 describe('imageGenerateDef', () => {
@@ -84,8 +88,10 @@ describe('imageGenerateDef', () => {
     expect(backendProp.enum).toContain('local');
     expect(backendProp.enum).toContain('cloud');
     expect(backendProp.enum).toContain('hybrid');
-    expect(backendProp.enum).toContain('imagen');
-    expect(backendProp.enum).toContain('imagen-3');
+    // Google retired Imagen 3 (Nov 2025): a model can no longer choose it.
+    expect(backendProp.enum).not.toContain('imagen');
+    expect(backendProp.enum).not.toContain('imagen-3');
+    expect(backendProp.description).toMatch(/retired/);
   });
 });
 
@@ -106,38 +112,21 @@ describe('imageGenerateHandler', () => {
     expect(res.result.source).toBe('automatic1111');
   });
 
-  test('backend: imagen returns image from Imagen 3', async () => {
-    mockGenerateImagen3.mockResolvedValueOnce({
-      base64: 'imagen3b64test==',
-      mimeType: 'png',
-    });
-
-    const res = await imageGenerateHandler({ prompt: 'a glowing nebula', backend: 'imagen' }, {} as any);
-    expect(res.success).toBe(true);
-    expect(res.result.image_base64).toBe('imagen3b64test==');
-    expect(res.result.source).toBe('imagen-3');
-  });
-
-  test('backend: imagen reports clear error when Imagen 3 fails', async () => {
-    mockGenerateImagen3.mockRejectedValueOnce(new Error('Gemini API key not configured'));
-
-    const res = await imageGenerateHandler({ prompt: 'a spaceship', backend: 'imagen' }, {} as any);
+  test.each(['imagen', 'imagen-3'])('a legacy %s request gets the retirement message and no network request', async backend => {
+    const res = await imageGenerateHandler({ prompt: 'a glowing nebula', backend }, {} as any);
     expect(res.success).toBe(false);
-    expect(res.error).toContain('Google Imagen 3 failed');
+    expect(res.error).toBe(IMAGEN3_RETIRED_MESSAGE);
+    expect(mockGenerateImagen3).toHaveBeenCalledTimes(1);
+    expect(mockHttpRequest).not.toHaveBeenCalled();
+    expect((require('https').request as jest.Mock)).not.toHaveBeenCalled();
   });
 
-  test('hybrid mode tries Imagen 3 before Pollinations when available', async () => {
-    // Mock local engines returning null
-    mockN8nResponse({ images: [] });
-    mockGenerateImagen3.mockResolvedValueOnce({
-      base64: 'imagen3hybridb64==',
-      mimeType: 'png',
-    });
-
+  test('hybrid mode never produces an Imagen image; the retired client refuses instantly', async () => {
+    mockN8nResponse({ images: [] }); // local engines have nothing
     const res = await imageGenerateHandler({ prompt: 'a futuristic city', backend: 'hybrid' }, {} as any);
-    expect(res.success).toBe(true);
-    expect(res.result.image_base64).toBe('imagen3hybridb64==');
-    expect(res.result.source).toBe('imagen-3');
+    expect(mockGenerateImagen3).toHaveBeenCalledTimes(1);
+    await expect(mockGenerateImagen3.mock.results[0].value).rejects.toMatchObject({ code: 'IMAGEN3_RETIRED' });
+    expect(res.result?.source).not.toBe('imagen-3');
   });
 
   test('returns error when n8n reports failure', async () => {

@@ -87,6 +87,9 @@ export interface Settings {
   // same ONNX stack Whisper already uses (English only). Kokoro failures fall
   // back to Edge — the job records which engine actually narrated.
   narrationEngine?: 'edge' | 'kokoro';
+  // Storyboard frame providers the owner has confirmed paying for, keyed by
+  // provider id → ISO time of the confirmation. Written only by the Storyboard UI.
+  paidFrameConfirmations?: Record<string, string>;
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
@@ -366,6 +369,7 @@ export const DEFAULT_SETTINGS: Settings = {
     media_delete_job: false,
     media_setup_research: false,
     media_create_job: true,
+    media_set_output: true,
     media_list_jobs: true,
     media_advance_job: true,
     media_approve_job: false,

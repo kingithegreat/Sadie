@@ -30,6 +30,7 @@ import { imagen3Provider } from './imagen3-adapter';
 import { localSD15Provider } from './local-sd15-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
 import { validateMovieImageFiles } from './image-output';
+import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput } from '../../shared/media-output';
 import { checkAndIngestColabResult } from './colab-queue';
 
 export interface MovieProject {
@@ -41,6 +42,9 @@ export interface MovieProject {
   defaultResolution: [number, number];
   defaultDurationSec: number;
   notes?: string;
+  burnSubtitles?: boolean;
+  outputSpec?: StudioOutputSpec;
+  latestSuccessfulOutput?: StudioRenderedOutput;
 }
 
 export interface SceneManifest {
@@ -100,6 +104,8 @@ export class MovieProjectRunner {
     project: MovieProject,
     characters: CharacterBibleEntry[] = [],
   ): void {
+    const burnSubtitles = resolveBurnSubtitles(project.burnSubtitles, false);
+    const outputSpec = resolveStudioOutputSpec(project.outputSpec);
     fs.mkdirSync(projectDir, { recursive: true });
     fs.mkdirSync(path.join(projectDir, 'characters'), { recursive: true });
     fs.mkdirSync(path.join(projectDir, 'scenes'), { recursive: true });
@@ -109,7 +115,7 @@ export class MovieProjectRunner {
     // Write project.json
     fs.writeFileSync(
       path.join(projectDir, 'project.json'),
-      JSON.stringify(project, null, 2),
+      JSON.stringify({ ...project, burnSubtitles, outputSpec }, null, 2),
       'utf-8',
     );
 

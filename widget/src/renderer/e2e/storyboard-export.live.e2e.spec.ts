@@ -4,14 +4,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
+import { trapSpeechNetwork } from './helpers/speechNetworkTrap';
 
 // Opt-in: uses the installed FFmpeg/ffprobe and cached Kokoro model, with
 // speech/model network transports trapped. It never downloads models or calls
 // a paid/cloud provider. Ordinary CI still runs the export failure contracts.
-test('Studio exports a complete two-scene local movie with timed narration and captions', async ({}, testInfo) => {
+for (const burnSubtitles of [true, false]) {
+test(`Studio exports a complete two-scene local movie with timed narration and captions ${burnSubtitles ? 'on' : 'off'}`, async ({}, testInfo) => {
   test.skip(process.env.HOMEBOT_STUDIO_EXPORT_LIVE !== '1', 'Requires installed FFmpeg and cached Kokoro; enable explicitly.');
   test.setTimeout(360_000);
   const ffmpeg = process.env.HOMEBOT_FFMPEG;
@@ -54,52 +56,36 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     expect(await dismissFirstRun(page)).toBe(true);
     await page.evaluate(() => window.electron.saveSettings({
       narrationEngine: 'kokoro', useCustomLLM: false,
-      permissions: { media_render_storyboard: true },
+      permissions: { media_render_storyboard: true, media_set_output: true },
     }));
+    if (!burnSubtitles) {
+      const created = await page.evaluate(() => window.electron.mediaCreate!({ title: 'Output preference proof', format: 'long' }));
+      expect(created.ok).toBe(true);
+      expect(created.job?.burnSubtitles).toBe(false);
+    }
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    if (!burnSubtitles) {
+      const jobCaptions = page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' });
+      await expect(jobCaptions).not.toBeChecked();
+      // This is a persisted control: its checked state changes after IPC save
+      // and refresh, not synchronously with the click.
+      await jobCaptions.click();
+      await expect.poll(async () => (await page.evaluate(() => window.electron.mediaList!()))
+        .find((job: any) => job.title === 'Output preference proof')?.burnSubtitles).toBe(true);
+      await expect(jobCaptions).toBeChecked();
+    }
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
     await expect(page.locator('.ms-storyboard-meta-path')).toContainText(projectId);
+    const captionChoice = page.getByRole('checkbox', { name: 'Burn captions into storyboard video' });
+    // This pre-existing project has no preference: preserve its legacy output
+    // until the user explicitly changes it through the real Studio control.
+    await expect(captionChoice).toBeChecked();
+    await captionChoice.setChecked(burnSubtitles);
     await page.getByRole('combobox', { name: 'Select Storyboard Scene' }).selectOption('scene_02');
     await expect(page.getByLabel('Narration for shot_01')).toHaveValue(lines[1]);
     await page.getByLabel('Duration for shot_01').fill('4');
-    const trapSpeechNetwork = async () => expect(await app.evaluate((_electron, fixture: { cacheDir?: string; packagePath: string }) => {
-      if (fixture.cacheDir) {
-        const createRequire = (process as any).getBuiltinModule('module').createRequire;
-        const widgetRequire = createRequire(fixture.packagePath);
-        const runtimeRequire = createRequire(widgetRequire.resolve('kokoro-js'));
-        runtimeRequire('@huggingface/transformers').env.cacheDir = fixture.cacheDir;
-      }
-      const state = globalThis as typeof globalThis & { exportSpeechAttempts: string[] };
-      state.exportSpeechAttempts = [];
-      const inspect = (value: any) => {
-        const destination = typeof value === 'string' ? value : String(value?.url || value?.hostname || value?.host || value);
-        if (/huggingface\.co|hf\.co|microsoft\.com|bing\.com|speech-export-control\.invalid/.test(destination)) {
-          state.exportSpeechAttempts.push(destination);
-          throw new Error('Speech/model network request blocked by the local export test');
-        }
-      };
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = (input, init) => { inspect(input); return originalFetch(input, init); };
-      for (const moduleName of ['http', 'https']) {
-        const transport = (process as any).getBuiltinModule(moduleName);
-        for (const method of ['get', 'request']) {
-          const original = transport[method];
-          transport[method] = (...args: any[]) => { inspect(args[0]); return original.apply(transport, args); };
-        }
-      }
-      for (const invoke of [
-        () => globalThis.fetch('https://speech-export-control.invalid'),
-        () => (process as any).getBuiltinModule('http').get({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('http').request({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('https').get({ hostname: 'speech-export-control.invalid' }),
-        () => (process as any).getBuiltinModule('https').request({ hostname: 'speech-export-control.invalid' }),
-      ]) { try { invoke(); } catch { /* Positive controls must be observed. */ } }
-      const count = state.exportSpeechAttempts.length;
-      state.exportSpeechAttempts = [];
-      return count;
-    }, { cacheDir: process.env.HOMEBOT_KOKORO_TEST_CACHE, packagePath: path.resolve('package.json') })).toBe(5);
-    await trapSpeechNetwork();
+    await trapSpeechNetwork(app);
     await page.getByRole('button', { name: /Render Movie/ }).click();
     const result = await Promise.race([
       page.locator('.ms-movie-rendered-banner').waitFor({ state: 'visible', timeout: 180_000 }).then(() => 'ready'),
@@ -107,16 +93,24 @@ test('Studio exports a complete two-scene local movie with timed narration and c
         .then(async () => page.getByRole('region', { name: 'Visual Storyboard Deck' }).getByRole('alert').innerText()),
     ]);
     expect(result).toBe('ready');
-    const reviewJob = (await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.id === `sb_${projectId}`);
-    expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8 });
-    expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', `${projectId}-1080p.mp4`));
+    const exportRecord = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput;
+    const reviewJob = (await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.id === `sbexport_${exportRecord.exportId}`);
+    expect(reviewJob).toMatchObject({ state: 'awaiting_approval', durationSeconds: 8, burnSubtitles });
+    expect(reviewJob?.outputSpec?.variants[0]).toMatchObject({ aspectRatio: '16:9', width: 1920, height: 1080 });
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).burnSubtitles).toBe(burnSubtitles);
+    expect(reviewJob?.renderPath).toBe(path.join(projectDir, 'renders', exportRecord.filename));
+    const reviewState = await page.evaluate(id => window.electron.mediaGetExportState!(id), reviewJob.id);
+    expect(reviewState.sourceRevision).toBeNull(); // Only the board owns its current-source comparison.
+    expect(reviewState.outputs).toEqual([expect.objectContaining({ moviePath: reviewJob.renderPath,
+      sourceRevision: exportRecord.sourceRevision, sha256: exportRecord.sha256 })]);
     await page.getByRole('button', { name: /Review & Publish/ }).click();
     await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator(`[data-job-id="${reviewJob.id}"]`).getByText('Saved movie — current source cannot be verified')).toBeVisible();
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await expect(page.getByLabel('Exported storyboard video')).toBeVisible();
     expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_02', 'shot_01', 'prompt.json'), 'utf8')).durationSec).toBe(4);
     expect(fs.readFileSync(path.join(projectDir, 'scenes', 'scene_01', 'shot_01', 'script.txt'), 'utf8')).toBe(lines[0]);
-    const movie = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
+    const movie = path.join(projectDir, 'renders', exportRecord.filename);
     expect(fs.statSync(movie).size).toBeGreaterThan(10_000);
     const info = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', movie], { windowsHide: true, timeout: 30_000 }).toString());
     const video = info.streams.find((s: any) => s.codec_type === 'video');
@@ -131,7 +125,9 @@ test('Studio exports a complete two-scene local movie with timed narration and c
       const captions = run(['-ss', String(second), '-i', movie, '-vf', 'crop=1600:220:160:760', '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1']);
       let whitePixels = 0;
       for (let p = 0; p < captions.length; p += 3) if (captions[p] > 200 && captions[p + 1] > 200 && captions[p + 2] > 200) whitePixels++;
-      expect(whitePixels).toBeGreaterThan(200);
+      // The caption-on case is the positive control for this image check.
+      if (burnSubtitles) expect(whitePixels).toBeGreaterThan(200);
+      else expect(whitePixels).toBe(0);
       return { second, rgb: [...pixel.subarray(0, 3)], captionWhitePixels: whitePixels, frame };
     });
     expect(samples[0].rgb[2]).toBeGreaterThan(samples[0].rgb[0] + 30);
@@ -151,7 +147,7 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     const events = fs.readFileSync(path.join(profile, 'logs', 'telemetry-events.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(events.some(event => event.event === 'tool_call' && event.details.tool === 'media_render_storyboard' && event.details.outcome === 'success')).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('studio-export-ready.png') });
-    const evidence = { movie, bytes: fs.statSync(movie).size, sha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'), duration: info.format.duration, video, audioRms, samples, speechNetworkAttempts: attempts };
+    const evidence = { movie, burnSubtitles, bytes: fs.statSync(movie).size, sha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'), duration: info.format.duration, video, audioRms, samples, speechNetworkAttempts: attempts };
     fs.writeFileSync(testInfo.outputPath('export-evidence.json'), JSON.stringify(evidence, null, 2));
     console.log('STUDIO_EXPORT_EVIDENCE', JSON.stringify(evidence));
     // Reopen the app surface and select the persisted project. A successful
@@ -159,10 +155,15 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     await app.close();
     ({ app, page } = await launchElectronApp(launchEnv, profile));
     await waitForAppReady(page);
-    await trapSpeechNetwork();
+    await trapSpeechNetwork(app);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    if (!burnSubtitles) {
+      await page.getByRole('tab', { name: /Director Console/ }).click();
+      await expect(page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' })).toBeChecked();
+    }
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
+    await expect(page.getByRole('checkbox', { name: 'Burn captions into storyboard video' })).toBeChecked({ checked: burnSubtitles });
     await expect(page.locator('.ms-movie-rendered-banner')).toContainText(movie);
     await expect(page.getByRole('button', { name: /Review & Publish/ })).toBeEnabled();
     expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
@@ -194,21 +195,25 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     await player.evaluate((video: HTMLVideoElement) => video.pause());
     await player.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('studio-export-preserved.png') });
-    // Correct the edit and replace the movie while its player has held a file
-    // handle. This exercises the Windows release-before-replace path.
+    // Correct the edit and export a new immutable movie while the previous
+    // player's file has been open. The reviewed original must remain unchanged.
     await page.getByLabel('Duration for shot_01').fill('4');
     await page.getByRole('button', { name: /Save Board/ }).click();
     await expect(board.getByRole('status')).toHaveText('Storyboard saved successfully.');
     const previousModified = fs.statSync(movie).mtimeMs;
     await page.getByRole('button', { name: /Render Movie/ }).click();
     await expect(board.getByRole('status')).toContainText('Successfully rendered', { timeout: 180_000 });
-    expect(fs.statSync(movie).mtimeMs).toBeGreaterThan(previousModified);
+    const replacementRecord = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput;
+    const replacementMovie = path.join(projectDir, 'renders', replacementRecord.filename);
+    expect(replacementMovie).not.toBe(movie);
+    expect(fs.statSync(movie).mtimeMs).toBe(previousModified);
+    expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
     await expect(player).toBeVisible();
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => ({ width: video.videoWidth, duration: video.duration })))
       .toEqual({ width: 1920, duration: 8 });
     expect(await app.evaluate(() => (globalThis as any).exportSpeechAttempts)).toEqual([]);
     fs.writeFileSync(testInfo.outputPath('export-evidence.json'), JSON.stringify({
-      ...evidence, finalSha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'),
+      ...evidence, replacementMovie, finalSha256: createHash('sha256').update(fs.readFileSync(replacementMovie)).digest('hex'),
       sceneCount: 2, lastSceneEditsSavedByRender: true, fullEndingPlayedWithoutLoop: true, reviewQueueReachable: true,
       reopenedAfterRestart: true, playerDecodedAndPlayed: true, failedReplacementPreserved: true, replacementWithPlayerLoaded: true,
     }, null, 2));
@@ -217,3 +222,4 @@ test('Studio exports a complete two-scene local movie with timed narration and c
     // Retain this isolated fixture and finished movie for inspection.
   }
 });
+}

@@ -1,4 +1,7 @@
 // ── Pro licensing / entitlements (renderer-facing mirror of src/entitlements + src/licensing) ──
+import type { StudioOutputSpec, StudioMovieResult } from './media-output';
+import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
+
 export type LicenseTier = 'free' | 'pro';
 
 export interface UpgradePrompt {
@@ -206,6 +209,8 @@ export interface CustomLLMConfig {
 export interface Settings {
   /** Saved narration provider used by Studio and the shared speech adapter. */
   narrationEngine?: 'edge' | 'kokoro';
+  /** Paid Storyboard frame providers the owner confirmed, id → ISO time. Written only by the Storyboard UI. */
+  paidFrameConfirmations?: Record<string, string>;
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
@@ -516,6 +521,7 @@ export interface ElectronAPI {
   // Every mutation returns { ok, job } or { ok: false, error } so the panel can
   // show the state machine's own refusal text rather than inventing one.
   mediaList?: () => Promise<any[]>;
+  mediaGetExportState?: (id: string) => Promise<import('./media-output').StudioExportState>;
   youtubeConnectionStatus?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeImportCredentials?: () => Promise<import('./youtube-connection').YouTubeConnectionReply>;
   youtubeConnect?: (options?: { upload?: boolean }) => Promise<import('./youtube-connection').YouTubeConnectionReply>;
@@ -533,13 +539,13 @@ export interface ElectronAPI {
     };
     error?: string;
   }>;
-  mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+  mediaCreate?: (input: { title: string; format?: 'short' | 'long'; brief?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
-  mediaApprove?: (id: string, note?: string) =>
+  mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaReject?: (id: string, revise: boolean, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -613,6 +619,62 @@ export interface ElectronAPI {
     renderPath?: string;
     error?: string;
   }>;
+  mediaAncientPathwaysGetAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    characters?: Array<{
+      slug: string;
+      name: string;
+      totalPoses: number;
+      handPlacedMouthAnchors: number;
+      headBoxes: number;
+      suggestedMouthAnchors: number;
+      missingMouthAnchors: number;
+    }>;
+    selected?: {
+      slug: string;
+      name: string;
+      manifest: any;
+      groups: string[];
+      mouthVisemes: Record<string, string>;
+      stats: {
+        totalPoses: number;
+        handPlacedMouthAnchors: number;
+        headBoxes: number;
+        suggestedMouthAnchors: number;
+        missingMouthAnchors: number;
+      };
+    };
+    error?: string;
+  }>;
+  mediaAncientPathwaysGetSprite?: (character: string, group: string, pose: string) => Promise<{
+    ok: boolean;
+    dataUrl?: string;
+    character?: string;
+    group?: string;
+    pose?: string;
+    error?: string;
+  }>;
+  /** Replacing an existing hand-placed box returns code CONFIRM_OVERWRITE unless confirmOverwrite is true. */
+  mediaAncientPathwaysSaveAnchor?: (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+    confirmOverwrite?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    message?: string;
+    box?: [number, number, number, number];
+    code?: 'CONFIRM_OVERWRITE';
+    existingBox?: [number, number, number, number];
+    error?: string;
+  }>;
+  mediaAncientPathwaysSuggestAnchors?: (character?: string) => Promise<{
+    ok: boolean;
+    message?: string;
+    error?: string;
+  }>;
   onMediaAncientPathwaysProgress?: (cb: (p: {
     jobId: string;
     episodeId: string;
@@ -666,23 +728,23 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
+  /** Each way to make Storyboard frames, checked now; never generates. */
+  mediaStoryboardFrameProviders?: () => Promise<{ ok: boolean; providers?: StoryboardFrameProviderStatus[]; error?: string }>;
+  /** Save this project's frame provider choice. */
+  mediaStoryboardSetFrameProvider?: (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) => Promise<{ ok: boolean; frameProvider?: StoryboardFrameProviderId; error?: string }>;
+  /** Record the owner's first-use confirmation for a paid frame provider. */
+  mediaStoryboardConfirmPaidFrames?: (frameProvider: StoryboardFrameProviderId) => Promise<{ ok: boolean; error?: string }>;
   mediaStoryboardGenerateFrame?: (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => Promise<{
     ok: boolean;
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[] }) => Promise<{
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;
   }>;
-  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => Promise<{
-    ok: boolean;
-    moviePath?: string;
-    durationSec?: number;
-    totalShots?: number;
-    error?: string;
-  }>;
+  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) => Promise<StudioMovieResult>;
   mediaStoryboardBreakdown?: (args: {
     script: string;
     genre?: string;
@@ -690,6 +752,7 @@ export interface ElectronAPI {
     title?: string;
     projectId?: string;
     autoGenerateFrames?: boolean;
+    frameProvider?: StoryboardFrameProviderId;
   }) => Promise<{
     ok: boolean;
     projectId?: string;
@@ -698,6 +761,8 @@ export interface ElectronAPI {
     shots?: Array<Record<string, any>>;
     totalDurationSec?: number;
     projectDir?: string;
+    framesGenerated?: number;
+    framesSkipped?: string;
     error?: string;
   }>;
   mediaSeriesSettingsList?: (seriesId: string) => Promise<{
@@ -910,7 +975,7 @@ export interface ElectronAPI {
   // Analytics summary (aggregated conversation + event stats)
   getAnalyticsSummary?: () => Promise<{ success: boolean; summary?: any; error?: string }>;
   // Shell file helpers
-  showInFolder?: (filePath: string) => void;
+  showInFolder?: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   openFile?: (filePath: string) => void;
   openExternalUrl?: (url: string) => Promise<{ success: boolean; error?: string }>;
   // MCP server management

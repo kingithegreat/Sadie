@@ -2,7 +2,7 @@
  * multi-plane-stage.ts — Shared Zero-VRAM 2.5D Multi-Plane Staging Logic.
  *
  * Implements pure mathematical parallax, contact shadow geometry, and CSS filter
- * generation for Remotion and HomeBot's review players. Runs 100% on CPU with zero GPU cost.
+ * generation for the FFmpeg render path and HomeBot's review players. Runs 100% on CPU with zero GPU cost.
  */
 
 import type React from 'react';

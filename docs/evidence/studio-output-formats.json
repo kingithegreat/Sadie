@@ -1,0 +1,233 @@
+{
+  "finalRun": {
+    "sourceCommit": "a49c1a8b1cc418cad3b6bfdad3dbf424350f5946",
+    "result": "14 passed in 444.94687 seconds; zero failures, skips or retries",
+    "artifactRoot": ".kilo/artifacts/studio-formats-final",
+    "archivedVideos": 12,
+    "archiveHashesVerified": true,
+    "originalEightFormatHashesUnchanged": true,
+    "playbackCheck": "After restart, start playback, seek to 0.25s before the ending, and verify ended without loop. Storyboard export QA separately decodes the complete file.",
+    "ordinaryJobCases": [
+      {
+        "case": "studio-job-format.live.e2e-4f2b9--real-single-image-encoding",
+        "sha256": "ce5e204b83db2721923b323081365f46db9c3f97ac6bf4e89057005bf98b87e3",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "frames": "90",
+        "durationSeconds": 3,
+        "sourceAudioSeconds": 3,
+        "captions": false,
+        "archivedFile": "exports/studio-job-format.live.e2e-4f2b9--real-single-image-encoding.mp4"
+      },
+      {
+        "case": "studio-job-format.live.e2e-7eead--real-single-image-encoding",
+        "sha256": "1e6dbda9a578001ef52e9c3627eeff6d5b3b01619dd9711e7e707466f1fe5f26",
+        "width": 720,
+        "height": 1280,
+        "fps": "30/1",
+        "frames": "105",
+        "durationSeconds": 3.5,
+        "sourceAudioSeconds": 3.49,
+        "captions": true,
+        "archivedFile": "exports/studio-job-format.live.e2e-7eead--real-single-image-encoding.mp4"
+      }
+    ]
+  },
+  "sourceCommit": "d6af04289d6a3bfd4a9711a9542e2fe175b876de",
+  "environment": "Windows Electron out/main/index.js build; installed FFmpeg n9.0; isolated test profiles",
+  "test": "widget/src/renderer/e2e/studio-output-formats.live.e2e.spec.ts",
+  "result": "8 passed in 5.1 minutes, retries disabled",
+  "artifactRoot": ".kilo/artifacts/studio-formats-d6af042",
+  "fps": 30,
+  "sampleAspectRatio": "1:1",
+  "codec": "h264",
+  "pixelFormat": "yuv420p",
+  "limits": "Unnarrated diagnostic cards, not approved artwork/pilot or installed release. Each case is one selected output; not multi-output execution or stage composition acceptance.",
+  "cases": [
+    {
+      "durationIntent": "short",
+      "aspectRatio": "9:16",
+      "width": 720,
+      "height": 1280,
+      "framing": "fit",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "3f2e5da3afc4c232e0600266e6c73fb20f704c807a51cce10cd0c560255ae537",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 304,
+        "right": 415,
+        "top": 584,
+        "bottom": 695,
+        "count": 12544
+      },
+      "corner": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "durationIntent": "short",
+      "aspectRatio": "9:16",
+      "width": 1080,
+      "height": 1920,
+      "framing": "crop",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "87ed905b02a2c0e4329193ae6a9f44d96def42975789f6e8e2b08d3747077b1c",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 341,
+        "right": 738,
+        "top": 761,
+        "bottom": 1158,
+        "count": 157625
+      },
+      "corner": [
+        21,
+        75,
+        125
+      ]
+    },
+    {
+      "durationIntent": "short",
+      "aspectRatio": "16:9",
+      "width": 1280,
+      "height": 720,
+      "framing": "fit",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 565,
+        "right": 714,
+        "top": 286,
+        "bottom": 433,
+        "count": 21906
+      },
+      "corner": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "durationIntent": "short",
+      "aspectRatio": "1:1",
+      "width": 1080,
+      "height": 1080,
+      "framing": "fit",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "328ba6f25fb95bc20652da53078399544fad637b7e0c18a0f0cacffbe3f7cc12",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 456,
+        "right": 623,
+        "top": 455,
+        "bottom": 622,
+        "count": 28224
+      },
+      "corner": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "durationIntent": "long",
+      "aspectRatio": "16:9",
+      "width": 1280,
+      "height": 720,
+      "framing": "fit",
+      "durationSeconds": 66,
+      "frames": 1980,
+      "sha256": "cf27652311dfb6bcbe8b2a58768fc6dddb8e4047cc08dbcbb7be962caf70cbb6",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 565,
+        "right": 714,
+        "top": 286,
+        "bottom": 433,
+        "count": 21906
+      },
+      "corner": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "durationIntent": "short",
+      "aspectRatio": "1:1",
+      "width": 720,
+      "height": 720,
+      "framing": "crop",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "bd8a8349b73a6b6f23dd0bdc46b3e3a249bdacd9a94c01b47fcd8dfeeb17ec9e",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 286,
+        "right": 433,
+        "top": 286,
+        "bottom": 433,
+        "count": 21901
+      },
+      "corner": [
+        21,
+        75,
+        125
+      ]
+    },
+    {
+      "durationIntent": "short",
+      "aspectRatio": "16:9",
+      "width": 1920,
+      "height": 1080,
+      "framing": "crop",
+      "durationSeconds": 4,
+      "frames": 120,
+      "sha256": "c88dd6a87a72cac842b4536592380f75fb6af88e1c58d913d460a8ea0ab7fac5",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 811,
+        "right": 1108,
+        "top": 391,
+        "bottom": 688,
+        "count": 88800
+      },
+      "corner": [
+        21,
+        75,
+        125
+      ]
+    },
+    {
+      "durationIntent": "long",
+      "aspectRatio": "9:16",
+      "width": 720,
+      "height": 1280,
+      "framing": "fit",
+      "durationSeconds": 66,
+      "frames": 1980,
+      "sha256": "8d762c80879e8d05c195fc78ecf4bb8cb64128c6cc804cf35f9394c5dc2af892",
+      "reopenedAndPlayed": true,
+      "squareMarker": {
+        "left": 304,
+        "right": 415,
+        "top": 584,
+        "bottom": 695,
+        "count": 12544
+      },
+      "corner": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

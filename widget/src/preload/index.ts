@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
+import type { StudioOutputSpec } from '../shared/media-output';
+import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -758,6 +760,7 @@ const electronAPI: ElectronAPI = {
     return () => ipcRenderer.removeListener('homebot:modules:changed', listener);
   },
   mediaList: async () => ipcRenderer.invoke('homebot:media:list'),
+  mediaGetExportState: async (id: string) => ipcRenderer.invoke('homebot:media:export-state', id),
   youtubeConnectionStatus: async () => ipcRenderer.invoke('homebot:media:youtube:status'),
   youtubeImportCredentials: async () => ipcRenderer.invoke('homebot:media:youtube:import'),
   youtubeConnect: async () => ipcRenderer.invoke('homebot:media:youtube:connect'),
@@ -768,14 +771,14 @@ const electronAPI: ElectronAPI = {
   youtubeUpload: async (jobId: string, metadata: import('../shared/youtube-connection').YouTubeVideoMetadata) =>
     ipcRenderer.invoke('homebot:media:youtube:upload', jobId, metadata),
   mediaParseFeed: async (url: string) => ipcRenderer.invoke('homebot:media:parse-feed', url),
-  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string }) =>
+  mediaCreate: async (input: { title: string; format?: 'short' | 'long'; brief?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render', opts?: { voice?: string; image?: string; visuals?: string }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
-  mediaApprove: async (id: string, note?: string) =>
-    ipcRenderer.invoke('homebot:media:approve', id, note),
+  mediaApprove: async (id: string, note?: string, expectedRenderPath?: string) =>
+    ipcRenderer.invoke('homebot:media:approve', id, note, expectedRenderPath),
   mediaReject: async (id: string, revise: boolean, note?: string) =>
     ipcRenderer.invoke('homebot:media:reject', id, revise, note),
   mediaFfmpegStatus: async () => ipcRenderer.invoke('homebot:media:ffmpeg-status'),
@@ -802,6 +805,20 @@ const electronAPI: ElectronAPI = {
     name: string;
   }) =>
     ipcRenderer.invoke('homebot:media:ancient-pathways-showrunner', options),
+  mediaAncientPathwaysGetAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-anchors', character),
+  mediaAncientPathwaysGetSprite: async (character: string, group: string, pose: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-get-sprite', character, group, pose),
+  mediaAncientPathwaysSaveAnchor: async (args: {
+    character: string;
+    group: string;
+    pose: string;
+    anchorType: 'mouth' | 'head';
+    box: [number, number, number, number];
+    confirmOverwrite?: boolean;
+  }) => ipcRenderer.invoke('homebot:media:ancient-pathways-save-anchor', args),
+  mediaAncientPathwaysSuggestAnchors: async (character?: string) =>
+    ipcRenderer.invoke('homebot:media:ancient-pathways-suggest-anchors', character),
   onMediaAncientPathwaysProgress: (cb: (p: any) => void) => {
     const listener = (_ev: IpcRendererEvent, p: any) => cb(p);
     ipcRenderer.on('homebot:media:ancient-pathways-progress', listener);
@@ -822,13 +839,19 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:list'),
   mediaStoryboardGet: async (projectId: string) =>
     ipcRenderer.invoke('homebot:media:storyboard:get', projectId),
+  mediaStoryboardFrameProviders: async () =>
+    ipcRenderer.invoke('homebot:media:storyboard:frame-providers'),
+  mediaStoryboardSetFrameProvider: async (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:set-frame-provider', args),
+  mediaStoryboardConfirmPaidFrames: async (frameProvider: StoryboardFrameProviderId) =>
+    ipcRenderer.invoke('homebot:media:storyboard:confirm-paid-frames', frameProvider),
   mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
-  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[] }) =>
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
-  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) =>
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
-  mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) =>
+  mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
   mediaSeriesSettingsList: async (seriesId: string) =>
     ipcRenderer.invoke('homebot:media:series-settings:list', seriesId),

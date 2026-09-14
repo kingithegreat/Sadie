@@ -50,8 +50,9 @@ test('a rendered video can be watched at the gate that approves it', async () =>
 
   // The point of showing it: this is the same row that approves it.
   expect(screen.getByText('Approve')).toBeTruthy();
-  // Celebratory ready banner and progress stepper provide clear guidance
-  expect(screen.getByText(/Your episode is ready to watch!/)).toBeInTheDocument();
+  // Watching, approval and upload are separate; an old path is not freshness evidence.
+  expect(screen.getByText('Watch the selected movie.')).toBeInTheDocument();
+  expect(screen.getByText('Saved movie — source revision unknown')).toBeInTheDocument();
   expect(screen.getByLabelText('Progress: Step 4 of 4')).toBeInTheDocument();
 });
 

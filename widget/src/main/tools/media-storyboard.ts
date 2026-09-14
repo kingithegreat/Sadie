@@ -12,21 +12,58 @@ import * as path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
 import {
   MovieProjectRunner,
-  createStandardRouter,
   type MovieProject,
   type SceneManifest,
 } from '../movie/project-runner';
+import {
+  STORYBOARD_FRAME_SIZE,
+  hasPaidFrameConfirmation,
+  routerForStoryboardFrame,
+  storyboardFrameRequestPolicy,
+} from '../movie/storyboard-frame-providers';
+import { isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
 import {
   ShotStatus,
   type ShotBibleEntry,
   type GenerationRequest,
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
+import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
+import { createStudioExportReview } from '../movie/studio-export-review';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
   if (custom && fs.existsSync(custom)) return custom;
   return path.join(os.homedir(), 'Desktop', 'homebot-movie-projects');
+}
+
+/** A missing or unreadable JSON file reads as empty; callers validate what they use. */
+function readProjectMeta(file: string): Record<string, any> {
+  try { return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : {}; } catch { return {}; }
+}
+
+/**
+ * Save which provider makes this storyboard's frame images. Called by the
+ * Storyboard picker (where each option's cost and watermark are shown) and the
+ * Auto-Director. Only listed options are accepted, and saving a paid choice
+ * grants nothing: it still needs the owner's confirmation in the Storyboard.
+ */
+export async function setStoryboardFrameProvider(args: { projectId?: unknown; frameProvider?: unknown }): Promise<ToolResult> {
+  const projectId = String(args?.projectId ?? '').trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
+  if (!isStoryboardFrameProviderId(args?.frameProvider)) return { success: false, error: 'Choose one of the listed ways to make frame images.' };
+  const metaPath = path.join(getStoryboardsRootDir(), projectId, 'project.json');
+  if (!fs.existsSync(metaPath)) return { success: false, error: `Storyboard project not found: ${projectId}` };
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const staged = `${metaPath}.saving`;
+    fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: args.frameProvider, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    fs.renameSync(staged, metaPath);
+    return { success: true, result: { frameProvider: args.frameProvider } };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
 }
 
 export interface StoryboardShotInput {
@@ -78,6 +115,8 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         type: 'boolean',
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
+      burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
+      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
     },
     required: ['projectId', 'title'],
   },
@@ -102,6 +141,8 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       freeOnly: args.freeOnly !== false,
+      burnSubtitles: resolveBurnSubtitles(args.burnSubtitles, false),
+      outputSpec: resolveStudioOutputSpec(args.outputSpec),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
@@ -308,12 +349,10 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
     const scenes = assembleStoryboardScenes(projectDir);
 
     // A saved file is available for review, not a new publication approval.
-    const moviePath = path.join(projectDir, 'renders', `${projectId}-1080p.mp4`);
-    let renderedMoviePath: string | null = null;
-    try {
-      const stat = fs.lstatSync(moviePath);
-      if (stat.isFile() && stat.size > 0) renderedMoviePath = moviePath;
-    } catch { /* No saved export yet. */ }
+    const savedOutput = projectMeta.latestSuccessfulOutput;
+    const filename = savedOutput === undefined ? `${projectId}-1080p.mp4` : savedOutput?.filename;
+    const renderedMoviePath = resolveStoryboardExportPath(projectDir, filename);
+    const exportState = await readStoryboardExportState(projectDir, projectMeta, scenes);
 
     return {
       success: true,
@@ -322,6 +361,8 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
         scenes,
         projectDir,
         renderedMoviePath,
+        exportState,
+        ...(renderedMoviePath && savedOutput ? { renderedOutput: savedOutput } : {}),
       },
     };
   } catch (err: any) {
@@ -399,33 +440,38 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
       return { success: false, error: 'No prompt available for shot frame generation.' };
     }
 
-    const router = createStandardRouter();
-    const req: GenerationRequest = {
-      kind: 'image',
-      prompt,
-      width: 1024,
-      height: 576,
-      shotId,
-      shotDir,
-      freeOnly: true,
-      allowWatermark: false,
-      allowDeferred: false,
-    };
+    // Frames are made only by the provider the owner chose for this project —
+    // never by automatic routing, which could reach a paid or watermarking service.
+    const projectMetaPath = path.join(rootDir, projectId, 'project.json');
+    const chosen = readProjectMeta(projectMetaPath).frameProvider;
+    if (!isStoryboardFrameProviderId(chosen)) {
+      return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+    }
+    const option = storyboardFrameProvider(chosen);
+    if (option.paid && !hasPaidFrameConfirmation(option.id)) {
+      return { success: false, error: `${option.label} costs money. Confirm paid use in the Storyboard before generating.` };
+    }
 
-    const { decision, result: res } = await router.generate(req);
+    const policy = storyboardFrameRequestPolicy(option);
+    const req: GenerationRequest = { kind: 'image', prompt, ...STORYBOARD_FRAME_SIZE, shotId, shotDir, ...policy };
+
+    const { decision, result: res } = await routerForStoryboardFrame(option.id).generate(req, { freeOnly: policy.freeOnly });
     if (res.status === 'failed') {
-      return { success: false, error: res.error || `Frame generation failed: ${decision.summary}` };
+      const rejected = decision.rejected[0]?.reason;
+      return { success: false, error: rejected ? `${option.label}: ${rejected}` : (res.error || `Frame generation failed: ${decision.summary}`) };
     }
 
     const imgPath = res.status === 'done' && res.files && res.files.length > 0 ? res.files[0]! : '';
 
     // Update status.json
     const statusFile = path.join(shotDir, 'status.json');
+    const previousAttempts = Number(readProjectMeta(statusFile).attempts);
     const statusData: any = {
       shotId,
       status: ShotStatus.IMAGE_GENERATED,
-      attempts: 1,
+      attempts: Number.isFinite(previousAttempts) && previousAttempts > 0 ? previousAttempts + 1 : 1,
       updatedAt: new Date().toISOString(),
+      frameProvider: option.id,
       provider: res.provider || decision.chosen?.providerId || 'free-router',
       // The exact prompt this frame was generated from — lets assembleScene
       // flag the frame as stale if the shot's prompt changes afterward.
@@ -473,6 +519,8 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
     properties: {
       projectId: { type: 'string', description: 'ID of the storyboard project.' },
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
+      burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
+      outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
       shots: {
         type: 'array',
         description: 'Ordered array of shot edits to persist.',
@@ -493,6 +541,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     return { success: false, error: 'Choose a valid storyboard project and scene.' };
   }
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
+  if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
+    return { success: false, error: 'Choose whether captions are on or off.' };
+  }
   const shots = args.shots;
   const shotIds = shots.map((shot: any) => shot?.shotId);
   if (shotIds.some((id: unknown) => typeof id !== 'string' || !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(id)) || new Set(shotIds).size !== shotIds.length) {
@@ -504,6 +555,8 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   }
 
   try {
+    // Validate the complete output contract before mutating any shot or project file.
+    const outputSpec = args.outputSpec === undefined ? undefined : resolveStudioOutputSpec(args.outputSpec);
     const rootDir = getStoryboardsRootDir();
     const projectDir = path.join(rootDir, projectId);
     const sceneDir = path.join(projectDir, 'scenes', sceneId);
@@ -513,6 +566,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     }
 
     const sceneJsonPath = path.join(sceneDir, 'scene.json');
+    const metaPath = path.join(projectDir, 'project.json');
+    // Parse before touching shot files; preserve unrelated project metadata.
+    const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : {};
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
 
@@ -543,6 +599,16 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
 
     sceneMeta.shots = shotIds;
     fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
+    if (projectMeta) {
+      const stagedMeta = `${metaPath}.saving`;
+      fs.writeFileSync(stagedMeta, JSON.stringify({
+        ...projectMeta,
+        ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
+        ...(outputSpec !== undefined ? { outputSpec } : {}),
+        updatedAt: new Date().toISOString(),
+      }, null, 2), 'utf-8');
+      fs.renameSync(stagedMeta, metaPath);
+    }
     return { success: true, result: { message: 'Storyboard updated successfully.' } };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
@@ -552,9 +618,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
 export const mediaRenderStoryboardDef: ToolDefinition = {
   name: 'media_render_storyboard',
   description:
-    'Renders a complete visual storyboard sequence into a broadcast-quality 1080p MP4 movie using local FFmpeg, ' +
-    'per-shot Ken Burns motion (slow push in, pan, tilt), voiceover narration (Edge or Kokoro TTS), and burned subtitles. ' +
-    'Strictly $0.00 spend invariant.',
+    'Renders a complete visual storyboard into an MP4 using local FFmpeg and saved output settings. ' +
+    'Includes voiceover narration and optional captions; crop framing supports Ken Burns motion, while fit retains the whole image. ' +
+    'Does not approve, upload or publish the movie.',
   parameters: {
     type: 'object',
     properties: {
@@ -572,8 +638,10 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       },
       burnSubtitles: {
         type: 'boolean',
-        description: 'Whether to burn aligned dialogue/action subtitles into the video (default: true).',
+        description: 'Optional override for the saved project caption choice. New projects default to off; legacy projects retain captions until changed.',
       },
+      outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
+      variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
     },
     required: ['projectId'],
   },
@@ -590,21 +658,45 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     projectId,
     sceneId: (args.sceneId as string)?.trim(),
     motion: args.motion !== false,
-    burnSubtitles: args.burnSubtitles !== false,
+    burnSubtitles: args.burnSubtitles,
+    variantId: args.variantId,
+    ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
   });
 
-  if (!res.ok) {
+  if (!res.ok && !res.variants) {
     return {
       success: false,
       error: res.error || 'Failed to render storyboard movie.',
     };
   }
 
+  const variants = [];
+  for (const result of res.variants ?? [res]) {
+    const reviewed = result.ok ? await registerStoryboardReview(projectId, (args.sceneId as string)?.trim(), result) : result;
+    variants.push({ ...result, ...reviewed });
+  }
+  const selected = variants.find(result => result.ok);
+  return {
+    success: res.ok,
+    ...(res.ok ? {} : { error: res.error || 'One or more formats did not finish. Successful movies are kept.' }),
+    result: { projectId, ...selected,
+      ...(res.variants ? { variants } : {}),
+      message: res.variants ? `${variants.filter(result => result.ok).length} of ${variants.length} selected formats exported. Review each saved movie separately.`
+        : `Rendered movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
+      handoff: { mode: 'media', payload: { workspace: 'storyboard', projectId, renderedMoviePath: selected?.moviePath } },
+    },
+  };
+};
+
+async function registerStoryboardReview(projectId: string, sceneId: string | undefined, res: import('../movie/storyboard-renderer').StoryboardRenderResult) {
   // Bridge rendered storyboard movie into primary MediaJob approval queue
-  const sceneId = (args.sceneId as string)?.trim();
   // Separate namespaces and a length-prefixed project ID avoid collisions
   // between complete movies and independently exported scenes.
-  let jobId: string | undefined = sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  let jobId: string | undefined = res.renderedOutput ? `sbexport_${res.renderedOutput.exportId}`
+    : sceneId ? `sbscene_${projectId.length}_${projectId}_${sceneId}` : `sb_${projectId}`;
+  const exportSpec = res.outputSpec ?? res.renderedOutput?.outputSpec;
+  const variant = exportSpec?.variants[0];
+  const outputLabel = variant ? `${variant.width} × ${variant.height} ${variant.aspectRatio}` : '1080p';
   let warning: string | undefined;
   try {
     const { readJobs, writeJobs } = await import('./media');
@@ -619,11 +711,15 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     const jobs = readJobs();
     const existing = jobs.find(j => j.id === jobId);
     const title = projectMeta.title || projectMeta.name || projectId;
-    const job: any = {
+    const job: any = res.renderedOutput ? createStudioExportReview({ source: { type: 'storyboard', id: projectId },
+      title, moviePath: res.moviePath!, output: res.renderedOutput,
+      brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)` }, existing) : {
       id: jobId,
       title: `[Storyboard] ${title}`,
-      format: (res.durationSec && res.durationSec > 60) ? 'long' : 'short',
+      format: exportSpec?.durationIntent ?? ((res.durationSec && res.durationSec > 60) ? 'long' : 'short'),
       state: 'awaiting_approval',
+      burnSubtitles: res.burnSubtitles,
+      ...(exportSpec ? { outputSpec: exportSpec } : {}), renderedOutput: res.renderedOutput,
       renderPath: res.moviePath,
       durationSeconds: res.durationSec,
       brief: projectMeta.description || `Rendered from Storyboard Deck (${res.totalShots} shots)`,
@@ -636,7 +732,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
           from: existing?.state || 'media_production',
           to: 'awaiting_approval',
           by: 'storyboard_render',
-          note: res.moviePath ? `Rendered 1080p movie: ${path.basename(res.moviePath)}` : 'Rendered 1080p movie',
+          note: res.moviePath ? `Rendered ${outputLabel} movie: ${path.basename(res.moviePath)}` : `Rendered ${outputLabel} movie`,
         },
       ],
     };
@@ -653,27 +749,8 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     console.warn('[Storyboard] Failed to register MediaJob in approval queue:', e);
   }
 
-  return {
-    success: true,
-    result: {
-      projectId,
-      jobId,
-      ...(warning ? { warning } : {}),
-      moviePath: res.moviePath,
-      durationSec: res.durationSec,
-      totalShots: res.totalShots,
-      message: `Rendered 1080p movie (${res.durationSec}s, ${res.totalShots} shots) successfully! Saved to: ${res.moviePath}`,
-      handoff: {
-        mode: 'media',
-        payload: {
-          workspace: 'storyboard',
-          projectId,
-          renderedMoviePath: res.moviePath,
-        },
-      },
-    },
-  };
-};
+  return { ...res, jobId, ...(warning ? { warning } : {}) };
+}
 
 // --- 6. media_breakdown_script ----------------------------------------------
 
@@ -711,7 +788,12 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       },
       autoGenerateFrames: {
         type: 'boolean',
-        description: 'Whether to immediately trigger AI frame generation for all directed shots (default: false).',
+        description: 'Whether to immediately make frame images for all directed shots (default: false). Needs frameProvider.',
+      },
+      frameProvider: {
+        type: 'string',
+        enum: ['online', 'this-pc'],
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark) or "this-pc" (local ComfyUI). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],
@@ -732,6 +814,7 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
     title: args.title as string,
     projectId: args.projectId as string,
     autoGenerateFrames: args.autoGenerateFrames === true,
+    frameProvider: typeof args.frameProvider === 'string' ? args.frameProvider : undefined,
   });
 
   if (!res.ok) {
@@ -752,7 +835,10 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
       projectDir: res.projectDir,
       // Preserve the director's complete shot contract for the legacy Studio IPC facade.
       shots: res.shots,
-      message: `Directed script into storyboard "${res.title}" (${res.genre}) with ${res.shots?.length || 0} shots! Total duration: ${res.totalDurationSec}s.`,
+      ...(res.framesGenerated !== undefined ? { framesGenerated: res.framesGenerated } : {}),
+      ...(res.framesSkipped ? { framesSkipped: res.framesSkipped } : {}),
+      message: `Directed script into storyboard "${res.title}" (${res.genre}) with ${res.shots?.length || 0} shots! Total duration: ${res.totalDurationSec}s.` +
+        (res.framesSkipped ? ` Frames were not made: ${res.framesSkipped}` : res.framesGenerated ? ` Made ${res.framesGenerated} frame(s).` : ''),
       handoff: {
         mode: 'media',
         payload: {

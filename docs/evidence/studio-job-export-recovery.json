@@ -1,0 +1,831 @@
+{
+  "checkpoint": "STUDIO-04 checkpoint 2 — ordinary-job export recovery and identity",
+  "integration": {
+    "pr": "https://github.com/kingithegreat/Sadie/pull/322",
+    "publishedCommit": "beb6324590dbbd5a08d11803fc303e93d965d05f",
+    "mergeCommit": "4da4532848cf2b8afa5edf5ffd512300c6494331",
+    "mergedAt": "2026-09-13T02:44:17Z",
+    "identicalFullTree": "c081aed565aa27f837d02766e7b996458a32d7d8",
+    "requiredContexts": [
+      "build",
+      "duplicate-export-guard",
+      "ESLint (React Hooks)",
+      "Permissions smoke test",
+      "widget",
+      "e2e-all"
+    ],
+    "allRequiredPresentAndSuccessful": true,
+    "applicationCi": [
+      34732986810,
+      34732995509
+    ],
+    "applicationCiCounts": {
+      "widget": 4254,
+      "widgetSkipped": 19,
+      "root": 227,
+      "overlays": 13
+    },
+    "matrixRun": 34732995519,
+    "matrix": {
+      "executedPerOs": 56,
+      "optInSkippedPerOs": 14,
+      "linux": [
+        24,
+        21,
+        11
+      ],
+      "windows": [
+        24,
+        21,
+        11
+      ],
+      "macosDirect": [
+        24,
+        20,
+        11
+      ],
+      "macosFlaky": 1,
+      "qualification": "Right-click menu x-distance 303.1 exceeded existing <80 check; passed existing retry. All nine outer attempts 1 / exit 0. No source or thresholds changed."
+    }
+  },
+  "sourceCommit": "eec67961446d973ed9493cef2075dc459b4064bf",
+  "runtime": "Windows Electron development bundle, not an installed release",
+  "mainBundleSha256": "8e6662b5d37a3cd3060efcbab4ce140bcb9ad90dc68159c83e00ca1fdf71ef97",
+  "artifactDirectory": ".kilo/artifacts/studio-job-recovery-eec6796",
+  "localChecks": {
+    "widgetTests": 4254,
+    "widgetSuites": 306,
+    "widgetSkippedTests": 19,
+    "widgetSeconds": 99.055,
+    "rootTests": 227,
+    "rootSuites": 18,
+    "rootScope": "Root source unchanged after the 227-test check",
+    "typechecks": "Root and widget pass",
+    "lintErrors": 0,
+    "existingLintWarnings": 8,
+    "docs": {
+      "preload": 218,
+      "rendererToMain": 167,
+      "mainToRenderer": 33
+    },
+    "duplicateGuardNewFiles": 1
+  },
+  "userStory": "Retry a failed ordinary-job export, recover after restart, and inspect the exact saved movie without losing a previous success or approving a different output.",
+  "boundaries": [
+    {
+      "boundary": "Visible UI to guarded IPC",
+      "evidence": "Retry export with saved inputs; selected history; exact-path approval rejected; existing sender/permission gateway tests"
+    },
+    {
+      "boundary": "IPC to render and persistent data",
+      "evidence": "Actual FFmpeg flat-content QA failure, distinct attempt/diagnostic and unchanged successful pointer; frozen byte-based input identity and re-read saves"
+    },
+    {
+      "boundary": "Stored data to renderer",
+      "evidence": "Restart, project A/B, exact saved history file and slides, full three-second playback, accurate source/attempt status"
+    },
+    {
+      "boundary": "Review to exact output",
+      "evidence": "Historical Approve disabled, stale-path request refused, state remains awaiting_approval; immutable storyboard review metadata preserved"
+    },
+    {
+      "boundary": "Filesystem launch adapter",
+      "evidence": "Actual preload/IPC/path validation; Electron shell trapped to avoid launching unrelated desktop apps"
+    }
+  ],
+  "additionalUnitCoverage": [
+    "Legacy immutable history",
+    "No-op timestamp versus changed source bytes",
+    "Audio/captions/image/music snapshots and unchanged scene reuse",
+    "Concurrent saved edits, project A/B and removed jobs",
+    "Duplicate same-process render lock",
+    "Interrupted persisted attempt recovery without autorun",
+    "Known script/narration mismatch and Unknown old provenance",
+    "Encoder/QA/metadata write failure preservation",
+    "Late UI history response cannot replace another selected job",
+    "Missing Reveal file gives a visible error",
+    "Independent storyboard review-source contract"
+  ],
+  "limitations": [
+    "Diagnostic stills, synthetic audio and cached local speech, not an approved creative pilot",
+    "Not an installed-release, owner-running-preview or complete Studio acceptance",
+    "Process-local render lock, not cross-process scheduling",
+    "Interruption unit proof uses persisted records, not a forced mid-encode process kill",
+    "No snapshot/output garbage collection; retained inputs/history consume disk",
+    "No explicit multi-output generation or external-renderer/stage parity claim",
+    "No provider spend, credentials, actual approval/upload/publication, owner profile/launcher or installer changes"
+  ],
+  "priorAttempts": {
+    "redCommit": "1b62049",
+    "originalRed": "Two failing unit/UI regressions and actual 43.4-second QA/pointer reproduction retained",
+    "intermediateMedia": "aa864ba production / 70b0fcb window-focus test harness: 16 passing cases, zero failures/skips/retries, 22 archived movies",
+    "abortedBatch": "First aa864ba compatibility batch stopped after three roughly 40-second failures; exact cause of every failure unestablished; original artifacts retained",
+    "finalCorrection": "Cross-source storyboard review metadata: one red regression then six passing helper cases; final actual test asserts verified metadata and accurate Director copy"
+  },
+  "electron": {
+    "tests": 16,
+    "failures": 0,
+    "errors": 0,
+    "skips": 0,
+    "retries": 0,
+    "seconds": 369.278424,
+    "recoverySeconds": 32.5,
+    "playbackLimit": "Recovery plays the entire three-second diagnostic movie before/after restart and as history. Other compatibility players start, seek near ending, and report ended/no-loop; not continuous playback of every 66-second case. Storyboard QA separately fully decodes output.",
+    "screenshotsInspected": [
+      "storyboard-export-reopened.png",
+      "failed-replacement-workspace.png",
+      "history-review-read-only.png"
+    ],
+    "screenshotLimit": "Initial failed-replacement snapshot is before playback, black at 0:00; use actual player assertions and the history screenshot at 0:03 as playback evidence."
+  },
+  "recovery": {
+    "profileName": "homebot-job-recovery-proof-CoY2qP",
+    "original": "video-landscape-cce6ad71-8db5-438d-8cad-82e559c58a98.mp4",
+    "retry": "video-landscape-1d459e8e-d645-4ac3-bbc7-f72b56174c2d.mp4",
+    "originalSha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+    "preservedSha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+    "retrySha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+    "rejected": "video-a5ab9a4d-daa0-41e7-8288-6191f271d7ec.rejected.mp4",
+    "latestFailedAttempt": "failed",
+    "latestRetryAttempt": "succeeded",
+    "wrongApproval": {
+      "ok": false,
+      "error": "The current movie changed. Select and watch that export before approving it."
+    },
+    "noApprovalPerformed": true
+  },
+  "archive": {
+    "successful": 21,
+    "rejectedDiagnostic": 1,
+    "total": 22,
+    "sourceCopyHashesVerified": true,
+    "actualVideoAndAudioStreamsVerified": true,
+    "intermediateAndFinalEncodedHashMultisetsMatch": true,
+    "originalProfilesPreserved": true
+  },
+  "movies": [
+    {
+      "filename": "local-export-proof-1080p-2384ba9b-f819-480b-8123-b609096abc9d.mp4",
+      "sha256": "1c810b1f215cba5e1bf905dad64ff081cce51daadbf6be860f54d92e63bcb314",
+      "bytes": 131760,
+      "kind": "successful export",
+      "width": 1920,
+      "height": 1080,
+      "duration": 8,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": true,
+      "sourceRevision": "45622895b61f4c352a154633e083a17c26af134b41185dd7c0839d96dee4a7f4"
+    },
+    {
+      "filename": "local-export-proof-1080p-aa3a9634-be5b-4641-88f3-5c3c01510594.mp4",
+      "sha256": "1c810b1f215cba5e1bf905dad64ff081cce51daadbf6be860f54d92e63bcb314",
+      "bytes": 131760,
+      "kind": "successful export",
+      "width": 1920,
+      "height": 1080,
+      "duration": 8,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": true,
+      "sourceRevision": "45622895b61f4c352a154633e083a17c26af134b41185dd7c0839d96dee4a7f4"
+    },
+    {
+      "filename": "local-export-proof-1080p-02a2e33d-ea16-4e5b-9638-93e54e33c5f6.mp4",
+      "sha256": "559b329a717b34bc338a5e805a846785d51fbe529b1843ae4d7cef5b1ab155b3",
+      "bytes": 113807,
+      "kind": "successful export",
+      "width": 1920,
+      "height": 1080,
+      "duration": 8,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "dde2e04e10d9179c9971eb08dc7957c9d3c1de85992326abbbca9a6297846357"
+    },
+    {
+      "filename": "local-export-proof-1080p-53e39ed3-4ee3-4058-932c-05d2b302776b.mp4",
+      "sha256": "559b329a717b34bc338a5e805a846785d51fbe529b1843ae4d7cef5b1ab155b3",
+      "bytes": 113807,
+      "kind": "successful export",
+      "width": 1920,
+      "height": 1080,
+      "duration": 8,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "dde2e04e10d9179c9971eb08dc7957c9d3c1de85992326abbbca9a6297846357"
+    },
+    {
+      "filename": "freshness-a-landscape-d139d978-0b8c-4b8d-99af-7d0471fac4c3.mp4",
+      "sha256": "809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2",
+      "bytes": 16405,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "109a44b903d6b59f5c68afd81e0ca7ef1f1939926f517743e62525f384694622"
+    },
+    {
+      "filename": "freshness-b-landscape-5d73f4f0-42c2-4288-8e64-00cd537886c7.mp4",
+      "sha256": "809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2",
+      "bytes": 16405,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "e1420e076287b02ee84694a3e2d9ccb71ae6d76e16a4bd281d6eb68901c4a960"
+    },
+    {
+      "filename": "freshness-b-landscape-cf9a033a-01ab-4766-9cb6-c3af58236130.mp4",
+      "sha256": "809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2",
+      "bytes": 16405,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "e1420e076287b02ee84694a3e2d9ccb71ae6d76e16a4bd281d6eb68901c4a960"
+    },
+    {
+      "filename": "freshness-b-scene_01-landscape-77257998-86e0-40dc-8667-707019abf08c.mp4",
+      "sha256": "5cb0a12dcb207e181f24aa7b5d9a08e1aaebe012ee25794c901c61a249d8743c",
+      "bytes": 7608,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 2,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "c9f91c94d237573ae9b2804dc0dc4fbe24f80914be69ac0e1d9f570dc5394aae"
+    },
+    {
+      "filename": "video-landscape-f794f6e5-547f-4377-b350-f34fc9be8c23.mp4",
+      "sha256": "ce5e204b83db2721923b323081365f46db9c3f97ac6bf4e89057005bf98b87e3",
+      "bytes": 59910,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 3,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "d67e11dbc7f691a35e8f577e6fa6d46a9d1de0ec02bf39c0501f8442819bb36f"
+    },
+    {
+      "filename": "video-portrait-699a2b89-fd29-4892-a443-d80bb5bbdf3d.mp4",
+      "sha256": "1e6dbda9a578001ef52e9c3627eeff6d5b3b01619dd9711e7e707466f1fe5f26",
+      "bytes": 75584,
+      "kind": "successful export",
+      "width": 720,
+      "height": 1280,
+      "duration": 3.5,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "portrait",
+            "aspectRatio": "9:16",
+            "width": 720,
+            "height": 1280,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": true,
+      "sourceRevision": "d63f59a741ed0bb5fb46923de3bf3c3244b1b22ce76bb81019c46d4e1d40ad36"
+    },
+    {
+      "filename": "video-landscape-2920a877-6a88-4e25-98e1-9a1894ca7d37.mp4",
+      "sha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+      "bytes": 66174,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 3,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "97d283f3fe0cd68f6be059772ab9d79f38086ec1398aede4c95d3eb22981e4fd"
+    },
+    {
+      "filename": "video-a5ab9a4d-daa0-41e7-8288-6191f271d7ec.rejected.mp4",
+      "sha256": "f045fd7272728ed1dd344f73c656b7f836792323ce15daa17cfe84af676b4e24",
+      "bytes": 57436,
+      "kind": "QA-rejected diagnostic",
+      "width": 1280,
+      "height": 720,
+      "duration": 3,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "sourceRevision": null
+    },
+    {
+      "filename": "video-landscape-1d459e8e-d645-4ac3-bbc7-f72b56174c2d.mp4",
+      "sha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+      "bytes": 66174,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 3,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "e30932716b28793f34963e52405bb60b52890c7d90475dc46fcc19f2857ae5b9"
+    },
+    {
+      "filename": "video-landscape-cce6ad71-8db5-438d-8cad-82e559c58a98.mp4",
+      "sha256": "7e1493be086413b6adb696468d317c64742a260852a89e1751f84dd0dbca5188",
+      "bytes": 66174,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 3,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "e30932716b28793f34963e52405bb60b52890c7d90475dc46fcc19f2857ae5b9"
+    },
+    {
+      "filename": "format-proof-portrait-6973d7cf-68cf-4790-a1bc-c48977311a49.mp4",
+      "sha256": "3f2e5da3afc4c232e0600266e6c73fb20f704c807a51cce10cd0c560255ae537",
+      "bytes": 17553,
+      "kind": "successful export",
+      "width": 720,
+      "height": 1280,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "portrait",
+            "aspectRatio": "9:16",
+            "width": 720,
+            "height": 1280,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "378a15b073365255ce073ac7cdfba94628c45bd186f38edef10e7f7b3428a15c"
+    },
+    {
+      "filename": "format-proof-portrait-882d4958-b3b4-48cc-a173-8605b3d7b07a.mp4",
+      "sha256": "87ed905b02a2c0e4329193ae6a9f44d96def42975789f6e8e2b08d3747077b1c",
+      "bytes": 17820,
+      "kind": "successful export",
+      "width": 1080,
+      "height": 1920,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "portrait",
+            "aspectRatio": "9:16",
+            "width": 1080,
+            "height": 1920,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "d9198e96d56988e50c9f9e4e04d19a2eefa01f525426544685bd5369a09e4b2c"
+    },
+    {
+      "filename": "format-proof-landscape-2febe2fa-81fc-4a96-b657-fa929e108939.mp4",
+      "sha256": "809782be8cc2928dd62f767ae515646fbebb5f5ddeee4aa32d563f90c5d6cde2",
+      "bytes": 16405,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "e0e85b6a1d4904b0e7ae0631597b411d268cf4b0e63461cef9de2742a2c1f944"
+    },
+    {
+      "filename": "format-proof-square-ba2bcb1b-040d-4297-8356-0f0daeb5edec.mp4",
+      "sha256": "328ba6f25fb95bc20652da53078399544fad637b7e0c18a0f0cacffbe3f7cc12",
+      "bytes": 34790,
+      "kind": "successful export",
+      "width": 1080,
+      "height": 1080,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "square",
+            "aspectRatio": "1:1",
+            "width": 1080,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "23cfd5428da6dc1d2049b388036fd80a0bdefb9465adec3e925ccae0511bc8ab"
+    },
+    {
+      "filename": "format-proof-landscape-535bd190-79c2-4720-a9c4-5d367a46e03d.mp4",
+      "sha256": "cf27652311dfb6bcbe8b2a58768fc6dddb8e4047cc08dbcbb7be962caf70cbb6",
+      "bytes": 188933,
+      "kind": "successful export",
+      "width": 1280,
+      "height": 720,
+      "duration": 66,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "long",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1280,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "52f6bfdb5e16ce5bbdeb9b60ca0c2567d3a30a601e731c7a0c109e1607a0b108"
+    },
+    {
+      "filename": "format-proof-square-ba7ff7ea-9df1-46d1-a6b5-c56a752d84ab.mp4",
+      "sha256": "bd8a8349b73a6b6f23dd0bdc46b3e3a249bdacd9a94c01b47fcd8dfeeb17ec9e",
+      "bytes": 14447,
+      "kind": "successful export",
+      "width": 720,
+      "height": 720,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "square",
+            "aspectRatio": "1:1",
+            "width": 720,
+            "height": 720,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "d56183df30edcd08c2647440ece0f266ec3c3f525348316642ed4ef66f440d21"
+    },
+    {
+      "filename": "format-proof-landscape-75f951a2-0439-4e46-8da5-9905e7935921.mp4",
+      "sha256": "c88dd6a87a72cac842b4536592380f75fb6af88e1c58d913d460a8ea0ab7fac5",
+      "bytes": 27465,
+      "kind": "successful export",
+      "width": 1920,
+      "height": 1080,
+      "duration": 4,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "short",
+        "variants": [
+          {
+            "id": "landscape",
+            "aspectRatio": "16:9",
+            "width": 1920,
+            "height": 1080,
+            "fps": 30,
+            "framing": {
+              "mode": "crop",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "96a4676223c0f9f79de0c484f6bbec8ad894ee95770927a9676d6474af5323f6"
+    },
+    {
+      "filename": "format-proof-portrait-c1410110-a000-4fa7-b943-39c2757056f0.mp4",
+      "sha256": "8d762c80879e8d05c195fc78ecf4bb8cb64128c6cc804cf35f9394c5dc2af892",
+      "bytes": 193107,
+      "kind": "successful export",
+      "width": 720,
+      "height": 1280,
+      "duration": 66,
+      "videoCodec": "h264",
+      "audioCodec": "aac",
+      "outputSpec": {
+        "schemaVersion": 1,
+        "durationIntent": "long",
+        "variants": [
+          {
+            "id": "portrait",
+            "aspectRatio": "9:16",
+            "width": 720,
+            "height": 1280,
+            "fps": 30,
+            "framing": {
+              "mode": "fit",
+              "x": 0.5,
+              "y": 0.5
+            }
+          }
+        ]
+      },
+      "burnSubtitles": false,
+      "sourceRevision": "8273155185d6ad94986499a919dbe5404eaebd2460d593af94b28f50befb62fa"
+    }
+  ]
+}

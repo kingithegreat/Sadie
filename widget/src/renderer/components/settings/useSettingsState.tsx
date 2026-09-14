@@ -452,6 +452,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     git_diff: 'View file changes in git (safe).',
     git_branches: 'List git branches (safe).',
     media_create_job: 'Start a new video in the Media Studio (safe — nothing is published).',
+    media_set_output: 'Save caption settings for an editable video. Existing exports are preserved.',
     media_list_jobs: 'List videos and the stage each has reached (safe).',
     media_list_music: 'List music available for narration soundtracks (safe).',
     media_advance_job: 'Move a video to its next pipeline stage. Cannot approve or publish.',

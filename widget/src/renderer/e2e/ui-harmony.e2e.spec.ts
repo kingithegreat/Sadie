@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchElectronApp } from './launchElectron';
+import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { dismissFirstRun } from './helpers/firstRun';
 
 async function checkStudioPalette(page: Page) {

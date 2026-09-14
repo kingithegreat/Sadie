@@ -9,6 +9,14 @@ import { renderNarrationToFile } from '../tools/voice';
 import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-renderer';
 import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
 import { readJobs, writeJobs } from '../tools/media';
+import { createStudioOutputSpec } from '../../shared/media-output';
+
+// Unit adapters must not implicitly depend on a downloaded Electron binary.
+// CI installs it later for the real renderer tests; the local install hid this.
+jest.mock('electron', () => ({
+  nativeImage: { createFromBuffer: () => { throw new Error('Provider image decoding is outside this render-adapter unit suite.'); } },
+}));
+jest.mock('../config-manager', () => ({ getSettings: jest.fn(() => ({ narrationEngine: 'edge' })) }));
 
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'), findFfmpeg: jest.fn(),
@@ -99,14 +107,351 @@ describe('storyboard export output contract', () => {
 
   test('uses the managed video engine and the distinct speech files actually returned', async () => {
     const result = await render();
-    expect(result.ok).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result).toMatchObject({ ok: true });
     expect(findFfmpeg).toHaveBeenCalledWith('/managed/ffmpeg');
     expect(new Set(speechPaths).size).toBe(2);
     const inputs = (execFile as unknown as jest.Mock).mock.calls.flatMap(([, args]) =>
       args.flatMap((arg: string, index: number) => arg === '-i' ? [args[index + 1]] : []));
     for (const actual of speechPaths) expect(inputs).toContain(actual);
     expect(result.durationSec).toBe(movieFacts.durationSeconds);
-    expect(fs.readFileSync(output, 'utf8')).toBe('controlled encoder bytes');
+    expect(fs.readFileSync(result.moviePath!, 'utf8')).toBe('controlled encoder bytes');
+  });
+
+  test('renders explicit landscape and portrait movies while preparing narration only once', async () => {
+    const outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec, burnSubtitles: false }));
+    let checkedMovies = 0;
+    (inspectRender as jest.Mock).mockImplementation(async (_bin: string, file: string) => {
+      if (!file.endsWith('.mp4')) return speechFacts;
+      checkedMovies++;
+      return checkedMovies === 1 ? movieFacts : { ...movieFacts, width: 1080, height: 1920 };
+    });
+    const result = await render() as any;
+    expect(result.ok).toBe(true);
+    expect(result.variants).toHaveLength(2);
+    expect(result.variants.map((item: any) => item.renderedOutput.outputSpec.variants[0].id)).toEqual(['landscape', 'portrait']);
+    expect(new Set(result.variants.map((item: any) => item.moviePath)).size).toBe(2);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2); // two shots, not four variant-dependent calls
+    expect(checkedMovies).toBe(2);
+    for (const item of result.variants) {
+      expect(item.ok).toBe(true);
+      expect(fs.existsSync(item.moviePath)).toBe(true);
+      expect(item.renderedOutput.sha256).toMatch(/^[a-f0-9]{64}$/);
+    }
+  });
+
+  test('tracks the saved source revision without inventing a change on a no-op save', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const read = async () => (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    const before = await read();
+    expect(before.exportState?.sourceRevision).toMatch(/^[a-f0-9]{64}$/);
+    // Match the saved/default motion intent; an explicit no-motion override is a different source.
+    const first = await renderStoryboardMovie({ projectId: 'export-check' });
+    expect(first.ok).toBe(true);
+    expect((first.renderedOutput as any)?.sourceRevision).toBe(before.exportState.sourceRevision);
+    expect((await read()).exportState.latestAttempt).toMatchObject({ status: 'succeeded', exportId: first.renderedOutput?.exportId });
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots, outputSpec: createStudioOutputSpec(), burnSubtitles: false }, {} as any)).success).toBe(true);
+    expect((await read()).exportState.sourceRevision).toBe(before.exportState.sourceRevision);
+    shots[0].prompt = 'A deliberately changed source prompt';
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots }, {} as any)).success).toBe(true);
+    const changed = await read();
+    expect(changed.exportState.sourceRevision).not.toBe(before.exportState.sourceRevision);
+    expect(changed.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('keeps a successful batch review and retries only the failed format using verified cached speech', async () => {
+    const outputSpec = { ...createStudioOutputSpec('16:9'), variants: [
+      createStudioOutputSpec('16:9').variants[0], createStudioOutputSpec('9:16').variants[0],
+    ] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec, burnSubtitles: false }));
+    const stored: any[] = [];
+    (readJobs as jest.Mock).mockImplementation(() => stored);
+    (writeJobs as jest.Mock).mockImplementation(jobs => stored.splice(0, stored.length, ...jobs));
+    let movies = 0;
+    (inspectRender as jest.Mock).mockImplementation(async (_bin: string, file: string) => {
+      if (!file.endsWith('.mp4')) return speechFacts;
+      movies++;
+      // Portrait's first encode is genuinely rejected by the unchanged geometry QA.
+      return movies < 3 ? movieFacts : { ...movieFacts, width: 1080, height: 1920 };
+    });
+    const first = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(first.success).toBe(false);
+    expect(first.result.variants).toHaveLength(2);
+    expect(stored).toHaveLength(1);
+    const review = { ...stored[0], state: 'approved' };
+    stored[0] = review;
+    const retry = await mediaRenderStoryboardHandler({ projectId: 'export-check', variantId: 'portrait', motion: false }, {} as any);
+    expect(retry.success).toBe(true);
+    expect(movies).toBe(3);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    expect(stored).toHaveLength(2);
+    expect(stored.find(item => item.id === review.id)).toEqual(review);
+    expect(stored[1].renderPath).not.toBe(review.renderPath);
+    expect(stored[1].outputSpec.variants[0].id).toBe('portrait');
+  });
+
+  test('a shared preparation failure leaves both formats retryable after reopening', async () => {
+    const outputSpec = { ...createStudioOutputSpec(), variants: [createStudioOutputSpec().variants[0], createStudioOutputSpec('9:16').variants[0]] };
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec, burnSubtitles: false }));
+    (findFfmpeg as jest.Mock).mockResolvedValue(null);
+    expect((await render()).ok).toBe(false);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.variantAttempts).toMatchObject({ landscape: { status: 'failed' }, portrait: { status: 'failed' } });
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+  });
+
+  test('malformed per-format attempt fields never reach the renderer as objects', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec: createStudioOutputSpec(),
+      variantExportAttempts: { landscape: { id: 'bad-note', variantId: 'landscape', status: 'failed',
+        startedAt: '2026-09-13T00:00:00Z', sourceRevision: null, error: { injected: 'not display text' } } } }));
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.variantAttempts.landscape?.error).toBeUndefined();
+  });
+
+  test('changed cached audio cannot be reused and output-only changes do reuse verified speech', async () => {
+    expect((await render()).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    expect((await renderStoryboardMovie({ projectId: 'export-check', burnSubtitles: false, motion: false })).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(2);
+    const cacheDir = path.join(root, 'export-check', 'renders', '.homebot-narration');
+    const cacheRecords = fs.readdirSync(cacheDir).filter(name => name.endsWith('.json'));
+    expect(cacheRecords).toHaveLength(2);
+    const record = JSON.parse(fs.readFileSync(path.join(cacheDir, cacheRecords[0]), 'utf8'));
+    fs.writeFileSync(path.join(cacheDir, record.filename), 'changed cached bytes');
+    expect((await render()).ok).toBe(true);
+    expect(renderNarrationToFile).toHaveBeenCalledTimes(3);
+  });
+
+  test.each(['square', '__proto__', null])('an unavailable retry format %s fails before narration or encoding', async variantId => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ outputSpec: createStudioOutputSpec() }));
+    const result = await renderStoryboardMovie({ projectId: 'export-check', variantId } as any);
+    expect(result.ok).toBe(false);
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  test('persists a failed latest attempt separately from successful export history', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const first = await render();
+    const second = await render();
+    expect(first.ok && second.ok).toBe(true);
+    movieFacts.width = 640;
+    expect((await render()).ok).toBe(false);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState?.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/picture size|match the storyboard/i) });
+    expect(reopened.renderedMoviePath).toBe(second.moviePath);
+    expect(reopened.exportState.outputs.map((item: any) => item.exportId)).toEqual(expect.arrayContaining([first.renderedOutput!.exportId, second.renderedOutput!.exportId]));
+    expect(fs.readFileSync(first.moviePath!, 'utf8')).toBe('controlled encoder bytes');
+  });
+
+  test('detects changed source image bytes and recovers an interrupted attempt on reopen', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const previousRevision = (first.renderedOutput as any)?.sourceRevision;
+    expect(previousRevision).toMatch(/^[a-f0-9]{64}$/);
+    fs.writeFileSync(shots[0].frameImagePath!, 'different source pixels');
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    meta.latestExportAttempt = { id: 'interrupted-fixture', status: 'rendering', sourceRevision: previousRevision, startedAt: new Date().toISOString() };
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.sourceRevision).not.toBe(previousRevision);
+    expect(reopened.exportState.latestAttempt.status).toBe('interrupted');
+    expect(JSON.parse(fs.readFileSync(metaPath, 'utf8')).latestExportAttempt.status).toBe('interrupted');
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('saved captions off reaches export without a caller override and survives reopening', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', notes: 'keep this', burnSubtitles: true }));
+    const saved = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots, burnSubtitles: false }, {} as any);
+    expect(saved.success).toBe(true);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(reopened.result.project).toMatchObject({ burnSubtitles: false, notes: 'keep this' });
+    const result = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(result.success).toBe(true);
+    const commands = (execFile as unknown as jest.Mock).mock.calls.map(([, args]) => args.join(' '));
+    expect(commands.some(command => command.includes('subtitles='))).toBe(false);
+    expect(readJobs).toHaveBeenCalled();
+    expect(writeJobs).toHaveBeenLastCalledWith(expect.arrayContaining([expect.objectContaining({ burnSubtitles: false })]));
+  });
+
+  test('new legacy exports preserve the fixed-name master and its approved review record', async () => {
+    const approved = { id: 'sb_export-check', renderPath: output, state: 'approved', approvedBy: 'owner' };
+    (readJobs as jest.Mock).mockReturnValue([approved]);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, 'legacy approved master');
+    const rendered = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(rendered.success).toBe(true);
+    expect(rendered.result.moviePath).not.toBe(output);
+    expect(rendered.result.jobId).not.toBe(approved.id);
+    expect((writeJobs as jest.Mock).mock.calls[0][0]).toContainEqual(approved);
+    expect(fs.readFileSync(output, 'utf8')).toBe('legacy approved master');
+    // The new review card must describe the actual landscape legacy movie,
+    // not infer portrait just because this complete movie is under a minute.
+    expect((writeJobs as jest.Mock).mock.calls[0][0].find((job: any) => job.id === rendered.result.jobId))
+      .toMatchObject({ outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop') });
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.renderedMoviePath).toBe(rendered.result.moviePath);
+    expect(reopened.exportState.untrackedOutputs).toContainEqual({ filename: path.basename(output), moviePath: output });
+    expect(reopened.exportState.outputs[0]).toMatchObject({ outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop'), sourceRevision: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  });
+
+  test('an active render keeps its copied source while an edit is saved and rejects a duplicate render', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ outputSpec: createStudioOutputSpec(), burnSubtitles: false, updatedAt: '2026-09-12T00:00:00Z' }));
+    const before = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { entered = resolve; });
+    const original = (renderNarrationToFile as jest.Mock).getMockImplementation()!;
+    (renderNarrationToFile as jest.Mock).mockImplementationOnce(async (...args) => { entered(); await gate; return original(...args); });
+    const pending = renderStoryboardMovie({ projectId: 'export-check' });
+    await started;
+    try {
+      fs.writeFileSync(shots[0].frameImagePath!, 'edited while rendering');
+      shots[0].prompt = 'Saved while exporting';
+      expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots }, {} as any)).success).toBe(true);
+      const during = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+      // Speech is now an explicit shared preparation phase, before either encode.
+      expect(during.exportState.latestAttempt.status).toBe('preparing');
+      expect(during.exportState.sourceRevision).not.toBe(before.exportState.sourceRevision);
+      const duplicate = await render();
+      expect(duplicate).toMatchObject({ ok: false, error: expect.stringMatching(/already rendering/) });
+      expect(JSON.parse(fs.readFileSync(metaPath, 'utf8')).latestExportAttempt.id).toBe(during.exportState.latestAttempt.id);
+    } finally { release(); await pending; }
+    const result = await pending;
+    expect(result.ok).toBe(true);
+    expect(result.renderedOutput?.sourceRevision).toBe(before.exportState.sourceRevision);
+    expect(result.renderedOutput?.sourceSavedAt).toBe('2026-09-12T00:00:00Z');
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.scenes[0].shots[0].prompt).toBe('Saved while exporting');
+    expect(reopened.exportState.sourceRevision).not.toBe(result.renderedOutput?.sourceRevision);
+  });
+
+  test('an early engine failure is persisted and cannot remove the last good file', async () => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    (findFfmpeg as jest.Mock).mockResolvedValue(null);
+    expect((await render()).ok).toBe(false);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/FFmpeg was not found/) });
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('an explicit motion override has different provenance from the saved default', async () => {
+    const first = await render(); // Explicit motion=false, unlike the Studio default.
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(first.ok).toBe(true);
+    expect(first.renderedOutput?.motion).toBe(false);
+    expect(first.renderedOutput?.sourceRevision).not.toBe(reopened.exportState.sourceRevision);
+  });
+
+  test('malformed provenance stays unknown and an unreadable attempt does not crash the workspace', async () => {
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, 'older untracked movie');
+    fs.writeFileSync(`${output}.json`, JSON.stringify({ filename: path.basename(output), exportId: 'old', createdAt: '2026-09-12T00:00:00Z', durationSeconds: 6 }));
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ latestExportAttempt: { status: { bad: true } } }));
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.latestAttempt).toBeUndefined();
+    expect(reopened.exportState.outputs).toEqual([]);
+    expect(reopened.exportState.untrackedOutputs).toContainEqual({ filename: path.basename(output), moviePath: output });
+    expect(reopened.exportState.warning).toMatch(/unreadable/);
+    expect(reopened.renderedMoviePath).toBe(output);
+  });
+
+  test('an existing explicitly named export cannot be overwritten, even on a legacy project', async () => {
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, 'approved master');
+    const result = await renderStoryboardMovie({ projectId: 'export-check', outputName: path.basename(output) });
+    expect(result).toMatchObject({ ok: false, error: expect.stringMatching(/Existing exports are preserved/) });
+    expect(fs.readFileSync(output, 'utf8')).toBe('approved master');
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+  });
+
+  test('another export claiming the requested filename during rendering is not overwritten', async () => {
+    (inspectRender as jest.Mock).mockImplementation(async (_bin: string, file: string) => {
+      if (!file.endsWith('.mp4')) return speechFacts;
+      fs.writeFileSync(output, 'master created by another process');
+      return movieFacts;
+    });
+    const result = await renderStoryboardMovie({ projectId: 'export-check', outputName: path.basename(output), motion: false });
+    expect(result.ok).toBe(false);
+    expect(fs.readFileSync(output, 'utf8')).toBe('master created by another process');
+  });
+
+  test('rejects malformed caption preferences before writing any saved shot', async () => {
+    const prompt = path.join(scene, shots[0].shotId, 'prompt.json');
+    const before = fs.readFileSync(prompt);
+    const result = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: [{ ...shots[0], prompt: 'changed' }], burnSubtitles: 'false' }, {} as any);
+    expect(result.success).toBe(false);
+    expect(fs.readFileSync(prompt)).toEqual(before);
+  });
+
+  test('saved portrait settings survive reopening, reach the encoder and preserve reviewed masters', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    const outputSpec = createStudioOutputSpec('9:16', 'long', '720p', 'fit');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', notes: 'keep this', burnSubtitles: false }));
+    const approved = { id: 'sb_export-check', renderPath: output, state: 'approved', approvedBy: 'owner' };
+    (readJobs as jest.Mock).mockReturnValue([approved]);
+    fs.mkdirSync(path.dirname(output), { recursive: true });
+    fs.writeFileSync(output, 'approved landscape master');
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots, outputSpec }, {} as any)).success).toBe(true);
+    expect((await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result.project)
+      .toMatchObject({ outputSpec, burnSubtitles: false, notes: 'keep this' });
+    movieFacts.width = 720;
+    movieFacts.height = 1280;
+    const result = await mediaRenderStoryboardHandler({ projectId: 'export-check', motion: false }, {} as any);
+    expect(result.success).toBe(true);
+    expect(result.result.outputSpec).toEqual(outputSpec);
+    expect(result.result.moviePath).not.toBe(output);
+    expect(result.result.jobId).not.toBe(approved.id);
+    expect(fs.readFileSync(output, 'utf8')).toBe('approved landscape master');
+    const jobs = (writeJobs as jest.Mock).mock.calls[0][0];
+    expect(jobs).toContainEqual(approved);
+    expect(jobs).toContainEqual(expect.objectContaining({ id: result.result.jobId, outputSpec, format: 'long', burnSubtitles: false }));
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(reopened.result.renderedMoviePath).toBe(result.result.moviePath);
+    expect(reopened.result.renderedOutput).toMatchObject({ outputSpec, burnSubtitles: false, durationSeconds: 6 });
+    const commands = (execFile as unknown as jest.Mock).mock.calls.map(([, args]) => args.join(' '));
+    expect(commands.some(command => command.includes('pad=720:1280:'))).toBe(true);
+    expect(commands.some(command => command.includes('subtitles='))).toBe(false);
+  });
+
+  test('malformed saved formats cannot mutate shot files', async () => {
+    const prompt = path.join(scene, shots[0].shotId, 'prompt.json');
+    const before = fs.readFileSync(prompt);
+    const result = await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: [{ ...shots[0], prompt: 'changed' }], outputSpec: { schemaVersion: 99 } }, {} as any);
+    expect(result.success).toBe(false);
+    expect(fs.readFileSync(prompt)).toEqual(before);
+  });
+
+  test('new exports are immutable and a failed variant retains the last successful pointer', async () => {
+    const metaPath = path.join(root, 'export-check', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ projectId: 'export-check', outputSpec: createStudioOutputSpec(), burnSubtitles: false }));
+    const first = await render();
+    const second = await render();
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.moviePath).not.toBe(first.moviePath);
+    expect(fs.existsSync(first.moviePath!)).toBe(true);
+    movieFacts.width = 640;
+    expect((await render()).ok).toBe(false);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(reopened.result.renderedMoviePath).toBe(second.moviePath);
+    expect(JSON.parse(fs.readFileSync(`${second.moviePath}.json`, 'utf8'))).toEqual(second.renderedOutput);
+  });
+
+  test('an invalid export pointer cannot escape the project render directory', async () => {
+    fs.writeFileSync(path.join(root, 'export-check', 'project.json'), JSON.stringify({ latestSuccessfulOutput: { filename: '../../private.mp4' } }));
+    fs.writeFileSync(path.join(root, 'private.mp4'), 'private');
+    const result = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect(result.result.renderedMoviePath).toBeNull();
   });
 
   test('a narration failure cannot become a successful silent movie or replace the old export', async () => {
@@ -182,7 +527,7 @@ describe('storyboard export output contract', () => {
     const result = await render();
     expect(result.ok).toBe(true);
     expect(renderNarrationToFile).not.toHaveBeenCalled();
-    expect(fs.existsSync(output)).toBe(true);
+    expect(fs.existsSync(result.moviePath!)).toBe(true);
   });
 
   test('the complete movie includes every saved scene in its declared order', async () => {
@@ -242,6 +587,20 @@ describe('storyboard export output contract', () => {
     expect(result.ok).toBe(true);
     expect(result.moviePath).not.toBe(output);
     expect(fs.readFileSync(output, 'utf8')).toBe('complete project movie');
+  });
+
+  test('scene-only history compares the saved scene rather than the whole project revision', async () => {
+    const ending = path.join(path.dirname(scene), 'scene_02');
+    fs.cpSync(scene, ending, { recursive: true });
+    const result = await renderStoryboardMovie({ projectId: 'export-check', sceneId: 'scene_01' });
+    expect(result.ok).toBe(true);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.sceneRevisions?.scene_01).toBe(result.renderedOutput?.sourceRevision);
+    expect(reopened.exportState.sourceRevision).not.toBe(result.renderedOutput?.sourceRevision);
+    fs.writeFileSync(path.join(ending, shots[0].shotId, 'script.txt'), 'Changed only the other scene.');
+    const changed = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(changed.exportState.sceneRevisions.scene_01).toBe(result.renderedOutput?.sourceRevision);
+    expect(changed.exportState.sourceRevision).not.toBe(reopened.exportState.sourceRevision);
   });
 
   test('an explicit scene export cannot replace the complete movie review job', async () => {

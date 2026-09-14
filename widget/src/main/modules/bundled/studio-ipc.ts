@@ -99,6 +99,11 @@ export function registerStudioIpc(
     return readJobs();
   });
 
+  ipcMain.handle('homebot:media:export-state', async (_e, id: string) => {
+    const { getMediaJobExportState } = await import('../../tools/media');
+    return getMediaJobExportState(id);
+  });
+
   // List a podcast feed's episodes so the panel can offer "make a recap of
   // this one". Read-only: nothing is created until the user picks an episode,
   // which then goes through the ordinary homebot:media:create path — a
@@ -124,7 +129,9 @@ export function registerStudioIpc(
     try {
       const job = createJob({
         title: String(input?.title || ''),
-        format: input?.format === 'long' ? 'long' : 'short',
+        format: input?.format === undefined ? undefined : input?.format === 'long' ? 'long' : 'short',
+        burnSubtitles: input?.burnSubtitles,
+        outputSpec: input?.outputSpec,
         brief: input?.brief ? String(input.brief) : undefined,
       });
       writeJobs([...readJobs(), job]);
@@ -136,7 +143,7 @@ export function registerStudioIpc(
 
   /** Shared by advance/approve/reject so the transition rules live in one place. */
   const applyMediaTransition = async (
-    id: string, to: string, opts: { humanDecision?: boolean; note?: string; by: string },
+    id: string, to: string, opts: { humanDecision?: boolean; note?: string; by: string }, expectedRenderPath?: string,
   ) => {
     const { readJobs, writeJobs } = await import('../../tools/media');
     const { transition, isValidState } = await import('../../media-studio');
@@ -148,8 +155,15 @@ export function registerStudioIpc(
     if (i < 0) return { ok: false, error: 'That video is no longer in the list.' };
     if (!isValidState(to)) return { ok: false, error: `"${to}" is not a pipeline stage.` };
     try {
+      if (to === 'awaiting_approval' || to === 'approved') {
+        const { assertMediaJobReviewable } = await import('../../media-job-export-state');
+        await assertMediaJobReviewable(jobs[i], expectedRenderPath);
+        if (JSON.stringify(readJobs().find(job => job.id === id)) !== JSON.stringify(jobs[i])) {
+          return { ok: false, error: 'This video changed during review. Reload it before continuing.' };
+        }
+      }
       jobs[i] = transition(jobs[i], to as any, { ...opts, publishingEnabled });
-      writeJobs(jobs);
+      writeJobs(readJobs().map(job => job.id === id ? jobs[i] : job));
       return { ok: true, job: jobs[i] };
     } catch (e: any) {
       return { ok: false, error: e.message };
@@ -186,7 +200,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -195,7 +209,8 @@ export function registerStudioIpc(
     // could write a script and record narration, then had no button for the
     // one step that actually produces the video. A panel-first workflow that
     // dead-ends before the deliverable is not a workflow.
-    const tool = action === 'render' ? 'media_render'
+    const tool = action === 'output' ? 'media_set_output'
+      : action === 'render' ? 'media_render'
       : action === 'narrate' ? 'media_narrate'
       : 'media_write_script';
     try {
@@ -207,10 +222,15 @@ export function registerStudioIpc(
       // network image-generation call.
       if (action === 'render' && opts?.image) args.image = opts.image;
       if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
-      if (!['render', 'narrate', 'script'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
+      if (action === 'render' && opts?.variantId !== undefined) args.variantId = opts.variantId;
+      if (action === 'output') {
+        args.burnSubtitles = opts?.burnSubtitles;
+        if (opts?.outputSpec !== undefined) args.outputSpec = opts.outputSpec;
+      }
+      if (!['render', 'narrate', 'script', 'output'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
       return res?.success
-        ? { ok: true, message: String(res.result ?? '') }
+        ? { ok: true, message: typeof res.result === 'string' ? res.result : res.result?.message || 'Export saved. Review the selected movie before approval.' }
         : { ok: false, error: String(res?.error ?? 'That stage failed.') };
     } catch (e: any) {
       return { ok: false, error: e?.message || String(e) };
@@ -220,8 +240,8 @@ export function registerStudioIpc(
   ipcMain.handle('homebot:media:advance', async (_e, id: string, to: string, note?: string) =>
     applyMediaTransition(id, to, { by: 'studio', note }));
 
-  ipcMain.handle('homebot:media:approve', async (_e, id: string, note?: string) =>
-    applyMediaTransition(id, 'approved', { by: 'human', humanDecision: true, note }));
+  ipcMain.handle('homebot:media:approve', async (_e, id: string, note?: string, expectedRenderPath?: string) =>
+    applyMediaTransition(id, 'approved', { by: 'human', humanDecision: true, note }, expectedRenderPath));
 
   ipcMain.handle('homebot:media:reject', async (_e, id: string, revise: boolean, note?: string) =>
     applyMediaTransition(id, revise ? 'needs_revision' : 'rejected', { by: 'human', humanDecision: true, note }));
@@ -398,6 +418,7 @@ export function registerStudioIpc(
     // script_qa — from a fresh job (state idea) it throws, which used to
     // report a successful Python render as a failure. Walks the chain instead.
     job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Ancient Pathways pipeline runs its own stages internally' });
+    job = { ...job, externalRenderer: 'ancient-pathways', burnSubtitles: undefined, outputSpec: undefined };
     // transition() returns a NEW object; `jobs` still holds whatever `job`
     // pointed to before that call (the array push above captured the
     // pre-transition object too), so the array must be re-synced or the
@@ -491,6 +512,7 @@ export function registerStudioIpc(
       brief: `Showrunner — ${options.prompt.slice(0, 120)}`,
     });
     job = fastForwardToMediaProduction(job, { by: 'studio', note: 'Showrunner runs its own stages internally' });
+    job = { ...job, externalRenderer: 'ancient-pathways', burnSubtitles: undefined, outputSpec: undefined };
     const jobs = readJobs();
     jobs.push(job);
     writeJobs(jobs);
@@ -552,6 +574,28 @@ export function registerStudioIpc(
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
     }
+  });
+
+  // Character Anchor Workbench. Reads are free; a save that would replace a
+  // hand-placed box is refused (CONFIRM_OVERWRITE) unless the owner confirmed it.
+  ipcMain.handle('homebot:media:ancient-pathways-get-anchors', async (_e, character?: string) => {
+    const { getCharacterAnchors } = await import('../../ancient-pathways');
+    return getCharacterAnchors(character);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-get-sprite', async (_e, character: string, group: string, pose: string) => {
+    const { getCharacterPoseSprite } = await import('../../ancient-pathways');
+    return getCharacterPoseSprite(character, group, pose);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-save-anchor', async (_e, args: any) => {
+    const { saveCharacterAnchor } = await import('../../ancient-pathways');
+    return saveCharacterAnchor(args);
+  });
+
+  ipcMain.handle('homebot:media:ancient-pathways-suggest-anchors', async (_e, character?: string) => {
+    const { suggestCharacterAnchors } = await import('../../ancient-pathways');
+    return suggestCharacterAnchors(character);
   });
 
   // ── Movie Generation Router ────────────────────────────────────────────────
@@ -648,6 +692,24 @@ export function registerStudioIpc(
     return { ok: res.success, storyboards: (res.result as any)?.storyboards || [], error: res.error };
   });
 
+  // The Storyboard's explicit frame provider choice: status, per-project choice,
+  // and the first-use confirmation a paid provider needs. None generates anything.
+  ipcMain.handle('homebot:media:storyboard:frame-providers', async () => {
+    const { describeStoryboardFrameProviders } = await import('../../movie/storyboard-frame-providers');
+    return { ok: true, providers: await describeStoryboardFrameProviders() };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:set-frame-provider', async (_ev, args: { projectId: string; frameProvider: string }) => {
+    const { setStoryboardFrameProvider } = await import('../../tools/media-storyboard');
+    const res = await setStoryboardFrameProvider(args || {});
+    return res.success ? { ok: true, frameProvider: (res.result as any).frameProvider } : { ok: false, error: res.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:confirm-paid-frames', async (_ev, frameProvider: string) => {
+    const { recordPaidFrameConfirmation } = await import('../../movie/storyboard-frame-providers');
+    return recordPaidFrameConfirmation(frameProvider);
+  });
+
   ipcMain.handle('homebot:media:storyboard:get', async (_ev, projectId: string) => {
     const res = await invokeTool(_ev, 'media_get_storyboard', { projectId });
     return { ok: res.success, result: res.result, error: res.error };
@@ -658,35 +720,45 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[] }) => {
+  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: unknown }) => {
     const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
     return res.success
       ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
       : { ok: false, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean }) => {
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
     try {
       const res = await invokeTool(_ev, 'media_render_storyboard', {
         projectId: args.projectId,
         sceneId: args.sceneId,
         motion: args.motion !== false,
-        burnSubtitles: args.burnSubtitles !== false,
+        burnSubtitles: args.burnSubtitles,
+        ...(args.outputSpec === undefined ? {} : { outputSpec: args.outputSpec }),
+        ...(args.variantId === undefined ? {} : { variantId: args.variantId }),
       });
-      return res.success
-          ? { ok: true, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId, ...(res.result.warning ? { warning: res.result.warning } : {}) }
+      return res.success || res.result?.variants
+          ? { ok: res.success, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,
+              ...(res.result.outputSpec ? { outputSpec: res.result.outputSpec } : {}), renderedOutput: res.result.renderedOutput,
+              ...(res.result.variants ? { variants: res.result.variants } : {}), ...(res.error ? { error: res.error } : {}),
+              ...(res.result.warning ? { warning: res.result.warning } : {}) }
         : { ok: false, error: res.error, code: res.code };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
     }
   });
 
-  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean }) => {
+  ipcMain.handle('homebot:media:storyboard:breakdown', async (_ev, args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: string }) => {
     try {
       const res = await invokeTool(_ev, 'media_breakdown_script', args || {});
       if (!res.success) return { ok: false, error: res.error, code: res.code };
-      const { projectId, title, genre, shots, totalDurationSec, projectDir } = res.result;
-      return { ok: true, projectId, title, genre, shots, totalDurationSec, projectDir };
+      const { projectId, title, genre, shots, totalDurationSec, projectDir, framesGenerated, framesSkipped } = res.result;
+      return {
+        ok: true, projectId, title, genre, shots, totalDurationSec, projectDir,
+        // Present only when frames were requested, keeping the legacy result shape otherwise.
+        ...(framesGenerated !== undefined ? { framesGenerated } : {}),
+        ...(framesSkipped ? { framesSkipped } : {}),
+      };
     } catch (err: any) {
       return { ok: false, error: err?.message || String(err) };
     }

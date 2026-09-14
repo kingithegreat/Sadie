@@ -10,15 +10,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   MovieProjectRunner,
-  createStandardRouter,
   type MovieProject,
   type SceneManifest,
 } from './project-runner';
 import {
   ShotStatus,
   type ShotBibleEntry,
-  type GenerationRequest,
 } from './types';
+import { isStoryboardFrameProviderId } from '../../shared/storyboard-frame-providers';
 import { getStoryboardProjectDir } from './storyboard-renderer';
 
 export type CinematicGenre =
@@ -56,6 +55,8 @@ export interface ScriptBreakdownOptions {
   projectId?: string;
   notes?: string;
   autoGenerateFrames?: boolean;
+  /** The Storyboard frame provider to save on the new project (see storyboard-frame-providers). */
+  frameProvider?: string;
   freeOnly?: boolean;
 }
 
@@ -67,6 +68,10 @@ export interface ScriptBreakdownResult {
   shots?: DirectedShot[];
   totalDurationSec?: number;
   projectDir?: string;
+  /** Frames made when autoGenerateFrames was requested. */
+  framesGenerated?: number;
+  /** Why requested frames were not (all) made — never a silent fallback. */
+  framesSkipped?: string;
   error?: string;
 }
 
@@ -521,27 +526,29 @@ export async function directScriptToStoryboard(options: ScriptBreakdownOptions):
       }
     }
 
-    // Optional: auto-generate keyframe stills via free router
-    if (options.autoGenerateFrames) {
-      try {
-        const router = createStandardRouter();
+    // Frames are made only through the provider chosen for this project, by the
+    // same handler the Storyboard uses (single provider, paid confirmation, no
+    // automatic fallback that could reach a paid or watermarking service).
+    let framesGenerated = 0;
+    let framesSkipped: string | undefined;
+    if (isStoryboardFrameProviderId(options.frameProvider)) {
+      const { setStoryboardFrameProvider } = await import('../tools/media-storyboard');
+      const saved = await setStoryboardFrameProvider({ projectId, frameProvider: options.frameProvider });
+      if (!saved.success) framesSkipped = saved.error;
+    }
+    if (options.autoGenerateFrames && !framesSkipped) {
+      if (!isStoryboardFrameProviderId(options.frameProvider)) {
+        framesSkipped = 'Choose how this storyboard makes frame images, then use Generate Frames.';
+      } else {
+        const { mediaGenerateStoryboardFrameHandler } = await import('../tools/media-storyboard');
         for (const shot of shotEntries) {
-          const req: GenerationRequest = {
-            kind: 'image',
-            shotId: shot.shotId,
-            shotDir: path.join(projectDir, 'scenes', 'scene_01', shot.shotId),
-            prompt: shot.action,
-            width: 1024,
-            height: 576,
-            durationSec: shot.durationSec,
-            freeOnly: true,
-            allowWatermark: true,
-            allowDeferred: false,
-          };
-          await router.generate(req);
+          const res = await mediaGenerateStoryboardFrameHandler(
+            { projectId, sceneId: 'scene_01', shotId: shot.shotId },
+            { executionId: `director-${projectId}-${shot.shotId}` },
+          );
+          if (!res.success) { framesSkipped = res.error; break; }
+          framesGenerated++;
         }
-      } catch (err) {
-        console.warn(`[script-director] Auto-generation non-fatal warning for ${projectId}:`, err);
       }
     }
 
@@ -553,6 +560,8 @@ export async function directScriptToStoryboard(options: ScriptBreakdownOptions):
       shots,
       totalDurationSec,
       projectDir,
+      ...(options.autoGenerateFrames ? { framesGenerated } : {}),
+      ...(framesSkipped ? { framesSkipped } : {}),
     };
   } catch (err: any) {
     return {

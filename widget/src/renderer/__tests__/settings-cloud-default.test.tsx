@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { render, fireEvent, waitFor } from '@testing-library/react';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react';
 
 jest.mock('../components/TelemetryConsentModal', () => ({ __esModule: true, default: () => null }));
 jest.mock('../components/TelemetryDashboard', () => ({ __esModule: true, default: () => null }));
@@ -57,10 +57,16 @@ describe('SettingsPanel — cloud connection defaults', () => {
     );
     expandSection(container, 'API Keys');
 
+    // Select OpenAI provider first
+    const providerSelect = container.querySelector('.provider-select') as HTMLSelectElement;
+    fireEvent.change(providerSelect, { target: { value: 'openai' } });
+
     const apiKeyInput = container.querySelector('.custom-llm-section .api-key-input') as HTMLInputElement;
     expect(apiKeyInput).toBeTruthy();
     fireEvent.change(apiKeyInput, { target: { value: 'sk-test' } });
 
+    // Use query specific to the CloudProviderSection Connect button
+    // The button is inside .custom-llm-section with class connect-btn
     const connectBtn = container.querySelector('.custom-llm-section .connect-btn') as HTMLButtonElement;
     expect(connectBtn).toBeTruthy();
     fireEvent.click(connectBtn);
@@ -85,7 +91,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
 
   test('switching provider clears stale cloud model and disables cloud default until reconnect', async () => {
     const onSave = jest.fn();
-    const { container, getByLabelText } = render(
+    const { container } = render(
       <SettingsPanel
         settings={{
           ...baseSettings,
@@ -106,7 +112,7 @@ describe('SettingsPanel — cloud connection defaults', () => {
     );
     expandSection(container, 'API Keys');
 
-    const providerSelect = getByLabelText('Cloud API provider') as HTMLSelectElement;
+    const providerSelect = screen.getByLabelText('Cloud API provider') as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: 'anthropic' } });
 
     expect(container.textContent).not.toContain('gpt-4o is connected but NOT in use');

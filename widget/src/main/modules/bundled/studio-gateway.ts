@@ -10,14 +10,17 @@ import { registerStudioIpc, StudioIpcGuard } from './studio-ipc';
 
 /** Fixed channel identity belongs to main; renderer arguments cannot select a module. */
 const signatures: Record<string, string[]> = {
-  list: [], 'parse-feed': ['string'], create: ['object'], run: ['string', 'string', 'object?'],
-  advance: ['string', 'string', 'string?'], approve: ['string', 'string?'], reject: ['string', 'boolean', 'string?'],
+  list: [], 'export-state': ['string'], 'parse-feed': ['string'], create: ['object'], run: ['string', 'string', 'object?'],
+  advance: ['string', 'string', 'string?'], approve: ['string', 'string?', 'string?'], reject: ['string', 'boolean', 'string?'],
   'ffmpeg-status': [], 'ffmpeg-setup': [], 'mark-published': ['string', 'string', 'string?'], delete: ['string', 'boolean?'],
   'trim-clip': ['object'], 'splice-video': ['object'], 'ancient-pathways-episodes': [], 'ancient-pathways-status': [],
   'ancient-pathways-doctor': ['string'], 'ancient-pathways-run': ['string'], 'ancient-pathways-showrunner': ['object'],
+  'ancient-pathways-get-anchors': ['string?'], 'ancient-pathways-get-sprite': ['string', 'string', 'string'],
+  'ancient-pathways-save-anchor': ['object'], 'ancient-pathways-suggest-anchors': ['string?'],
   'movie:run': ['object'], 'movie:list-projects': [], 'storyboard:create': ['object'], 'storyboard:list': [],
   'storyboard:get': ['string'], 'storyboard:generate-frame': ['object'], 'storyboard:save': ['object'],
   'storyboard:render': ['object'], 'storyboard:breakdown': ['object'],
+  'storyboard:frame-providers': [], 'storyboard:set-frame-provider': ['object'], 'storyboard:confirm-paid-frames': ['string'],
   'youtube:status': [], 'youtube:import': [], 'youtube:connect': [],
   'youtube:connect-upload': [], 'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
   'youtube:upload': ['string', 'object'],
