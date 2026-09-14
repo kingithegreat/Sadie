@@ -14,13 +14,21 @@ import { CONNECTIONS } from '../../shared/connections-catalogue';
 
 const mockListServers = jest.fn().mockResolvedValue([]);
 const mockAddServer = jest.fn().mockResolvedValue({ success: true });
+const mockRemoveServer = jest.fn().mockResolvedValue({ success: true });
+const mockToggleServer = jest.fn().mockResolvedValue({ success: true });
+const mockGetStatus = jest.fn().mockResolvedValue([]);
 
 beforeEach(() => {
   jest.clearAllMocks();
   mockListServers.mockResolvedValue([]);
+  mockGetStatus.mockResolvedValue([]);
+  window.confirm = jest.fn().mockReturnValue(true);
   (window as any).electron = {
     mcpListServers: mockListServers,
     mcpAddServer: mockAddServer,
+    mcpRemoveServer: mockRemoveServer,
+    mcpToggleServer: mockToggleServer,
+    mcpGetStatus: mockGetStatus,
     youtubeConnectionStatus: async () => ({ ok: true, status: { configured: false, signedIn: false, busy: false, channels: [] } }),
   };
 });
@@ -118,5 +126,37 @@ describe('ConnectionsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Connect' }));
     const notice = await screen.findByText(/did not start just now: spawn npx ENOENT/);
     expect(notice.className).toContain('cnx-notice-error');
+  });
+
+  test('includes Google Drive & Docs and Gmail in the catalogue cards', () => {
+    render(<ConnectionsPanel navContext={null} />);
+    expect(screen.getByText('Google Drive & Docs')).toBeTruthy();
+    expect(screen.getByText('Gmail')).toBeTruthy();
+  });
+
+  test('can disconnect a connected server from its card', async () => {
+    mockListServers.mockResolvedValue([{ name: 'google-drive', enabled: true }]);
+    mockGetStatus.mockResolvedValue([{ name: 'google-drive', connected: true, toolCount: 4 }]);
+    render(<ConnectionsPanel navContext={{ service: 'google-drive' }} />);
+
+    const disconnectBtn = await screen.findByRole('button', { name: 'Disconnect' });
+    fireEvent.click(disconnectBtn);
+
+    await waitFor(() => {
+      expect(mockRemoveServer).toHaveBeenCalledWith('google-drive');
+    });
+  });
+
+  test('can toggle disable/enable on a connected server from its card', async () => {
+    mockListServers.mockResolvedValue([{ name: 'gmail', enabled: true }]);
+    mockGetStatus.mockResolvedValue([{ name: 'gmail', connected: true, toolCount: 2 }]);
+    render(<ConnectionsPanel navContext={{ service: 'gmail' }} />);
+
+    const disableBtn = await screen.findByRole('button', { name: 'Disable' });
+    fireEvent.click(disableBtn);
+
+    await waitFor(() => {
+      expect(mockToggleServer).toHaveBeenCalledWith('gmail', false);
+    });
   });
 });

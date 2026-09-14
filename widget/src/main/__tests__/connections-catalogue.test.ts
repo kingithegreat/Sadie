@@ -48,6 +48,14 @@ describe('connections catalogue', () => {
   test('findConnection matches ids case-insensitively and rejects junk', () => {
     expect(findConnection('Notion')?.id).toBe('notion');
     expect(findConnection('  GITHUB ')?.id).toBe('github');
+    expect(findConnection('Google-Drive')?.id).toBe('google-drive');
+    expect(findConnection('drive')?.id).toBe('google-drive');
+    expect(findConnection('gdrive')?.id).toBe('google-drive');
+    expect(findConnection('docs')?.id).toBe('google-drive');
+    expect(findConnection('google-docs')?.id).toBe('google-drive');
+    expect(findConnection('Gmail')?.id).toBe('gmail');
+    expect(findConnection('email')?.id).toBe('gmail');
+    expect(findConnection('mail')?.id).toBe('gmail');
     expect(findConnection('nope')).toBeUndefined();
     expect(findConnection(42)).toBeUndefined();
     expect(findConnection(undefined)).toBeUndefined();
@@ -100,6 +108,28 @@ describe('buildServerConfig', () => {
     if (!built.ok) return;
     const header = JSON.parse(built.config.env!.OPENAPI_MCP_HEADERS);
     expect(header.Authorization).toBe('Bearer ntn_spaced');
+  });
+
+  test('google-drive and gmail configure correct commands, args, and credentials env', () => {
+    const gdrive = findConnection('google-drive')!;
+    expect(gdrive).toBeDefined();
+    const gdriveBuilt = buildServerConfig(gdrive, { GDRIVE_CREDENTIALS_PATH: 'C:/keys/gdrive.json' });
+    expect(gdriveBuilt.ok).toBe(true);
+    if (gdriveBuilt.ok) {
+      expect(gdriveBuilt.config.command).toBe('npx');
+      expect(gdriveBuilt.config.args).toContain('@modelcontextprotocol/server-gdrive');
+      expect(gdriveBuilt.config.env?.GDRIVE_CREDENTIALS_PATH).toBe('C:/keys/gdrive.json');
+    }
+
+    const gmail = findConnection('gmail')!;
+    expect(gmail).toBeDefined();
+    const gmailBuilt = buildServerConfig(gmail, { GMAIL_CREDENTIALS_PATH: 'C:/keys/gmail.json' });
+    expect(gmailBuilt.ok).toBe(true);
+    if (gmailBuilt.ok) {
+      expect(gmailBuilt.config.command).toBe('npx');
+      expect(gmailBuilt.config.args).toContain('mcp-server-gmail');
+      expect(gmailBuilt.config.env?.GMAIL_CREDENTIALS_PATH).toBe('C:/keys/gmail.json');
+    }
   });
 });
 

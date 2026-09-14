@@ -217,6 +217,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     general: true,
     models: true,
+    connections: true,
     voice: true,
     cloud: true,
     api_keys: true,

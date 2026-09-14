@@ -27,6 +27,7 @@ import ModelsSettingsTab from './settings/ModelsSettingsTab';
 import VoiceHotkeysTab from './settings/VoiceHotkeysTab';
 import PrivacySettingsTab from './settings/PrivacySettingsTab';
 import AdvancedSettingsTab from './settings/AdvancedSettingsTab';
+import ConnectionsSettingsSection from './settings/ConnectionsSettingsSection';
 
 interface SettingsPanelProps {
   settings: SharedSettings;
@@ -122,6 +123,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         <PrivacySwitch />
 
         <ModelsSettingsTab />
+        <ConnectionsSettingsSection />
         <VoiceHotkeysTab />
         <GeneralSettingsTab />
 
