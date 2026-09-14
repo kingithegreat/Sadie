@@ -350,6 +350,23 @@ describe('Media Studio — From Ancient Pathways', () => {
     expect(mediaMovieListProjects).toHaveBeenCalledTimes(1);
   });
 
+  test('Generation Router names only providers that can run, and does not call them all free', async () => {
+    // It advertised "the best-available free provider … Imagen 3" after Google
+    // retired Imagen 3 (#334), and Pollinations may watermark.
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const section = screen.getByText('Generation Router').parentElement as HTMLElement;
+    expect(section.textContent).not.toMatch(/Imagen/);
+    expect(section.textContent).not.toMatch(/best-available free/i);
+    expect(section.textContent).toMatch(/may add a watermark/);
+  });
+
   test('clicking a project invokes mediaMovieRun with project id', async () => {
     const { mediaMovieRun } = setup();
     await act(async () => {
