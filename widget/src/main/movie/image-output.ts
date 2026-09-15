@@ -1,4 +1,4 @@
-/** Studio image artifacts. No provider, credential or routing authority lives here. */
+/** Studio output artifacts. No provider, credential or routing authority lives here. */
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -9,6 +9,7 @@ import { isWithinHomeDir } from '../utils/home-boundary';
 import type { GenerationRequest } from './types';
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 512 * 1024 * 1024;
 
 function shotRoot(shotDir: string): string {
   if (!shotDir || !path.isAbsolute(shotDir)) throw new Error('Image output needs an absolute shot folder.');
@@ -78,5 +79,77 @@ export function validateMovieImageFiles(shotDir: string, files: string[]): void 
     const stat = fs.statSync(file);
     if (!stat.isFile() || stat.size === 0 || stat.size > MAX_IMAGE_BYTES) throw new Error('Image output is not a usable file.');
     decode(fs.readFileSync(file));
+  }
+}
+
+/**
+ * Do not trust a provider's done flag or a filename for a video shot either.
+ *
+ * The Movie Runner validated only image shots: a `kind === 'video'` shot was
+ * set to `VIDEO_GENERATED` on the provider's word, with no check on the MP4 it
+ * produced — so an empty file, a file with no video stream, or a solid-color
+ * placeholder all counted as a finished shot. That is the same "the stage said
+ * green, nothing looked" failure the media QA gate exists to catch.
+ *
+ * The check reuses the media-qa probe: `inspectRender` reads the real file
+ * through ffmpeg (never ffprobe — a second binary that may not be installed),
+ * so a video that cannot be decoded fails here rather than shipping. Frame
+ * variance is the same placeholder detector; it only rejects when EVERY sampled
+ * frame is flat, so one legitimately simple frame does not trip it.
+ *
+ * `ffmpeg`/`inspect` are injectable for tests; production resolves the managed
+ * binary. If ffmpeg is genuinely missing the shot is refused, not silently
+ * accepted — an unverifiable video must not read as verified.
+ */
+export async function validateMovieVideoFiles(
+  shotDir: string,
+  files: string[],
+  deps: {
+    ffmpeg?: string | null;
+    inspect?: (ffmpeg: string, file: string) => Promise<{
+      hasVideo: boolean;
+      durationSeconds: number | null;
+      frameSamples: { stdDev: number }[] | null;
+    }>;
+  } = {},
+): Promise<void> {
+  if (!Array.isArray(files) || files.length === 0) throw new Error('No video output was saved.');
+  const root = fs.realpathSync(shotRoot(shotDir));
+  for (const file of files) {
+    if (typeof file !== 'string' || !path.isAbsolute(file) || !inside(root, fs.realpathSync(file))) {
+      throw new Error('Video output must stay inside its shot folder.');
+    }
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_VIDEO_BYTES) {
+      throw new Error('Video output is not a usable file.');
+    }
+  }
+
+  let ffmpeg = deps.ffmpeg;
+  if (ffmpeg === undefined) {
+    const { findManagedFfmpeg } = await import('../ffmpeg-setup');
+    const { findFfmpeg } = await import('../media-render');
+    ffmpeg = await findFfmpeg(findManagedFfmpeg());
+  }
+  if (!ffmpeg) {
+    throw new Error('Cannot verify the video — the video engine (ffmpeg) is not set up.');
+  }
+
+  let inspect = deps.inspect;
+  if (!inspect) {
+    const { inspectRender } = await import('../media-qa');
+    inspect = inspectRender;
+  }
+  const facts = await inspect(ffmpeg, files[0]);
+  if (!facts.hasVideo) throw new Error('The saved video has no video stream.');
+  if (facts.durationSeconds === null || facts.durationSeconds <= 0) {
+    throw new Error('The saved video has no measurable duration.');
+  }
+  if (facts.frameSamples && facts.frameSamples.length > 0) {
+    const { FLAT_FRAME_STDDEV } = await import('../media-qa');
+    const maxStdDev = Math.max(...facts.frameSamples.map((s) => s.stdDev));
+    if (maxStdDev < FLAT_FRAME_STDDEV) {
+      throw new Error('The saved video is a flat placeholder, not real scene art.');
+    }
   }
 }
