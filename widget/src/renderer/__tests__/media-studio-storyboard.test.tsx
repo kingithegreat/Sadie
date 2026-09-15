@@ -846,3 +846,27 @@ describe('Storyboard frame freshness', () => {
     }
   });
 });
+
+test('the voice for this export is chosen on the export itself, not in Settings', async () => {
+  // With Online off the online voice throws, and Settings was the only way out.
+  const mocks = setup();
+  render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+  const voice = await screen.findByLabelText('Narration voice for this export');
+  expect((voice as HTMLSelectElement).value).toBe('');            // saved setting until changed
+  expect(voice.textContent).toMatch(/works offline/i);
+
+  await act(async () => { fireEvent.change(voice, { target: { value: 'kokoro' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Render Movie|Render both formats/ })); });
+
+  expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.objectContaining({ narrationEngine: 'kokoro' }));
+});
+
+test('leaving the voice alone keeps the saved setting, with nothing forced onto the export', async () => {
+  const mocks = setup();
+  render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+  await screen.findByLabelText('Narration voice for this export');
+  const render_ = screen.getByRole('button', { name: /Render Movie|Render both formats/ });
+  await waitFor(() => expect(render_).not.toBeDisabled());
+  await act(async () => { fireEvent.click(render_); });
+  expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.not.objectContaining({ narrationEngine: expect.anything() }));
+});

@@ -15,8 +15,8 @@ export const NARRATION_ENGINES: Array<{
   value: NarrationEngine | '';
   label: string;
 }> = [
-  { value: '', label: 'Edge neural (default)' },
-  { value: 'kokoro', label: 'Kokoro — local, English (first use downloads ≈90 MB)' },
+  { value: '', label: 'Online voice (default) — needs Online turned on' },
+  { value: 'kokoro', label: 'Voice on this PC — English, works offline (first use downloads ≈90 MB)' },
 ];
 
 /** Kokoro speakers worth offering, with human labels. */

@@ -41,6 +41,7 @@ import {
 } from '../shared/types';
 import { IPC_SEND_MESSAGE } from '../shared/constants';
 import { NAV_CHANNEL, type NavRequest } from '../shared/navigation';
+import type { NarrationEngine } from '../shared/narration';
 
 // No local duplicate ElectronAPI — we import the canonical type above and ensure our implementation matches it.
 
@@ -849,7 +850,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
-  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
