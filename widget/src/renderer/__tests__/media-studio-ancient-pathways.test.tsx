@@ -3,7 +3,7 @@
  * media-studio-ancient-pathways.test.tsx — "From Ancient Pathways…" in Media Studio.
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 
 const MOCK_EPISODES = [
@@ -228,6 +228,39 @@ describe('Media Studio — From Ancient Pathways', () => {
 
     const doctorButtons = screen.getAllByText('Run Quality Check');
     expect(doctorButtons.length).toBeGreaterThan(0);
+  });
+
+  test('a failed quality check is reported in words the owner can act on', async () => {
+    // It used to print the checker's own line, e.g. "master has music:
+    // quiet-window RMS 0.00287 (dialogue-only measures 0.00000)", which he read
+    // twice without being able to do anything with it.
+    const { mediaAncientPathwaysDoctor } = setup();
+    mediaAncientPathwaysDoctor.mockResolvedValue({
+      ok: true,
+      episodeId: 'egypt',
+      failed: 2,
+      checks: [
+        { name: 'rigs resolve', ok: true, detail: 'all 8 rigs resolve' },
+        { name: 'master has music', ok: false, detail: 'quiet-window RMS 0.00287 (dialogue-only measures 0.00000)' },
+        { name: 'no panel headings in sprites', ok: false, detail: "1 sprites carry a panel heading: ['leila/pose_b/reading.png']" },
+      ],
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(screen.getByText('From Ancient Pathways…')); });
+    await act(async () => { fireEvent.click(screen.getAllByText('Run Quality Check')[0]); });
+
+    expect(screen.getByText(/2 problems found/)).toBeInTheDocument();
+    expect(screen.queryByText(/check\(s\) failed/)).toBeNull();
+
+    const card = screen.getByText(/2 problems found/).closest('.ms-ap-card-doctor') as HTMLElement;
+    expect(within(card).getByText('The finished video has no music')).toBeInTheDocument();
+    expect(within(card).getByText(/A heading strip is inside a character picture/)).toBeInTheDocument();
+    // What to do next, not just what is wrong.
+    expect(card.textContent).toMatch(/run the mix step again/i);
+    // The checker's own line stays available for agents and logs.
+    expect(card.textContent).toContain('quiet-window RMS 0.00287');
+    // A check that passed is not listed as a problem.
+    expect(card.textContent).not.toMatch(/rigs resolve/);
   });
 
   test('clicking Run Quality Check invokes mediaAncientPathwaysDoctor', async () => {

@@ -26,6 +26,7 @@ import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, t
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
+import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
 import {
   type CameraMotion,
   type StageFraming,
@@ -3925,13 +3926,25 @@ ${shots.map((s, idx) => `
                         <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
                       ) : apDoctorChecks[ep.id].failed > 0 ? (
                         <div className="ms-ap-doctor-fail">
-                          <span className="ms-doctor-status">⚠️ {apDoctorChecks[ep.id].failed} check(s) failed</span>
-                          <details style={{ marginTop: 4 }}>
-                            <summary style={{ cursor: 'pointer', color: '#666' }}>View details</summary>
+                          <span className="ms-doctor-status">⚠️ {failureSummary(apDoctorChecks[ep.id].failed)}</span>
+                          <details style={{ marginTop: 4 }} open>
+                            <summary style={{ cursor: 'pointer', color: '#666' }}>What is wrong</summary>
                             <ul style={{ margin: 4, paddingLeft: 20 }}>
-                              {apDoctorChecks[ep.id].checks.filter(c => !c.ok).map((check, i) => (
-                                <li key={i} style={{ fontSize: 12, marginBottom: 2 }}>{check.name}: {check.detail}</li>
-                              ))}
+                              {apDoctorChecks[ep.id].checks.filter(c => !c.ok).map((check, i) => {
+                                // The checker answers in its own terms. Say what it means
+                                // and what to do; keep its line for agents and logs.
+                                const plain = explainCheck(check.name);
+                                return (
+                                  <li key={i} style={{ fontSize: 12, marginBottom: 6 }}>
+                                    <div style={{ fontWeight: 600 }}>{plain ? plain.title : check.name}</div>
+                                    {plain && <div>{plain.meaning}</div>}
+                                    {plain && <div style={{ color: '#9ecbff' }}>What to do: {plain.fix}</div>}
+                                    <div style={{ color: '#8b949e', fontSize: 11, marginTop: 2 }}>
+                                      {check.name}: {check.detail}
+                                    </div>
+                                  </li>
+                                );
+                              })}
                             </ul>
                           </details>
                         </div>
