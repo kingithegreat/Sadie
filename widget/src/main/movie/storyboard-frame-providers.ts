@@ -21,9 +21,58 @@ import { GenerationRouter, evaluate } from './router';
 import { pollinationsProvider } from './pollinations-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
 import type { GenerationProvider, GenerationRequest } from './types';
+import { resolveStudioOutputSpec, type StudioAspectRatio } from '../../shared/media-output';
 
-/** Storyboard frames are 16:9 stills. */
+/** Storyboard frames, 16:9. Kept for availability probes and legacy callers. */
 export const STORYBOARD_FRAME_SIZE = { width: 1024, height: 576 } as const;
+
+/**
+ * Frame size per export shape, at one pixel budget (~590k, the same as the old
+ * fixed 1024x576) so a 4 GB card is no worse off in portrait than in landscape,
+ * and every side is a multiple of 64 for the diffusion models.
+ *
+ * Frames used to be 16:9 whatever the project exported, so a portrait export
+ * cropped the middle 32% out of every shot - which is also what made the flat
+ * image QA reject centred portrait crops in the live multi-output test.
+ */
+export const STORYBOARD_FRAME_SIZES: Record<StudioAspectRatio, { width: number; height: number }> = {
+  '16:9': { width: 1024, height: 576 },
+  '9:16': { width: 576, height: 1024 },
+  '1:1': { width: 768, height: 768 },
+};
+
+export interface StoryboardFrameShape {
+  width: number;
+  height: number;
+  /** The shape the frames are drawn for. */
+  aspectRatio: StudioAspectRatio;
+  /** Other shapes this project exports, which must crop from these frames. */
+  croppedAspects: StudioAspectRatio[];
+}
+
+/**
+ * The shape to draw frames in for a storyboard project.
+ *
+ * One image cannot natively fit two shapes, so with several variants the first
+ * one wins and the rest are reported as cropped - said out loud rather than
+ * discovered in the export.
+ */
+export function storyboardFrameShape(outputSpec?: unknown): StoryboardFrameShape {
+  // resolveStudioOutputSpec throws on settings it does not recognise. Frame
+  // generation must not die with it: fall back to landscape, as before.
+  let variants: ReturnType<typeof resolveStudioOutputSpec>['variants'];
+  try {
+    variants = resolveStudioOutputSpec(outputSpec ?? undefined).variants;
+  } catch {
+    variants = [];
+  }
+  const aspects: StudioAspectRatio[] = [];
+  for (const v of variants) {
+    if (!aspects.includes(v.aspectRatio)) aspects.push(v.aspectRatio);
+  }
+  const primary = aspects[0] ?? '16:9';
+  return { ...STORYBOARD_FRAME_SIZES[primary], aspectRatio: primary, croppedAspects: aspects.slice(1) };
+}
 
 const ADAPTERS: Record<StoryboardFrameProviderOption['routerProviderId'], GenerationProvider> = {
   pollinations: pollinationsProvider,

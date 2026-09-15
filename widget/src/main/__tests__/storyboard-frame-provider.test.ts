@@ -30,6 +30,7 @@ import {
 } from '../tools/media-storyboard';
 import { describeStoryboardFrameProviders, recordPaidFrameConfirmation } from '../movie/storyboard-frame-providers';
 import { STORYBOARD_FRAME_PROVIDERS } from '../../shared/storyboard-frame-providers';
+import { createStudioOutputSpec } from '../../shared/media-output';
 
 const ctx = { executionId: 'frame-provider-test' };
 const originalFetch = globalThis.fetch;
@@ -38,6 +39,7 @@ const originalComfy = process.env.COMFY_ENDPOINT;
 let root: string;
 let fetchMock: jest.Mock;
 let comfyPrompts: string[];
+let comfySizes: Array<{ width: number; height: number }>;
 let comfy: http.Server;
 
 beforeAll(async () => {
@@ -49,7 +51,7 @@ beforeAll(async () => {
     if (url.pathname.startsWith('/object_info')) return json({});
     if (url.pathname === '/prompt') {
       let raw = ''; req.on('data', c => (raw += c));
-      req.on('end', () => { comfyPrompts.push(JSON.parse(raw).prompt['6'].inputs.text); json({ prompt_id: `p${comfyPrompts.length}` }); });
+      req.on('end', () => { const body = JSON.parse(raw); comfyPrompts.push(body.prompt['6'].inputs.text); comfySizes.push({ width: body.prompt['5'].inputs.width, height: body.prompt['5'].inputs.height }); json({ prompt_id: `p${comfyPrompts.length}` }); });
       return;
     }
     if (url.pathname.startsWith('/history/')) {
@@ -70,6 +72,7 @@ beforeEach(async () => {
   mockSettings = { useCustomLLM: false };
   mockGeminiKey = '';
   comfyPrompts = [];
+  comfySizes = [];
   fetchMock = jest.fn(async () => ({ ok: true, json: async () => ({ predictions: [{ bytesBase64Encoded: movieImageFixture.toString('base64'), mimeType: 'image/png' }] }) }));
   globalThis.fetch = fetchMock as any;
   const created = await mediaCreateStoryboardHandler({ projectId: 'harbour', title: 'Harbour', shots: [{ prompt: 'Old harbour at dawn', durationSec: 4 }] }, ctx);
@@ -108,6 +111,38 @@ test('the choice persists per project and unknown providers are refused', async 
     expect((await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: bad })).success).toBe(false);
   }
   expect(JSON.parse(fs.readFileSync(path.join(root, 'harbour', 'project.json'), 'utf8')).frameProvider).toBe('this-pc');
+});
+
+test('the frame is drawn in the shape the project exports, not always 16:9', async () => {
+  // A 16:9 frame in a 9:16 export loses the middle 32% of every shot.
+  await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'this-pc' });
+  const metaPath = path.join(root, 'harbour', 'project.json');
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  fs.writeFileSync(metaPath, JSON.stringify({
+    ...meta,
+    outputSpec: createStudioOutputSpec('9:16'),
+  }));
+
+  const res = await generate();
+  expect(res.success).toBe(true);
+  expect(comfySizes).toEqual([{ width: 576, height: 1024 }]);
+  expect((res.result as any).frameSize).toMatchObject({ width: 576, height: 1024, aspectRatio: '9:16' });
+});
+
+test('a landscape project still gets 16:9 frames, and both shapes say which one crops', async () => {
+  await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'this-pc' });
+  const metaPath = path.join(root, 'harbour', 'project.json');
+  const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  fs.writeFileSync(metaPath, JSON.stringify({
+    ...meta,
+    outputSpec: { ...createStudioOutputSpec('16:9'),
+      variants: [...createStudioOutputSpec('16:9').variants, ...createStudioOutputSpec('9:16').variants] },
+  }));
+
+  const res = await generate();
+  expect(res.success).toBe(true);
+  expect(comfySizes).toEqual([{ width: 1024, height: 576 }]);
+  expect((res.result as any).message).toMatch(/also exports 9:16, which crops from this frame/);
 });
 
 test('the chosen provider alone makes the frame, and attempts count up on regenerate', async () => {
