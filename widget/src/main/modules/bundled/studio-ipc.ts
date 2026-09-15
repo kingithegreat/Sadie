@@ -727,7 +727,7 @@ export function registerStudioIpc(
       : { ok: false, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown; narrationEngine?: unknown }) => {
     try {
       const res = await invokeTool(_ev, 'media_render_storyboard', {
         projectId: args.projectId,
@@ -736,6 +736,7 @@ export function registerStudioIpc(
         burnSubtitles: args.burnSubtitles,
         ...(args.outputSpec === undefined ? {} : { outputSpec: args.outputSpec }),
         ...(args.variantId === undefined ? {} : { variantId: args.variantId }),
+        ...(args.narrationEngine === undefined ? {} : { narrationEngine: args.narrationEngine }),
       });
       return res.success || res.result?.variants
           ? { ok: res.success, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,

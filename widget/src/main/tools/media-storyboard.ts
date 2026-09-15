@@ -642,6 +642,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       },
       outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
       variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
+      narrationEngine: { type: 'string', enum: ['edge', 'kokoro'], description: "Voice for this export: 'kokoro' speaks on this PC with no internet, 'edge' is the online voice. Omit to use the saved setting." },
     },
     required: ['projectId'],
   },
@@ -661,6 +662,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     burnSubtitles: args.burnSubtitles,
     variantId: args.variantId,
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
+    ...(args.narrationEngine === 'edge' || args.narrationEngine === 'kokoro' ? { narrationEngine: args.narrationEngine } : {}),
   });
 
   if (!res.ok && !res.variants) {
