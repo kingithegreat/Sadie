@@ -504,6 +504,7 @@ describe('storyboard export output contract', () => {
     ['no audio', { hasAudio: false }],
     ['silent narration', { meanVolumeDb: -91, maxVolumeDb: -91 }],
     ['unmeasured narration', { meanVolumeDb: null, maxVolumeDb: null }],
+    ['flat placeholder frames', { frameSamples: [{ atSeconds: 1.5, stdDev: 0.1 }, { atSeconds: 3, stdDev: 0.4 }, { atSeconds: 4.5, stdDev: 2.9 }] }],
   ] as Array<[string, Partial<RenderFacts>]>)('rejects %s and retains the previous export', async (_name, facts) => {
     movieFacts = { ...movieFacts, ...facts };
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -511,6 +512,15 @@ describe('storyboard export output contract', () => {
     const result = await render();
     expect(result.ok).toBe(false);
     expect(fs.readFileSync(output, 'utf8')).toBe('previous valid export');
+  });
+
+  test('real frame content passes the flat-frame gate, and one simple frame among real ones does not trip it', async () => {
+    // Positive control: the gate must be able to pass, not just reject.
+    movieFacts.frameSamples = [{ atSeconds: 1.5, stdDev: 18 }, { atSeconds: 3, stdDev: 24 }, { atSeconds: 4.5, stdDev: 15 }];
+    expect((await render()).ok).toBe(true);
+    // A legitimately simple frame (a title card, a dark shot) beside real art is not a placeholder.
+    movieFacts.frameSamples = [{ atSeconds: 1.5, stdDev: 0.2 }, { atSeconds: 3, stdDev: 21 }, { atSeconds: 4.5, stdDev: 1.1 }];
+    expect((await render()).ok).toBe(true);
   });
 
   test('an inspection failure stays a failed export', async () => {
