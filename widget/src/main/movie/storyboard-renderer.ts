@@ -19,7 +19,7 @@ import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, 
 import * as os from 'os';
 import * as path from 'path';
 import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
-import { inspectRender, SILENCE_FLOOR_DB } from '../media-qa';
+import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
 import type { NarrationEngine } from '../../shared/narration';
 import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
@@ -531,6 +531,17 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     }
     if (hasNarration && (facts.meanVolumeDb === null || !Number.isFinite(facts.meanVolumeDb) || facts.meanVolumeDb < SILENCE_FLOOR_DB)) {
       throw new Error('The exported narration is missing or silent. Check the selected voice and retry.');
+    }
+    // A render can match every number above and still be a solid-color
+    // placeholder — every frame the same flat color with narration playing
+    // over it. This is the same gate the job pipeline (evaluateRenderQa) and
+    // the movie runner apply; fail only when EVERY sampled frame is flat, so
+    // one legitimately simple frame does not trip it.
+    if (facts.frameSamples && facts.frameSamples.length > 0) {
+      const maxStdDev = Math.max(...facts.frameSamples.map(s => s.stdDev));
+      if (maxStdDev < FLAT_FRAME_STDDEV) {
+        throw new Error('The exported video is a flat color with no picture content — the frames look like placeholders, not real scene art. The previous export has been kept.');
+      }
     }
     // The existence check above is only a friendly early error. EXCL is the
     // actual no-overwrite guarantee if another process creates that name later.
