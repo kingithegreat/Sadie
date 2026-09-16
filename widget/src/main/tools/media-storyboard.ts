@@ -28,7 +28,7 @@ import {
   type GenerationRequest,
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
-import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 
@@ -116,7 +116,7 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
-      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
+      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p crop, so camera movement shows in every shot; fit keeps the whole image still.' },
     },
     required: ['projectId', 'title'],
   },
@@ -142,7 +142,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       updatedAt: new Date().toISOString(),
       freeOnly: args.freeOnly !== false,
       burnSubtitles: resolveBurnSubtitles(args.burnSubtitles, false),
-      outputSpec: resolveStudioOutputSpec(args.outputSpec),
+      outputSpec: args.outputSpec === undefined ? createStoryboardOutputSpec() : resolveStudioOutputSpec(args.outputSpec),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
