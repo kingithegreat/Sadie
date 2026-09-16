@@ -420,6 +420,14 @@ export interface DoctorCheckResult {
   episodeId: string;
   checks: Array<{ name: string; ok: boolean; detail: string }>;
   failed: number;
+  /**
+   * Set when the checker could not run at all (no Ancient Pathways checkout,
+   * no doctor.py, Python missing, or the run timed out). Callers must treat
+   * this as "unknown", never as "passed" — an empty check list with no error
+   * is what used to render as "All quality checks passed" for a checker that
+   * never ran.
+   */
+  error?: string;
 }
 
 export interface ReachabilityFinding {
@@ -487,15 +495,17 @@ function scanReachability(apDir: string): ReachabilityFinding[] {
 }
 
 export { scanReachability };
+/** The checker is a quick local script; if it hangs, the UI must not sit on "Checking…" forever. */
+const DOCTOR_TIMEOUT_MS = 5 * 60 * 1000;
 export async function runDoctorChecks(episodeId: string, dir?: string): Promise<DoctorCheckResult> {
   const apDir = dir || resolveAncientPathwaysDir();
   if (!apDir || !fs.existsSync(apDir)) {
-    return { episodeId, checks: [], failed: 0 };
+    return { episodeId, checks: [], failed: 0, error: 'Ancient Pathways is not installed on this PC, so the quality checker cannot run.' };
   }
 
   const doctorPath = path.join(apDir, 'scripts', 'doctor.py');
   if (!fs.existsSync(doctorPath)) {
-    return { episodeId, checks: [], failed: 0 };
+    return { episodeId, checks: [], failed: 0, error: 'The quality checker (doctor.py) is missing from the Ancient Pathways checkout.' };
   }
 
   const child = spawn('python', [doctorPath, '--episode', episodeId], {
@@ -510,7 +520,20 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
   let stdout = '';
   let stderr = '';
 
-  return new Promise((resolve) => {
+  return new Promise<DoctorCheckResult>((resolve) => {
+    let settled = false;
+    const finish = (result: DoctorCheckResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({ episodeId, checks: [], failed: 0, error: `The quality checker took longer than ${Math.round(DOCTOR_TIMEOUT_MS / 60000)} minutes and was stopped.` });
+    }, DOCTOR_TIMEOUT_MS);
+    timer.unref?.();
+
     child.stdout.on('data', (chunk) => {
       stdout += chunk.toString('utf8');
     });
@@ -519,7 +542,12 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
       stderr += chunk.toString('utf8');
     });
 
-    child.on('close', () => {
+    child.on('close', (code) => {
+      if (code !== 0 && code !== null) {
+        const tail = (stderr || stdout).trim().split('\n').slice(-3).join(' ');
+        finish({ episodeId, checks: [], failed: 0, error: `The quality checker exited with code ${code}${tail ? `: ${tail}` : ''}.` });
+        return;
+      }
       const checks: Array<{ name: string; ok: boolean; detail: string; id?: number }> = [];
       const lines = stdout.split('\n');
       for (const line of lines) {
@@ -533,35 +561,21 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
         }
       }
 
-      const reachability = scanReachability(apDir);
-      if (reachability.length > 0) {
-        for (const f of reachability) {
-          checks.push({
-            name: `reachability:${f.symbol}`,
-            ok: false,
-            detail: `${f.issue} (defined in ${f.definedIn}, ${f.callers} cross-module callers found)`,
-          });
-        }
-      }
-
-      if (checks.length === 0 && (stderr.trim() || stdout.trim())) {
-        checks.push({
-          name: 'doctor_execution',
-          ok: false,
-          detail: stderr.trim() || stdout.trim() || 'doctor.py exited without check output.',
-        });
+      // The checker's own lines are the episode's quality. Repo hygiene (dead
+      // Python functions) is a separate concern and used to be mixed in here,
+      // which both slowed every run and produced failures the owner could not
+      // act on. scanReachability stays exported for explicit use.
+      if (checks.length === 0) {
+        finish({ episodeId, checks: [], failed: 0, error: 'The quality checker ran but reported no checks. Its output format may have changed.' });
+        return;
       }
 
       const failed = checks.filter((c) => !c.ok).length;
-      resolve({ episodeId, checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail })), failed });
+      finish({ episodeId, checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail })), failed });
     });
 
     child.on('error', (err) => {
-      resolve({
-        episodeId,
-        checks: [{ name: 'python_doctor_execution', ok: false, detail: `Could not launch Python for doctor checks: ${err.message}` }],
-        failed: 1,
-      });
+      finish({ episodeId, checks: [], failed: 0, error: `Could not start Python to run the quality checker: ${err.message}` });
     });
   });
 }
