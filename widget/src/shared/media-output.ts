@@ -169,6 +169,16 @@ export function resolveStudioOutputSpec(
   return { schemaVersion: 1, durationIntent: spec.durationIntent, variants };
 }
 
+/**
+ * Output settings for a NEW Storyboard project: landscape 1080p, crop framing.
+ * Crop is what lets each shot's camera movement (push in, pan, tilt) reach the
+ * video — fit keeps the whole image still. Owner decision, 2026-09-17. Saved
+ * projects keep whatever framing they already have.
+ */
+export function createStoryboardOutputSpec(): StudioOutputSpec {
+  return createStudioOutputSpec('16:9', 'short', '1080p', 'crop');
+}
+
 export function createStudioOutputSpec(
   aspectRatio: StudioAspectRatio = '16:9',
   durationIntent: 'short' | 'long' = 'short',
