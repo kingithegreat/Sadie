@@ -31,6 +31,12 @@ import {
 import { describeStoryboardFrameProviders, recordPaidFrameConfirmation } from '../movie/storyboard-frame-providers';
 import { STORYBOARD_FRAME_PROVIDERS } from '../../shared/storyboard-frame-providers';
 import { createStudioOutputSpec } from '../../shared/media-output';
+import { geminiAspectRatio } from '../movie/gemini-image-adapter';
+
+// These are real-handler tests that render frames through a loopback ComfyUI
+// server; the 3-frame auto-generation test takes ~4.6s alone, so the Jest
+// 5000ms default is too tight under a loaded runner (it has flaked as a timeout).
+jest.setTimeout(15_000);
 
 const ctx = { executionId: 'frame-provider-test' };
 const originalFetch = globalThis.fetch;
@@ -89,10 +95,13 @@ const generate = () => mediaGenerateStoryboardFrameHandler({ projectId: 'harbour
 const shotStatus = () => JSON.parse(fs.readFileSync(path.join(root, 'harbour', 'scenes', 'scene_01', 'shot_001', 'status.json'), 'utf8'));
 
 test('the picker never offers Ancient Pathways or local SD 1.5 for still frames', () => {
-  // Imagen was removed when Google retired it (10 November 2025).
-  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['comfyui', 'pollinations']);
-  expect(STORYBOARD_FRAME_PROVIDERS.some(o => o.paid)).toBe(false);
+  // Imagen was removed when Google retired it (10 November 2025); Gemini is its paid replacement.
+  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['comfyui', 'gemini-image', 'pollinations']);
+  expect(STORYBOARD_FRAME_PROVIDERS.filter(o => o.paid).map(o => o.id)).toEqual(['gemini']);
   expect(STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'online')?.label).toMatch(/may add a watermark/);
+  const gemini = STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'gemini')!;
+  expect(gemini.label).toMatch(/paid/);
+  expect(gemini.watermark).toMatch(/SynthID/);
 });
 
 test('a new storyboard has no provider; generating asks for a choice and contacts nothing', async () => {
@@ -179,24 +188,125 @@ test('a project that saved Imagen before it was retired is asked to choose again
   expect((await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'imagen' })).success).toBe(false);
 });
 
-test('no current option can record a paid confirmation', () => {
+test('only the paid option can record a paid confirmation', () => {
   for (const id of ['imagen', 'online', 'this-pc', 'ancient-pathways']) {
     expect(recordPaidFrameConfirmation(id).ok).toBe(false);
   }
   expect(mockSettings.paidFrameConfirmations).toBeUndefined();
+  expect(recordPaidFrameConfirmation('gemini').ok).toBe(true);
+  expect(Object.keys(mockSettings.paidFrameConfirmations)).toEqual(['gemini']);
 });
 
 test('status checks say what each option needs, without generating anything', async () => {
-  let status = Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
+  const check = async () => Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
+  let status = await check();
   expect(status.online).toMatchObject({ ready: false, needs: 'online' });
   expect(status['this-pc']).toMatchObject({ ready: true, needs: null });
-  expect(Object.keys(status).sort()).toEqual(['online', 'this-pc']);
+  expect(status.gemini).toMatchObject({ ready: false, needs: 'online' });
+  expect(Object.keys(status).sort()).toEqual(['gemini', 'online', 'this-pc']);
+
   mockSettings = { useCustomLLM: true };
-  mockGeminiKey = 'AIza-test-key';
-  status = Object.fromEntries((await describeStoryboardFrameProviders()).map(s => [s.id, s]));
+  status = await check();
   expect(status.online).toMatchObject({ ready: true });
+  expect(status.gemini).toMatchObject({ ready: false, needs: 'gemini-key' });
+  expect(status.gemini.reason).toMatch(/Gemini API key in Settings/);
+
+  mockGeminiKey = 'AIza-test-key';
+  status = await check();
+  expect(status.gemini).toMatchObject({ ready: false, needs: 'paid-confirmation' });
+
+  recordPaidFrameConfirmation('gemini');
+  status = await check();
+  expect(status.gemini).toMatchObject({ ready: true, needs: null });
   expect(comfyPrompts).toEqual([]);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+describe('Gemini frames (paid, owner-confirmed)', () => {
+  const geminiReply = (body: unknown, status = 200) => ({
+    ok: status >= 200 && status < 300, status,
+    json: async () => body, text: async () => JSON.stringify(body),
+  });
+  const imageReply = geminiReply({
+    candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/png', data: movieImageFixture.toString('base64') } }] } }],
+  });
+  const chooseGemini = async () => {
+    mockSettings = { useCustomLLM: true };
+    mockGeminiKey = 'AIza-test-key';
+    expect((await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'gemini' })).success).toBe(true);
+  };
+
+  test('every Storyboard frame shape maps to the matching Gemini aspect ratio', () => {
+    expect(geminiAspectRatio(1024, 576)).toBe('16:9');
+    expect(geminiAspectRatio(576, 1024)).toBe('9:16');
+    expect(geminiAspectRatio(768, 768)).toBe('1:1');
+  });
+
+  test('before paid use is confirmed it refuses and sends nothing to Google', async () => {
+    await chooseGemini();
+    const res = await generate();
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/costs money\. Confirm paid use/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('with Online off it refuses even when confirmed and keyed', async () => {
+    await chooseGemini();
+    recordPaidFrameConfirmation('gemini');
+    mockSettings = { ...mockSettings, useCustomLLM: false };
+    const res = await generate();
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Online/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('once confirmed it asks Gemini 3.1 Flash Image for the project shape and saves the frame', async () => {
+    await chooseGemini();
+    recordPaidFrameConfirmation('gemini');
+    const metaPath = path.join(root, 'harbour', 'project.json');
+    fs.writeFileSync(metaPath, JSON.stringify({ ...JSON.parse(fs.readFileSync(metaPath, 'utf8')), outputSpec: createStudioOutputSpec('9:16') }));
+    fetchMock.mockResolvedValueOnce(imageReply);
+
+    const res = await generate();
+    expect(res.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent');
+    expect(url).not.toContain('AIza'); // the key travels in a header, never in the URL
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('AIza-test-key');
+    const body = JSON.parse(String(init.body));
+    expect(body.contents[0].parts[0].text).toBe('Old harbour at dawn');
+    expect(body.generationConfig).toEqual({ responseModalities: ['TEXT', 'IMAGE'], responseFormat: { image: { aspectRatio: '9:16', imageSize: '1K' } } });
+
+    const framePath = (res.result as any).frameImagePath as string;
+    expect(fs.readFileSync(framePath).equals(movieImageFixture)).toBe(true);
+    expect(shotStatus()).toMatchObject({ provider: 'gemini-image', frameProvider: 'gemini', attempts: 1 });
+    expect(comfyPrompts).toEqual([]); // ComfyUI is reachable, and still not used
+  });
+
+  test('a key without billing gets a plain answer about Google\'s missing free tier', async () => {
+    await chooseGemini();
+    recordPaidFrameConfirmation('gemini');
+    fetchMock.mockResolvedValueOnce(geminiReply({ error: { code: 429, status: 'RESOURCE_EXHAUSTED',
+      message: 'Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-3.1-flash-image' } }, 429));
+    const res = await generate();
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/no image quota.*turn on billing/);
+    expect(res.error).not.toContain('AIza');
+    expect(comfyPrompts).toEqual([]); // no fallback on failure either
+  });
+
+  test('a reply with no image says why instead of saving an empty frame', async () => {
+    await chooseGemini();
+    recordPaidFrameConfirmation('gemini');
+    fetchMock.mockResolvedValueOnce(geminiReply({ candidates: [{ finishReason: 'IMAGE_SAFETY', content: { parts: [] } }] }));
+    const res = await generate();
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/no image for this prompt \(IMAGE_SAFETY\)/);
+    const imageDir = path.join(root, 'harbour', 'scenes', 'scene_01', 'shot_001', 'image');
+    expect(fs.existsSync(imageDir) ? fs.readdirSync(imageDir) : []).toEqual([]);
+    expect(shotStatus().frameProvider).toBeUndefined();
+  });
 });
 
 describe('Auto-Director frames follow the same choice', () => {

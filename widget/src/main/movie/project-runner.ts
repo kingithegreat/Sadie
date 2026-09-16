@@ -29,7 +29,7 @@ import { pollinationsProvider } from './pollinations-adapter';
 import { imagen3Provider } from './imagen3-adapter';
 import { localSD15Provider } from './local-sd15-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
-import { validateMovieImageFiles } from './image-output';
+import { validateMovieImageFiles, validateMovieVideoFiles } from './image-output';
 import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput } from '../../shared/media-output';
 import { checkAndIngestColabResult } from './colab-queue';
 
@@ -322,18 +322,25 @@ export class MovieProjectRunner {
         const imageFiles = () => state.outputFiles
           ? state.outputFiles.map(file => path.resolve(shotDir, file))
           : ['png', 'jpg', 'jpeg'].map(ext => path.join(shotDir, 'image', `${shotId}.${ext}`)).filter(file => fs.existsSync(file));
+        const videoFiles = () => state.outputFiles
+          ? state.outputFiles.map(file => path.resolve(shotDir, file))
+          : [path.join(shotDir, 'video', `${shotId}.mp4`)].filter(file => fs.existsSync(file));
 
-        // A persisted success is only reusable while its image is still usable.
+        // A persisted success is only reusable while its output is still usable.
         if (
           state.status === ShotStatus.IMAGE_GENERATED ||
           state.status === ShotStatus.VIDEO_GENERATED ||
           state.status === ShotStatus.APPROVED
         ) {
-          const files = req.kind === 'image' ? imageFiles() : undefined;
+          const files = req.kind === 'image' ? imageFiles() : videoFiles();
           if (files) {
-            try { validateMovieImageFiles(shotDir, files); }
-            catch {
-              failShot('The saved image is missing or unreadable. Run the shot again to replace it.', 'cached');
+            try {
+              if (req.kind === 'image') validateMovieImageFiles(shotDir, files);
+              else await validateMovieVideoFiles(shotDir, files);
+            } catch {
+              failShot(req.kind === 'image'
+                ? 'The saved image is missing or unreadable. Run the shot again to replace it.'
+                : 'The saved video is missing or unusable. Run the shot again to replace it.', 'cached');
               continue;
             }
           }
@@ -423,9 +430,19 @@ export class MovieProjectRunner {
         const generated = await router.generate(req);
         const { decision } = generated;
         let { result } = generated;
-        if (result.status === 'done' && req.kind === 'image') {
-          try { validateMovieImageFiles(shotDir, result.files); }
-          catch { result = { status: 'failed', provider: result.provider, error: 'No readable image was saved. Run the shot again or choose another provider.' }; }
+        if (result.status === 'done') {
+          try {
+            if (req.kind === 'image') validateMovieImageFiles(shotDir, result.files);
+            else await validateMovieVideoFiles(shotDir, result.files);
+          } catch {
+            result = {
+              status: 'failed',
+              provider: result.provider,
+              error: req.kind === 'image'
+                ? 'No readable image was saved. Run the shot again or choose another provider.'
+                : 'No usable video was saved. Run the shot again or choose another provider.',
+            };
+          }
         }
 
         // Record per-shot decision in shotDir/decision.json
