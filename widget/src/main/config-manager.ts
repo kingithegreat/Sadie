@@ -363,6 +363,7 @@ export const DEFAULT_SETTINGS: Settings = {
     media_get_storyboard: true,
     media_generate_storyboard_frame: true,
     media_save_storyboard: true,
+    media_set_storyboard_image: true,
     media_render_storyboard: true,
     media_breakdown_script: true,
     // Destructive and irreversible, so it also carries requiresConfirmation.
