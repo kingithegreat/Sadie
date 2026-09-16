@@ -304,6 +304,40 @@ describe('Media Studio — From Ancient Pathways', () => {
     expect(screen.getByText(/All quality checks passed/)).toBeInTheDocument();
   });
 
+  test('shows an unavailable message instead of a pass when the checker could not run', async () => {
+    setup({
+      mediaAncientPathwaysDoctor: jest.fn().mockResolvedValue({
+        ok: true,
+        episodeId: 'babylon',
+        checks: [],
+        failed: 0,
+        error: 'Ancient Pathways is not installed on this PC, so the quality checker cannot run.',
+      }),
+    });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByText('From Ancient Pathways…'));
+    });
+
+    const doctorButtons = screen.getAllByText('Run Quality Check');
+    await act(async () => {
+      fireEvent.click(doctorButtons[0]);
+    });
+
+    await act(async () => {
+      // Wait for the check to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
+    expect(screen.getByText(/Quality check could not be run/)).toBeInTheDocument();
+    expect(screen.getByText(/Ancient Pathways is not installed/)).toBeInTheDocument();
+    // A checker that never ran must not read as a pass.
+    expect(screen.queryByText(/All quality checks passed/)).toBeNull();
+  });
+
   test('showrunner panel appears within Ancient Pathways section', async () => {
     setup();
     await act(async () => {
