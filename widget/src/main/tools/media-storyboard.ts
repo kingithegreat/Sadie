@@ -16,7 +16,7 @@ import {
   type SceneManifest,
 } from '../movie/project-runner';
 import {
-  STORYBOARD_FRAME_SIZE,
+  storyboardFrameShape,
   hasPaidFrameConfirmation,
   routerForStoryboardFrame,
   storyboardFrameRequestPolicy,
@@ -453,7 +453,12 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     }
 
     const policy = storyboardFrameRequestPolicy(option);
-    const req: GenerationRequest = { kind: 'image', prompt, ...STORYBOARD_FRAME_SIZE, shotId, shotDir, ...policy };
+    // Draw the frame in the shape this project exports. A 16:9 frame in a 9:16
+    // export loses the middle 32% of every shot to the crop.
+    const shape = storyboardFrameShape(readProjectMeta(projectMetaPath).outputSpec);
+    const req: GenerationRequest = {
+      kind: 'image', prompt, width: shape.width, height: shape.height, shotId, shotDir, ...policy,
+    };
 
     const { decision, result: res } = await routerForStoryboardFrame(option.id).generate(req, { freeOnly: policy.freeOnly });
     if (res.status === 'failed') {
@@ -487,7 +492,12 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
         shotId,
         provider: res.provider || decision.chosen?.providerId || 'free-router',
         frameImagePath: imgPath,
-        message: `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`,
+        frameSize: { width: shape.width, height: shape.height, aspectRatio: shape.aspectRatio },
+        message: `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`
+          + ` Drawn ${shape.width}x${shape.height} for ${shape.aspectRatio}.`
+          + (shape.croppedAspects.length
+            ? ` This project also exports ${shape.croppedAspects.join(' and ')}, which crops from this frame.`
+            : ''),
       },
     };
   } catch (err: any) {
