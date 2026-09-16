@@ -429,6 +429,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const animaticAudioRef = useRef<HTMLAudioElement | null>(null);
   const [storyboardRendering, setStoryboardRendering] = useState(false);
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
+  // Voice for the next storyboard export. '' keeps the saved setting.
+  const [storyboardVoice, setStoryboardVoice] = useState<'' | 'edge' | 'kokoro'>('');
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
@@ -1597,6 +1599,7 @@ ${shots.map((s, idx) => `
         ...(sceneId ? { sceneId } : {}),
         burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
         ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
+        ...(storyboardVoice ? { narrationEngine: storyboardVoice } : {}),
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
@@ -4364,6 +4367,21 @@ ${shots.map((s, idx) => `
             >
               ✂️ Open in CapCut
             </button>
+
+            {/* The voice belongs here, not in Settings: with Online off the online
+                voice cannot speak, and the export used to fail with no way out. */}
+            <select
+              className="ms-input ms-engine-select"
+              value={storyboardVoice}
+              onChange={e => setStoryboardVoice(e.target.value as '' | 'edge' | 'kokoro')}
+              disabled={storyboardBusy}
+              aria-label="Narration voice for this export"
+              title="Which voice reads the narration when this movie is rendered"
+            >
+              {NARRATION_ENGINES.map(engine => (
+                <option key={engine.label} value={engine.value}>{engine.label}</option>
+              ))}
+            </select>
 
             <button
               type="button"
