@@ -4,7 +4,7 @@
  * shot cards, camera framing pills, AI frame generation, and Chat navContext handoff.
  */
 
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
@@ -21,7 +21,7 @@ function frameStatuses(state: Record<string, Partial<StoryboardFrameProviderStat
   const defaults: Record<string, Partial<StoryboardFrameProviderStatus>> = {
     online: { ready: false, needs: 'online', reason: 'Online is off. Turn on Online in Settings to use this.' },
     'this-pc': { ready: true, needs: null, reason: null },
-    imagen: { ready: false, needs: 'gemini-key', reason: 'Add a Gemini API key in Settings. Google bills that account per image.' },
+    gemini: { ready: false, needs: 'paid-confirmation', reason: 'Confirm paid use before the first image.' },
   };
   return STORYBOARD_FRAME_PROVIDERS.map(o => ({ ...o, ready: false, needs: null, reason: null, ...defaults[o.id], ...state[o.id] }) as StoryboardFrameProviderStatus);
 }
@@ -793,6 +793,7 @@ describe('Storyboard frame provider picker', () => {
       'Choose how to make frame images…',
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
+      'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
     ]);
     expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
     expect(picker.value).toBe('');
@@ -824,6 +825,21 @@ describe('Storyboard frame provider picker', () => {
     mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ online: { ready: true, needs: null, reason: null } }) });
     await openBoard(mocks, { frameProvider: 'online' });
     await waitFor(() => expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent(/may add a small watermark to images, and it would appear in your movie/));
+    expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
+  });
+
+  test('choosing Gemini asks to confirm the per-image cost before any frame, and records only that confirmation', async () => {
+    const mocks = setup();
+    await openBoard(mocks, { frameProvider: undefined });
+    await act(async () => { fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'gemini' } }); });
+    expect(mocks.mediaStoryboardSetFrameProvider).toHaveBeenCalledWith({ projectId: 'pyramid-builders', frameProvider: 'gemini' });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(/About US\$0\.07 per image/);
+    expect(dialog).toHaveTextContent(/invisible SynthID watermark/);
+    expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
+    for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
+    await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Use it and pay per image' })); });
+    await waitFor(() => expect(mocks.mediaStoryboardConfirmPaidFrames).toHaveBeenCalledWith('gemini'));
     expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
   });
 
