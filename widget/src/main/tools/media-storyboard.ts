@@ -29,6 +29,7 @@ import {
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-style';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 
@@ -530,6 +531,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       projectId: { type: 'string', description: 'ID of the storyboard project.' },
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
       burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
+      captionStyle: { type: 'object', description: 'How burned-in captions look: {size: small|medium|large, position: bottom|middle|top, font: Arial|Segoe UI|Verdana|Georgia|Impact|Trebuchet MS, color: #rrggbb, background: outline|box}. Omitted fields keep the default (medium, bottom, Arial, #ffffff, outline).' },
       outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
       shots: {
         type: 'array',
@@ -553,6 +555,12 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
   if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
     return { success: false, error: 'Choose whether captions are on or off.' };
+  }
+  let captionStyle: CaptionStyle | undefined;
+  try {
+    captionStyle = args.captionStyle === undefined ? undefined : resolveCaptionStyle(args.captionStyle);
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
   }
   const shots = args.shots;
   const shotIds = shots.map((shot: any) => shot?.shotId);
@@ -614,6 +622,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       fs.writeFileSync(stagedMeta, JSON.stringify({
         ...projectMeta,
         ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
+        ...(captionStyle !== undefined ? { captionStyle } : {}),
         ...(outputSpec !== undefined ? { outputSpec } : {}),
         updatedAt: new Date().toISOString(),
       }, null, 2), 'utf-8');

@@ -18,7 +18,8 @@ import * as fs from 'fs';
 import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput, type StudioMovieResult } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
-import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
+import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor } from '../media-render';
+import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
 import type { NarrationEngine } from '../../shared/narration';
@@ -399,7 +400,9 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
   const width = variant?.width ?? 1920;
   const height = variant?.height ?? 1080;
   const fps = variant?.fps ?? 30;
-  const subtitleStyle = variant ? defaultSubtitleStyle(variant.aspectRatio)
+  // The owner's saved caption style; legacy projects without an output shape keep their fixed 1080p style.
+  const subtitleStyle = variant ? subtitleStyleFor(variant.aspectRatio, projectMeta.captionStyle)
+    : isCustomCaptionStyle(projectMeta.captionStyle) ? subtitleStyleFor('16:9', projectMeta.captionStyle)
     : 'FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Alignment=2,MarginV=35';
   const exportId = attempt.id;
   const outputFilename = opts.outputName || `${opts.projectId}${sceneId ? `-${sceneId}` : ''}-${variant?.id ?? '1080p'}-${exportId}.mp4`;
