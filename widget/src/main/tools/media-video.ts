@@ -12,6 +12,22 @@ function errText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
+/**
+ * Verify a produced video file is actually a usable video, not merely present.
+ * The trim/splice tools used to trust the file existing on disk; an empty,
+ * corrupt or headerless output read as a successful trim. Same probe the media
+ * QA gate uses (ffmpeg, never ffprobe), so a file ffmpeg cannot read fails here
+ * rather than shipping as a "trimmed" clip.
+ */
+async function verifyVideoFile(ffmpeg: string, filePath: string): Promise<void> {
+  const { inspectRender } = await import('../media-qa');
+  const facts = await inspectRender(ffmpeg, filePath);
+  if (!facts.hasVideo) throw new Error('the output is not a video');
+  if (facts.durationSeconds === null || facts.durationSeconds <= 0) {
+    throw new Error('the output has no measurable duration');
+  }
+}
+
 function spawnFfmpeg(args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile('ffmpeg', args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 50 * 1024 * 1024 },
@@ -114,6 +130,12 @@ const trimVideoHandler: ToolHandler = async (callArgs: Record<string, any>): Pro
 
     if (!fs.existsSync(outPath)) {
       return { success: false, error: 'The trimmed file was not created. The video may be corrupted or unsupported.' };
+    }
+
+    try {
+      await verifyVideoFile(ffmpeg, outPath);
+    } catch (e: any) {
+      return { success: false, error: `The trimmed file is not a usable video: ${errText(e)}` };
     }
 
     const originalSize = fs.statSync(resolvedPath).size;
@@ -221,6 +243,12 @@ const spliceVideoHandler: ToolHandler = async (callArgs: Record<string, any>): P
 
     if (!fs.existsSync(outputPath)) {
       return { success: false, error: 'The spliced file was not created. Check that all clips have compatible formats.' };
+    }
+
+    try {
+      await verifyVideoFile(ffmpeg, outputPath);
+    } catch (e: any) {
+      return { success: false, error: `The spliced file is not a usable video: ${errText(e)}` };
     }
 
     const totalSize = resolvedClips.reduce((sum, p) => sum + (fs.statSync(p).size || 0), 0);

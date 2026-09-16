@@ -15,7 +15,7 @@ export const NARRATION_ENGINES: Array<{
   value: NarrationEngine | '';
   label: string;
 }> = [
-  { value: '', label: 'Edge neural (default)' },
+  { value: '', label: 'Online voice (default) — needs Online turned on' },
   { value: 'kokoro', label: 'Voice on this PC — English, works offline after a one-time download (needs Online on once, ≈90 MB)' },
 ];
 
