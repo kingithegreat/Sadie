@@ -21,6 +21,7 @@ import * as path from 'path';
 import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle } from '../media-render';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
+import type { NarrationEngine } from '../../shared/narration';
 import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
   storyboardNarrationEngine, storyboardFileDigest, updateStoryboardExportMeta } from './storyboard-export-state';
 
@@ -32,6 +33,8 @@ export interface StoryboardRenderOptions {
   outputName?: string;
   outputSpec?: unknown;
   variantId?: StudioOutputVariant['id'];
+  /** Voice for this export. Omit to use the saved setting. */
+  narrationEngine?: NarrationEngine;
 }
 
 export type StoryboardRenderResult = StudioMovieResult;
@@ -275,7 +278,9 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
       }
     }
     shots = snapshotScenes.flatMap(scene => scene.shots);
-    const engine = storyboardNarrationEngine();
+    // The voice chosen for THIS export wins over the saved setting: with Online
+    // off, the online voice throws and the only way out used to be Settings.
+    const engine = opts.narrationEngine ?? storyboardNarrationEngine();
     const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
     const motion = opts.motion !== false;
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
