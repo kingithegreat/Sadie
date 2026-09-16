@@ -6,12 +6,12 @@
  *
  * Ancient Pathways is deliberately absent (it renders animated episodes, not
  * still frames) and so is local SD 1.5 (capped at 512 px, below a 16:9 frame).
- * Imagen was removed when Google retired it (10 November 2025); a paid Google
- * image model would need the owner's decision before it is added back. The
- * paid-confirmation contract below stays for any future paid option.
+ * Imagen was removed when Google retired it (10 November 2025). The owner chose
+ * Google's replacement, Gemini 3.1 Flash Image, as a paid option (2026-09-16):
+ * it has no free tier, so it needs a first-use confirmation like any paid option.
  */
 
-export type StoryboardFrameProviderId = 'online' | 'this-pc';
+export type StoryboardFrameProviderId = 'online' | 'this-pc' | 'gemini';
 
 /** What the owner still has to do before this choice can make frames. */
 export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 'paid-confirmation';
@@ -19,7 +19,7 @@ export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 
 export interface StoryboardFrameProviderOption {
   id: StoryboardFrameProviderId;
   /** GenerationRouter provider that does the work. */
-  routerProviderId: 'pollinations' | 'comfyui';
+  routerProviderId: 'pollinations' | 'comfyui' | 'gemini-image';
   /** Where · who · the one fact that matters. Shown in the picker. */
   label: string;
   cost: string;
@@ -51,6 +51,16 @@ export const STORYBOARD_FRAME_PROVIDERS: readonly StoryboardFrameProviderOption[
     paid: false,
     mayWatermark: false,
     advanced: true,
+  },
+  {
+    id: 'gemini',
+    routerProviderId: 'gemini-image',
+    label: 'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
+    cost: 'About US$0.07 per image (Gemini 3.1 Flash Image), charged by Google to your Gemini API key. There is no free tier; your prompt is sent to Google.',
+    watermark: 'Google adds its invisible SynthID watermark to every image. It does not show in your movie.',
+    paid: true,
+    mayWatermark: true,
+    advanced: false,
   },
 ];
 
