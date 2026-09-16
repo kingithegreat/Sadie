@@ -20,6 +20,7 @@ import {
 import { GenerationRouter, evaluate } from './router';
 import { pollinationsProvider } from './pollinations-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
+import { geminiImageProvider } from './gemini-image-adapter';
 import type { GenerationProvider, GenerationRequest } from './types';
 import { resolveStudioOutputSpec, type StudioAspectRatio } from '../../shared/media-output';
 
@@ -77,6 +78,7 @@ export function storyboardFrameShape(outputSpec?: unknown): StoryboardFrameShape
 const ADAPTERS: Record<StoryboardFrameProviderOption['routerProviderId'], GenerationProvider> = {
   pollinations: pollinationsProvider,
   comfyui: comfyUIProvider,
+  'gemini-image': geminiImageProvider,
 };
 
 /** The request policy a chosen option runs under. */
@@ -121,6 +123,9 @@ export async function describeStoryboardFrameProvider(option: StoryboardFramePro
   }
   if (!score.eligible) {
     if (option.id === 'this-pc') return blocked('comfyui', 'ComfyUI is not running on this PC.');
+    if (option.id === 'gemini') {
+      return blocked('gemini-key', 'Add your Gemini API key in Settings (Main chat model — Cloud API, provider Google AI Studio), then choose “Check again”.');
+    }
     return blocked(null, 'This option cannot make frames right now.');
   }
   if (option.paid && !hasPaidFrameConfirmation(option.id)) {
