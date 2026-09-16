@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (225)** — `window.electron`
+**Preload methods (227)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1017,58 +1017,58 @@ browserBounds                       browserCapture                      browserD
 browserNavigate                     browserReload                       cancelStream                        captureLogs
 captureScreen                       changesDiff                         changesList                         checkConnection
 checkOllamaInstalled                clearPermissionAudit                closeWindow                         compactConversation
-createAutomation                    createConversation                  deleteAutomation                    deleteConversation
-deleteOllamaModel                   detectGpuVram                       downloadOllama                      downloadUpdate
-executeImageGenerate                exportChat                          exportConversation                  exportPermissionAudit
-exportSettings                      exportTelemetryConsent              fetchFeeds                          fetchPageContent
-generateQuiz                        generateQuizFromRag                 generateTitle                       getAnalyticsSummary
-getBatchSummaries                   getCapabilityReport                 getConfigPath                       getConversation
-getCrmActivity                      getCrmDashboard                     getEnv                              getGeneratedImage
-getMode                             getPerfAggregates                   getPerfHistory                      getSettings
-getSupervisorStatus                 getUncensoredMode                   getWidgetMode                       hasPermission
-importSettings                      improvePrompt                       installUpdate                       invoke
-licenseActivate                     licenseDeactivate                   licenseStatus                       licenseValidate
-listAllFeeds                        listCustomLLMModels                 listFeedSources                     listOllamaModels
-listTools                           loadAutomations                     loadConversations                   loadQuizProgress
-maximizeWindow                      mcpAddServer                        mcpGetStatus                        mcpListServers
-mcpRemoveServer                     mcpToggleServer                     mediaAdvance                        mediaAncientPathwaysDoctor
-mediaAncientPathwaysEpisodes        mediaAncientPathwaysGetAnchors      mediaAncientPathwaysGetSprite       mediaAncientPathwaysRun
-mediaAncientPathwaysSaveAnchor      mediaAncientPathwaysShowrunner      mediaAncientPathwaysStatus          mediaAncientPathwaysSuggestAnchors
-mediaApprove                        mediaCreate                         mediaDelete                         mediaFfmpegSetup
-mediaFfmpegStatus                   mediaGetExportState                 mediaList                           mediaMarkPublished
-mediaMovieListProjects              mediaMovieRun                       mediaParseFeed                      mediaReject
-mediaRun                            mediaSeriesSettingsDelete           mediaSeriesSettingsGet              mediaSeriesSettingsList
-mediaSeriesSettingsSave             mediaSeriesSettingsSegment          mediaSpliceVideo                    mediaStoryboardBreakdown
-mediaStoryboardConfirmPaidFrames    mediaStoryboardCreate               mediaStoryboardFrameProviders       mediaStoryboardGenerateFrame
-mediaStoryboardGet                  mediaStoryboardList                 mediaStoryboardRender               mediaStoryboardSave
-mediaStoryboardSetFrameProvider     mediaTrimClip                       minimizeWindow                      moduleList
-moduleSetEnabled                    onAssistantToolActivity             onBatchSummary                      onBrowserState
-onConfigRecovered                   onConfirmationRequest               onConversationCompacted             onHardwareProfileApplied
-onHideWindow                        onMediaAncientPathwaysProgress      onMediaFfmpegProgress               onMessage
-onModelFallback                     onModulesChanged                    onNavigate                          onOllamaDownloadProgress
-onOllamaStatus                      onPermissionRequest                 onProactiveBriefing                 onPullModelProgress
-onReminderFired                     onSdCppSetupProgress                onShowWindow                        onStreamChunk
-onStreamEnd                         onStreamError                       onSupervisorStatus                  onTerminalExit
-onTerminalOutput                    onTitleUpdated                      onUpdateAvailable                   onUpdateDownloaded
-onUpdateProgress                    onWidgetModeChanged                 openExternalUrl                     openFile
-parseDocument                       pullModel                           pullModelStream                     ragClear
-ragIndex                            ragList                             readConsentLog                      readDebugLogs
-readPermissionAudit                 readTelemetryEvents                 removeFeed                          removeHideWindowListener
-removeShowWindowListener            resetPermissions                    resolveActiveModel                  restartApp
-runAutomation                       runDiagnostics                      saveConversation                    saveQuizProgress
-saveSettings                        schedulerAdd                        schedulerList                       schedulerRemove
-schedulerToggle                     sdCppAutoSetup                      sdCppSetup                          sdCppStatus
-searchConversations                 sendConfirmationResponse            sendMessage                         sendPermissionResponse
-sendStreamMessage                   setActiveConversation               setAlwaysOnTop                      setUncensoredMode
-showInFolder                        skillsList                          skillsOpenFolder                    startOllama
-startSpeechRecognition              subscribeToStream                   terminalClose                       terminalCreate
-terminalKill                        terminalRun                         testN8nConnection                   toggleWidgetMode
-ttsListVoices                       ttsSampleVoice                      ttsSpeak                            ttsStop
-unhideFeed                          updateAutomation                    updateMessage                       workspaceList
-workspaceRead                       workspaceRoot                       workspaceSave                       writeClipboard
-writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
-youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
-youtubeUpload
+createAutomation                    createConversation                  createProblemReport                 deleteAutomation
+deleteConversation                  deleteOllamaModel                   detectGpuVram                       downloadOllama
+downloadUpdate                      executeImageGenerate                exportChat                          exportConversation
+exportPermissionAudit               exportSettings                      exportTelemetryConsent              fetchFeeds
+fetchPageContent                    generateQuiz                        generateQuizFromRag                 generateTitle
+getAnalyticsSummary                 getBatchSummaries                   getCapabilityReport                 getConfigPath
+getConversation                     getCrmActivity                      getCrmDashboard                     getEnv
+getGeneratedImage                   getMode                             getPerfAggregates                   getPerfHistory
+getSettings                         getSupervisorStatus                 getUncensoredMode                   getWidgetMode
+hasPermission                       importSettings                      improvePrompt                       installUpdate
+invoke                              licenseActivate                     licenseDeactivate                   licenseStatus
+licenseValidate                     listAllFeeds                        listCustomLLMModels                 listFeedSources
+listOllamaModels                    listTools                           loadAutomations                     loadConversations
+loadQuizProgress                    maximizeWindow                      mcpAddServer                        mcpGetStatus
+mcpListServers                      mcpRemoveServer                     mcpToggleServer                     mediaAdvance
+mediaAncientPathwaysDoctor          mediaAncientPathwaysEpisodes        mediaAncientPathwaysGetAnchors      mediaAncientPathwaysGetSprite
+mediaAncientPathwaysRun             mediaAncientPathwaysSaveAnchor      mediaAncientPathwaysShowrunner      mediaAncientPathwaysStatus
+mediaAncientPathwaysSuggestAnchors  mediaApprove                        mediaCreate                         mediaDelete
+mediaFfmpegSetup                    mediaFfmpegStatus                   mediaGetExportState                 mediaList
+mediaMarkPublished                  mediaMovieListProjects              mediaMovieRun                       mediaParseFeed
+mediaReject                         mediaRun                            mediaSeriesSettingsDelete           mediaSeriesSettingsGet
+mediaSeriesSettingsList             mediaSeriesSettingsSave             mediaSeriesSettingsSegment          mediaSpliceVideo
+mediaStoryboardBreakdown            mediaStoryboardConfirmPaidFrames    mediaStoryboardCreate               mediaStoryboardFrameProviders
+mediaStoryboardGenerateFrame        mediaStoryboardGet                  mediaStoryboardList                 mediaStoryboardRender
+mediaStoryboardSave                 mediaStoryboardSetFrameProvider     mediaTrimClip                       minimizeWindow
+moduleList                          moduleSetEnabled                    onAssistantToolActivity             onBatchSummary
+onBrowserState                      onConfigRecovered                   onConfirmationRequest               onConversationCompacted
+onHardwareProfileApplied            onHideWindow                        onMediaAncientPathwaysProgress      onMediaFfmpegProgress
+onMessage                           onModelFallback                     onModulesChanged                    onNavigate
+onOllamaDownloadProgress            onOllamaStatus                      onPermissionRequest                 onProactiveBriefing
+onPullModelProgress                 onReminderFired                     onSdCppSetupProgress                onShowWindow
+onStreamChunk                       onStreamEnd                         onStreamError                       onSupervisorStatus
+onTerminalExit                      onTerminalOutput                    onTitleUpdated                      onUpdateAvailable
+onUpdateDownloaded                  onUpdateProgress                    onWidgetModeChanged                 openExternalUrl
+openFile                            parseDocument                       pullModel                           pullModelStream
+ragClear                            ragIndex                            ragList                             readConsentLog
+readDebugLogs                       readPermissionAudit                 readTelemetryEvents                 removeFeed
+removeHideWindowListener            removeShowWindowListener            resetPermissions                    resolveActiveModel
+restartApp                          runAutomation                       runDiagnostics                      saveConversation
+saveQuizProgress                    saveSettings                        schedulerAdd                        schedulerList
+schedulerRemove                     schedulerToggle                     sdCppAutoSetup                      sdCppSetup
+sdCppStatus                         searchConversations                 sendConfirmationResponse            sendMessage
+sendPermissionResponse              sendStreamMessage                   setActiveConversation               setAlwaysOnTop
+setUncensoredMode                   showInFolder                        showProblemReport                   skillsList
+skillsOpenFolder                    startOllama                         startSpeechRecognition              subscribeToStream
+terminalClose                       terminalCreate                      terminalKill                        terminalRun
+testN8nConnection                   toggleWidgetMode                    ttsListVoices                       ttsSampleVoice
+ttsSpeak                            ttsStop                             unhideFeed                          updateAutomation
+updateMessage                       workspaceList                       workspaceRead                       workspaceRoot
+workspaceSave                       writeClipboard                      writeDocument                       youtubeCancel
+youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
+youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
 **IPC channels, renderer → main (174)**

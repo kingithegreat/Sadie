@@ -611,6 +611,10 @@ const electronAPI: ElectronAPI = {
   runDiagnostics: async () => {
     return await ipcRenderer.invoke('homebot:run-diagnostics');
   },
+  createProblemReport: async (note?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:create', note),
+  showProblemReport: async (file: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:show', file),
 
   exportSettings: async () => {
     return await ipcRenderer.invoke('homebot:export-settings');
