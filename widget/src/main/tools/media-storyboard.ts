@@ -21,7 +21,7 @@ import {
   routerForStoryboardFrame,
   storyboardFrameRequestPolicy,
 } from '../movie/storyboard-frame-providers';
-import { isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
+import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
 import {
   ShotStatus,
   type ShotBibleEntry,
@@ -378,8 +378,9 @@ export const mediaGetStoryboardHandler: ToolHandler = async (
 export const mediaGenerateStoryboardFrameDef: ToolDefinition = {
   name: 'media_generate_storyboard_frame',
   description:
-    'Generate a visual storyboard sketch/frame for a planned shot using HomeBot’s free-first ' +
-    '5-provider GenerationRouter (Pollinations / Imagen 3 / Local SD 1.5).',
+    'Generate a visual storyboard sketch/frame for a planned shot with the frame provider the ' +
+    'owner chose for this project ("Online" · free third-party service, or "This PC" · ComfyUI). ' +
+    'Frames are never auto-routed, so a paid or watermarking service cannot be reached silently.',
   category: 'media',
   parameters: {
     type: 'object',
@@ -804,8 +805,8 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       },
       frameProvider: {
         type: 'string',
-        enum: ['online', 'this-pc'],
-        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark) or "this-pc" (local ComfyUI). Omit to let the owner choose in the Storyboard.',
+        enum: STORYBOARD_FRAME_PROVIDERS.map(option => option.id),
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI) or "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],

@@ -338,7 +338,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   } | null>(null);
   const [seasonFilter, setSeasonFilter] = useState<number>(0);
   const [apSearch, setApSearch] = useState<string>('');
-  const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean }>>({});
+  const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean; error?: string }>>({});
   // Showrunner: free-first autonomous prompt-to-movie production
   const [showrunnerPrompt, setShowrunnerPrompt] = useState('');
   const [showrunnerDuration, setShowrunnerDuration] = useState(60);
@@ -425,6 +425,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [animaticIndex, setAnimaticIndex] = useState(0);
   const [animaticElapsedSec, setAnimaticElapsedSec] = useState(0);
   const [animaticLoop, setAnimaticLoop] = useState(false);
+  const [animaticAudioUrl, setAnimaticAudioUrl] = useState('');
+  const animaticAudioRef = useRef<HTMLAudioElement | null>(null);
   const [storyboardRendering, setStoryboardRendering] = useState(false);
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   // Voice for the next storyboard export. '' keeps the saved setting.
@@ -1354,6 +1356,53 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     return () => clearInterval(interval);
   }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboardScene]);
 
+  // Narration for the current animatic shot, synthesised on demand through the
+  // SAME TTS engine that will record it, so the preview sounds like the render.
+  // A shot with no narration stays silent.
+  const loadAnimaticAudio = useCallback(async (shot: any) => {
+    const text = shot?.narration?.trim();
+    if (!text) {
+      setAnimaticAudioUrl('');
+      return;
+    }
+    try {
+      const res = await api()?.ttsSampleVoice?.(
+        undefined,
+        text,
+        narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+      );
+      setAnimaticAudioUrl(res?.success && res.path ? toMediaFileUrl(res.path) : '');
+    } catch {
+      setAnimaticAudioUrl('');
+    }
+  }, [narrateEngine]);
+
+  // Load (and later play) the narration for whichever shot the animatic is on.
+  useEffect(() => {
+    if (!animaticOpen) return;
+    void loadAnimaticAudio(activeStoryboardScene?.shots?.[animaticIndex]);
+  }, [animaticOpen, animaticIndex, activeStoryboardScene, loadAnimaticAudio]);
+
+  // Play/pause the narration with the animatic, and start the next shot's
+  // narration as soon as its audio is ready (the URL changing here replays it).
+  useEffect(() => {
+    const el = animaticAudioRef.current;
+    if (!el) return;
+    // jsdom does not implement HTMLMediaElement playback; ignore its errors so
+    // the animatic tests (which run there) stay quiet and the real renderer
+    // still plays.
+    try {
+      if (animaticPlaying && animaticAudioUrl) {
+        void el.play().catch(() => {});
+      } else {
+        el.pause();
+        el.currentTime = 0;
+      }
+    } catch {
+      /* media playback not available in this environment */
+    }
+  }, [animaticPlaying, animaticAudioUrl, animaticIndex]);
+
   const handleEnhancePrompt = (shotId: string) => {
     if (!activeStoryboard) return;
     const scene = activeStoryboardScene;
@@ -1591,18 +1640,18 @@ ${shots.map((s, idx) => `
       if (res?.ok) {
         setApDoctorChecks(prev => ({
           ...prev,
-          [episodeId]: { checks: res.checks || [], failed: res.failed || 0, loading: false }
+          [episodeId]: { checks: res.checks || [], failed: res.failed || 0, loading: false, error: res.error }
         }));
       } else {
         setApDoctorChecks(prev => ({
           ...prev,
-          [episodeId]: { checks: [], failed: 1, loading: false }
+          [episodeId]: { checks: [], failed: 0, loading: false, error: res?.error || 'The quality check could not be run.' }
         }));
       }
     } catch {
       setApDoctorChecks(prev => ({
         ...prev,
-        [episodeId]: { checks: [], failed: 1, loading: false }
+        [episodeId]: { checks: [], failed: 0, loading: false, error: 'The quality check could not be run.' }
       }));
     }
   };
@@ -3927,6 +3976,11 @@ ${shots.map((s, idx) => `
                     <div className="ms-ap-card-doctor">
                       {apDoctorChecks[ep.id].loading ? (
                         <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
+                      ) : apDoctorChecks[ep.id].error ? (
+                        <div className="ms-ap-doctor-fail">
+                          <span className="ms-doctor-status">⚠️ Quality check could not be run</span>
+                          <div style={{ marginTop: 4, fontSize: 12, color: '#8b949e' }}>{apDoctorChecks[ep.id].error}</div>
+                        </div>
                       ) : apDoctorChecks[ep.id].failed > 0 ? (
                         <div className="ms-ap-doctor-fail">
                           <span className="ms-doctor-status">⚠️ {failureSummary(apDoctorChecks[ep.id].failed)}</span>
@@ -4184,6 +4238,8 @@ ${shots.map((s, idx) => `
     const activeScene = activeStoryboardScene;
     const shots = activeScene?.shots || [];
     const totalDuration = shots.reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0);
+    const sequenceElapsed = shots.slice(0, animaticIndex).reduce((acc, s) => acc + (Number(s.durationSec) || 5), 0)
+      + Math.min(animaticElapsedSec, Number(shots[animaticIndex]?.durationSec) || 5);
     const renderedFramesCount = shots.filter(s => !!s.frameImagePath).length;
 
     return (
@@ -5056,13 +5112,37 @@ ${shots.map((s, idx) => `
                 </div>
               </div>
 
-              {/* Progress Scrubber Bar */}
+              {/* Narration for the current shot, silent when there is none. */}
+              <audio
+                ref={animaticAudioRef}
+                src={animaticAudioUrl}
+                preload="auto"
+                style={{ display: 'none' }}
+              />
+
+              {/* Progress Scrubber — drag to seek through the whole sequence. */}
               <div className="ms-animatic-progress-bar">
-                <div
-                  className="ms-animatic-progress-fill"
-                  style={{
-                    width: `${Math.min(100, (animaticElapsedSec / (shots[animaticIndex]?.durationSec || 5)) * 100)}%`,
+                <input
+                  type="range"
+                  className="ms-animatic-scrubber"
+                  min={0}
+                  max={totalDuration || 1}
+                  step={0.1}
+                  value={sequenceElapsed}
+                  onChange={(e) => {
+                    const pos = Number(e.target.value);
+                    let acc = 0;
+                    for (let i = 0; i < shots.length; i++) {
+                      const d = Number(shots[i]?.durationSec) || 5;
+                      if (pos < acc + d) {
+                        setAnimaticIndex(i);
+                        setAnimaticElapsedSec(Math.max(0, pos - acc));
+                        break;
+                      }
+                      acc += d;
+                    }
                   }}
+                  aria-label="Animatic timeline scrubber"
                 />
               </div>
 
