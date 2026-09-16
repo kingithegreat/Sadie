@@ -338,7 +338,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   } | null>(null);
   const [seasonFilter, setSeasonFilter] = useState<number>(0);
   const [apSearch, setApSearch] = useState<string>('');
-  const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean }>>({});
+  const [apDoctorChecks, setApDoctorChecks] = useState<Record<string, { checks: Array<{ name: string; ok: boolean; detail: string }>; failed: number; loading: boolean; error?: string }>>({});
   // Showrunner: free-first autonomous prompt-to-movie production
   const [showrunnerPrompt, setShowrunnerPrompt] = useState('');
   const [showrunnerDuration, setShowrunnerDuration] = useState(60);
@@ -1640,18 +1640,18 @@ ${shots.map((s, idx) => `
       if (res?.ok) {
         setApDoctorChecks(prev => ({
           ...prev,
-          [episodeId]: { checks: res.checks || [], failed: res.failed || 0, loading: false }
+          [episodeId]: { checks: res.checks || [], failed: res.failed || 0, loading: false, error: res.error }
         }));
       } else {
         setApDoctorChecks(prev => ({
           ...prev,
-          [episodeId]: { checks: [], failed: 1, loading: false }
+          [episodeId]: { checks: [], failed: 0, loading: false, error: res?.error || 'The quality check could not be run.' }
         }));
       }
     } catch {
       setApDoctorChecks(prev => ({
         ...prev,
-        [episodeId]: { checks: [], failed: 1, loading: false }
+        [episodeId]: { checks: [], failed: 0, loading: false, error: 'The quality check could not be run.' }
       }));
     }
   };
@@ -3981,6 +3981,11 @@ ${shots.map((s, idx) => `
                     <div className="ms-ap-card-doctor">
                       {apDoctorChecks[ep.id].loading ? (
                         <span className="ms-working"><span className="ms-spinner" />Checking quality...</span>
+                      ) : apDoctorChecks[ep.id].error ? (
+                        <div className="ms-ap-doctor-fail">
+                          <span className="ms-doctor-status">⚠️ Quality check could not be run</span>
+                          <div style={{ marginTop: 4, fontSize: 12, color: '#8b949e' }}>{apDoctorChecks[ep.id].error}</div>
+                        </div>
                       ) : apDoctorChecks[ep.id].failed > 0 ? (
                         <div className="ms-ap-doctor-fail">
                           <span className="ms-doctor-status">⚠️ {failureSummary(apDoctorChecks[ep.id].failed)}</span>
