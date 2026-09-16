@@ -249,40 +249,171 @@ export function checkRenderLock(ancientPathwaysDir: string): RenderLockStatus {
 /**
  * Locates the finished 1080p deliverable for an episode.
  */
-export function findEpisodeDeliverable(ancientPathwaysDir: string, episodeId: string): string | null {
+export function findEpisodeDeliverable(ancientPathwaysDir: string, episodeId: string, finishedDir?: string): string | null {
   const deliverablesDir = path.join(ancientPathwaysDir, 'workspace', 'deliverables');
-  if (!fs.existsSync(deliverablesDir)) return null;
-
   const ep = ANCIENT_PATHWAYS_EPISODES.find(e => e.id.toLowerCase() === episodeId.toLowerCase());
   const cap = episodeId.charAt(0).toUpperCase() + episodeId.slice(1).toLowerCase();
 
-  const candidates = [
-    path.join(deliverablesDir, `Ancient_Pathways_${cap}_1080p.mp4`),
-    path.join(deliverablesDir, `Ancient_Pathways_Episode_${cap}_1080p.mp4`),
-    ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_${cap}_1080p.mp4`) : null,
-    ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_1080p.mp4`) : null,
-  ].filter(Boolean) as string[];
+  if (fs.existsSync(deliverablesDir)) {
+    const candidates = [
+      path.join(deliverablesDir, `Ancient_Pathways_${cap}_1080p.mp4`),
+      path.join(deliverablesDir, `Ancient_Pathways_Episode_${cap}_1080p.mp4`),
+      ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_${cap}_1080p.mp4`) : null,
+      ep ? path.join(deliverablesDir, `Ancient_Pathways_Episode_${ep.code}_1080p.mp4`) : null,
+    ].filter(Boolean) as string[];
 
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
+    for (const c of candidates) {
+      if (fs.existsSync(c)) return c;
+    }
+
+    // General glob search fallback for any 1080p mp4 matching episode name
+    try {
+      const files = fs.readdirSync(deliverablesDir);
+      const needle = episodeId.toLowerCase();
+      const match = files.find(f => {
+        const lower = f.toLowerCase();
+        return lower.includes(needle) && lower.includes('1080p') && lower.endsWith('.mp4');
+      });
+      if (match) {
+        return path.join(deliverablesDir, match);
+      }
+    } catch {
+      /* readdir failed */
+    }
   }
 
-  // General glob search fallback for any 1080p mp4 matching episode name
-  try {
-    const files = fs.readdirSync(deliverablesDir);
-    const needle = episodeId.toLowerCase();
-    const match = files.find(f => {
-      const lower = f.toLowerCase();
-      return lower.includes(needle) && lower.includes('1080p') && lower.endsWith('.mp4');
-    });
-    if (match) {
-      return path.join(deliverablesDir, match);
+  // Also probe Finished directory (e.g. C:\Users\adenk\Desktop\Ancient Pathways - FINISHED)
+  const finDir = finishedDir || (process.env.NODE_ENV !== 'test' ? path.join(os.homedir(), 'Desktop', 'Ancient Pathways - FINISHED') : undefined);
+  if (finDir && fs.existsSync(finDir)) {
+    try {
+      const folders = fs.readdirSync(finDir, { withFileTypes: true });
+      const numCode = ep ? ep.code.replace('EP', '') : '';
+      const epFolder = folders.find(f => f.isDirectory() && (
+        f.name.toLowerCase().includes(episodeId.toLowerCase()) ||
+        (ep && (
+          f.name.toLowerCase().includes(ep.code.toLowerCase()) ||
+          (numCode && f.name.startsWith(numCode)) ||
+          f.name.toLowerCase().includes(ep.title.toLowerCase())
+        ))
+      ));
+      if (epFolder) {
+        const subPath = path.join(finDir, epFolder.name);
+        const subFiles = fs.readdirSync(subPath);
+        const match = subFiles.find(f => {
+          const lower = f.toLowerCase();
+          return (
+            lower.endsWith('.mp4') &&
+            (lower.includes(episodeId.toLowerCase()) ||
+             (ep && (lower.includes(ep.code.toLowerCase()) || (numCode && lower.includes(numCode)))))
+          );
+        });
+        if (match) {
+          return path.join(subPath, match);
+        }
+      }
+    } catch {
+      /* ignore readdir failure */
     }
-  } catch {
-    /* readdir failed */
   }
 
   return null;
+}
+
+export interface DeliverToFinishedResult {
+  ok: boolean;
+  targetDir?: string;
+  filesCopied?: string[];
+  error?: string;
+}
+
+export function deliverEpisodeToFinished(
+  episodeId: string,
+  sourceDir?: string,
+  targetRootDir?: string
+): DeliverToFinishedResult {
+  const apDir = sourceDir || resolveAncientPathwaysDir();
+  const ep = ANCIENT_PATHWAYS_EPISODES.find(e => e.id.toLowerCase() === episodeId.toLowerCase());
+  if (!ep) return { ok: false, error: `Unknown episode: ${episodeId}` };
+
+  const destRoot = targetRootDir || path.join(os.homedir(), 'Desktop', 'Ancient Pathways - FINISHED');
+  if (!fs.existsSync(destRoot)) {
+    try {
+      fs.mkdirSync(destRoot, { recursive: true });
+    } catch (e: any) {
+      return { ok: false, error: `Could not create finished destination folder: ${e.message}` };
+    }
+  }
+
+  let targetFolder: string;
+  try {
+    const existing = fs.readdirSync(destRoot, { withFileTypes: true });
+    const match = existing.find(f => f.isDirectory() && (
+      f.name.toLowerCase().includes(ep.id.toLowerCase()) ||
+      f.name.toLowerCase().includes(ep.code.toLowerCase())
+    ));
+    if (match) {
+      targetFolder = path.join(destRoot, match.name);
+    } else {
+      const folderName = `${ep.code.replace('EP', '')} - ${ep.title.split(':')[1]?.trim() || ep.title}`;
+      targetFolder = path.join(destRoot, folderName);
+      fs.mkdirSync(targetFolder, { recursive: true });
+    }
+  } catch (e: any) {
+    return { ok: false, error: `Failed to inspect or create destination folder: ${e.message}` };
+  }
+
+  const copied: string[] = [];
+  if (apDir && fs.existsSync(apDir)) {
+    const searchDirs = [
+      path.join(apDir, 'workspace', 'deliverables'),
+      path.join(apDir, 'renders'),
+      path.join(apDir, 'workspace', 'export'),
+    ];
+    for (const dir of searchDirs) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const lower = file.toLowerCase();
+          if (lower.includes(ep.id.toLowerCase()) || lower.includes(ep.code.toLowerCase())) {
+            const src = path.join(dir, file);
+            const dst = path.join(targetFolder, file);
+            if (fs.statSync(src).isFile()) {
+              fs.copyFileSync(src, dst);
+              copied.push(file);
+            }
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  return { ok: true, targetDir: targetFolder, filesCopied: copied };
+}
+
+export function deliverJobToFinished(
+  job: { id: string; title: string; renderPath?: string; format?: string },
+  targetRootDir?: string
+): { ok: boolean; targetPath?: string; error?: string } {
+  if (!job.renderPath || !fs.existsSync(job.renderPath)) {
+    return { ok: false, error: 'No rendered video file found for this job.' };
+  }
+
+  const destRoot = targetRootDir || path.join(os.homedir(), 'Desktop', 'Ancient Pathways - FINISHED', 'Exports');
+  try {
+    if (!fs.existsSync(destRoot)) {
+      fs.mkdirSync(destRoot, { recursive: true });
+    }
+    const safeTitle = (job.title || 'video').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ext = path.extname(job.renderPath) || '.mp4';
+    const targetFile = path.join(destRoot, `${safeTitle}_${job.format || 'master'}${ext}`);
+    fs.copyFileSync(job.renderPath, targetFile);
+    return { ok: true, targetPath: targetFile };
+  } catch (e: any) {
+    return { ok: false, error: `Failed to export to finished folder: ${e.message}` };
+  }
 }
 
 export interface DoctorCheckResult {
@@ -320,33 +451,35 @@ function scanReachability(apDir: string): ReachabilityFinding[] {
     collect(path.join(apDir, sub));
   }
 
-  if (pyFiles.length === 0) return findings;
-
   for (const file of pyFiles) {
-    const content = fs.readFileSync(file, 'utf8');
-    for (const line of content.split('\n')) {
-      const defMatch = line.match(/^\s*def\s+(\w+)\s*\(/);
-      if (!defMatch) continue;
-      const fnName = defMatch[1];
-      if (fnName.startsWith('_')) continue;
+    try {
+      const content = fs.readFileSync(file, 'utf8');
+      for (const line of content.split('\n')) {
+        const defMatch = line.match(/^\s*def\s+(\w+)\s*\(/);
+        if (!defMatch) continue;
+        const fnName = defMatch[1];
+        if (fnName.startsWith('_') || fnName === 'main') continue;
 
-      let callers = 0;
-      for (const other of pyFiles) {
-        if (other === file) continue;
-        const otherContent = fs.readFileSync(other, 'utf8');
-        if (new RegExp(`\\b${fnName}\\s*\\(`).test(otherContent)) {
-          callers++;
+        let callers = 0;
+        for (const other of pyFiles) {
+          if (other === file) continue;
+          const otherContent = fs.readFileSync(other, 'utf8');
+          if (new RegExp(`\\b${fnName}\\s*\\(`).test(otherContent)) {
+            callers++;
+          }
+        }
+
+        if (callers === 0) {
+          findings.push({
+            symbol: fnName,
+            definedIn: path.relative(apDir, file),
+            callers: 0,
+            issue: `def ${fnName}() defined but called from no other module in pipeline/`,
+          });
         }
       }
-
-      if (callers === 0) {
-        findings.push({
-          symbol: fnName,
-          definedIn: path.relative(apDir, file),
-          callers: 0,
-          issue: `def ${fnName}() defined but called from no other module in pipeline/`,
-        });
-      }
+    } catch {
+      /* read error */
     }
   }
 
@@ -387,7 +520,7 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
     });
 
     child.on('close', () => {
-      const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
+      const checks: Array<{ name: string; ok: boolean; detail: string; id?: number }> = [];
       const lines = stdout.split('\n');
       for (const line of lines) {
         const match = line.match(/\[(ok|FAIL)\]\s+(\d+\.?\d*)\s+(\S+)\s+(.+)/i);
@@ -396,7 +529,7 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
           const idNum = parseFloat(match[2]);
           const name = match[3];
           const detail = match[4].trim();
-          checks.push({ name, ok: isOk, detail, id: idNum } as any);
+          checks.push({ name, ok: isOk, detail, id: idNum });
         }
       }
 
@@ -411,12 +544,24 @@ export async function runDoctorChecks(episodeId: string, dir?: string): Promise<
         }
       }
 
+      if (checks.length === 0 && (stderr.trim() || stdout.trim())) {
+        checks.push({
+          name: 'doctor_execution',
+          ok: false,
+          detail: stderr.trim() || stdout.trim() || 'doctor.py exited without check output.',
+        });
+      }
+
       const failed = checks.filter((c) => !c.ok).length;
       resolve({ episodeId, checks: checks.map((c) => ({ name: c.name, ok: c.ok, detail: c.detail })), failed });
     });
 
-    child.on('error', () => {
-      resolve({ episodeId, checks: [], failed: 0 });
+    child.on('error', (err) => {
+      resolve({
+        episodeId,
+        checks: [{ name: 'python_doctor_execution', ok: false, detail: `Could not launch Python for doctor checks: ${err.message}` }],
+        failed: 1,
+      });
     });
   });
 }

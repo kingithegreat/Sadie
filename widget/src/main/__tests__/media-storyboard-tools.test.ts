@@ -243,6 +243,35 @@ The golden pyramid capstone catches the last ray of sunlight.`;
     expect(s1.prompt).toContain('Panavision');
     expect(s1.narration.length).toBeGreaterThan(5);
   });
+
+  it('imports custom image files onto storyboard shots via media_set_storyboard_image', async () => {
+    const { mediaCreateStoryboardHandler, storyboardToolHandlers, setStoryboardShotImage } = await import('../tools/media-storyboard');
+    const createRes = await mediaCreateStoryboardHandler(
+      { projectId: 'import-test-proj', title: 'Import Test Project', shots: [{ prompt: 'Shot 1' }] },
+      { executionId: 'test-exec-12' },
+    );
+    expect(createRes.success).toBe(true);
+    const projectId = createRes.result.projectId;
+
+    const tmpImg = path.join(tmpRoot, 'custom-frame.png');
+    fs.writeFileSync(tmpImg, 'fake-custom-image-data');
+
+    // Test tool handler
+    const handler = storyboardToolHandlers.media_set_storyboard_image;
+    expect(handler).toBeDefined();
+
+    const res = await setStoryboardShotImage({
+      projectId,
+      sceneId: 'scene_01',
+      shotId: 'shot_001',
+      imagePath: tmpImg,
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.result.shotId).toBe('shot_001');
+    expect(res.result.provider).toBe('custom_import');
+    expect(fs.existsSync(res.result.frameImagePath)).toBe(true);
+  });
 });
 
 
