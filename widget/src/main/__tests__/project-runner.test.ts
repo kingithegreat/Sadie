@@ -3,6 +3,15 @@ import * as os from 'os';
 import * as path from 'path';
 import { movieImageFixture } from './helpers/movie-image';
 jest.mock('electron', () => ({ nativeImage: require('./helpers/movie-image').movieNativeImageStub }));
+// The runner validates video shots via the media-qa probe; the mock provider
+// writes bytes that are not a real MP4, so exercise the wiring by asserting the
+// validator is called (and that a rejection fails the shot) rather than running
+// ffmpeg on fake content.
+jest.mock('../movie/image-output', () => ({
+  ...jest.requireActual('../movie/image-output'),
+  validateMovieVideoFiles: jest.fn(async () => {}),
+}));
+import { validateMovieVideoFiles } from '../movie/image-output';
 import {
   MovieProjectRunner,
   createStandardRouter,
@@ -388,6 +397,46 @@ describe('MovieProjectRunner', () => {
       } finally {
         delete process.env.HOMEBOT_COLAB_QUEUE;
       }
+    });
+  });
+
+  describe('video shot validation', () => {
+    beforeEach(() => {
+      (validateMovieVideoFiles as jest.Mock).mockReset();
+      (validateMovieVideoFiles as jest.Mock).mockResolvedValue(undefined);
+    });
+
+    it('validates a generated video shot before recording it as a success', async () => {
+      MovieProjectRunner.createProject(tmpDir, sampleProject, [sampleCharacter]);
+      MovieProjectRunner.addScene(tmpDir, sampleScene, [sampleShots[1]]);
+
+      const router = new GenerationRouter().register(mockProvider('mock-engine'));
+      const report = await MovieProjectRunner.runProject(tmpDir, { router });
+
+      expect(report.completedShots).toBe(1);
+      expect(report.failedShots).toBe(0);
+      const s = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, 'scenes', 'scene_01', 'shot_002', 'status.json'), 'utf-8'),
+      );
+      expect(s.status).toBe(ShotStatus.VIDEO_GENERATED);
+      expect(validateMovieVideoFiles).toHaveBeenCalled();
+    });
+
+    it('fails the shot when the produced video is unusable', async () => {
+      (validateMovieVideoFiles as jest.Mock).mockRejectedValue(new Error('no video stream'));
+      MovieProjectRunner.createProject(tmpDir, sampleProject, [sampleCharacter]);
+      MovieProjectRunner.addScene(tmpDir, sampleScene, [sampleShots[1]]);
+
+      const router = new GenerationRouter().register(mockProvider('mock-engine'));
+      const report = await MovieProjectRunner.runProject(tmpDir, { router });
+
+      expect(report.completedShots).toBe(0);
+      expect(report.failedShots).toBe(1);
+      const s = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, 'scenes', 'scene_01', 'shot_002', 'status.json'), 'utf-8'),
+      );
+      expect(s.status).toBe(ShotStatus.FAILED);
+      expect(s.lastError).toMatch(/video/i);
     });
   });
 
