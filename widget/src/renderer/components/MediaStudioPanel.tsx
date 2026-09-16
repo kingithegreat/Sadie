@@ -208,6 +208,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [timelineZoom, setTimelineZoom] = useState<number>(1);
   const [timelineMediaDuration, setTimelineMediaDuration] = useState<number | null>(null);
   const [clipCuts, setClipCuts] = useState<number[]>([]);
+  // Segments (indices into the cut-boundary list) the owner has ripple-deleted;
+  // excluded when the movie is re-assembled from the remaining segments.
+  const [deletedSegments, setDeletedSegments] = useState<number[]>([]);
   const [selectedClipIndex, setSelectedClipIndex] = useState<number | null>(0);
   const [inPoint, setInPoint] = useState<number | null>(null);
   const [outPoint, setOutPoint] = useState<number | null>(null);
@@ -1351,6 +1354,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
     return () => clearInterval(interval);
   }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboardScene]);
+
+  // A new split invalidates the cut-boundary segment indices, so ripple-delete
+  // markers are cleared whenever the cut list changes.
+  useEffect(() => { setDeletedSegments([]); }, [clipCuts]);
 
   const handleEnhancePrompt = (shotId: string) => {
     if (!activeStoryboard) return;
@@ -2575,22 +2582,62 @@ ${shots.map((s, idx) => `
         setError('Track V1 is locked.');
         return;
       }
-      if (clipCuts.length > 0) {
-        let closestIdx = 0;
-        let minDiff = Math.abs(clipCuts[0] - timelineTime);
-        for (let i = 1; i < clipCuts.length; i++) {
-          const diff = Math.abs(clipCuts[i] - timelineTime);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestIdx = i;
-          }
-        }
-        const removed = clipCuts[closestIdx];
-        setClipCuts(cuts => cuts.filter((_, i) => i !== closestIdx));
-        setDone(`Ripple removed clip cut at ${formatTimecode(removed)}`);
+      const segments = cutBoundaries.slice(0, -1).map((start, i) => ({ start, end: cutBoundaries[i + 1], index: i }));
+      const segIdx = segments.findIndex(s => timelineTime >= s.start && timelineTime < s.end);
+      if (segIdx === -1) {
+        setDone('No segment at the playhead to delete — move the playhead onto a segment first.');
         return;
       }
-      setDone('No cut point near the playhead to remove — add a split with Trim first.');
+      setDeletedSegments(prev => prev.includes(segIdx) ? prev : [...prev, segIdx].sort((a, b) => a - b));
+      setDone(`Ripple deleted segment ${segIdx + 1} of ${segments.length}. Reassemble to drop it from the movie.`);
+    };
+
+    // Trim each kept segment out of the rendered movie and splice them back
+    // into one file, so a ripple-delete actually changes the delivered video.
+    const handleRenderFromCuts = async () => {
+      setError(null);
+      if (!job?.renderPath) {
+        setDone('No rendered video to cut yet — render the movie first.');
+        return;
+      }
+      const segments = cutBoundaries.slice(0, -1).map((start, i) => ({ start, end: cutBoundaries[i + 1], index: i }));
+      const kept = segments.filter(s => !deletedSegments.includes(s.index));
+      if (kept.length === segments.length) {
+        setDone('No segment is deleted — ripple-delete a segment first, then reassemble.');
+        return;
+      }
+      if (kept.length < 2) {
+        setDone('Keep at least two segments to reassemble.');
+        return;
+      }
+      setBusy('render-cuts');
+      setBusyLabel('Reassembling from kept segments...');
+      try {
+        const trimmed: string[] = [];
+        for (const seg of kept) {
+          const res = await api()?.mediaTrimClip?.({
+            videoPath: job.renderPath,
+            startSec: seg.start,
+            durationSec: Math.max(0.1, seg.end - seg.start),
+          });
+          if (res?.ok) trimmed.push(String((res.result as any)?.path));
+          else throw new Error(res?.error || 'Could not trim a segment.');
+        }
+        const dir = job.renderPath.replace(/[\\/][^\\/]*$/, '');
+        const base = (job.renderPath.split(/[\\/]/).pop() || 'movie').replace(/\.[^.]+$/, '');
+        const outPath = `${dir}/${base}-reassembled.mp4`;
+        const spliceRes = await api()?.mediaSpliceVideo?.({ clips: trimmed, outputPath: outPath });
+        if (spliceRes?.ok) {
+          setDone(`Reassembled movie saved to: ${outPath.split(/[\\/]/).pop()}`);
+        } else {
+          setError(spliceRes?.error || 'Reassembly failed.');
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Reassembly failed.');
+      } finally {
+        setBusy(null);
+        setBusyLabel('');
+      }
     };
 
     const handleExportSelection = async () => {
@@ -2710,6 +2757,15 @@ ${shots.map((s, idx) => `
               onClick={handleRippleDelete}
             >
               🗑️ Ripple
+            </button>
+            <button
+              type="button"
+              className="ms-dcc-tool-btn"
+              title="Trim each kept segment and splice them into a new movie"
+              onClick={handleRenderFromCuts}
+              disabled={deletedSegments.length === 0}
+            >
+              🎬 Render from cuts
             </button>
             <button
               type="button"

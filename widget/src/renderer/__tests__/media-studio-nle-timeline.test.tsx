@@ -257,6 +257,55 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
     expect(screen.queryByText('✕ Range')).not.toBeInTheDocument();
   });
 
+  test('ripple-delete enables the Render from cuts action', async () => {
+    setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+    });
+
+    const renderFromCuts = screen.getByRole('button', { name: /Render from cuts/i });
+    expect(renderFromCuts).toBeDisabled();
+
+    // Create two cut points, then delete the segment at the playhead.
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('✂️ Split')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('✂️ Split')); });
+    await act(async () => { fireEvent.click(screen.getByText('🗑️ Ripple')); });
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Ripple deleted segment/i);
+    expect(renderFromCuts).not.toBeDisabled();
+  });
+
+  test('Render from cuts trims the kept segments and splices them', async () => {
+    const mediaSpliceVideo = jest.fn().mockResolvedValue({ ok: true, result: { path: '/mock/export/reassembled.mp4' } });
+    setup({ mediaSpliceVideo });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+    });
+
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('✂️ Split')); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
+    await act(async () => { fireEvent.click(screen.getByText('✂️ Split')); });
+    await act(async () => { fireEvent.click(screen.getByText('🗑️ Ripple')); });
+
+    const mediaTrimClip = (window as any).electron.mediaTrimClip;
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Render from cuts/i }));
+    });
+
+    expect(mediaTrimClip).toHaveBeenCalled();
+    expect(mediaSpliceVideo).toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent(/Reassembled movie saved to/i);
+  });
+
   test('switching Inspector tabs displays transitions, color grade LUTs, audio ducking, and master export', async () => {
     setup();
     await act(async () => {
