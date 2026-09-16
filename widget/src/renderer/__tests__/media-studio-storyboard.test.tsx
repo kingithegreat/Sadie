@@ -9,6 +9,13 @@ import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 
+// jsdom does not implement HTMLMediaElement playback; make play/pause no-ops so
+// the animatic narration audio effect does not log "not implemented" errors.
+beforeAll(() => {
+  (HTMLMediaElement.prototype as any).play = jest.fn(async () => {});
+  (HTMLMediaElement.prototype as any).pause = jest.fn();
+});
+
 /** Real catalog entries with a status per option; default: only This PC is ready. */
 function frameStatuses(state: Record<string, Partial<StoryboardFrameProviderStatus>> = {}): StoryboardFrameProviderStatus[] {
   const defaults: Record<string, Partial<StoryboardFrameProviderStatus>> = {
@@ -608,6 +615,8 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.getByText(/Animatic Playback: Pyramid Builders/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /⏸ Pause/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Close Animatic Player/i })).toBeInTheDocument();
+    // A draggable scrubber seeks the whole sequence.
+    expect(screen.getByRole('slider', { name: /Animatic timeline scrubber/i })).toBeInTheDocument();
 
     // Close animatic player
     const closeBtn = screen.getByRole('button', { name: /Close Animatic Player/i });
@@ -616,6 +625,32 @@ describe('Media Studio Visual Storyboard Deck', () => {
     });
 
     expect(screen.queryByRole('dialog', { name: /Storyboard Animatic Player/i })).not.toBeInTheDocument();
+  });
+
+  test('animatic asks the TTS engine for the current shot narration', async () => {
+    const ttsSampleVoice = jest.fn().mockResolvedValue({ success: true, path: 'C:/fake/path/narration.mp3', engine: 'edge' });
+    setup({ ttsSampleVoice });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    const tab = screen.getByRole('tab', { name: /Storyboard/i });
+    await act(async () => {
+      fireEvent.click(tab);
+    });
+
+    const playBtn = screen.getByRole('button', { name: /▶ Play Animatic/i });
+    await act(async () => {
+      fireEvent.click(playBtn);
+    });
+
+    // The first shot has narration; opening the animatic synthesises it through
+    // the same TTS engine the render will use.
+    await waitFor(() => expect(ttsSampleVoice).toHaveBeenCalledWith(
+      undefined,
+      'The sun rises over the limestone ramps.',
+      undefined,
+    ));
   });
 
   test('enhances shot prompt with composition and lens cues on button click', async () => {
