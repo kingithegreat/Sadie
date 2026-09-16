@@ -196,18 +196,22 @@ describe('ancient-pathways main module', () => {
   });
 
   describe('runDoctorChecks', () => {
-    it('returns empty result when Ancient Pathways directory does not exist', async () => {
+    it('returns an error (not a clean pass) when Ancient Pathways directory does not exist', async () => {
       const res = await runDoctorChecks('egypt', path.join(tmpDir, 'does-not-exist'));
       expect(res.episodeId).toBe('egypt');
       expect(res.checks).toEqual([]);
       expect(res.failed).toBe(0);
+      expect(res.error).toBeDefined();
+      expect(res.error).toMatch(/not installed/i);
     });
 
-    it('returns empty result when doctor.py does not exist', async () => {
+    it('returns an error (not a clean pass) when doctor.py does not exist', async () => {
       const res = await runDoctorChecks('egypt', tmpDir);
       expect(res.episodeId).toBe('egypt');
       expect(res.checks).toEqual([]);
       expect(res.failed).toBe(0);
+      expect(res.error).toBeDefined();
+      expect(res.error).toMatch(/doctor\.py/i);
     });
   });
   describe('scanReachability', () => {
