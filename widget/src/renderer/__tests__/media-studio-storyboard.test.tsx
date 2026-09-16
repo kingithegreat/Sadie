@@ -355,6 +355,29 @@ describe('Media Studio Visual Storyboard Deck', () => {
     expect(screen.getByLabelText('Duration for shot_001')).toHaveValue(5);
   });
 
+  test('a fit project says, beside each moving shot, that the movement will not show; crop projects say nothing', async () => {
+    const api = setup();
+    const board = (await api.mediaStoryboardGet()).result;
+    api.mediaStoryboardGet.mockResolvedValue({ ok: true, result: { ...board, project: { ...board.project, outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'fit') } } });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    expect(await screen.findByRole('note', { name: 'Camera movement note for shot_001' })).toHaveTextContent(/will not show in the landscape video: that format uses Fit framing/);
+    expect(screen.getByRole('note', { name: 'Camera movement note for shot_003' })).toBeInTheDocument();
+    expect(screen.queryByRole('note', { name: 'Camera movement note for shot_002' })).toBeNull(); // static shot
+
+    fireEvent.change(screen.getByLabelText('Storyboard image framing'), { target: { value: 'crop' } });
+    await waitFor(() => expect(screen.queryByRole('note', { name: /Camera movement note/ })).toBeNull());
+  });
+
+  test('adding a second format keeps crop, so the portrait video keeps its camera moves', async () => {
+    const api = setup();
+    const board = (await api.mediaStoryboardGet()).result;
+    api.mediaStoryboardGet.mockResolvedValue({ ok: true, result: { ...board, project: { ...board.project, outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop') } } });
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    fireEvent.change(await screen.findByLabelText('Storyboard output selection'), { target: { value: 'both' } });
+    expect(screen.getByLabelText('Storyboard portrait image framing')).toHaveValue('crop');
+    expect(screen.queryByRole('note', { name: /Camera movement note/ })).toBeNull();
+  });
+
   test('does not offer a caption switch that cannot change an external export', async () => {
     setup({ mediaList: jest.fn(async () => [{ id: 'external', title: 'External production', format: 'long',
       state: 'media_production', history: [{ note: 'Ancient Pathways pipeline runs its own stages internally' }] }]) });
