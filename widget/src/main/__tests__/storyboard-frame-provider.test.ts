@@ -33,6 +33,11 @@ import { STORYBOARD_FRAME_PROVIDERS } from '../../shared/storyboard-frame-provid
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { geminiAspectRatio } from '../movie/gemini-image-adapter';
 
+// These are real-handler tests that render frames through a loopback ComfyUI
+// server; the 3-frame auto-generation test takes ~4.6s alone, so the Jest
+// 5000ms default is too tight under a loaded runner (it has flaked as a timeout).
+jest.setTimeout(15_000);
+
 const ctx = { executionId: 'frame-provider-test' };
 const originalFetch = globalThis.fetch;
 const originalProjects = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
