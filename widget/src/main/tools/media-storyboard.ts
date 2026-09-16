@@ -21,7 +21,7 @@ import {
   routerForStoryboardFrame,
   storyboardFrameRequestPolicy,
 } from '../movie/storyboard-frame-providers';
-import { isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
+import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
 import {
   ShotStatus,
   type ShotBibleEntry,
@@ -653,6 +653,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       },
       outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
       variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
+      narrationEngine: { type: 'string', enum: ['edge', 'kokoro'], description: "Voice for this export: 'kokoro' speaks on this PC with no internet, 'edge' is the online voice. Omit to use the saved setting." },
     },
     required: ['projectId'],
   },
@@ -672,6 +673,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     burnSubtitles: args.burnSubtitles,
     variantId: args.variantId,
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
+    ...(args.narrationEngine === 'edge' || args.narrationEngine === 'kokoro' ? { narrationEngine: args.narrationEngine } : {}),
   });
 
   if (!res.ok && !res.variants) {
@@ -803,8 +805,8 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       },
       frameProvider: {
         type: 'string',
-        enum: ['online', 'this-pc'],
-        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark) or "this-pc" (local ComfyUI). Omit to let the owner choose in the Storyboard.',
+        enum: STORYBOARD_FRAME_PROVIDERS.map(option => option.id),
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI) or "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],
