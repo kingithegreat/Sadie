@@ -232,7 +232,11 @@ export async function renderNarrationToFile(
       return { ...rendered, engine: 'kokoro' };
     } catch (err: any) {
       if (!onlineSpeechAllowed()) {
-        throw new Error('The voice on this PC is not ready, and Online is off. Set up the local voice with Online enabled, then try again. No online fallback was used.');
+        // The on-PC voice's weights (~90 MB) download only once, and only while
+        // Online is on. After that it is cached and works offline forever, so
+        // the guidance names the one-time step rather than implying the voice
+        // is permanently unusable offline.
+        throw new Error('The voice on this PC needs a one-time download (~90 MB). Turn on Online once and try again — after that it works offline. No online fallback was used.');
       }
       console.warn(`[HomeBot Voice] Kokoro unavailable (${err?.message || err}); falling back to Edge TTS.`);
       try { logTelemetryEvent('tts_fallback', { from: 'kokoro', to: 'edge', error: err?.message || String(err) }); } catch (_e) {}
