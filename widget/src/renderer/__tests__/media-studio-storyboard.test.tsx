@@ -794,6 +794,7 @@ describe('Storyboard frame provider picker', () => {
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
       'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
+      'ChatGPT plan · Codex on this PC · uses your plan limits, no per-image charge',
     ]);
     expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
     expect(picker.value).toBe('');

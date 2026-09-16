@@ -21,6 +21,7 @@ import { GenerationRouter, evaluate } from './router';
 import { pollinationsProvider } from './pollinations-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
 import { geminiImageProvider } from './gemini-image-adapter';
+import { codexImageProvider } from './codex-image-adapter';
 import type { GenerationProvider, GenerationRequest } from './types';
 import { resolveStudioOutputSpec, type StudioAspectRatio } from '../../shared/media-output';
 
@@ -79,6 +80,7 @@ const ADAPTERS: Record<StoryboardFrameProviderOption['routerProviderId'], Genera
   pollinations: pollinationsProvider,
   comfyui: comfyUIProvider,
   'gemini-image': geminiImageProvider,
+  'codex-image': codexImageProvider,
 };
 
 /** The request policy a chosen option runs under. */
@@ -126,6 +128,7 @@ export async function describeStoryboardFrameProvider(option: StoryboardFramePro
     if (option.id === 'gemini') {
       return blocked('gemini-key', 'Add your Gemini API key in Settings (Main chat model — Cloud API, provider Google AI Studio), then choose “Check again”.');
     }
+    if (option.id === 'chatgpt-plan') return blocked('codex', score.reason);
     return blocked(null, 'This option cannot make frames right now.');
   }
   if (option.paid && !hasPaidFrameConfirmation(option.id)) {
