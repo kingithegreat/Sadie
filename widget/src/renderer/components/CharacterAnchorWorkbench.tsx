@@ -309,7 +309,7 @@ export const CharacterAnchorWorkbench: React.FC = () => {
   };
 
   const handleSuggestAll = async () => {
-    if (!window.confirm('Run auto-suggestion for missing anchors? Existing hand-placed anchors will NOT be touched.')) {
+    if (!window.confirm('Run auto-suggestion for missing anchors on ALL characters? Existing hand-placed anchors will NOT be touched.')) {
       return;
     }
     setIsSuggesting(true);
