@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (225)** — `window.electron`
+**Preload methods (231)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1064,11 +1064,12 @@ showInFolder                        skillsList                          skillsOp
 startSpeechRecognition              subscribeToStream                   terminalClose                       terminalCreate
 terminalKill                        terminalRun                         testN8nConnection                   toggleWidgetMode
 ttsListVoices                       ttsSampleVoice                      ttsSpeak                            ttsStop
-unhideFeed                          updateAutomation                    updateMessage                       workspaceList
-workspaceRead                       workspaceRoot                       workspaceSave                       writeClipboard
-writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
-youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
-youtubeUpload
+unhideFeed                          updateAutomation                    updateMessage                       workspaceGitBranches
+workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage                   workspaceGitStatus
+workspaceGitUnstage                 workspaceList                       workspaceRead                       workspaceRoot
+workspaceSave                       writeClipboard                      writeDocument                       youtubeCancel
+youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
+youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
 **IPC channels, renderer → main (174)**
