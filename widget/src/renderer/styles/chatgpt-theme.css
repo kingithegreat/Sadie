@@ -9166,6 +9166,17 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   border-top: 1px solid var(--hairline);
 }
 
+/* CodeMirror 6 editor: it draws its own gutter and scrolls itself, so it fills the whole area. */
+.code-editor-cm {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: "surface" "cursor";
+}
+.code-cm-host { grid-area: surface; min-height: 0; min-width: 0; overflow: hidden; }
+.code-cm-host .cm-editor { height: 100%; font-family: var(--font-mono); font-size: 12.5px; }
+.code-cm-host .cm-scroller { font-family: inherit; line-height: 1.5; }
+.code-cm-host .cm-editor.cm-focused { outline: none; }
+
 /* Assistant tool activity in the workspace status bar â€” makes non-dangerous
    tool calls visible. Dangerous ones already raise the confirmation modal. */
 .ws-status-assistant {
