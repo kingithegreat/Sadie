@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 import type { StudioOutputSpec } from '../shared/media-output';
+import type { CaptionStyle } from '../shared/caption-style';
 import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
@@ -784,7 +785,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string, expectedRenderPath?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note, expectedRenderPath),
@@ -864,7 +865,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSetShotImage: async (args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:set-shot-image', args),
-  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
   mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine; colorGrade?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),

@@ -19,6 +19,7 @@
  */
 
 import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../shared/media-output';
+import type { CaptionStyle } from '../shared/caption-style';
 
 /** Pipeline states, in the order the plan defines them. */
 export const MEDIA_STATES = [
@@ -89,6 +90,8 @@ export interface MediaJob {
   burnSubtitles?: boolean;
   /** Absent on legacy jobs: preserve their original short/long geometry. */
   outputSpec?: StudioOutputSpec;
+  /** How burned-in captions look; omitted means the default style. */
+  captionStyle?: CaptionStyle;
   renderedOutput?: StudioRenderedOutput;
   renderInputs?: MediaRenderInputs;
   narrationScriptHash?: string;

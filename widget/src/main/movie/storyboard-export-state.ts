@@ -4,6 +4,7 @@ import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { getSettings } from '../config-manager';
 import { assembleStoryboardScenes, type AssembledScene } from './storyboard-assembly';
+import { isCustomCaptionStyle, resolveCaptionStyle } from '../../shared/caption-style';
 import { resolveBurnSubtitles, resolveStudioOutputSpec, readStudioExportAttempt, type StudioExportAttempt, type StudioExportState,
   type StudioRenderedOutput } from '../../shared/media-output';
 
@@ -47,6 +48,8 @@ export async function storyboardSourceRevision(
   return createHash('sha256').update(JSON.stringify({ schema: 'storyboard-source-1', scenes: inputs,
     outputSpec: meta.outputSpec === undefined ? 'legacy-1080p-crop' : resolveStudioOutputSpec(meta.outputSpec),
     burnSubtitles: resolveBurnSubtitles(meta.burnSubtitles), motion: options.motion !== false,
+    // Only a non-default style joins the identity, so exports made before caption styles existed stay current.
+    ...(isCustomCaptionStyle(meta.captionStyle) ? { captionStyle: resolveCaptionStyle(meta.captionStyle) } : {}),
     narrationEngine: narrated ? options.engine ?? storyboardNarrationEngine() : null,
   })).digest('hex');
 }
