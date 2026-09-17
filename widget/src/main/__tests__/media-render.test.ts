@@ -24,6 +24,7 @@ import {
   buildLoudnormFilter,
   parseLoudnormOutput,
   LoudnormStats,
+  buildColorGradeFilter,
 } from '../media-render';
 
 /** The -vf value, which is where every interesting decision ends up. */
@@ -580,6 +581,43 @@ describe('two-pass audio loudness normalization (Task 3)', () => {
     expect(args).toContain('-af');
     const af = args[args.indexOf('-af') + 1];
     expect(af).toContain('loudnorm=I=-16:TP=-2.0:LRA=11');
+  });
+
+  describe('color grading LUT filter presets', () => {
+    it('returns valid FFmpeg filters for each supported preset', () => {
+      expect(buildColorGradeFilter('warm_nile')).toContain('colorbalance=rs=0.15');
+      expect(buildColorGradeFilter('teal_orange')).toContain('colorbalance=rs=0.1');
+      expect(buildColorGradeFilter('nocturne')).toContain('saturation=0.6');
+      expect(buildColorGradeFilter('rec709')).toBeNull();
+      expect(buildColorGradeFilter('none')).toBeNull();
+      expect(buildColorGradeFilter(null)).toBeNull();
+    });
+
+    it('injects color grade filter into buildRenderArgs before format=yuv420p', () => {
+      const args = buildRenderArgs({
+        audioPath: '/a.mp3',
+        outputPath: '/out.mp4',
+        shape: 'short',
+        durationSeconds: 10,
+        colorGrade: 'warm_nile',
+      });
+      const vf = filtersOf(args);
+      expect(vf).toContain('colorbalance=rs=0.15');
+      expect(vf).toContain('format=yuv420p');
+    });
+
+    it('injects color grade filter into buildTimelineRenderArgs before format=yuv420p', () => {
+      const args = buildTimelineRenderArgs({
+        concatPath: '/scenes.txt',
+        audioPath: '/a.mp3',
+        outputPath: '/out.mp4',
+        shape: 'long',
+        colorGrade: 'teal_orange',
+      });
+      const vf = filtersOf(args);
+      expect(vf).toContain('colorbalance=rs=0.1');
+      expect(vf).toContain('format=yuv420p');
+    });
   });
 });
 
