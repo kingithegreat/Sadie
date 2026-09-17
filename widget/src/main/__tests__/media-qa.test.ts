@@ -18,6 +18,9 @@ import {
   describeQa,
   SILENCE_FLOOR_DB,
   DURATION_TOLERANCE_SECONDS,
+  FLAT_FRAME_STDDEV,
+  contentStdDev,
+  frameStdDev,
 } from '../media-qa';
 
 /** Captured from: ffmpeg -i good.mp4 -af volumedetect -f null - */
@@ -150,6 +153,43 @@ describe('evaluateRenderQa', () => {
     const v = evaluateRenderQa(parseRenderFacts(hot), { ...SHORT, hasMusic: false });
     expect(v.warnings.join(' ')).toMatch(/narration peaks/);
     expect(v.warnings.join(' ')).not.toMatch(/music/);
+  });
+});
+
+describe('contentStdDev — flat placeholders are flat even inside fit bars', () => {
+  const SIZE = 64;
+  const frame = (pixel: (x: number, y: number) => number) => {
+    const buf = Buffer.alloc(SIZE * SIZE);
+    for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) buf[y * SIZE + x] = pixel(x, y);
+    return buf;
+  };
+  const pillarbox = (x: number) => x < 18 || x > 45; // a 9:16 image fitted into 16:9
+  const letterbox = (y: number) => y < 12 || y > 51;
+
+  test('a flat slate reads flat', () => {
+    expect(contentStdDev(frame(() => 39))).toBeLessThan(FLAT_FRAME_STDDEV);
+  });
+
+  test('a flat slate with black pillarbox bars reads flat (the bars used to make it look varied)', () => {
+    const slate = frame(x => (pillarbox(x) ? 16 : 39));
+    expect(frameStdDev(slate)).toBeGreaterThan(FLAT_FRAME_STDDEV); // the old measurement passed it
+    expect(contentStdDev(slate)).toBeLessThan(FLAT_FRAME_STDDEV);
+  });
+
+  test('real texture inside letterbox bars still reads as a picture', () => {
+    const photo = frame((x, y) => (letterbox(y) ? 16 : ((x * 7 + y * 13) % 180) + 40));
+    expect(contentStdDev(photo)).toBeGreaterThan(FLAT_FRAME_STDDEV * 5);
+  });
+
+  test('a smooth vertical gradient with no bars is measured whole, not stripped away', () => {
+    const sky = frame((_x, y) => 60 + y * 2);
+    expect(contentStdDev(sky)).toBeCloseTo(frameStdDev(sky), 5);
+    expect(contentStdDev(sky)).toBeGreaterThan(FLAT_FRAME_STDDEV);
+  });
+
+  test('a small bright subject on black is a picture', () => {
+    const subject = frame((x, y) => (x > 28 && x < 36 && y > 28 && y < 36 ? 230 : 16));
+    expect(contentStdDev(subject)).toBeGreaterThan(FLAT_FRAME_STDDEV);
   });
 });
 

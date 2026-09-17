@@ -12738,6 +12738,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.ms-stage-preview-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--warning, #fbbf24);
+}
+
 .ms-stage-param-group {
   display: flex;
   flex-direction: column;
@@ -13672,6 +13678,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   font-size: 0.7rem;
   font-weight: 500;
   color: var(--text-muted, #cbd5e1);
+}
+
+.ms-shot-motion-note {
+  margin: 4px 0 0;
+  font-size: 0.7rem;
+  color: var(--warning, #fbbf24);
 }
 
 .ms-shot-textarea {

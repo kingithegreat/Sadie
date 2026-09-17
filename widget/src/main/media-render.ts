@@ -24,6 +24,7 @@ import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveStudioOutputVariant, type StudioAspectRatio, type StudioOutputVariant } from '../shared/media-output';
+import { resolveCaptionStyle, type CaptionStyle } from '../shared/caption-style';
 
 /** One visual, held for a span of the video. */
 export interface Segment {
@@ -53,6 +54,25 @@ export function buildStudioFrameFilters(value: StudioOutputVariant): string[] {
       : `pad=${v.width}:${v.height}:(ow-iw)/2:(oh-ih)/2:color=black`,
     'setsar=1',
   ];
+}
+
+export type ColorGradePreset = 'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne' | 'neutral' | string;
+
+/**
+ * Builds FFmpeg color balance and eq filter string corresponding to a color grading LUT preset.
+ */
+export function buildColorGradeFilter(preset?: string | null): string | null {
+  if (!preset || preset === 'rec709' || preset === 'neutral' || preset === 'none') return null;
+  switch (preset) {
+    case 'warm_nile':
+      return 'eq=contrast=1.1:saturation=1.2:brightness=-0.02,colorbalance=rs=0.15:gs=0.05:bs=-0.1';
+    case 'teal_orange':
+      return 'eq=contrast=1.15:saturation=1.25,colorbalance=rs=0.1:gs=-0.05:bs=-0.1:rm=-0.05:gm=0.05:bm=0.1';
+    case 'nocturne':
+      return 'eq=contrast=1.2:saturation=0.6:brightness=-0.15,colorbalance=rs=-0.1:gs=0.0:bs=0.2';
+    default:
+      return null;
+  }
 }
 
 /** -shortest alone can leave an encoder tail. Allow one frame beyond measured
@@ -211,21 +231,48 @@ export function toAssUnits(px: number, frameHeight: number): number {
 }
 
 export function defaultSubtitleStyle(shape: VideoShape): string {
+  return subtitleStyleFor(shape);
+}
+
+/** Size multipliers on the default caption height for each shape. */
+const CAPTION_SCALE: Record<CaptionStyle['size'], number> = { small: 0.75, medium: 1, large: 1.35 };
+/**
+ * Centred alignment in the LEGACY SSA numbering that ffmpeg's force_style uses
+ * (bottom 1-3, top +4, middle +8) — not the ASS numpad (8 = top). Measured on
+ * rendered frames: numpad 8 landed middle-left and 5 landed top-left.
+ */
+const CAPTION_ALIGNMENT: Record<CaptionStyle['position'], number> = { bottom: 2, middle: 10, top: 6 };
+
+/** #rrggbb to ASS &HAABBGGRR (alpha 00 is opaque). */
+function assColour(hex: string, alpha = 0): string {
+  const [r, g, b] = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)];
+  return `&H${alpha.toString(16).padStart(2, '0')}${b}${g}${r}`.toUpperCase();
+}
+
+/**
+ * libass force_style for the owner's caption style (default when omitted).
+ * Title-safe margins are kept for every position: portrait keeps clear of the
+ * platform overlays at top and bottom, landscape keeps a broadcast inset.
+ */
+export function subtitleStyleFor(shape: VideoShape, captionStyle?: unknown): string {
+  const style = resolveCaptionStyle(captionStyle);
   const { h } = dimensionsFor(shape);
   const portrait = shape === 'short' || shape === '9:16';
   // Wanted, in real pixels on the finished frame.
   const marginPx = portrait ? 280 : 70;
-  const fontPx = portrait ? 110 : 56;
+  const fontPx = Math.round((portrait ? 110 : 56) * CAPTION_SCALE[style.size]);
   const outlinePx = portrait ? 8 : 5;
+  const box = style.background === 'box';
   return [
-    'FontName=Arial',
+    `FontName=${style.font}`,
     `FontSize=${toAssUnits(fontPx, h)}`,
-    'PrimaryColour=&H00FFFFFF',
-    'OutlineColour=&H00000000',
-    'BorderStyle=1',
+    `PrimaryColour=${assColour(style.color)}`,
+    // Box: libass paints BorderStyle=3 with the outline colour, 25% transparent.
+    `OutlineColour=${box ? assColour('#000000', 0x40) : '&H00000000'}`,
+    `BorderStyle=${box ? 3 : 1}`,
     `Outline=${toAssUnits(outlinePx, h)}`,
     'Shadow=0',
-    'Alignment=2',
+    `Alignment=${CAPTION_ALIGNMENT[style.position]}`,
     `MarginV=${toAssUnits(marginPx, h)}`,
     'Bold=1',
   ].join(',');
@@ -382,6 +429,8 @@ export function buildRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
   targetI?: number;
@@ -429,6 +478,10 @@ export function buildRenderArgs(opts: {
     // backdrop.
     const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
+  }
+  if (opts.colorGrade) {
+    const lut = buildColorGradeFilter(opts.colorGrade);
+    if (lut) filters.push(lut);
   }
   // yuv420p or the file will not play in most browsers or on phones.
   filters.push('format=yuv420p');
@@ -500,6 +553,8 @@ export function buildTimelineRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
   targetI?: number;
@@ -532,6 +587,10 @@ export function buildTimelineRenderArgs(opts: {
   if (opts.captionsPath) {
     const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
+  }
+  if (opts.colorGrade) {
+    const lut = buildColorGradeFilter(opts.colorGrade);
+    if (lut) filters.push(lut);
   }
   filters.push('format=yuv420p');
 
@@ -708,6 +767,8 @@ export async function renderVideo(opts: {
   outputVariant?: StudioOutputVariant;
   imagePath?: string | null;
   captionsPath?: string | null;
+  /** libass force_style for the owner's caption style; defaults to the standard style. */
+  subtitleStyle?: string;
   durationSeconds: number;
   zoom?: boolean;
   /** Concat script for a multi-scene render; a single still is used when absent. */
@@ -716,6 +777,8 @@ export async function renderVideo(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Pass-through or pre-measured loudnorm stats. Set to false to disable loudnorm. */
   loudnormStats?: LoudnormStats | false | null;
   targetI?: number;
