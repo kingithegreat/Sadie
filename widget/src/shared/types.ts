@@ -157,6 +157,13 @@ export interface AssistantToolActivity {
 }
 
 /** A file or folder in the Explorer tree. */
+/** One changed file in the Workspace Source Control panel. */
+export interface WorkspaceGitChange {
+  path: string;
+  from?: string;
+  kind: 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'type-changed';
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;
@@ -975,6 +982,14 @@ export interface ElectronAPI {
   workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
   workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
   workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
+  workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
+    staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;
+  workspaceGitStage?: (folder: string, files: string[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceGitUnstage?: (folder: string, files: string[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceGitCommit?: (folder: string, message: string) => Promise<{ success: boolean; error?: string; hash?: string }>;
+  workspaceGitBranches?: (folder: string) => Promise<{ success: boolean; error?: string; current?: string; branches?: string[] }>;
+  workspaceGitCheckout?: (folder: string, branch: string) => Promise<{ success: boolean; error?: string }>;
   onAssistantToolActivity?: (callback: (info: AssistantToolActivity) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;

@@ -10,6 +10,7 @@ const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // attach in main — no reason to pay for either until it is actually opened.
 const BrowserPanel = lazy(() => import('./BrowserPanel'));
 const ChangesPanel = lazy(() => import('./ChangesPanel'));
+const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -29,7 +30,7 @@ interface OpenFile {
   language: string;
 }
 
-type SideView = 'explorer' | 'changes' | null;
+type SideView = 'explorer' | 'changes' | 'scm' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -246,6 +247,14 @@ export default function WorkspaceShell({
         ><Icon name="diff" size={20} /></button>
         <button
           type="button"
+          className={`ws-activity-btn${sideView === 'scm' ? ' active' : ''}`}
+          title="Source Control"
+          aria-label="Source Control"
+          aria-pressed={sideView === 'scm'}
+          onClick={() => setSideView(v => (v === 'scm' ? null : 'scm'))}
+        ><Icon name="code" size={20} /></button>
+        <button
+          type="button"
           className={`ws-activity-btn${browserOpen ? ' active' : ''}`}
           title="Browser"
           aria-label="Toggle browser panel"
@@ -262,6 +271,17 @@ export default function WorkspaceShell({
         ><Icon name="chat" size={20} /></button>
       </nav>
 
+      {sideView === 'scm' && (
+        <aside className="ws-sidebar" aria-label="Source Control">
+          <div className="ws-sidebar-title">Source Control</div>
+          <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
+          <div className="ws-sidebar-body">
+            <Suspense fallback={<div className="tree-hint">Loading…</div>}>
+              {root && <SourceControlPanel folder={root} onOpenFile={openFile} />}
+            </Suspense>
+          </div>
+        </aside>
+      )}
       {/* Sidebar */}
       {sideView === 'changes' && (
         <aside className="ws-sidebar" aria-label="Changes">
