@@ -79,6 +79,12 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_LIST: 'homebot:workspace:list',
   WORKSPACE_READ: 'homebot:workspace:read',
   WORKSPACE_SAVE: 'homebot:workspace:save',
+  WORKSPACE_GIT_STATUS: 'homebot:workspace:git-status',
+  WORKSPACE_GIT_STAGE: 'homebot:workspace:git-stage',
+  WORKSPACE_GIT_UNSTAGE: 'homebot:workspace:git-unstage',
+  WORKSPACE_GIT_COMMIT: 'homebot:workspace:git-commit',
+  WORKSPACE_GIT_BRANCHES: 'homebot:workspace:git-branches',
+  WORKSPACE_GIT_CHECKOUT: 'homebot:workspace:git-checkout',
   ASSISTANT_TOOL_ACTIVITY: 'homebot:assistant-tool-activity',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
@@ -564,6 +570,12 @@ const electronAPI: ElectronAPI = {
   workspaceSave: async (filePath: string, content: string): Promise<any> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
   },
+  workspaceGitStatus: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STATUS, folder),
+  workspaceGitStage: async (folder: string, files: string[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STAGE, folder, files),
+  workspaceGitUnstage: async (folder: string, files: string[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_UNSTAGE, folder, files),
+  workspaceGitCommit: async (folder: string, message: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_COMMIT, folder, message),
+  workspaceGitBranches: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_BRANCHES, folder),
+  workspaceGitCheckout: async (folder: string, branch: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_CHECKOUT, folder, branch),
 
   /** Tool calls made by the external assistant (Claude Code) via the bridge.
    *  Returns an unsubscribe function. */
