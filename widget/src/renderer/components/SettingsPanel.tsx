@@ -23,6 +23,7 @@ import { useSettingsState } from './settings/useSettingsState';
 import { SettingsProvider } from './settings/SettingsContext';
 import PrivacySwitch from './settings/PrivacySwitch';
 import GeneralSettingsTab from './settings/GeneralSettingsTab';
+import ProblemReportSection from './settings/ProblemReportSection';
 import ModelsSettingsTab from './settings/ModelsSettingsTab';
 import VoiceHotkeysTab from './settings/VoiceHotkeysTab';
 import PrivacySettingsTab from './settings/PrivacySettingsTab';
@@ -126,6 +127,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         <ConnectionsSettingsSection />
         <VoiceHotkeysTab />
         <GeneralSettingsTab />
+        <ProblemReportSection />
 
         {advanced && <>
           <PrivacySettingsTab />

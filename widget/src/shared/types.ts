@@ -876,6 +876,9 @@ export interface ElectronAPI {
   sdCppSetup?: () => Promise<{ success: boolean; message?: string; dir?: string; modelsDir?: string; instructions?: string[] }>;
   // Full system/connectivity diagnostics report
   runDiagnostics?: () => Promise<{ success: boolean; error?: string; [key: string]: any }>;
+  /** Settings → Report a problem (main/problem-report-ipc.ts). */
+  createProblemReport?: (note?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  showProblemReport?: (file: string) => Promise<{ success: boolean; error?: string }>;
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;
