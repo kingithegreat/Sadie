@@ -1,10 +1,11 @@
 /**
  * HomeBot voice input engines.
  *
- * The default engine is local Whisper (via @huggingface/transformers, bundled
- * and running in the renderer) — far more accurate than the legacy Windows
+ * The default engine is local Whisper — far more accurate than the legacy Windows
  * SAPI dictation path, works with any accent, and needs no per-user training.
- * The model downloads once on first use and is cached by the browser.
+ * This file records and resamples; the model runs in the main process
+ * (main/speech/whisper-transcriber.ts), downloads once while Online is on,
+ * and is cached in HomeBot's data folder.
  *
  * SAPI and the Web Speech API remain available as selectable fallbacks in
  * Settings → Voice.
@@ -113,36 +114,16 @@ export function computeRms(samples: Float32Array): number {
   return Math.sqrt(sum / samples.length);
 }
 
-// ── Whisper pipeline (cached per model) ─────────────────────────────────────
+// ── Whisper runs in the main process ───────────────────────────────────────
+//
+// The model download used to be a renderer fetch to huggingface.co, which the
+// renderer CSP (connect-src 'self') blocks: "Voice error: Failed to fetch".
+// main/speech/whisper-transcriber.ts loads it instead (Online-gated, cached in
+// userData); only the recorded 16 kHz samples are sent there.
 
 const WHISPER_SAMPLE_RATE = 16_000;
-const pipelineCache = new Map<string, Promise<any>>();
 
 export type VoiceStatusCallback = (status: string) => void;
-
-function getWhisperPipeline(modelId: string, onStatus?: VoiceStatusCallback): Promise<any> {
-  let cached = pipelineCache.get(modelId);
-  if (!cached) {
-    cached = (async () => {
-      const { pipeline } = await import('@huggingface/transformers');
-      let lastPct = -1;
-      return pipeline('automatic-speech-recognition', modelId, {
-        progress_callback: (p: any) => {
-          if (p?.status === 'progress' && typeof p.progress === 'number') {
-            const pct = Math.round(p.progress);
-            if (pct !== lastPct) {
-              lastPct = pct;
-              onStatus?.(`⬇️ Downloading voice model… ${pct}% (one-time)`);
-            }
-          }
-        },
-      });
-    })();
-    cached.catch(() => pipelineCache.delete(modelId)); // don't cache failures
-    pipelineCache.set(modelId, cached);
-  }
-  return cached;
-}
 
 // ── Recording ────────────────────────────────────────────────────────────────
 
@@ -255,30 +236,23 @@ async function blobToWhisperInput(blob: Blob): Promise<Float32Array> {
  */
 export async function whisperTranscribeOnce(opts: WhisperTranscribeOptions = {}): Promise<{ text: string }> {
   const modelId = pickWhisperModelId(opts.modelSize, opts.language);
-
-  // Kick off the model load in parallel with recording — on a warm cache this
-  // is instant; on first use the download progress is surfaced via onStatus.
-  const pipelinePromise = getWhisperPipeline(modelId, opts.onStatus);
+  const api = (window as any).electron;
+  if (typeof api?.whisperTranscribe !== 'function') throw new Error('Voice input is not available in this window.');
 
   opts.onStatus?.('🎤 Listening… speak now (auto-stops on silence)');
   const blob = await recordUntilSilence(opts);
   if (!blob) return { text: '' };
 
   opts.onStatus?.('📝 Transcribing…');
-  const [asr, audio] = await Promise.all([pipelinePromise, blobToWhisperInput(blob)]);
-
-  const lang = (opts.language || 'en').toLowerCase();
-  const generateOpts: Record<string, unknown> = {
-    chunk_length_s: 30,
-    stride_length_s: 5,
-    return_timestamps: false,
-  };
-  // English-only checkpoints reject a language option; multilingual ones need it.
-  if (lang !== 'en') {
-    generateOpts.language = lang;
-    generateOpts.task = 'transcribe';
+  const audio = await blobToWhisperInput(blob);
+  const stopProgress = api.onWhisperProgress?.((p: { percent: number }) => {
+    opts.onStatus?.(`⬇️ Downloading voice model… ${p.percent}% (one-time)`);
+  });
+  try {
+    const res = await api.whisperTranscribe({ modelId, language: opts.language, audio });
+    if (!res?.success) throw new Error(res?.error || 'Transcription failed');
+    return { text: String(res.text || '').trim() };
+  } finally {
+    stopProgress?.();
   }
-
-  const output = await asr(audio, generateOpts);
-  return { text: String(output?.text || '').trim() };
 }
