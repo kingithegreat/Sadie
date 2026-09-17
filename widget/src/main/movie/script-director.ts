@@ -18,6 +18,7 @@ import {
   type ShotBibleEntry,
 } from './types';
 import { isStoryboardFrameProviderId } from '../../shared/storyboard-frame-providers';
+import { createStoryboardOutputSpec } from '../../shared/media-output';
 import { getStoryboardProjectDir } from './storyboard-renderer';
 
 export type CinematicGenre =
@@ -463,6 +464,8 @@ export async function directScriptToStoryboard(options: ScriptBreakdownOptions):
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       freeOnly: options.freeOnly !== false,
+      // Crop so the director's per-shot camera moves reach the video.
+      outputSpec: createStoryboardOutputSpec(),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: `Genre: ${genre}. Auto-directed script breakdown: ${options.notes || options.script.slice(0, 120)}`,

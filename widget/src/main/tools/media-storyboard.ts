@@ -28,7 +28,7 @@ import {
   type GenerationRequest,
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
-import { resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 
@@ -116,7 +116,7 @@ export const mediaCreateStoryboardDef: ToolDefinition = {
         description: 'Hard gate ensuring all generations cost $0.00 (defaults to true).',
       },
       burnSubtitles: { type: 'boolean', description: 'Burn captions into the movie. New projects default to off.' },
-      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p fit.' },
+      outputSpec: { type: 'object', description: 'Saved output settings, independent of shot durations: schemaVersion 1, durationIntent short or long, variants containing one format or explicitly both landscape and portrait, each {id: landscape/portrait/square, aspectRatio: 16:9/9:16/1:1, width, height, fps: 30, framing: {mode: fit/crop, x: 0.5, y: 0.5}}. Use matching 720p or 1080p dimensions. Defaults to landscape 1080p crop, so camera movement shows in every shot; fit keeps the whole image still.' },
     },
     required: ['projectId', 'title'],
   },
@@ -142,7 +142,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       updatedAt: new Date().toISOString(),
       freeOnly: args.freeOnly !== false,
       burnSubtitles: resolveBurnSubtitles(args.burnSubtitles, false),
-      outputSpec: resolveStudioOutputSpec(args.outputSpec),
+      outputSpec: args.outputSpec === undefined ? createStoryboardOutputSpec() : resolveStudioOutputSpec(args.outputSpec),
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
@@ -674,6 +674,7 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     variantId: args.variantId,
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
     ...(args.narrationEngine === 'edge' || args.narrationEngine === 'kokoro' ? { narrationEngine: args.narrationEngine } : {}),
+    ...(typeof args.colorGrade === 'string' ? { colorGrade: args.colorGrade } : {}),
   });
 
   if (!res.ok && !res.variants) {
@@ -863,6 +864,84 @@ export const mediaBreakdownScriptHandler: ToolHandler = async (args, _context) =
   };
 };
 
+// --- 8. setStoryboardShotImage ------------------------------------------------
+
+export async function setStoryboardShotImage(args: {
+  projectId: string;
+  sceneId?: string;
+  shotId: string;
+  imagePath: string;
+}): Promise<ToolResult> {
+  const projectId = String(args.projectId || '').trim();
+  const sceneId = String(args.sceneId || 'scene_01').trim();
+  const shotId = String(args.shotId || '').trim();
+  const imagePath = String(args.imagePath || '').trim();
+
+  if (!projectId || !shotId || !imagePath) {
+    return { success: false, error: 'projectId, shotId, and imagePath are required.' };
+  }
+  if (!fs.existsSync(imagePath)) {
+    return { success: false, error: `Image file does not exist: ${imagePath}` };
+  }
+
+  const rootDir = getStoryboardsRootDir();
+  const shotDir = path.join(rootDir, projectId, 'scenes', sceneId, shotId);
+  if (!fs.existsSync(shotDir)) {
+    return { success: false, error: `Shot directory not found: ${shotDir}` };
+  }
+
+  try {
+    const imgDir = path.join(shotDir, 'image');
+    if (!fs.existsSync(imgDir)) {
+      fs.mkdirSync(imgDir, { recursive: true });
+    }
+    const ext = path.extname(imagePath).toLowerCase() || '.png';
+    const destFile = path.join(imgDir, `frame${ext}`);
+    fs.copyFileSync(imagePath, destFile);
+
+    const statusFile = path.join(shotDir, 'status.json');
+    const prevStatus = readProjectMeta(statusFile);
+    const statusData = {
+      ...prevStatus,
+      shotId,
+      status: ShotStatus.IMAGE_GENERATED,
+      updatedAt: new Date().toISOString(),
+      provider: 'custom_import',
+      frameImagePath: destFile,
+    };
+    fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf-8');
+
+    return {
+      success: true,
+      result: {
+        projectId,
+        sceneId,
+        shotId,
+        frameImagePath: destFile,
+        provider: 'custom_import',
+        message: `Image for ${shotId} imported successfully from ${path.basename(imagePath)}.`,
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+export const mediaSetStoryboardImageDef: ToolDefinition = {
+  name: 'media_set_storyboard_image',
+  description: 'Imports an existing local image file as the rendered keyframe for a storyboard shot.',
+  parameters: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'ID of the storyboard project.' },
+      sceneId: { type: 'string', description: 'Scene ID (defaults to scene_01).' },
+      shotId: { type: 'string', description: 'Shot ID to assign the image to.' },
+      imagePath: { type: 'string', description: 'Absolute path to the local image file.' },
+    },
+    required: ['projectId', 'shotId', 'imagePath'],
+  },
+};
+
 // --- Exports -----------------------------------------------------------------
 
 export const storyboardToolDefs: ToolDefinition[] = [
@@ -873,6 +952,7 @@ export const storyboardToolDefs: ToolDefinition[] = [
   mediaSaveStoryboardDef,
   mediaRenderStoryboardDef,
   mediaBreakdownScriptDef,
+  mediaSetStoryboardImageDef,
 ];
 
 export const storyboardToolHandlers: Record<string, ToolHandler> = {
@@ -883,6 +963,8 @@ export const storyboardToolHandlers: Record<string, ToolHandler> = {
   media_save_storyboard: mediaSaveStoryboardHandler,
   media_render_storyboard: mediaRenderStoryboardHandler,
   media_breakdown_script: mediaBreakdownScriptHandler,
+  media_set_storyboard_image: (args) => setStoryboardShotImage(args as any),
 };
+
 
 

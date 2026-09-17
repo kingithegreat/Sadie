@@ -13695,6 +13695,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   color: var(--text-muted, #cbd5e1);
 }
 
+.ms-shot-motion-note {
+  margin: 4px 0 0;
+  font-size: 0.7rem;
+  color: var(--warning, #fbbf24);
+}
+
 .ms-shot-textarea {
   background: rgba(10, 14, 22, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.1);

@@ -846,6 +846,12 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:movie:run', options),
   mediaMovieListProjects: async () =>
     ipcRenderer.invoke('homebot:media:movie:list-projects'),
+  mediaDeliverToFinished: async (payload: { episodeId?: string; jobId?: string; customDir?: string }) =>
+    ipcRenderer.invoke('homebot:media:deliver-finished', payload),
+  mediaListMusicTracks: async (folderOverride?: string) =>
+    ipcRenderer.invoke('homebot:media:music:list', folderOverride),
+  mediaSaveMusicConfig: async (config: { enabled?: boolean; folder?: string }) =>
+    ipcRenderer.invoke('homebot:media:music:save-config', config),
   mediaStoryboardCreate: async (data: any) =>
     ipcRenderer.invoke('homebot:media:storyboard:create', data),
   mediaStoryboardList: async () =>
@@ -860,9 +866,11 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:confirm-paid-frames', frameProvider),
   mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
+  mediaStoryboardSetShotImage: async (args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:set-shot-image', args),
   mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
-  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine }) =>
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine; colorGrade?: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
