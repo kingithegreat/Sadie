@@ -7,6 +7,7 @@ import {
   ANCIENT_PATHWAYS_PROVIDER_ID,
   extractCharactersFromRequest,
   probeAncientPathways,
+  showrunnerProductionName,
 } from '../movie/ancient-pathways-adapter';
 import { pollinationsProvider } from '../movie/pollinations-adapter';
 import { localSD15Provider } from '../movie/local-sd15-adapter';
@@ -18,10 +19,11 @@ import type { GenerationRequest } from '../movie/types';
 // On CI runners this path does not exist; mocking makes the suite hermetic.
 const mockResolveAncientPathwaysDir = jest.fn();
 const mockCheckRenderLock = jest.fn();
+const mockRunShowrunner = jest.fn();
 jest.mock('../ancient-pathways', () => ({
   resolveAncientPathwaysDir: () => mockResolveAncientPathwaysDir(),
   checkRenderLock: (dir: string) => mockCheckRenderLock(dir),
-  runShowrunner: jest.fn(),
+  runShowrunner: (...args: any[]) => mockRunShowrunner(...args),
 }));
 
 describe('Ancient Pathways Local Movie Adapter', () => {
@@ -40,6 +42,7 @@ describe('Ancient Pathways Local Movie Adapter', () => {
   afterEach(() => {
     mockResolveAncientPathwaysDir.mockReset();
     mockCheckRenderLock.mockReset();
+    mockRunShowrunner.mockReset();
     if (origEnv !== undefined) {
       process.env.ANCIENT_PATHWAYS_DIR = origEnv;
     } else {
@@ -77,7 +80,7 @@ describe('Ancient Pathways Local Movie Adapter', () => {
       expect(cap.imageToVideo).toBe(true);
       expect(cap.watermark).toBe('none');
       expect(cap.deferred).toBe(false);
-      expect(ancientPathwaysProvider.kind).toBe('both');
+      expect(ancientPathwaysProvider.kind).toBe('video');
     });
   });
 
@@ -114,7 +117,7 @@ describe('Ancient Pathways Local Movie Adapter', () => {
         .register(pollinationsProvider)   // rejected: video? kind='image' only, refImages='none'
         .register(localSD15Provider)       // rejected: kind='image', 512x512
         .register(colabProvider)           // rejected: allowDeferred=false
-        .register(ancientPathwaysProvider); // eligible! kind='both', 1920x1080, multi-ref, ready
+        .register(ancientPathwaysProvider); // eligible! kind='video', 1920x1080, multi-ref, ready
 
       const req = baseReq({
         kind: 'video',
@@ -128,41 +131,37 @@ describe('Ancient Pathways Local Movie Adapter', () => {
       expect(decision.chosen?.eligible).toBe(true);
     });
 
-    it('wins for 1080p stills with character references when deferred is disallowed', async () => {
-      const router = new GenerationRouter()
-        .register(pollinationsProvider)   // rejected: referenceImages='none'
-        .register(localSD15Provider)       // rejected: 512x512 < 1920x1080
-        .register(colabProvider)           // rejected: allowDeferred=false
-        .register(ancientPathwaysProvider); // eligible!
+    it('is never chosen for a still: the Showrunner renders MP4 scenes only', async () => {
+      // It used to "win" stills, render a video, and fail the image check after a
+      // full render — every time.
+      const router = new GenerationRouter().register(ancientPathwaysProvider);
+      const decision = await router.route(baseReq({ kind: 'image', characterRefs: ['/refs/imhotep.png'] }));
+      expect(decision.chosen).toBeFalsy();
+      expect(decision.summary).toMatch(/does not produce image/);
 
-      const req = baseReq({
-        kind: 'image',
-        width: 1920,
-        height: 1080,
-        characterRefs: ['/refs/imhotep.png'],
-        allowDeferred: false,
-      });
-
-      const decision = await router.route(req);
-      expect(decision.chosen?.providerId).toBe(ANCIENT_PATHWAYS_PROVIDER_ID);
+      const direct = await ancientPathwaysProvider.generate(baseReq({ kind: 'image' }));
+      expect(direct).toMatchObject({ status: 'failed', error: 'Ancient Pathways makes video clips, not still frames.' });
+      expect(mockRunShowrunner).not.toHaveBeenCalled();
     });
+  });
 
-    it('wins over colab for character stills even when deferral is allowed because it is ready', async () => {
-      const router = new GenerationRouter()
-        .register(colabProvider)           // availability='needs_human' (score 49)
-        .register(ancientPathwaysProvider); // availability='ready' (score 125+)
+  describe('production naming', () => {
+    it('a changed prompt or duration gets a fresh production; the same request resumes the same one', async () => {
+      const outputPath = path.join(tmpDir, 'scene_master_1080p.mp4');
+      fs.writeFileSync(outputPath, 'mp4');
+      mockRunShowrunner.mockResolvedValue({ ok: true, outputPath });
 
-      const req = baseReq({
-        kind: 'image',
-        width: 1920,
-        height: 1080,
-        characterRefs: ['/refs/imhotep.png'],
-        allowDeferred: true,
-      });
+      await ancientPathwaysProvider.generate(baseReq({ durationSec: 2 }));
+      await ancientPathwaysProvider.generate(baseReq({ durationSec: 2 }));
+      await ancientPathwaysProvider.generate(baseReq({ durationSec: 4 }));
+      await ancientPathwaysProvider.generate(baseReq({ durationSec: 2, prompt: 'Socrates in the agora' }));
+      const names = mockRunShowrunner.mock.calls.map((c) => c[0].name);
+      expect(names[0]).toMatch(/^shot_shot_ap_001_[0-9a-f]{10}$/);
+      expect(names[1]).toBe(names[0]);
+      expect(new Set(names).size).toBe(3);
+      expect(mockRunShowrunner.mock.calls[2][0].duration).toBe(4);
 
-      const decision = await router.route(req);
-      expect(decision.chosen?.providerId).toBe(ANCIENT_PATHWAYS_PROVIDER_ID);
-      expect(decision.fallbacks.map((f) => f.providerId)).toContain('colab-worker');
+      expect(showrunnerProductionName('../evil id', 'p', 1, 'leila')).toMatch(/^shot__evil_id_[0-9a-f]{10}$/);
     });
   });
 });

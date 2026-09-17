@@ -23,6 +23,13 @@ test('job output control reaches the same model-facing settings handler', async 
   expect(invokeTool).toHaveBeenCalledWith({}, 'media_set_output', { job: 'draft', burnSubtitles: false });
 });
 
+test('a caption style chosen on a video reaches the same settings handler', async () => {
+  const captionStyle = { size: 'large', position: 'middle', font: 'Georgia', color: '#00ffff', background: 'box' };
+  const result = await handlers['homebot:media:run']({}, 'draft', 'output', { captionStyle });
+  expect(result.ok).toBe(true);
+  expect(invokeTool).toHaveBeenCalledWith({}, 'media_set_output', expect.objectContaining({ job: 'draft', captionStyle }));
+});
+
 test.each([undefined, false, true])('job creation persists explicit/default captions %s', async burnSubtitles => {
   const result = await handlers['homebot:media:create']({}, { title: 'New production', burnSubtitles });
   expect(result.ok).toBe(true);

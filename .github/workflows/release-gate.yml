@@ -4,11 +4,21 @@ on:
   push:
     branches:
       - main
+  # Changes to this gate prove themselves on their own PR before they reach main.
+  pull_request:
+    paths:
+      - .github/workflows/release-gate.yml
 
+# Windows, matching ci.yml's `widget` job: HomeBot ships Windows-only, and the
+# widget suite is written for it (fixtures live in os.tmpdir(), which the
+# main-process tools accept only inside the home directory; tests use
+# C:\Windows paths as "outside your folder"). On ubuntu-latest this gate failed
+# every main run from at least 2026-09-13 to 2026-09-16 with 122 tests in 21
+# suites red for those reasons alone, so nobody could read it as a release signal.
 jobs:
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -16,52 +26,78 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install deps
-        run: npm ci
-      - name: Install widget deps
-        run: npm ci --prefix widget
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+      - name: Install (root)
+        run: npm ci --ignore-scripts
+      - name: Install (widget)
+        working-directory: widget
+        run: npm ci --ignore-scripts
       - name: Build widget
-        run: npm run build --prefix widget
+        working-directory: widget
+        run: npm run build
 
   unit-tests:
     name: Unit Tests
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: build
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install deps
-        run: npm ci
-      - name: Install widget deps
-        run: npm ci --prefix widget
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
+      # Same install as ci.yml `widget`; see the comments there for why each step exists.
+      - name: Install (root)
+        run: npm ci --ignore-scripts
+      - name: Install (widget)
+        working-directory: widget
+        run: npm ci --ignore-scripts
+      - name: Build native modules against Node
+        run: |
+          npm rebuild better-sqlite3
+          cd widget && npm rebuild better-sqlite3
+      - name: Point TEMP inside the home directory
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:USERPROFILE 'homebot-test-tmp'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          "TEMP=$tmp" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TMP=$tmp"  | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Run unit tests
-        run: npm test --prefix widget
+        working-directory: widget
+        run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
 
   e2e-smoke:
     name: E2E (smoke)
     needs: unit-tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: widget/package-lock.json
       - name: Install widget deps
         run: npm ci --prefix widget
       - name: Build widget
         run: npm run build --prefix widget
       - name: Install Playwright browsers
         working-directory: widget
-        run: npx playwright install --with-deps
+        run: npx playwright install
+      # Named specs, not `-g "smoke"`: no test title contains "smoke", so that
+      # filter selected 0 tests and Playwright failed with "No tests found".
+      # These two launch the built app: its UI draws, and Studio creates a real
+      # project through its IPC and Core tool executor.
       - name: Run smoke E2E
         working-directory: widget
-        run: npx playwright test -g "smoke" --retries=2 --trace on-first-retry --reporter=dot
+        run: npx playwright test src/renderer/e2e/brand-and-icons.e2e.spec.ts src/renderer/e2e/studio-host.e2e.spec.ts --retries=2 --trace on-first-retry --reporter=line
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v4

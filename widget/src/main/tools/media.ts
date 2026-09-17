@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../../shared/media-output';
+import { resolveCaptionStyle } from '../../shared/caption-style';
 import { createStudioExportReview } from '../movie/studio-export-review';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
@@ -1052,7 +1053,7 @@ async function renderMediaJobAttempt(
   try {
     const { dir, audioPath, captionsPath, image, musicPath, ffmpeg, narrationSeconds, music,
       scenePaths, visualNote, musicNote, concatPath, zoom, renderInputs } = prepared;
-    const { renderVideo } = await import('../media-render');
+    const { renderVideo, subtitleStyleFor } = await import('../media-render');
     const { inspectRender, evaluateRenderQa, describeQa } = await import('../media-qa');
     const outputSpec = job.outputSpec === undefined ? undefined : resolveStudioOutputSpec(job.outputSpec, job.format);
     if (outputSpec && outputSpec.variants.length !== 1) throw new Error('Encode one selected format at a time.');
@@ -1073,6 +1074,7 @@ async function renderMediaJobAttempt(
       outputVariant,
       imagePath: image,
       captionsPath: resolveBurnSubtitles(job.burnSubtitles) ? captionsPath : null,
+      subtitleStyle: subtitleStyleFor(shape, job.captionStyle),
       concatPath,
       durationSeconds: narrationSeconds,
       zoom,
@@ -1378,6 +1380,7 @@ const setMediaOutputDef: ToolDefinition = {
     properties: {
       job: { type: 'string', description: 'Job id or title' },
       burnSubtitles: { type: 'boolean', description: 'Whether to burn captions into the next video export' },
+      captionStyle: { type: 'object', description: 'How burned-in captions look: {size: small|medium|large, position: bottom|middle|top, font: Arial|Segoe UI|Verdana|Georgia|Impact|Trebuchet MS, color: #rrggbb, background: outline|box}. Omitted fields keep the default (medium, bottom, Arial, #ffffff, outline).' },
       outputSpec: { type: 'object', description: 'Same versioned outputSpec as media_create_job. Saves the next export shape/size/framing independently of content length.' },
     },
     required: ['job'],
@@ -1392,12 +1395,14 @@ const setMediaOutputHandler: ToolHandler = async (args) => {
     if (hasExternalMediaRenderer(job)) return err('Caption settings for this video are controlled by Ancient Pathways. HomeBot cannot change that external export yet.');
     if (renderingJobs.has(job.id)) return err('This video is rendering. Wait for its current export before changing output settings.');
     if (!canEditMediaOutput(job.state)) return err('Send this video back for revision before changing its output. The reviewed export is unchanged.');
-    if (args.burnSubtitles === undefined && args.outputSpec === undefined) return err('Choose output settings to save.');
+    if (args.burnSubtitles === undefined && args.outputSpec === undefined && args.captionStyle === undefined) return err('Choose output settings to save.');
+    const captionStyle = args.captionStyle === undefined ? undefined : resolveCaptionStyle(args.captionStyle);
     if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') return err('Choose whether captions are on or off.');
     const outputSpec = args.outputSpec === undefined ? undefined : resolveStudioOutputSpec(args.outputSpec, job.format);
     if (outputSpec && outputSpec.durationIntent !== job.format) return err('Output settings must retain this video’s content length. Shape is independent of length.');
     upsert({ ...job,
       ...(args.burnSubtitles === undefined ? {} : { burnSubtitles: args.burnSubtitles }),
+      ...(captionStyle ? { captionStyle } : {}),
       ...(outputSpec ? { outputSpec } : {}), updatedAt: new Date().toISOString() });
     return ok(`Output settings saved for the next export. Existing audio and video files are unchanged.`);
   } catch (e) { return err(`Could not save output settings: ${errText(e)}`); }
