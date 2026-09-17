@@ -119,6 +119,12 @@ export const FRAME_SAMPLE_FRACTIONS = [0.1, 0.3, 0.5, 0.7, 0.9];
 /** Side of the square a sampled frame is scaled down to before measuring. */
 const FRAME_SAMPLE_SIZE = 64;
 
+/** Gray level at or below which a flat edge line reads as black padding (video black is 16). */
+const PAD_BLACK_MAX = 24;
+
+/** Smallest picture, as a fraction of each side, that stripped bars may leave. */
+const MIN_CONTENT_FRACTION = 0.25;
+
 /**
  * Population standard deviation of raw 8-bit grayscale pixel bytes. A frame
  * of one flat color (plus tiny compression noise) reads near 0; any frame
@@ -136,6 +142,46 @@ export function frameStdDev(pixels: Buffer): number {
     variance += d * d;
   }
   return Math.sqrt(variance / pixels.length);
+}
+
+/**
+ * `frameStdDev` of the picture inside any letterbox or pillarbox bars.
+ *
+ * A flat placeholder fitted into a different shape gains black bars, and bars
+ * plus one flat color measured as "varied" — a 9:16 slate in a 16:9 fit export
+ * passed QA as real art. This strips outer rows and columns that are flat AND
+ * black (the `fit` pad color, see media-render.ts), repeatedly, then measures
+ * what is left. Only black lines are stripped, so a picture whose rows are each
+ * smooth (a plain sky gradient) is still measured whole.
+ */
+export function contentStdDev(pixels: Buffer, size = FRAME_SAMPLE_SIZE): number {
+  if (pixels.length < size * size) return frameStdDev(pixels);
+  let top = 0, bottom = size - 1, left = 0, right = size - 1;
+  const at = (x: number, y: number) => pixels[y * size + x]!;
+  const flat = (values: number[]) => {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return mean <= PAD_BLACK_MAX && frameStdDev(Buffer.from(values)) < FLAT_FRAME_STDDEV;
+  };
+  const row = (y: number) => { const v: number[] = []; for (let x = left; x <= right; x++) v.push(at(x, y)); return v; };
+  const col = (x: number) => { const v: number[] = []; for (let y = top; y <= bottom; y++) v.push(at(x, y)); return v; };
+  let changed = true;
+  while (changed && top <= bottom && left <= right) {
+    changed = false;
+    if (top <= bottom && flat(row(top))) { top++; changed = true; }
+    if (top <= bottom && flat(row(bottom))) { bottom--; changed = true; }
+    if (left <= right && top <= bottom && flat(col(left))) { left++; changed = true; }
+    if (left <= right && top <= bottom && flat(col(right))) { right--; changed = true; }
+  }
+  if (top > bottom || left > right) return 0;
+  // Fit bars leave a large picture (a 9:16 image in 16:9 keeps ~32% of the
+  // width). A small box means black was the picture's own background around a
+  // subject, not padding, so measure the whole frame instead.
+  if (right - left + 1 < size * MIN_CONTENT_FRACTION || bottom - top + 1 < size * MIN_CONTENT_FRACTION) {
+    return frameStdDev(pixels.subarray(0, size * size));
+  }
+  const inner: number[] = [];
+  for (let y = top; y <= bottom; y++) for (let x = left; x <= right; x++) inner.push(at(x, y));
+  return frameStdDev(Buffer.from(inner));
 }
 
 /**
@@ -187,7 +233,7 @@ export async function sampleFrameVariance(
   for (const fraction of FRAME_SAMPLE_FRACTIONS) {
     const atSeconds = durationSeconds * fraction;
     const pixels = await grabFrame(ffmpeg, filePath, atSeconds, size);
-    samples.push({ atSeconds, stdDev: frameStdDev(pixels) });
+    samples.push({ atSeconds, stdDev: contentStdDev(pixels) });
   }
   return samples;
 }

@@ -7,6 +7,7 @@ import {
   findEpisodeDeliverable,
   deliverEpisodeToFinished,
   deliverJobToFinished,
+  explainShowrunnerFailure,
   humanizeStage,
   resolveAncientPathwaysDir,
   runEpisodePipeline,
@@ -313,6 +314,37 @@ describe('ancient-pathways main module', () => {
 
       const found = findEpisodeDeliverable(tmpDir, 'egypt', finishedDir);
       expect(found).toBe(mp4Path);
+    });
+  });
+
+  describe('explainShowrunnerFailure', () => {
+    // Aden's report, verbatim: the compiler's own message ends in "None".
+    const traceback = [
+      '    ^^^^',
+      '  File "C:\\Users\\adenk\\Desktop\\Ancient Pathways\\pipeline\\production\\scene_compiler.py", line 66, in compile_scene',
+      '    raise RuntimeError(',
+      "RuntimeError: Scene compilation failed at shot 'scene_01_shot_01': None",
+    ].join('\n');
+
+    it('reads the shot QA reason from status.json instead of showing "None"', () => {
+      const shotDir = path.join(tmpDir, 'workspace', 'productions', 'shot_x_abc', 'scene_01', 'scene_01_shot_01');
+      fs.mkdirSync(shotDir, { recursive: true });
+      // Shape copied from the failed production on this machine.
+      fs.writeFileSync(path.join(shotDir, 'status.json'), JSON.stringify({
+        shot_id: 'scene_01_shot_01', status: 'FAILED',
+        error: "Non-repairable QA failures for shot 'scene_01_shot_01': duration_drift. Full report: ['Duration drift (1.20s) exceeded limit.']",
+        qa_checks_failed: ['duration_drift'],
+      }));
+      expect(explainShowrunnerFailure(tmpDir, 'shot_x_abc', 1, '', traceback)).toBe(
+        "Ancient Pathways rejected shot scene_01_shot_01: Non-repairable QA failures for shot 'scene_01_shot_01': duration_drift. Full report: ['Duration drift (1.20s) exceeded limit.']");
+    });
+
+    it('without a status file it names the raised error, not the traceback tail', () => {
+      expect(explainShowrunnerFailure(tmpDir, 'missing', 1, '', traceback)).toBe(
+        "Showrunner exited with code 1: RuntimeError: Scene compilation failed at shot 'scene_01_shot_01': None");
+      expect(explainShowrunnerFailure(tmpDir, 'missing', 1, 'loading\n', 'ModuleNotFoundError: No module named \'PIL\'')).toBe(
+        "Showrunner exited with code 1: ModuleNotFoundError: No module named 'PIL'");
+      expect(explainShowrunnerFailure(tmpDir, 'missing', 3, '', '')).toBe('Showrunner exited with code 3: Check logs');
     });
   });
 });

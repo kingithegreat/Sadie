@@ -8986,6 +8986,27 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 }
 .ws-sidebar-body { flex: 1 1 auto; overflow: auto; padding-bottom: 8px; }
 
+/* Source Control panel */
+.scm-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px; font-size: 12px; }
+.scm-branch { display: flex; align-items: center; gap: 6px; }
+.scm-branch select { flex: 1 1 auto; min-width: 0; }
+.scm-message { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 4px 6px; }
+.scm-commit { align-self: stretch; padding: 4px 8px; cursor: pointer; }
+.scm-commit:disabled { opacity: 0.5; cursor: default; }
+.scm-section-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 11px; text-transform: uppercase; opacity: 0.8; margin-top: 4px; }
+.scm-list { list-style: none; margin: 0; padding: 0; }
+.scm-row { display: flex; align-items: center; gap: 4px; }
+.scm-row:hover { background: rgba(128, 128, 128, 0.16); }
+.scm-file { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; align-items: center; background: none; border: none; color: inherit; text-align: left; padding: 2px 0; cursor: pointer; font: inherit; }
+.scm-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scm-kind { width: 1.1em; text-align: center; font-family: var(--font-mono); font-weight: 700; }
+.scm-kind-added, .scm-kind-untracked { color: #3fb950; }
+.scm-kind-deleted, .scm-kind-conflicted { color: #f85149; }
+.scm-kind-modified, .scm-kind-renamed, .scm-kind-type-changed { color: #d29922; }
+.scm-action { background: none; border: 1px solid transparent; color: inherit; cursor: pointer; padding: 0 6px; border-radius: 4px; }
+.scm-action:hover { border-color: rgba(128, 128, 128, 0.4); }
+.scm-refresh { align-self: flex-start; background: none; border: none; color: var(--accent); cursor: pointer; padding: 2px 0; }
+
 /* File tree */
 .tree-row {
   display: flex; align-items: center; gap: 4px;
@@ -9144,6 +9165,17 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.6;
   border-top: 1px solid var(--hairline);
 }
+
+/* CodeMirror 6 editor: it draws its own gutter and scrolls itself, so it fills the whole area. */
+.code-editor-cm {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: "surface" "cursor";
+}
+.code-cm-host { grid-area: surface; min-height: 0; min-width: 0; overflow: hidden; }
+.code-cm-host .cm-editor { height: 100%; font-family: var(--font-mono); font-size: 12.5px; }
+.code-cm-host .cm-scroller { font-family: inherit; line-height: 1.5; }
+.code-cm-host .cm-editor.cm-focused { outline: none; }
 
 /* Assistant tool activity in the workspace status bar â€” makes non-dangerous
    tool calls visible. Dangerous ones already raise the confirmation modal. */
@@ -12761,6 +12793,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   color: #fff;
   padding-bottom: 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ms-stage-preview-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--warning, #fbbf24);
 }
 
 .ms-stage-param-group {

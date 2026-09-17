@@ -337,6 +337,23 @@ describe('Media Studio Visual Storyboard Deck', () => {
       ] }) })));
   });
 
+  test('caption style controls appear with captions on and the chosen style is saved with the board', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const position = await screen.findByLabelText('Storyboard caption position');
+    fireEvent.change(position, { target: { value: 'top' } });
+    fireEvent.change(screen.getByLabelText('Storyboard caption font'), { target: { value: 'Impact' } });
+    fireEvent.change(screen.getByLabelText('Storyboard caption colour'), { target: { value: '#ffd400' } });
+    expect(screen.getByLabelText('Storyboard caption sample')).toHaveStyle({ color: '#ffd400' });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    await waitFor(() => expect(api.mediaStoryboardSave).toHaveBeenCalled());
+    expect(api.mediaStoryboardSave.mock.calls[0][0].captionStyle).toEqual({
+      size: 'medium', position: 'top', font: 'Impact', color: '#ffd400', background: 'outline' });
+
+    fireEvent.click(screen.getByLabelText('Burn captions into storyboard video'));
+    expect(screen.queryByLabelText('Storyboard caption position')).toBeNull();
+  });
+
   test('storyboard both choice saves independent portrait framing and reaches the existing render action', async () => {
     const api = setup();
     render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
@@ -817,6 +834,7 @@ describe('Storyboard frame provider picker', () => {
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
       'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
+      'ChatGPT plan · Codex on this PC · uses your plan limits, no per-image charge',
     ]);
     expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
     expect(picker.value).toBe('');
