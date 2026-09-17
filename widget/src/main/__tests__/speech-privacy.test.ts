@@ -120,7 +120,7 @@ test('cached local narration stays usable with Online off', async () => {
 test('missing local resources return setup guidance without an online fallback', async () => {
   mockKokoroLoad.mockRejectedValue(new Error('local model absent'));
   await expect(renderNarrationToFile('Private.', path.join(dir, 'n.wav'), { engine: 'kokoro' }))
-    .rejects.toThrow(/voice on this PC is not ready.*Online is off/);
+    .rejects.toThrow(/one-time download.*Online once/);
   expect(mockKokoroLoad).toHaveBeenCalledWith(false);
   expect(mockSetMetadata).not.toHaveBeenCalled();
   expect(mockToFile).not.toHaveBeenCalled();
@@ -134,7 +134,7 @@ test('an offline request does not join a pending online model download', async (
   mockSettings.useCustomLLM = false;
   mockKokoroLoad.mockRejectedValueOnce(new Error('cache absent'));
   await expect(renderNarrationToFile('Private.', path.join(dir, 'two.wav'), { engine: 'kokoro' }))
-    .rejects.toThrow(/Online is off/);
+    .rejects.toThrow(/one-time download.*Online once/);
   expect(mockKokoroLoad.mock.calls).toEqual([[true], [false]]);
   rejectDownload(new Error('download interrupted'));
   expect(await online).toBeInstanceOf(Error);

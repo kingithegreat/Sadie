@@ -22,7 +22,7 @@ import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
-import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, resolveStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
@@ -461,6 +461,15 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  // Output formats framed "fit" export every shot as a still (camera movement needs crop).
+  const storyboardStillFormats: string[] = (() => {
+    try {
+      return resolveStudioOutputSpec(activeStoryboard?.project?.outputSpec, 'short', '16:9').variants
+        .filter(variant => variant.framing.mode === 'fit').map(variant => variant.id);
+    } catch {
+      return [];
+    }
+  })();
   // A saved choice that is no longer offered (e.g. retired Imagen) reads as not chosen yet.
   const frameChoice: StoryboardFrameProviderId | undefined = isStoryboardFrameProviderId(activeStoryboard?.project?.frameProvider)
     ? activeStoryboard?.project?.frameProvider : undefined;
@@ -5304,6 +5313,12 @@ ${shots.map((s, idx) => `
                             </button>
                           ))}
                         </div>
+                        {storyboardStillFormats.length > 0 && !!shot.movement && shot.movement !== 'static' && (
+                          <p className="ms-shot-motion-note" role="note" aria-label={`Camera movement note for ${shot.shotId}`}>
+                            This movement will not show in the {storyboardStillFormats.join(' and ')} video: that format uses Fit framing,
+                            which keeps the whole image still. Choose “Crop to fill” in Output format to see it.
+                          </p>
+                        )}
                       </div>
 
                       {/* Action Prompt */}

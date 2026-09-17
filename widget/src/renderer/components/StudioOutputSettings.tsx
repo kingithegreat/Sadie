@@ -26,7 +26,8 @@ export function StudioOutputSettings({ label, value, durationIntent = 'short', l
   const changeSelection = (selection: string) => {
     const ratios: StudioAspectRatio[] = selection === 'both' ? ['16:9', '9:16'] : [spec.variants[0].aspectRatio];
     onChange({ ...spec, variants: ratios.map(ratio => spec.variants.find(v => v.aspectRatio === ratio)
-      ?? createStudioOutputSpec(ratio, spec.durationIntent).variants[0]) });
+      // An added format keeps the framing already chosen, so crop (and its camera motion) is not lost to fit.
+      ?? createStudioOutputSpec(ratio, spec.durationIntent, '1080p', spec.variants[0].framing.mode).variants[0]) });
   };
 
   return <fieldset className="ms-output-settings" disabled={disabled} aria-label={`${label} output settings`}>
