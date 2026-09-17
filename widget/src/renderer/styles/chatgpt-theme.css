@@ -13510,6 +13510,54 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   color: #34d399;
 }
 
+/* Undo/redo for storyboard edits (MS-10), beside the badges they change. */
+.ms-storyboard-undo {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.ms-storyboard-undo:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ms-storyboard-undo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Unsaved edits found on open: offered, never applied on their own. */
+.ms-storyboard-draft-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  color: #fde68a;
+  font-size: 0.85rem;
+}
+
+.ms-storyboard-draft-prompt button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.18);
+  color: #fef3c7;
+  cursor: pointer;
+}
+
+.ms-storyboard-draft-prompt button:hover {
+  background: rgba(250, 204, 21, 0.3);
+}
+
 .ms-storyboard-deck {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));

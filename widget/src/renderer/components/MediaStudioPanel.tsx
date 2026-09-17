@@ -18,6 +18,11 @@ import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
+import {
+  browserDraftStorage, canRedo as historyCanRedo, canUndo as historyCanUndo, clearDraft,
+  describeDraftAge, initialHistory, loadDraft, record, redo as historyRedo, reset as resetHistory,
+  saveDraft, undo as historyUndo, type History, type StoryboardDraft,
+} from './storyboard-history';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
@@ -396,7 +401,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const storyboardLoadVersion = useRef(0);
   const [savedStoryboardDraft, setSavedStoryboardDraft] = useState<string | null>(null);
   const [selectedStoryboardSceneId, setSelectedStoryboardSceneId] = useState<string | null>(null);
-  const [activeStoryboard, setActiveStoryboard] = useState<{
+  type ActiveStoryboard = {
     project: Record<string, any>;
     scenes: Array<{
       sceneId: string;
@@ -418,7 +423,28 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }>;
     projectDir: string;
     exportState?: StudioExportState;
-  } | null>(null);
+  } | null;
+
+  // Storyboard edits go through an undo history (MS-10): every change is a step,
+  // typing in one field coalesces into one, and unsaved work is kept as a draft
+  // so closing the app does not lose it (storyboard-history.ts).
+  const [storyboardHistory, setStoryboardHistory] = useState<History<ActiveStoryboard>>(() => initialHistory(null as ActiveStoryboard));
+  const activeStoryboard = storyboardHistory.present;
+  const draftStorage = useRef(browserDraftStorage()).current;
+  const [pendingDraft, setPendingDraft] = useState<StoryboardDraft<ActiveStoryboard> | null>(null);
+
+  /** `key` marks which field is being edited, so held-down typing is one undo step. */
+  const setActiveStoryboard = useCallback((value: React.SetStateAction<ActiveStoryboard>, key?: string) => {
+    setStoryboardHistory(h => record(h, typeof value === 'function'
+      ? (value as (prev: ActiveStoryboard) => ActiveStoryboard)(h.present)
+      : value, { key }));
+  }, []);
+  /** Opening another storyboard starts its own history — the old steps are not its. */
+  const replaceStoryboard = useCallback((board: ActiveStoryboard) => setStoryboardHistory(resetHistory(board)), []);
+  const undoStoryboard = useCallback(() => setStoryboardHistory(h => historyUndo(h)), []);
+  const redoStoryboard = useCallback(() => setStoryboardHistory(h => historyRedo(h)), []);
+  const canUndoStoryboard = historyCanUndo(storyboardHistory);
+  const canRedoStoryboard = historyCanRedo(storyboardHistory);
   const [storyboardLoading, setStoryboardLoading] = useState<boolean>(false);
   const [storyboardSaving, setStoryboardSaving] = useState<boolean>(false);
   const [generatingShotId, setGeneratingShotId] = useState<string | null>(null);
@@ -463,6 +489,40 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  const storyboardUnsaved = !!activeStoryboard && savedStoryboardDraft !== null
+    && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard);
+
+  // Autosave: unsaved edits are written beside the project id shortly after
+  // typing stops, so closing the app (or a crash) does not lose them. Saving
+  // clears it; so does editing back to what is on disk.
+  useEffect(() => {
+    if (!selectedStoryboardId || !activeStoryboard || savedStoryboardDraft === null) return;
+    const board = activeStoryboard;
+    const projectId = selectedStoryboardId;
+    const savedIdentity = savedStoryboardDraft;
+    const timer = setTimeout(() => {
+      if (storyboardDraftIdentity(board) === savedIdentity) clearDraft(draftStorage, projectId);
+      else saveDraft(draftStorage, { projectId, savedIdentity, savedAt: Date.now(), board });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [activeStoryboard, savedStoryboardDraft, selectedStoryboardId, draftStorage]);
+
+  // Ctrl/Cmd+Z and Ctrl+Shift+Z (or Ctrl+Y) while editing a storyboard. A text
+  // field keeps its own undo — retyping a sentence should not rewind the board.
+  useEffect(() => {
+    if (activeWorkspace !== 'storyboard' || !activeStoryboard) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) { event.preventDefault(); undoStoryboard(); }
+      else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); redoStoryboard(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeWorkspace, activeStoryboard, undoStoryboard, redoStoryboard]);
   // Output formats framed "fit" export every shot as a still (camera movement needs crop).
   const storyboardStillFormats: string[] = (() => {
     try {
@@ -1034,7 +1094,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     setStoryboardLoading(true);
     setStoryboardError(null);
     setStoryboardMessage(null);
-    setActiveStoryboard(null);
+    replaceStoryboard(null);
+    setPendingDraft(null);
     setRenderedMoviePath(null);
     setRenderedMovieJobId(null);
     setSavedStoryboardDraft(null);
@@ -1044,8 +1105,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       const res = await api()?.mediaStoryboardGet?.(projectId);
       if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.result) {
-        setActiveStoryboard(res.result);
-        setSavedStoryboardDraft(storyboardDraftIdentity(res.result));
+        replaceStoryboard(res.result);
+        const savedIdentity = storyboardDraftIdentity(res.result);
+        setSavedStoryboardDraft(savedIdentity);
+        // Unsaved edits from a previous session are offered, never applied silently.
+        setPendingDraft(loadDraft<ActiveStoryboard>(draftStorage, projectId, savedIdentity, board => storyboardDraftIdentity(board!)));
         setSelectedStoryboardId(projectId);
         setSelectedStoryboardSceneId(res.result.scenes?.[0]?.sceneId || null);
         setAnimaticPlaying(false);
@@ -1162,6 +1226,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleUpdateShot = (shotId: string, updates: Record<string, any>) => {
     if (!activeStoryboard) return;
+    const editKey = `shot:${shotId}:${Object.keys(updates).sort().join(',')}`;
     setActiveStoryboard(prev => {
       if (!prev) return null;
       const scenes = prev.scenes.map(sc => sc.sceneId !== activeStoryboardScene?.sceneId ? sc : ({
@@ -1169,7 +1234,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         shots: sc.shots.map(s => s.shotId === shotId ? { ...s, ...updates } : s),
       }));
       return { ...prev, scenes };
-    });
+    }, editKey);
   };
 
   const handleSaveStoryboard = async (showMessage = true): Promise<boolean> => {
@@ -1192,6 +1257,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }
       if (loadVersion !== storyboardLoadVersion.current) return false;
       setSavedStoryboardDraft(savedDraft);
+      clearDraft(draftStorage, selectedStoryboardId);
+      setPendingDraft(null);
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
       if (loadVersion !== storyboardLoadVersion.current) return false;
       if (showMessage) {
@@ -5008,11 +5075,23 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
                 <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
                 <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
+                <button type="button" className="ms-storyboard-undo" aria-label="Undo" title="Undo (Ctrl+Z)"
+                  disabled={!canUndoStoryboard || storyboardBusy} onClick={undoStoryboard}>↶ Undo</button>
+                <button type="button" className="ms-storyboard-undo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"
+                  disabled={!canRedoStoryboard || storyboardBusy} onClick={redoStoryboard}>↷ Redo</button>
               </div>
             </div>
 
+            {pendingDraft && (
+              <div className="ms-storyboard-draft-prompt" data-testid="storyboard-draft-prompt" role="status">
+                <span>You have unsaved edits to this storyboard from {describeDraftAge(pendingDraft.savedAt)}.</span>
+                <button type="button" onClick={() => { replaceStoryboard(pendingDraft.board); setPendingDraft(null); }}>Restore them</button>
+                <button type="button" onClick={() => { clearDraft(draftStorage, pendingDraft.projectId); setPendingDraft(null); }}>Discard</button>
+              </div>
+            )}
+
             <StudioExportStatus state={activeStoryboard.exportState} moviePath={renderedMoviePath}
-              unsaved={savedStoryboardDraft !== null && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard)}
+              unsaved={storyboardUnsaved}
               busy={storyboardBusy} rendering={storyboardRendering}
               onRetry={(variantId, sceneId) => { void handleRenderMovie(variantId, sceneId); }}
               onSelect={moviePath => { setRenderedMoviePath(moviePath); setRenderedMovieJobId(null); }} />
