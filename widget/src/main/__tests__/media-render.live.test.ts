@@ -23,6 +23,14 @@ jest.mock('../mcp-client', () => ({
   discoverExternalMcpServers: jest.fn(),
   initializeMcpServers: jest.fn().mockResolvedValue(undefined),
 }));
+// This suite narrates with real online speech (Edge TTS), so its settings say
+// Online is on. Since #314 (2026-09-12) narration correctly refuses online
+// speech while Online is off, and every narrated case here failed on that
+// refusal - the nightly was red for it from that night on.
+jest.mock('../config-manager', () => {
+  const actual = jest.requireActual('../config-manager');
+  return { ...actual, getSettings: () => ({ ...actual.getSettings(), useCustomLLM: true }) };
+});
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -44,6 +52,12 @@ import * as path from 'path';
 import { initializeTools } from '../tools';
 import { mediaToolHandlers, readJobs, __resetMediaJobsForTests } from '../tools/media';
 import { findFfmpeg } from '../media-render';
+import { createStudioOutputSpec } from '../../shared/media-output';
+
+// New jobs default to captions off (#318) and landscape fit whatever their
+// length (#320). These cases check burned captions and a vertical short, so
+// they ask for both explicitly instead of relying on the old defaults.
+const PORTRAIT_WITH_CAPTIONS = { burnSubtitles: true, outputSpec: createStudioOutputSpec('9:16') };
 
 jest.setTimeout(10 * 60 * 1000);
 
@@ -71,7 +85,7 @@ maybe('rendering a real video', () => {
       throw new Error('No ffmpeg found. Set HOMEBOT_FFMPEG or install it, or run without HOMEBOT_LIVE=1.');
     }
 
-    await call('media_create_job', { title: 'Render check', format: 'short' });
+    await call('media_create_job', { title: 'Render check', format: 'short', ...PORTRAIT_WITH_CAPTIONS });
 
     // Short, fixed script: this test is about the video, not the writing. The
     // job is put at script_draft directly, since narration legitimately
@@ -172,7 +186,7 @@ maybe('rendering a real video', () => {
     const ffmpeg = await findFfmpeg();
     if (!ffmpeg) throw new Error('No ffmpeg found.');
 
-    await call('media_create_job', { title: 'Missing captions check', format: 'short' });
+    await call('media_create_job', { title: 'Missing captions check', format: 'short', ...PORTRAIT_WITH_CAPTIONS });
     const jobs = readJobs();
     const j = jobs.find(x => x.title === 'Missing captions check')!;
     j.script = 'A short line, just enough to produce real narration audio.';
@@ -204,7 +218,7 @@ maybe('rendering a real video', () => {
     const ffmpeg = await findFfmpeg();
     if (!ffmpeg) throw new Error('No ffmpeg found.');
 
-    await call('media_create_job', { title: 'Scene check', format: 'short' });
+    await call('media_create_job', { title: 'Scene check', format: 'short', ...PORTRAIT_WITH_CAPTIONS });
     const jobs = readJobs();
     const j = jobs.find(x => x.title === 'Scene check')!;
     j.script = 'A storm rose over the open sea at night. '

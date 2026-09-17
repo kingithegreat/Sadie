@@ -1,5 +1,6 @@
 // ── Pro licensing / entitlements (renderer-facing mirror of src/entitlements + src/licensing) ──
 import type { StudioOutputSpec, StudioMovieResult } from './media-output';
+import type { CaptionStyle } from './caption-style';
 import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
 
 export type LicenseTier = 'free' | 'pro';
@@ -502,6 +503,8 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  whisperTranscribe?: (args: { modelId: string; language?: string; audio: Float32Array }) => Promise<{ success: boolean; text?: string; error?: string }>;
+  onWhisperProgress?: (cb: (p: { status: 'downloading'; percent: number }) => void) => () => void;
 
   // TTS (text-to-speech)
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
@@ -543,7 +546,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -752,7 +755,7 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) => Promise<{
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;

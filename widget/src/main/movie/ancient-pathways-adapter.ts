@@ -8,11 +8,14 @@
  * 2. CHARACTER CONSISTENCY: Natively supports multiple character references mapped
  *    to the 12 canonical character libraries (Imhotep, Socrates, Vitruvius, Masamune,
  *    Pakal, Leila, Flappy, Leif, Dhara, Meng Tian, Nebuchadnezzar) and articulated rigs.
- * 3. DUAL KIND: Generates both 1080p/1440p stills and animated MP4 video clips.
+ * 3. VIDEO ONLY: the Showrunner always renders an MP4 scene. It used to be
+ *    registered for stills too, so a frame request rendered a video, failed the
+ *    image check, and cost a render every time.
  * 4. IMMEDIATE AVAILABILITY: Unlike deferred cloud workers (Colab T4), runs locally
  *    without human intervention when workspace/render.lock is clear.
  */
 
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import type {
@@ -78,6 +81,20 @@ export function extractCharactersFromRequest(req: GenerationRequest): string {
   return 'leila,flappy';
 }
 
+/**
+ * Production folder for one request. Ancient Pathways resumes any shot already
+ * in that folder, whatever its length — so reusing `shot_<id>` after the shot's
+ * prompt or duration changed served the old clip, and QA rejected it for
+ * "duration drift" (a 0.8 s clip from an earlier run against a 2 s request).
+ * A fingerprint of what is being made keeps identical re-runs resumable and
+ * gives a changed request a fresh production.
+ */
+export function showrunnerProductionName(shotId: string, prompt: string, duration: number, characters: string): string {
+  const safeId = String(shotId).replace(/[^\w-]+/g, '_').slice(0, 60) || 'shot';
+  const fingerprint = createHash('sha256').update(JSON.stringify([prompt, duration, characters])).digest('hex').slice(0, 10);
+  return `shot_${safeId}_${fingerprint}`;
+}
+
 // ---------------------------------------------------------------------------
 // Probe — what Ancient Pathways can do right now
 // ---------------------------------------------------------------------------
@@ -122,7 +139,7 @@ export async function probeAncientPathways(
 }
 
 // ---------------------------------------------------------------------------
-// Generate — produce still or animated shot via Ancient Pathways
+// Generate — produce an animated shot via Ancient Pathways
 // ---------------------------------------------------------------------------
 
 export async function generateAncientPathwaysShot(
@@ -146,9 +163,17 @@ export async function generateAncientPathwaysShot(
     };
   }
 
+  if (req.kind !== 'video') {
+    return {
+      status: 'failed',
+      provider: ANCIENT_PATHWAYS_PROVIDER_ID,
+      error: 'Ancient Pathways makes video clips, not still frames.',
+    };
+  }
+
   const characters = extractCharactersFromRequest(req);
-  const duration = req.durationSec ?? (req.kind === 'video' ? 8 : 4);
-  const name = `shot_${req.shotId}`;
+  const duration = req.durationSec ?? 8;
+  const name = showrunnerProductionName(req.shotId, req.prompt, duration, characters);
 
   try {
     const result = await runShowrunner({
@@ -171,7 +196,7 @@ export async function generateAncientPathwaysShot(
     let targetFile = result.outputPath;
     if (req.shotDir) {
       fs.mkdirSync(req.shotDir, { recursive: true });
-      const destDir = path.join(req.shotDir, req.kind === 'video' ? 'video' : 'image');
+      const destDir = path.join(req.shotDir, 'video');
       fs.mkdirSync(destDir, { recursive: true });
       const ext = path.extname(result.outputPath);
       const destPath = path.join(destDir, `${req.shotId}${ext}`);
@@ -204,7 +229,7 @@ export async function generateAncientPathwaysShot(
 
 export const ancientPathwaysProvider: GenerationProvider = {
   id: ANCIENT_PATHWAYS_PROVIDER_ID,
-  kind: 'both',
+  kind: 'video',
   probe: probeAncientPathways,
   generate: generateAncientPathwaysShot,
 };

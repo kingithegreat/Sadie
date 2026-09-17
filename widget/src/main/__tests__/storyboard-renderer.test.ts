@@ -277,6 +277,36 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     expect(res.totalShots).toBe(2);
   });
 
+  test('a caption style saved through the Storyboard Deck reaches the burned captions; an invalid one is refused', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'caption-style', title: 'Caption Style', burnSubtitles: true,
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop'),
+      shots: [{ prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }],
+    }, {} as any);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+    const shots = [{ shotId: 'shot_001', prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }];
+
+    const refused: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots, captionStyle: { color: 'red' } }, {} as any);
+    expect(refused.success).toBe(false);
+    expect(refused.error).toMatch(/colour like #ffffff/);
+
+    const saved: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots,
+      captionStyle: { position: 'middle', background: 'box', size: 'small' } }, {} as any);
+    expect(saved.success).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).captionStyle)
+      .toEqual({ size: 'small', position: 'middle', font: 'Arial', color: '#ffffff', background: 'box' });
+
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'caption-style', burnSubtitles: true })).ok).toBe(true);
+    const captionArgs = (execFile as unknown as jest.Mock).mock.calls.flatMap(([, args]) => args).filter((arg: string) => arg.includes('subtitles='));
+    expect(captionArgs.length).toBeGreaterThan(0);
+    for (const arg of captionArgs) {
+      expect(arg).toContain('Alignment=10');
+      expect(arg).toContain('BorderStyle=3');
+    }
+  });
+
   test('an edit made and saved through the Storyboard Deck reaches the export — the exact bug this fixes', async () => {
     const created: any = await mediaCreateStoryboardHandler({
       projectId: 'edit-reaches-export',

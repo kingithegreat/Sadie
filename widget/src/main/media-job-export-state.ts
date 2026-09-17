@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import type { MediaJob } from './media-studio';
+import { isCustomCaptionStyle, resolveCaptionStyle } from '../shared/caption-style';
 import { hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, readStudioExportAttempt,
   type StudioExportState, type StudioRenderedOutput } from '../shared/media-output';
 
@@ -24,6 +25,8 @@ export async function mediaJobSourceRevision(job: MediaJob, inputs = job.renderI
       schema: 'media-job-source-1', title: job.title, script: job.script ?? null, narrationScriptHash: job.narrationScriptHash ?? null,
       outputSpec: resolveStudioOutputSpec(job.outputSpec, job.format, job.format === 'long' ? '16:9' : '9:16'),
       burnSubtitles: resolveBurnSubtitles(job.burnSubtitles), durationSeconds: job.durationSeconds ?? null,
+      // Only a non-default style joins the identity, so earlier exports stay current.
+      ...(isCustomCaptionStyle(job.captionStyle) ? { captionStyle: resolveCaptionStyle(job.captionStyle) } : {}),
       audio: await digest(job.narrationPath), captions: await digest(job.captionsPath),
       image: await digest(inputs.imagePath), scenes: await Promise.all(inputs.scenePaths.map(digest)),
       music: await digest(inputs.musicPath), zoom: inputs.zoom, visuals: inputs.visuals, style: inputs.style ?? null,

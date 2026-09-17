@@ -226,6 +226,7 @@ export function registerStudioIpc(
       if (action === 'output') {
         args.burnSubtitles = opts?.burnSubtitles;
         if (opts?.outputSpec !== undefined) args.outputSpec = opts.outputSpec;
+        if ((opts as { captionStyle?: unknown } | undefined)?.captionStyle !== undefined) args.captionStyle = (opts as { captionStyle?: unknown }).captionStyle;
       }
       if (!['render', 'narrate', 'script', 'output'].includes(action)) return { ok: false, error: 'Unknown Studio stage.' };
       const res = await invokeTool(_e, tool, args);
@@ -787,7 +788,7 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: unknown }) => {
+  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: unknown; outputSpec?: unknown }) => {
     const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
     return res.success
       ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
