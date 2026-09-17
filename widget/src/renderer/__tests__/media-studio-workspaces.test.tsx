@@ -165,6 +165,9 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
 
     expect(screen.getByLabelText('Camera Aspect Ratio')).toBeInTheDocument();
     expect(screen.getByText('16:9 Landscape (YouTube)')).toBeInTheDocument();
+    // The export does no compositing, so the Stage must not imply its settings reach the video.
+    expect(screen.getByRole('note', { name: 'Stage preview only' })).toHaveTextContent(/not your exported video/);
+    expect(screen.queryByText(/Color Grade/)).toBeNull();
 
     // Click Back to Director
     await act(async () => {

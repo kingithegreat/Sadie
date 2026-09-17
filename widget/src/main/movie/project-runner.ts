@@ -31,6 +31,7 @@ import { localSD15Provider } from './local-sd15-adapter';
 import { comfyUIProvider } from './comfyui-adapter';
 import { validateMovieImageFiles, validateMovieVideoFiles } from './image-output';
 import { resolveBurnSubtitles, resolveStudioOutputSpec, type StudioOutputSpec, type StudioRenderedOutput } from '../../shared/media-output';
+import type { CaptionStyle } from '../../shared/caption-style';
 import { checkAndIngestColabResult } from './colab-queue';
 
 export interface MovieProject {
@@ -44,6 +45,8 @@ export interface MovieProject {
   notes?: string;
   burnSubtitles?: boolean;
   outputSpec?: StudioOutputSpec;
+  /** How burned-in captions look; omitted means the default style. */
+  captionStyle?: CaptionStyle;
   latestSuccessfulOutput?: StudioRenderedOutput;
 }
 

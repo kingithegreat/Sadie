@@ -12759,6 +12759,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.ms-stage-preview-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--warning, #fbbf24);
+}
+
 .ms-stage-param-group {
   display: flex;
   flex-direction: column;

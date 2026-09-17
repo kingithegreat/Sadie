@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (235)** — `window.electron`
+**Preload methods (237)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1051,26 +1051,27 @@ onOllamaStatus                      onPermissionRequest                 onProact
 onReminderFired                     onSdCppSetupProgress                onShowWindow                        onStreamChunk
 onStreamEnd                         onStreamError                       onSupervisorStatus                  onTerminalExit
 onTerminalOutput                    onTitleUpdated                      onUpdateAvailable                   onUpdateDownloaded
-onUpdateProgress                    onWidgetModeChanged                 openExternalUrl                     openFile
-parseDocument                       pullModel                           pullModelStream                     ragClear
-ragIndex                            ragList                             readConsentLog                      readDebugLogs
-readPermissionAudit                 readTelemetryEvents                 removeFeed                          removeHideWindowListener
-removeShowWindowListener            resetPermissions                    resolveActiveModel                  restartApp
-runAutomation                       runDiagnostics                      saveConversation                    saveQuizProgress
-saveSettings                        schedulerAdd                        schedulerList                       schedulerRemove
-schedulerToggle                     sdCppAutoSetup                      sdCppSetup                          sdCppStatus
-searchConversations                 sendConfirmationResponse            sendMessage                         sendPermissionResponse
-sendStreamMessage                   setActiveConversation               setAlwaysOnTop                      setUncensoredMode
-showInFolder                        skillsList                          skillsOpenFolder                    startOllama
-startSpeechRecognition              subscribeToStream                   terminalClose                       terminalCreate
-terminalKill                        terminalRun                         testN8nConnection                   toggleWidgetMode
-ttsListVoices                       ttsSampleVoice                      ttsSpeak                            ttsStop
-unhideFeed                          updateAutomation                    updateMessage                       workspaceGitBranches
-workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage                   workspaceGitStatus
-workspaceGitUnstage                 workspaceList                       workspaceRead                       workspaceRoot
-workspaceSave                       writeClipboard                      writeDocument                       youtubeCancel
-youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
-youtubeRefresh                      youtubeRemove                       youtubeUpload
+onUpdateProgress                    onWhisperProgress                   onWidgetModeChanged                 openExternalUrl
+openFile                            parseDocument                       pullModel                           pullModelStream
+ragClear                            ragIndex                            ragList                             readConsentLog
+readDebugLogs                       readPermissionAudit                 readTelemetryEvents                 removeFeed
+removeHideWindowListener            removeShowWindowListener            resetPermissions                    resolveActiveModel
+restartApp                          runAutomation                       runDiagnostics                      saveConversation
+saveQuizProgress                    saveSettings                        schedulerAdd                        schedulerList
+schedulerRemove                     schedulerToggle                     sdCppAutoSetup                      sdCppSetup
+sdCppStatus                         searchConversations                 sendConfirmationResponse            sendMessage
+sendPermissionResponse              sendStreamMessage                   setActiveConversation               setAlwaysOnTop
+setUncensoredMode                   showInFolder                        skillsList                          skillsOpenFolder
+startOllama                         startSpeechRecognition              subscribeToStream                   terminalClose
+terminalCreate                      terminalKill                        terminalRun                         testN8nConnection
+toggleWidgetMode                    ttsListVoices                       ttsSampleVoice                      ttsSpeak
+ttsStop                             unhideFeed                          updateAutomation                    updateMessage
+whisperTranscribe                   workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit
+workspaceGitStage                   workspaceGitStatus                  workspaceGitUnstage                 workspaceList
+workspaceRead                       workspaceRoot                       workspaceSave                       writeClipboard
+writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
+youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
+youtubeUpload
 ```
 
 **IPC channels, renderer → main (178)**

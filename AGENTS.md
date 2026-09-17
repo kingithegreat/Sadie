@@ -9,6 +9,7 @@ this repo at the same time, often within minutes of each other. Read this before
 |---|---|
 | `CLAUDE.md` | **The contract.** Non-negotiable operating rules. It overrides this file. |
 | `CLAIMS.md` | **Who is building what right now**, plus rules of the road that changed recently. Read the tail first — newest section is last. |
+| `docs/USER_TESTING_PLAN.md` | **The shared work queue to user testing** (2026-09-17): gates, Media Studio, providers, Code mode vs Cursor, release. Pick items by ID, one item per PR, put the ID in the PR title. |
 | `C:\Users\adenk\Documents\Brain\Ai-Brain\01_Projects\HomeBot\Plan.md` | **The plan** — tracks A–I, owners, and what Aden has actually asked for, in his words. Outside the repo, on this machine, readable directly. |
 
 The vault at `C:\Users\adenk\Documents\Brain\Ai-Brain` is Aden's notes, not repo content. **Read it
@@ -84,6 +85,21 @@ Run the relevant local checks before publishing:
 cd widget && npx tsc --noEmit && npm run lint && npx jest --config=jest.config.ts --runInBand --no-coverage
 cd .. && npx jest && npm run docs:check
 ```
+
+### Widget tests that do real I/O need an explicit timeout
+
+A widget unit test that runs a **real handler against a loopback HTTP server** (e.g. the
+ComfyUI server in `storyboard-frame-provider.test.ts`, which renders frames through a real
+socket and reads files) can legitimately take multiple seconds. The Jest default is
+**5000 ms**, which such tests brush right up against — that test measured ~4.6s locally and
+flaked as a timeout under CI load, taking the whole `widget` job red on several PRs at once
+(because they all ran the same suite). The fix was `jest.setTimeout(15_000)` in that file.
+
+Rule: **any test that does real loopback HTTP generation or real subprocess/file work gets an
+explicit `jest.setTimeout(...)` above the 5s default** (15s is fine), not the default. A
+timeout on such a test is a CI-load symptom, not a product bug, and it will appear as a bare
+"exceeded 5000 ms" with no failing assertion. Before believing a `widget` job is red for a
+real reason, check whether it is one such timeout.
 
 ### `npm ci` needs both packages, then native rebuilds
 
