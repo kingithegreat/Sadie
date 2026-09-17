@@ -165,6 +165,46 @@ than the change was worth.
 - Non-technical users are the audience. The first-run screen says "On this PC" and "Online", not
   "Ollama" and "Cloud API".
 
+## Working alongside other agents — what collided on 2026-09-15/16
+
+Two Claude sessions built the same Media Studio fixes in parallel (a video-clip validator twice),
+and a non-Claude agent re-investigated three Ancient Pathways quality-check failures that were
+already fixed and logged. Each was avoidable with a two-second look.
+
+- **Check open PRs, not just `CLAIMS.md`.** Before building, run `gh pr list --state open`. If a PR
+  already covers your task, review it or help land it — do not write a second version.
+- **Work in your own worktree:** `git worktree add -b claude/<name> .kilo/worktrees/<name> origin/main`.
+  `C:\Users\adenk\Desktop\sadie` is nobody's checkout.
+- **Never delete `.kilo/worktrees/claude-task2-studio-ipc-tests`.** It holds the only real
+  `node_modules`; the main checkout, the preview and every worktree link to it through junctions.
+  Before removing any worktree, remove its junctions first
+  (`cmd /c rmdir "<worktree>\widget\node_modules"`, and the root one) and check the target still
+  exists. A recursive delete that follows a junction wipes the dependencies for every checkout.
+- **Landing under strict branch protection:**
+  - a green PR that is `BEHIND` never merges on its own — run `gh pr update-branch <n>`;
+  - every merge puts the other open PRs behind again, so **one agent drives the merge queue at a
+    time** and lands PRs one by one;
+  - all six required contexts must be *present* and green: `build`, `duplicate-export-guard`,
+    `ESLint (React Hooks)`, `Permissions smoke test`, `widget`, `e2e-all`;
+  - a red check is not "flaky" until you have read the failing test and confirmed it does not touch
+    your change;
+  - to **hold** a PR, make it a draft *and* disable auto-merge — `auto-merge.yml` re-arms auto-merge
+    on every push to `claude/**`;
+  - after merge, verify the content arrived: `git diff <tested-head> origin/main` should be 0 lines,
+    because a squash merge never makes your SHA an ancestor.
+- **The widget typecheck is yours to run.** `tsc` caught errors this week that the Jest run did not.
+  Preload/IPC changes also need `npm run docs:write` **at the repo root**, not in `widget/`.
+- **Shared skills.** Lessons that cost real time live as skills shared by every agent on this PC:
+  `~/.claude/skills` (Claude) and `~/.agents/skills` (Codex, Gemini CLI); Antigravity reads
+  `~/.gemini/config/skills`. Add one as `<name>/SKILL.md`, then run
+  `powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\adenk\.agents\sync-shared-skills.ps1`
+  to share it. Never put a credential in a skill.
+- **The sibling repo `C:\Users\adenk\Desktop\Ancient Pathways` has stricter rules** (its own
+  `CLAUDE.md`): commit locally and never push, never `git add -A`, one render at a time
+  (`workspace/render.lock`), never edit pipeline code during a render, and hand-placed
+  `_mouth_anchors` are locked — never re-measure them or re-slice a Season 1 character without
+  Aden. Log what you verified in its `COORDINATION.md`.
+
 ## When you finish
 
 Update `CLAIMS.md` — release your claim, and add a note if you changed a rule of the road. It is

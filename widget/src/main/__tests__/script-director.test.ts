@@ -162,6 +162,8 @@ She retrieves the encrypted datacore from the chassis.`;
       const projectDir = res.projectDir!;
       expect(fs.existsSync(projectDir)).toBe(true);
       expect(fs.existsSync(path.join(projectDir, 'project.json'))).toBe(true);
+      // Crop, so the director's per-shot camera moves reach the exported video.
+      expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).outputSpec.variants[0].framing.mode).toBe('crop');
       // No manifest.json: the renderer now assembles shots from scene.json/
       // prompt.json/script.txt directly (see storyboard-assembly.ts) — a
       // second, hand-synced representation was the bug this replaced.
