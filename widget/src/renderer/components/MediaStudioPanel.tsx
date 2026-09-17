@@ -3894,9 +3894,14 @@ ${shots.map((s, idx) => `
           {/* Blender N-Panel / Camera & Lighting Inspector */}
           <div className="ms-stage-inspector">
             <h3 className="ms-stage-inspector-title">🎥 Camera &amp; Staging Inspector</h3>
+            {/* The exported video does no compositing (FFmpeg takes one image per shot), so nothing here reaches an export. Say so. */}
+            <p className="ms-stage-preview-note" role="note" aria-label="Stage preview only">
+              Preview only: these settings change this on-screen stage, not your exported video. To move the camera in a video,
+              choose a camera move on each shot in Storyboard.
+            </p>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Focal Length &amp; Optics:</label>
+              <label className="ms-param-label">Focal Length &amp; Optics (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
@@ -3923,7 +3928,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Camera Motion (Multi-Plane Parallax):</label>
+              <label className="ms-param-label">Camera Motion, Multi-Plane Parallax (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
@@ -3972,7 +3977,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Lighting Mood &amp; Color Grade:</label>
+              <label className="ms-param-label">Lighting Mood (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
