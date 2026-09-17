@@ -199,6 +199,29 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     expect(res.error).toContain('No rendered keyframes found');
   });
 
+  test('a new storyboard left on its defaults exports its camera moves (crop), while a saved fit project stays still', async () => {
+    const zoompanCalls = () => (execFile as unknown as jest.Mock).mock.calls.filter(([, args]) => args.some((arg: string) => arg.includes('zoompan='))).length;
+    const shots = [{ prompt: 'Harbour at dawn', durationSec: 3, narration: 'Dawn.', movement: 'slow push in' }];
+
+    // No outputSpec: the default a user gets from the New Storyboard button.
+    const created: any = await mediaCreateStoryboardHandler({ projectId: 'default-motion', title: 'Default Motion', shots }, {} as any);
+    expect(created.success).toBe(true);
+    const saved = JSON.parse(fs.readFileSync(path.join(created.result.projectDir, 'project.json'), 'utf8'));
+    expect(saved.outputSpec).toEqual(createStudioOutputSpec('16:9', 'short', '1080p', 'crop'));
+    dropFakeFrame(created.result.projectDir, 'scene_01', 'shot_001');
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'default-motion', motion: true })).ok).toBe(true);
+    expect(zoompanCalls()).toBe(1);
+
+    // Control: the same shot in a project the owner saved as fit keeps the whole image still.
+    const fit: any = await mediaCreateStoryboardHandler({ projectId: 'fit-still', title: 'Fit Still', shots,
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'fit') }, {} as any);
+    dropFakeFrame(fit.result.projectDir, 'scene_01', 'shot_001');
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'fit-still', motion: true })).ok).toBe(true);
+    expect(zoompanCalls()).toBe(0);
+  });
+
   test('renders full 1080p movie with Ken Burns motion, voiceover, and burned subtitles', async () => {
     const created: any = await mediaCreateStoryboardHandler({
       projectId: 'full-movie-proj',

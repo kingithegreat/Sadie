@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput, type StudioMovieResult } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
-import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor } from '../media-render';
+import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor, buildColorGradeFilter } from '../media-render';
 import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
@@ -36,6 +36,8 @@ export interface StoryboardRenderOptions {
   variantId?: StudioOutputVariant['id'];
   /** Voice for this export. Omit to use the saved setting. */
   narrationEngine?: NarrationEngine;
+  /** Optional color grading LUT preset to burn into the export. */
+  colorGrade?: string | null;
 }
 
 export type StoryboardRenderResult = StudioMovieResult;
@@ -428,12 +430,14 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
 
         const shotClipPath = path.join(tempDir, `clip_${String(i).padStart(3, '0')}.mp4`);
         const kbFilter = buildKenBurnsFilter(shot.movement || 'static', dur, fps, outputVariant);
+        const lutFilter = buildColorGradeFilter(opts.colorGrade);
+        const vf = [kbFilter, lutFilter, 'format=yuv420p'].filter(Boolean).join(',');
 
         await runCommand(ffmpeg, [
           '-y',
           '-loop', '1',
           '-i', imgPath,
-          '-vf', `${kbFilter},format=yuv420p`,
+          '-vf', vf,
           '-c:v', 'libx264',
           '-preset', 'veryfast',
           '-t', String(dur),
@@ -500,6 +504,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         const escapedSrt = escapeFilterPath(srtPath);
         filters.push(`subtitles='${escapedSrt}':force_style='${subtitleStyle}'`);
       }
+      const lutFilter = buildColorGradeFilter(opts.colorGrade);
+      if (lutFilter) filters.push(lutFilter);
       filters.push('format=yuv420p');
 
       await runCommand(ffmpeg, [

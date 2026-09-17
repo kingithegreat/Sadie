@@ -365,9 +365,71 @@ export function registerStudioIpc(
 
   // ---- Ancient Pathways (Animated Documentary Pipeline) ----
   ipcMain.handle('homebot:media:ancient-pathways-episodes', async () => {
-    const { ANCIENT_PATHWAYS_EPISODES, resolveAncientPathwaysDir } = await import('../../ancient-pathways');
+    const { ANCIENT_PATHWAYS_EPISODES, resolveAncientPathwaysDir, findEpisodeDeliverable } = await import('../../ancient-pathways');
     const dir = resolveAncientPathwaysDir();
-    return { ok: true, episodes: ANCIENT_PATHWAYS_EPISODES, available: !!dir, dir };
+    const episodes = ANCIENT_PATHWAYS_EPISODES.map(ep => {
+      const deliverablePath = dir ? findEpisodeDeliverable(dir, ep.id) : null;
+      return { ...ep, deliverablePath };
+    });
+    return { ok: true, episodes, available: !!dir, dir };
+  });
+
+  ipcMain.handle('homebot:media:deliver-finished', async (_e, payload: { episodeId?: string; jobId?: string; customDir?: string }) => {
+    try {
+      assertEnabled();
+      if (payload?.episodeId) {
+        const { deliverEpisodeToFinished } = await import('../../ancient-pathways');
+        const res = deliverEpisodeToFinished(payload.episodeId, undefined, payload.customDir);
+        return res;
+      }
+      if (payload?.jobId) {
+        const { readJobs } = await import('../../tools/media');
+        const { deliverJobToFinished } = await import('../../ancient-pathways');
+        const jobs = readJobs();
+        const job = jobs.find(j => j.id === payload.jobId);
+        if (!job) return { ok: false, error: `Job not found: ${payload.jobId}` };
+        const res = deliverJobToFinished(job, payload.customDir);
+        return res;
+      }
+      return { ok: false, error: 'Provide either episodeId or jobId to deliver.' };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Delivery to finished folder failed.' };
+    }
+  });
+
+  ipcMain.handle('homebot:media:music:list', async (_e, folderOverride?: string) => {
+    try {
+      assertEnabled();
+      const { getSettings } = await import('../../config-manager');
+      const { listMusicTracks } = await import('../../media-music');
+      const settings = getSettings() as any;
+      const folder = (folderOverride || settings?.mediaMusicFolder || '').trim();
+      if (!folder || !fs.existsSync(folder)) {
+        return { ok: true, enabled: !!settings?.mediaMusicEnabled, folder: folder || '', tracks: [] };
+      }
+      const tracks = listMusicTracks(folder).map(p => ({
+        path: p,
+        name: path.basename(p),
+      }));
+      return { ok: true, enabled: !!settings?.mediaMusicEnabled, folder, tracks };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not list music tracks.' };
+    }
+  });
+
+  ipcMain.handle('homebot:media:music:save-config', async (_e, config: { enabled?: boolean; folder?: string }) => {
+    try {
+      assertEnabled();
+      const { getSettings, saveSettings } = await import('../../config-manager');
+      const current = getSettings() as any;
+      const next: any = {};
+      if (typeof config?.enabled === 'boolean') next.mediaMusicEnabled = config.enabled;
+      if (typeof config?.folder === 'string') next.mediaMusicFolder = config.folder;
+      saveSettings(next);
+      return { ok: true, enabled: next.mediaMusicEnabled ?? current.mediaMusicEnabled, folder: next.mediaMusicFolder ?? current.mediaMusicFolder };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not save music settings.' };
+    }
   });
 
   ipcMain.handle('homebot:media:ancient-pathways-status', async () => {
@@ -721,6 +783,11 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
+  ipcMain.handle('homebot:media:storyboard:set-shot-image', async (_ev, args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) => {
+    const res = await invokeTool(_ev, 'media_set_storyboard_image', args || {});
+    return { ok: res.success, result: res.result, error: res.error };
+  });
+
   ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: unknown; outputSpec?: unknown }) => {
     const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
     return res.success
@@ -728,13 +795,14 @@ export function registerStudioIpc(
       : { ok: false, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown; narrationEngine?: unknown }) => {
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown; narrationEngine?: unknown; colorGrade?: string }) => {
     try {
       const res = await invokeTool(_ev, 'media_render_storyboard', {
         projectId: args.projectId,
         sceneId: args.sceneId,
         motion: args.motion !== false,
         burnSubtitles: args.burnSubtitles,
+        ...(args.colorGrade ? { colorGrade: args.colorGrade } : {}),
         ...(args.outputSpec === undefined ? {} : { outputSpec: args.outputSpec }),
         ...(args.variantId === undefined ? {} : { variantId: args.variantId }),
         ...(args.narrationEngine === undefined ? {} : { narrationEngine: args.narrationEngine }),
