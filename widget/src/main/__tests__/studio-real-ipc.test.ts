@@ -51,6 +51,9 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
         mediaMusicEnabled: false,
         mediaPublishingEnabled: false,
         narrationEngine: 'edge',
+        // Online on: this suite narrates with real online speech (Edge), which
+        // is refused while Online is off (since #314).
+        useCustomLLM: true,
       }),
       'utf8'
     );
@@ -125,6 +128,8 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     }, {
       title: 'Fast Real IPC Diagnostic',
       format: 'short',
+      // Real captions on a 'plain' render: captions default off since #318.
+      burnSubtitles: true,
       brief: 'Verification of real IPC and real userData pipeline execution.',
     });
 
@@ -281,8 +286,11 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     const failedJob = updatedJobs.find((j: any) => j.id === jobId);
     expect(failedJob.state).toBe('needs_revision');
     // The render itself is not discarded on a QA failure — same trust
-    // boundary as every other QA failure in this pipeline.
-    expect(failedJob.renderPath).toBeTruthy();
-    expect(fs.existsSync(failedJob.renderPath)).toBe(true);
+    // boundary as every other QA failure in this pipeline. Since #311 it is
+    // kept as rejectedRenderPath, so it can never replace a previous good video
+    // (the same contract media-render.live.test.ts asserts).
+    expect(failedJob.renderPath).toBeUndefined();
+    expect(failedJob.rejectedRenderPath).toBeTruthy();
+    expect(fs.existsSync(failedJob.rejectedRenderPath)).toBe(true);
   });
 });
