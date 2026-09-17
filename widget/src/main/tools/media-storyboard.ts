@@ -816,7 +816,7 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       frameProvider: {
         type: 'string',
         enum: STORYBOARD_FRAME_PROVIDERS.map(option => option.id),
-        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI) or "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI), "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard) or "chatgpt-plan" (the owner\'s ChatGPT plan through the signed-in Codex CLI; no per-image charge, uses plan limits). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],
