@@ -24,6 +24,7 @@ import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, resolveStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
+import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
@@ -85,7 +86,7 @@ interface MediaJobEvent { at: string; from: string; to: string; by: string; note
 
 /** Only editable source fields: operational export metadata cannot dirty a draft. */
 function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: Array<{ sceneId: string; shots: any[] }> }): string {
-  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, outputSpec: board.project.outputSpec,
+  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, captionStyle: board.project.captionStyle ?? null, outputSpec: board.project.outputSpec,
     scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
       shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
@@ -99,6 +100,7 @@ interface MediaJob {
   title: string;
   format: 'short' | 'long';
   burnSubtitles?: boolean;
+  captionStyle?: unknown;
   outputSpec?: StudioOutputSpec;
   externalRenderer?: string;
   state: MediaJobState;
@@ -1183,6 +1185,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           sceneId: scene.sceneId,
           shots: scene.shots,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+          ...(activeStoryboard.project.captionStyle !== undefined ? { captionStyle: activeStoryboard.project.captionStyle } : {}),
           ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
@@ -2123,6 +2126,11 @@ ${shots.map((s, idx) => `
           />{' '}Burn captions into video
           {j.reviewSource ? ' — settings belong to this saved movie' : !canEditMediaOutput(j.state) && ' — send back for revision to change'}
         </label>}
+        {!hasExternalMediaRenderer(j) && j.burnSubtitles !== false && (
+          <CaptionStyleSettings label={j.title} value={j.captionStyle}
+            disabled={busy === j.id || !!j.reviewSource || !canEditMediaOutput(j.state)}
+            onChange={captionStyle => void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { captionStyle }), 'Saving caption style')} />
+        )}
 
         {j.reviewSource && <button type="button" className="ms-btn" onClick={() => {
           if (j.reviewSource!.type === 'job') {
@@ -4734,6 +4742,10 @@ ${shots.map((s, idx) => `
               }}
             />{' '}Burn captions into video — saved with Save Board or Render Movie
           </label>
+          {activeStoryboard.project.burnSubtitles !== false && (
+            <CaptionStyleSettings label="Storyboard" value={activeStoryboard.project.captionStyle} disabled={storyboardBusy}
+              onChange={captionStyle => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, captionStyle } } : prev)} />
+          )}
           <fieldset className="ms-output-settings ms-frame-provider" aria-label="Frame images" disabled={storyboardBusy}>
             <legend>Frame images</legend>
             <select
