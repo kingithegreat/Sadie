@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
+import { closeElectronApp } from './helpers/closeApp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -60,7 +61,7 @@ test('a tooltip is actually visible, not merely in the DOM', async () => {
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(vp.width + 1);
 
-  await app.close();
+  await closeElectronApp(app);
 });
 
 test('keyboard focus alone shows help on an icon-only control', async () => {
@@ -83,5 +84,5 @@ test('keyboard focus alone shows help on an icon-only control', async () => {
   await expect(page.getByRole('tooltip')).toHaveCount(0);
   expect(await attach.evaluate((el: HTMLElement) => el === document.activeElement)).toBe(true);
 
-  await app.close();
+  await closeElectronApp(app);
 });

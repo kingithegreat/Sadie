@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
+import { closeElectronApp, CLOSE_BUDGET_MS } from './helpers/closeApp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -77,7 +78,7 @@ test('right-click menu lands at the cursor and is not laid out as a page row', a
   const rect = (await menu.boundingBox())!;
   expect(Math.abs(rect.x - (box.x + box.width / 2))).toBeLessThan(80);
 
-  await app.close();
+  await closeElectronApp(app);
 });
 
 test('no open overlay is trapped inside a clipping container', async () => {
@@ -110,7 +111,7 @@ test('no open overlay is trapped inside a clipping container', async () => {
   });
 
   expect(trapped).toEqual([]);
-  await app.close();
+  await closeElectronApp(app);
 });
 
 test('toasts leave navigation usable and do not push the page down', async () => {
@@ -167,7 +168,7 @@ test('toasts leave navigation usable and do not push the page down', async () =>
 
   await page.locator('button.mode-btn', { hasText: 'Studio' }).click({ timeout: 3000 });
   await expect(page.getByRole('heading', { name: /Media Studio/ }).first()).toBeVisible();
-  } finally { await app.close(); }
+  } finally { await closeElectronApp(app); }
 });
 
 /**
@@ -247,7 +248,7 @@ for (const overlay of [
       await page.keyboard.press('Escape');
       await expect(backdrop).toHaveCount(0);
     } finally {
-      await app.close();
+      await closeElectronApp(app);
     }
   });
 }
@@ -290,7 +291,7 @@ for (const p of PANELS) {
     await page.waitForTimeout(400);
     await expect(page.locator(p.sel)).toHaveCount(0);
 
-    await app.close();
+    await closeElectronApp(app);
   });
 }
 
@@ -325,7 +326,7 @@ test('the keyboard shortcuts panel covers the window', async () => {
   expect(info.w).toBe(info.vw);
   expect(info.headerTop).toBe(headerBefore);
 
-  await app.close();
+  await closeElectronApp(app);
 });
 
 test('the permission prompt renders as a modal, not a page row', async () => {
@@ -359,7 +360,7 @@ test('the permission prompt renders as a modal, not a page row', async () => {
   expect(info.h).toBe(info.vh);
   expect(info.headerTop).toBe(headerBefore);
 
-  await app.close();
+  await closeElectronApp(app);
 });
 
 test('conversation search replaces the sidebar without falling into the page flow', async () => {
@@ -396,5 +397,16 @@ test('conversation search replaces the sidebar without falling into the page flo
   await page.waitForTimeout(400);
   await expect(page.locator('.conversation-search-overlay')).toHaveCount(0);
 
-  await app.close();
+  await closeElectronApp(app);
+});
+
+test('the app shuts down when it is asked to', async () => {
+  // The shutdown budget lives here, once, instead of leaking into every other
+  // test's teardown: a hung quit used to spend the 60s timeout of whichever
+  // test ran, and it read as a broken context menu (helpers/closeApp.ts).
+  const { app } = await open('homebot-e2e-quit-');
+  const child = app.process();
+  const elapsed = await closeElectronApp(app, 'shutdown check');
+  expect(child.killed || child.exitCode !== null).toBe(true);
+  expect(elapsed).toBeLessThan(CLOSE_BUDGET_MS);
 });
