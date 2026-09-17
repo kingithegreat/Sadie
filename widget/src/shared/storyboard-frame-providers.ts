@@ -11,15 +11,15 @@
  * it has no free tier, so it needs a first-use confirmation like any paid option.
  */
 
-export type StoryboardFrameProviderId = 'online' | 'this-pc' | 'gemini';
+export type StoryboardFrameProviderId = 'online' | 'this-pc' | 'gemini' | 'chatgpt-plan';
 
 /** What the owner still has to do before this choice can make frames. */
-export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 'paid-confirmation';
+export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 'codex' | 'paid-confirmation';
 
 export interface StoryboardFrameProviderOption {
   id: StoryboardFrameProviderId;
   /** GenerationRouter provider that does the work. */
-  routerProviderId: 'pollinations' | 'comfyui' | 'gemini-image';
+  routerProviderId: 'pollinations' | 'comfyui' | 'gemini-image' | 'codex-image';
   /** Where · who · the one fact that matters. Shown in the picker. */
   label: string;
   cost: string;
@@ -59,6 +59,17 @@ export const STORYBOARD_FRAME_PROVIDERS: readonly StoryboardFrameProviderOption[
     cost: 'About US$0.07 per image (Gemini 3.1 Flash Image), charged by Google to your Gemini API key. There is no free tier; your prompt is sent to Google.',
     watermark: 'Google adds its invisible SynthID watermark to every image. It does not show in your movie.',
     paid: true,
+    mayWatermark: true,
+    advanced: false,
+  },
+  {
+    // Aden, 2026-09-17: image generation through the ChatGPT plan he already pays for.
+    id: 'chatgpt-plan',
+    routerProviderId: 'codex-image',
+    label: 'ChatGPT plan · Codex on this PC · uses your plan limits, no per-image charge',
+    cost: 'No per-image charge: each frame uses your ChatGPT plan’s Codex limits (image turns use them several times faster than chat). Needs the Codex CLI signed in with ChatGPT; your prompt is sent to OpenAI.',
+    watermark: 'OpenAI attaches C2PA content credentials to generated images. They are metadata and do not show in your movie.',
+    paid: false,
     mayWatermark: true,
     advanced: false,
   },
