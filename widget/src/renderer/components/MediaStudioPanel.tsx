@@ -458,6 +458,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   // Voice for the next storyboard export. '' keeps the saved setting.
   const [storyboardVoice, setStoryboardVoice] = useState<'' | 'edge' | 'kokoro'>('');
+  const [storyboardMusic, setStoryboardMusic] = useState<boolean>(true);
+  const [storyboardMusicVolume, setStoryboardMusicVolume] = useState<number>(0.20);
+  const [storyboardEncoder, setStoryboardEncoder] = useState<'auto' | 'nvenc' | 'cpu'>('auto');
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
@@ -1049,6 +1052,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         setAnimaticPlaying(false);
         setAnimaticOpen(false);
         setRenderedMoviePath(res.result.renderedMoviePath || null);
+        if (res.result.project?.musicEnabled !== undefined) {
+          setStoryboardMusic(res.result.project.musicEnabled !== false);
+        }
+        if (typeof res.result.project?.musicVolume === 'number') {
+          setStoryboardMusicVolume(res.result.project.musicVolume);
+        }
       } else {
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
@@ -1184,6 +1193,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           shots: scene.shots,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
           ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
+          musicEnabled: storyboardMusic,
+          musicVolume: storyboardMusicVolume,
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
       }
@@ -1686,6 +1697,9 @@ ${shots.map((s, idx) => `
         ...(colorGradeLut && colorGradeLut !== 'rec709' ? { colorGrade: colorGradeLut } : {}),
         ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         ...(storyboardVoice ? { narrationEngine: storyboardVoice } : {}),
+        music: storyboardMusic,
+        musicVolume: storyboardMusicVolume,
+        encoder: storyboardEncoder,
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
@@ -4687,6 +4701,30 @@ ${shots.map((s, idx) => `
 
             <button
               type="button"
+              className="ms-btn"
+              onClick={() => setStoryboardMusic(m => !m)}
+              disabled={storyboardBusy}
+              aria-label={storyboardMusic ? 'Background music enabled' : 'Background music disabled'}
+              title={storyboardMusic ? `Background music enabled (${Math.round(storyboardMusicVolume * 100)}% volume, auto-ducked under narration)` : 'Background music disabled'}
+            >
+              {storyboardMusic ? '🎵 BGM: On' : '🔇 BGM: Off'}
+            </button>
+
+            <select
+              className="ms-input ms-encoder-select"
+              value={storyboardEncoder}
+              onChange={e => setStoryboardEncoder(e.target.value as 'auto' | 'nvenc' | 'cpu')}
+              disabled={storyboardBusy}
+              aria-label="Video encoder for this export"
+              title="Video encoder: Auto detects NVIDIA NVENC GPU acceleration, or CPU fallback"
+            >
+              <option value="auto">⚡ Auto (GPU/CPU)</option>
+              <option value="nvenc">⚡ NVENC (GPU)</option>
+              <option value="cpu">💻 CPU (libx264)</option>
+            </select>
+
+            <button
+              type="button"
               className="ms-btn ms-btn--primary"
               disabled={storyboardBusy || !activeStoryboard?.scenes.some(scene => scene.shots.length > 0)}
               onClick={() => { void handleRenderMovie(); }}
@@ -4722,18 +4760,46 @@ ${shots.map((s, idx) => `
             disabled={storyboardBusy} saveHint="Saved with Save Board or Render Movie."
             previewUrl={frameUrl(activeStoryboardScene?.shots[0]?.frameImagePath)}
             onChange={outputSpec => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, outputSpec } } : prev)} />
-          <label className="ms-job-format">
-            <input
-              type="checkbox"
-              aria-label="Burn captions into storyboard video"
-              checked={activeStoryboard.project.burnSubtitles !== false}
-              disabled={storyboardBusy}
-              onChange={e => {
-                const burnSubtitles = e.target.checked;
-                setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, burnSubtitles } } : prev);
-              }}
-            />{' '}Burn captions into video — saved with Save Board or Render Movie
-          </label>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 8px 0' }}>
+            <label className="ms-job-format" style={{ margin: 0 }}>
+              <input
+                type="checkbox"
+                aria-label="Burn captions into storyboard video"
+                checked={activeStoryboard.project.burnSubtitles !== false}
+                disabled={storyboardBusy}
+                onChange={e => {
+                  const burnSubtitles = e.target.checked;
+                  setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, burnSubtitles } } : prev);
+                }}
+              />{' '}Burn captions into video
+            </label>
+            <label className="ms-job-format" style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <input
+                type="checkbox"
+                aria-label="Include background music with auto-ducking"
+                checked={storyboardMusic}
+                disabled={storyboardBusy}
+                onChange={e => setStoryboardMusic(e.target.checked)}
+              />{' '}🎵 Background music (ducked under narration)
+            </label>
+            {storyboardMusic && (
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#94a3b8' }}>
+                <span>Volume:</span>
+                <input
+                  type="range"
+                  min="0.05"
+                  max="0.50"
+                  step="0.05"
+                  value={storyboardMusicVolume}
+                  onChange={e => setStoryboardMusicVolume(parseFloat(e.target.value))}
+                  disabled={storyboardBusy}
+                  aria-label="Background music volume"
+                  style={{ width: '80px', verticalAlign: 'middle' }}
+                />
+                <span style={{ minWidth: '32px' }}>{Math.round(storyboardMusicVolume * 100)}%</span>
+              </label>
+            )}
+          </div>
           <fieldset className="ms-output-settings ms-frame-provider" aria-label="Frame images" disabled={storyboardBusy}>
             <legend>Frame images</legend>
             <select
@@ -4991,6 +5057,8 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
                 <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
                 <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
+                {storyboardMusic && <span className="ms-storyboard-badge">🎵 BGM ({Math.round(storyboardMusicVolume * 100)}%)</span>}
+                <span className="ms-storyboard-badge">{storyboardEncoder === 'nvenc' ? '⚡ NVENC GPU' : storyboardEncoder === 'cpu' ? '💻 CPU' : '⚡ Auto (GPU/CPU)'}</span>
               </div>
             </div>
 

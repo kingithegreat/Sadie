@@ -856,9 +856,9 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSetShotImage: async (args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:set-shot-image', args),
-  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) =>
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; musicEnabled?: boolean; musicVolume?: number }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
-  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine; colorGrade?: string }) =>
+  mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine; colorGrade?: string; music?: boolean | string | null; musicVolume?: number; encoder?: 'auto' | 'nvenc' | 'cpu' }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),

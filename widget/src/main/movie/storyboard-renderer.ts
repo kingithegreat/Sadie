@@ -18,7 +18,7 @@ import * as fs from 'fs';
 import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput, type StudioMovieResult } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
-import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle, buildColorGradeFilter } from '../media-render';
+import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, defaultSubtitleStyle, buildColorGradeFilter, buildMusicAudioGraph, MUSIC_VOLUME_DEFAULT } from '../media-render';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
 import type { NarrationEngine } from '../../shared/narration';
@@ -37,6 +37,12 @@ export interface StoryboardRenderOptions {
   narrationEngine?: NarrationEngine;
   /** Optional color grading LUT preset to burn into the export. */
   colorGrade?: string | null;
+  /** Background music track: true (auto-pick), false (no music), or specific track name/path. */
+  music?: boolean | string | null;
+  /** Volume level for background music (default 0.18). */
+  musicVolume?: number;
+  /** Preferred video encoder ('auto' | 'nvenc' | 'cpu'). Default 'auto'. */
+  encoder?: 'auto' | 'nvenc' | 'cpu';
 }
 
 export type StoryboardRenderResult = StudioMovieResult;
@@ -127,6 +133,57 @@ function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stde
       }
     });
   });
+}
+
+let cachedNvencSupport: boolean | null = null;
+
+export function resetNvencProbeCache(val: boolean | null = null): void {
+  cachedNvencSupport = val;
+}
+
+/**
+ * Detects whether the local FFmpeg build and hardware GPU support h264_nvenc encoding.
+ */
+export async function probeNvencSupport(ffmpeg: string): Promise<boolean> {
+  if (cachedNvencSupport !== null) return cachedNvencSupport;
+  try {
+    await runCommand(ffmpeg, [
+      '-y',
+      '-f', 'lavfi',
+      '-i', 'testsrc=duration=0.04:size=320x240:rate=25',
+      '-c:v', 'h264_nvenc',
+      '-f', 'null',
+      '-',
+    ]);
+    cachedNvencSupport = true;
+    return true;
+  } catch {
+    cachedNvencSupport = false;
+    return false;
+  }
+}
+
+/**
+ * Resolves video encoder and preset based on user preference and hardware capabilities.
+ * Supports 'auto' (GPU NVENC preferred, falling back to CPU), 'nvenc', and 'cpu' (libx264).
+ */
+export async function resolveVideoEncoder(
+  ffmpeg: string,
+  requested?: 'auto' | 'nvenc' | 'cpu'
+): Promise<{ encoder: 'h264_nvenc' | 'libx264'; preset: string }> {
+  if (requested === 'cpu') {
+    return { encoder: 'libx264', preset: 'veryfast' };
+  }
+  const supported = await probeNvencSupport(ffmpeg);
+  if (requested === 'nvenc') {
+    if (supported) return { encoder: 'h264_nvenc', preset: 'p4' };
+    throw new Error('NVENC GPU acceleration was requested but h264_nvenc is not supported on this device.');
+  }
+  // 'auto': use NVENC if available, else libx264
+  if (supported) {
+    return { encoder: 'h264_nvenc', preset: 'p4' };
+  }
+  return { encoder: 'libx264', preset: 'veryfast' };
 }
 
 /**
@@ -375,7 +432,80 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
       combinedAudioPath,
     ]);
 
-    // 2. Generate Subtitles file
+    // 2. Mix background music if requested (MS-4)
+    let finalAudioPath = combinedAudioPath;
+    const { chooseMusic, listMusicTracks } = await import('../media-music');
+    let mediaSettings: any = null;
+    try {
+      const { getSettings } = await import('../config-manager');
+      mediaSettings = getSettings();
+    } catch {
+      /* Non-electron or test environment */
+    }
+    const musicWanted = opts.music !== undefined
+      ? Boolean(opts.music)
+      : (projectMeta.musicEnabled !== undefined ? Boolean(projectMeta.musicEnabled) : !!mediaSettings?.mediaMusicEnabled);
+    const musicFolder = (mediaSettings?.mediaMusicFolder || '').trim();
+    let musicTrackPath: string | null = null;
+
+    if (musicWanted) {
+      if (typeof opts.music === 'string' && opts.music.trim()) {
+        const candidate = opts.music.trim();
+        if (fs.existsSync(candidate)) {
+          musicTrackPath = candidate;
+        } else if (musicFolder && fs.existsSync(musicFolder)) {
+          const tracks = listMusicTracks(musicFolder);
+          const matched = tracks.find(t => path.basename(t).toLowerCase() === path.basename(candidate).toLowerCase());
+          if (matched) musicTrackPath = matched;
+        }
+      } else if (typeof projectMeta.musicTrack === 'string' && projectMeta.musicTrack.trim()) {
+        const candidate = projectMeta.musicTrack.trim();
+        if (fs.existsSync(candidate)) {
+          musicTrackPath = candidate;
+        } else if (musicFolder && fs.existsSync(musicFolder)) {
+          const tracks = listMusicTracks(musicFolder);
+          const matched = tracks.find(t => path.basename(t).toLowerCase() === path.basename(candidate).toLowerCase());
+          if (matched) musicTrackPath = matched;
+        }
+      } else if (musicFolder && fs.existsSync(musicFolder)) {
+        const choice = chooseMusic({ enabled: true, folder: musicFolder, seed: Math.round(totalDuration) });
+        musicTrackPath = choice.path;
+      }
+    }
+
+    if (musicTrackPath && fs.existsSync(musicTrackPath)) {
+      const volume = opts.musicVolume ?? projectMeta.musicVolume ?? MUSIC_VOLUME_DEFAULT;
+      const duckedAudioPath = path.join(tempDir, 'ducked_audio.wav');
+      if (hasNarration) {
+        const { graph, outLabel } = buildMusicAudioGraph({
+          narrationInput: 0,
+          musicInput: 1,
+          volume,
+        });
+        await runCommand(ffmpeg, [
+          '-y',
+          '-i', combinedAudioPath,
+          '-i', musicTrackPath,
+          '-filter_complex', graph,
+          '-map', outLabel,
+          '-c:a', 'pcm_s16le',
+          duckedAudioPath,
+        ]);
+      } else {
+        await runCommand(ffmpeg, [
+          '-y',
+          '-i', musicTrackPath,
+          '-filter_complex', `[0:a]volume=${volume},aloop=loop=-1:size=2147483647[aout]`,
+          '-map', '[aout]',
+          '-t', String(totalDuration),
+          '-c:a', 'pcm_s16le',
+          duckedAudioPath,
+        ]);
+      }
+      finalAudioPath = duckedAudioPath;
+    }
+
+    // 3. Generate Subtitles file
     let srtPath: string | null = null;
     if (burnSubtitles) {
       srtPath = path.join(tempDir, 'subtitles.srt');
@@ -384,7 +514,7 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     }
 
     return { ffmpeg, projectDir, projectMeta, outputSpec, burnSubtitles, sceneId, shots, snapshotScenes,
-      engine, totalDuration, motion, hasNarration, combinedAudioPath, srtPath, inputDir: tempDir, rendersDir };
+      engine, totalDuration, motion, hasNarration, combinedAudioPath: finalAudioPath, srtPath, inputDir: tempDir, rendersDir };
   } catch (error) {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     throw error;
@@ -416,7 +546,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     attempt.status = 'rendering';
     recordStoryboardAttempt(projectDir, attempt);
 
-    // 3. Render Video Track
+    // 3. Render Video Track (MS-9 GPU acceleration with CPU fallback)
+    const videoEncoder = await resolveVideoEncoder(ffmpeg, opts.encoder);
     if (motion) {
       // Per-shot Ken Burns motion clips
       const videoClips: string[] = [];
@@ -435,8 +566,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
           '-loop', '1',
           '-i', imgPath,
           '-vf', vf,
-          '-c:v', 'libx264',
-          '-preset', 'veryfast',
+          '-c:v', videoEncoder.encoder,
+          '-preset', videoEncoder.preset,
           '-t', String(dur),
           '-r', String(fps),
           shotClipPath,
@@ -468,8 +599,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       }
 
       muxArgs.push(
-        '-c:v', 'libx264',
-        '-preset', 'fast',
+        '-c:v', videoEncoder.encoder,
+        '-preset', videoEncoder.preset === 'veryfast' ? 'fast' : videoEncoder.preset,
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
@@ -512,8 +643,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         '-i', concatListPath,
         '-i', combinedAudioPath,
         '-vf', filters.join(','),
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
+        '-c:v', videoEncoder.encoder,
+        '-preset', videoEncoder.preset,
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',

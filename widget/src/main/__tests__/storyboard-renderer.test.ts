@@ -316,4 +316,79 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     expect(narrationCalls).toEqual(['EDITED narration B.', 'EDITED narration A.']);
     expect(narrationCalls.join(' ')).not.toContain('Original narration');
   });
+
+  test('renders with background music and automatic sidechain ducking under narration (MS-4)', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'music-ducking-check',
+      title: 'Music Ducking Check',
+      shots: [
+        { prompt: 'Scene 1', durationSec: 4, narration: 'Spoken voice line.' },
+      ],
+    }, {} as any);
+    expect(created.success).toBe(true);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+
+    const dummyMusic = path.join(projectDir, 'track.mp3');
+    fs.writeFileSync(dummyMusic, 'dummy music audio');
+
+    (execFile as unknown as jest.Mock).mockClear();
+    const res = await renderStoryboardMovie({
+      projectId: 'music-ducking-check',
+      music: dummyMusic,
+      musicVolume: 0.22,
+    });
+    expect(res.ok).toBe(true);
+
+    // Verify ffmpeg was invoked with sidechaincompress audio filter
+    const calls = (execFile as unknown as jest.Mock).mock.calls;
+    const duckingCall = calls.find((c: any[]) =>
+      Array.isArray(c[1]) && c[1].some((arg: string) => typeof arg === 'string' && arg.includes('sidechaincompress'))
+    );
+    expect(duckingCall).toBeDefined();
+    const filterArg = duckingCall[1].find((arg: string) => typeof arg === 'string' && arg.includes('volume=0.22'));
+    expect(filterArg).toBeDefined();
+  });
+
+  test('probes and utilizes h264_nvenc GPU encoding with fallback to libx264 (MS-9)', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'gpu-encoder-check',
+      title: 'GPU Encoder Check',
+      shots: [
+        { prompt: 'Shot 1', durationSec: 3, narration: 'Narration.' },
+      ],
+    }, {} as any);
+    expect(created.success).toBe(true);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+
+    // 1. Explicit CPU encoder
+    (execFile as unknown as jest.Mock).mockClear();
+    const resCpu = await renderStoryboardMovie({
+      projectId: 'gpu-encoder-check',
+      encoder: 'cpu',
+      outputName: 'cpu-out.mp4',
+    });
+    expect(resCpu.ok).toBe(true);
+    const callsCpu = (execFile as unknown as jest.Mock).mock.calls;
+    const cpuEncodeCalls = callsCpu.filter((c: any[]) =>
+      Array.isArray(c[1]) && c[1].includes('-c:v') && c[1][c[1].indexOf('-c:v') + 1] === 'libx264'
+    );
+    expect(cpuEncodeCalls.length).toBeGreaterThan(0);
+
+    // 2. Explicit NVENC encoder
+    (execFile as unknown as jest.Mock).mockClear();
+    const resNvenc = await renderStoryboardMovie({
+      projectId: 'gpu-encoder-check',
+      encoder: 'nvenc',
+      outputName: 'nvenc-out.mp4',
+    });
+    expect(resNvenc.ok).toBe(true);
+    const callsNvenc = (execFile as unknown as jest.Mock).mock.calls;
+    const nvencEncodeCalls = callsNvenc.filter((c: any[]) =>
+      Array.isArray(c[1]) && c[1].includes('-c:v') && c[1][c[1].indexOf('-c:v') + 1] === 'h264_nvenc'
+    );
+    expect(nvencEncodeCalls.length).toBeGreaterThan(0);
+  });
 });
+

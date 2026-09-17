@@ -787,14 +787,14 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: unknown }) => {
+  ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: unknown; musicEnabled?: boolean; musicVolume?: number }) => {
     const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
     return res.success
       ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
       : { ok: false, error: res.error };
   });
 
-  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown; narrationEngine?: unknown; colorGrade?: string }) => {
+  ipcMain.handle('homebot:media:storyboard:render', async (_ev, args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown; narrationEngine?: unknown; colorGrade?: string; music?: boolean | string | null; musicVolume?: number; encoder?: 'auto' | 'nvenc' | 'cpu' }) => {
     try {
       const res = await invokeTool(_ev, 'media_render_storyboard', {
         projectId: args.projectId,
@@ -805,6 +805,9 @@ export function registerStudioIpc(
         ...(args.outputSpec === undefined ? {} : { outputSpec: args.outputSpec }),
         ...(args.variantId === undefined ? {} : { variantId: args.variantId }),
         ...(args.narrationEngine === undefined ? {} : { narrationEngine: args.narrationEngine }),
+        ...(args.music !== undefined ? { music: args.music } : {}),
+        ...(typeof args.musicVolume === 'number' ? { musicVolume: args.musicVolume } : {}),
+        ...(args.encoder ? { encoder: args.encoder } : {}),
       });
       return res.success || res.result?.variants
           ? { ok: res.success, moviePath: res.result.moviePath, durationSec: res.result.durationSec, totalShots: res.result.totalShots, jobId: res.result.jobId,

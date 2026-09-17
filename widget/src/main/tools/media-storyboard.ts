@@ -532,6 +532,8 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
       burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
       outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
+      musicEnabled: { type: 'boolean', description: 'Save the background music enable choice. Omit to keep the saved choice.' },
+      musicVolume: { type: 'number', description: 'Save the background music volume level (0.05 - 1.0).' },
       shots: {
         type: 'array',
         description: 'Ordered array of shot edits to persist.',
@@ -616,6 +618,8 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
         ...projectMeta,
         ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
         ...(outputSpec !== undefined ? { outputSpec } : {}),
+        ...(args.musicEnabled !== undefined ? { musicEnabled: args.musicEnabled } : {}),
+        ...(typeof args.musicVolume === 'number' ? { musicVolume: args.musicVolume } : {}),
         updatedAt: new Date().toISOString(),
       }, null, 2), 'utf-8');
       fs.renameSync(stagedMeta, metaPath);
@@ -654,6 +658,9 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
       variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
       narrationEngine: { type: 'string', enum: ['edge', 'kokoro'], description: "Voice for this export: 'kokoro' speaks on this PC with no internet, 'edge' is the online voice. Omit to use the saved setting." },
+      music: { type: 'string', description: 'Optional background music track or boolean toggle (default: uses project/settings preference with sidechain ducking).' },
+      musicVolume: { type: 'number', description: 'Optional background music volume (0.05 to 1.0, default: 0.18).' },
+      encoder: { type: 'string', enum: ['auto', 'nvenc', 'cpu'], description: "Video encoder selection: 'nvenc' for NVIDIA GPU acceleration, 'cpu' for libx264, 'auto' to auto-detect (default: auto)." },
     },
     required: ['projectId'],
   },
@@ -675,6 +682,9 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
     ...(args.narrationEngine === 'edge' || args.narrationEngine === 'kokoro' ? { narrationEngine: args.narrationEngine } : {}),
     ...(typeof args.colorGrade === 'string' ? { colorGrade: args.colorGrade } : {}),
+    ...(args.music !== undefined ? { music: args.music } : {}),
+    ...(typeof args.musicVolume === 'number' ? { musicVolume: args.musicVolume } : {}),
+    ...(args.encoder === 'auto' || args.encoder === 'nvenc' || args.encoder === 'cpu' ? { encoder: args.encoder } : {}),
   });
 
   if (!res.ok && !res.variants) {
