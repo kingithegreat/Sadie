@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (225)** — `window.electron`
+**Preload methods (229)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1034,14 +1034,15 @@ maximizeWindow                      mcpAddServer                        mcpGetSt
 mcpRemoveServer                     mcpToggleServer                     mediaAdvance                        mediaAncientPathwaysDoctor
 mediaAncientPathwaysEpisodes        mediaAncientPathwaysGetAnchors      mediaAncientPathwaysGetSprite       mediaAncientPathwaysRun
 mediaAncientPathwaysSaveAnchor      mediaAncientPathwaysShowrunner      mediaAncientPathwaysStatus          mediaAncientPathwaysSuggestAnchors
-mediaApprove                        mediaCreate                         mediaDelete                         mediaFfmpegSetup
-mediaFfmpegStatus                   mediaGetExportState                 mediaList                           mediaMarkPublished
-mediaMovieListProjects              mediaMovieRun                       mediaParseFeed                      mediaReject
-mediaRun                            mediaSeriesSettingsDelete           mediaSeriesSettingsGet              mediaSeriesSettingsList
-mediaSeriesSettingsSave             mediaSeriesSettingsSegment          mediaSpliceVideo                    mediaStoryboardBreakdown
-mediaStoryboardConfirmPaidFrames    mediaStoryboardCreate               mediaStoryboardFrameProviders       mediaStoryboardGenerateFrame
-mediaStoryboardGet                  mediaStoryboardList                 mediaStoryboardRender               mediaStoryboardSave
-mediaStoryboardSetFrameProvider     mediaTrimClip                       minimizeWindow                      moduleList
+mediaApprove                        mediaCreate                         mediaDelete                         mediaDeliverToFinished
+mediaFfmpegSetup                    mediaFfmpegStatus                   mediaGetExportState                 mediaList
+mediaListMusicTracks                mediaMarkPublished                  mediaMovieListProjects              mediaMovieRun
+mediaParseFeed                      mediaReject                         mediaRun                            mediaSaveMusicConfig
+mediaSeriesSettingsDelete           mediaSeriesSettingsGet              mediaSeriesSettingsList             mediaSeriesSettingsSave
+mediaSeriesSettingsSegment          mediaSpliceVideo                    mediaStoryboardBreakdown            mediaStoryboardConfirmPaidFrames
+mediaStoryboardCreate               mediaStoryboardFrameProviders       mediaStoryboardGenerateFrame        mediaStoryboardGet
+mediaStoryboardList                 mediaStoryboardRender               mediaStoryboardSave                 mediaStoryboardSetFrameProvider
+mediaStoryboardSetShotImage         mediaTrimClip                       minimizeWindow                      moduleList
 moduleSetEnabled                    onAssistantToolActivity             onBatchSummary                      onBrowserState
 onConfigRecovered                   onConfirmationRequest               onConversationCompacted             onHardwareProfileApplied
 onHideWindow                        onMediaAncientPathwaysProgress      onMediaFfmpegProgress               onMessage
@@ -1071,7 +1072,7 @@ youtubeConnectionStatus             youtubeImportCredentials            youtubeR
 youtubeUpload
 ```
 
-**IPC channels, renderer → main (174)**
+**IPC channels, renderer → main (178)**
 
 ```
 homebot:__e2e_get_router_logs                   homebot:__e2e_invoke_tool_batch
@@ -1115,20 +1116,22 @@ homebot:media:ancient-pathways-get-sprite       homebot:media:ancient-pathways-r
 homebot:media:ancient-pathways-save-anchor      homebot:media:ancient-pathways-showrunner
 homebot:media:ancient-pathways-status           homebot:media:ancient-pathways-suggest-anchors
 homebot:media:approve                           homebot:media:create
-homebot:media:delete                            homebot:media:export-state
-homebot:media:ffmpeg-setup                      homebot:media:ffmpeg-status
-homebot:media:list                              homebot:media:mark-published
-homebot:media:movie:list-projects               homebot:media:movie:run
-homebot:media:parse-feed                        homebot:media:reject
-homebot:media:run                               homebot:media:series-settings:delete
-homebot:media:series-settings:get               homebot:media:series-settings:list
-homebot:media:series-settings:save              homebot:media:series-settings:segment
-homebot:media:splice-video                      homebot:media:storyboard:breakdown
-homebot:media:storyboard:confirm-paid-frames    homebot:media:storyboard:create
-homebot:media:storyboard:frame-providers        homebot:media:storyboard:generate-frame
-homebot:media:storyboard:get                    homebot:media:storyboard:list
-homebot:media:storyboard:render                 homebot:media:storyboard:save
-homebot:media:storyboard:set-frame-provider     homebot:media:trim-clip
+homebot:media:delete                            homebot:media:deliver-finished
+homebot:media:export-state                      homebot:media:ffmpeg-setup
+homebot:media:ffmpeg-status                     homebot:media:list
+homebot:media:mark-published                    homebot:media:movie:list-projects
+homebot:media:movie:run                         homebot:media:music:list
+homebot:media:music:save-config                 homebot:media:parse-feed
+homebot:media:reject                            homebot:media:run
+homebot:media:series-settings:delete            homebot:media:series-settings:get
+homebot:media:series-settings:list              homebot:media:series-settings:save
+homebot:media:series-settings:segment           homebot:media:splice-video
+homebot:media:storyboard:breakdown              homebot:media:storyboard:confirm-paid-frames
+homebot:media:storyboard:create                 homebot:media:storyboard:frame-providers
+homebot:media:storyboard:generate-frame         homebot:media:storyboard:get
+homebot:media:storyboard:list                   homebot:media:storyboard:render
+homebot:media:storyboard:save                   homebot:media:storyboard:set-frame-provider
+homebot:media:storyboard:set-shot-image         homebot:media:trim-clip
 homebot:media:youtube:cancel                    homebot:media:youtube:connect
 homebot:media:youtube:connect-upload            homebot:media:youtube:import
 homebot:media:youtube:refresh                   homebot:media:youtube:remove
