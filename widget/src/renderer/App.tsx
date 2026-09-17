@@ -618,14 +618,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   /**
    * Save user settings to main process
    */
-  const saveSettings = async (newSettings: SharedSettings) => {
+  const saveSettings = useCallback(async (newSettings: SharedSettings) => {
     try {
       const updated = await window.electron.saveSettings(newSettings);
       setSettings(prev => ({ ...prev, ...updated }));
     } catch (err) {
       console.error('Failed to save settings:', err);
     }
-  };
+  }, []);
 
   /**
    * Update per-conversation system prompt and persist it

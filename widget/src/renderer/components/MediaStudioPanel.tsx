@@ -571,6 +571,54 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     }
   };
 
+  const handleSaveSeriesSetting = async () => {
+    setError(null);
+    let targetId = selectedSettingId;
+    if (!targetId) {
+      const name = window.prompt('Enter setting name or ID (e.g. throne_room):');
+      if (!name || !name.trim()) return;
+      targetId = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+    }
+
+    const currentLighting = stageLightingPreset === 'dawn' ? LIGHTING_PRESETS.daylight : stageLightingPreset === 'torch' ? LIGHTING_PRESETS.torchlight : stageLightingPreset === 'noon' ? LIGHTING_PRESETS.studio_warm : LIGHTING_PRESETS.scifi_cool;
+    try {
+      const res = await api()?.mediaSeriesSettingsSave?.({
+        seriesId: selectedSeriesId,
+        settingId: targetId,
+        lightingJson: JSON.stringify(currentLighting),
+      });
+      if (res?.success) {
+        setDone(`✓ Setting "${targetId}" saved successfully.`);
+        await loadSeriesSettings(selectedSeriesId);
+        setSelectedSettingId(targetId);
+      } else {
+        setError(res?.error || 'Failed to save series setting.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Error saving series setting.');
+    }
+  };
+
+  const handleDeleteSeriesSetting = async () => {
+    if (!selectedSettingId) return;
+    const confirmed = window.confirm(`Are you sure you want to delete series setting "${selectedSettingId}"?`);
+    if (!confirmed) return;
+    setError(null);
+    try {
+      const res = await api()?.mediaSeriesSettingsDelete?.(selectedSeriesId, selectedSettingId);
+      if (res?.success) {
+        setDone(`✓ Setting "${selectedSettingId}" deleted.`);
+        setSelectedSettingId('');
+        setActiveSettingBundle(null);
+        await loadSeriesSettings(selectedSeriesId);
+      } else {
+        setError(res?.error || 'Failed to delete series setting.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Error deleting series setting.');
+    }
+  };
+
   // Deep linking and cross-workspace handoff (e.g. from Chat or external tool invocation)
   useEffect(() => {
     if (navContext) {
@@ -3802,6 +3850,27 @@ ${shots.map((s, idx) => `
             >
               {isSegmenting ? '⏳ Segmenting...' : '✂️ CPU RMBG'}
             </button>
+            <button
+              type="button"
+              className="ms-dcc-toggle-btn"
+              data-testid="stage-setting-save-btn"
+              onClick={handleSaveSeriesSetting}
+              title="Save current setting plates and lighting configuration"
+            >
+              💾 Save
+            </button>
+            {selectedSettingId && (
+              <button
+                type="button"
+                className="ms-dcc-toggle-btn"
+                data-testid="stage-setting-delete-btn"
+                onClick={handleDeleteSeriesSetting}
+                title="Delete the currently selected custom setting"
+                style={{ color: '#f87171' }}
+              >
+                🗑️ Delete
+              </button>
+            )}
           </div>
         </div>
 
