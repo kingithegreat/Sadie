@@ -907,7 +907,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:series-settings:save', args),
   mediaSeriesSettingsDelete: async (seriesId: string, settingId: string) =>
     ipcRenderer.invoke('homebot:media:series-settings:delete', seriesId, settingId),
-  mediaSeriesSettingsSegment: async (args: { imageBase64: string; preferCpu?: boolean }) =>
+  mediaSeriesSettingsSegment: async (args: { imageBase64?: string; bgPath?: string; preferCpu?: boolean }) =>
     ipcRenderer.invoke('homebot:media:series-settings:segment', args),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
