@@ -10,6 +10,7 @@ const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // attach in main — no reason to pay for either until it is actually opened.
 const BrowserPanel = lazy(() => import('./BrowserPanel'));
 const ChangesPanel = lazy(() => import('./ChangesPanel'));
+const WorkspaceAssistantPanel = lazy(() => import('./WorkspaceAssistantPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -58,6 +59,7 @@ export default function WorkspaceShell({
   const [activePath, setActivePath] = useState<string | null>(null);
   const [terminalOpen, setTerminalOpen] = useState(true);
   const [browserOpen, setBrowserOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [assistantActivity, setAssistantActivity] = useState<string | null>(null);
 
@@ -252,6 +254,14 @@ export default function WorkspaceShell({
           aria-pressed={browserOpen}
           onClick={() => setBrowserOpen(b => !b)}
         ><Icon name="globe" size={20} /></button>
+        <button
+          type="button"
+          className={`ws-activity-btn${assistantOpen ? ' active' : ''}`}
+          title="Assistant — ask about your code"
+          aria-label="Toggle assistant panel"
+          aria-pressed={assistantOpen}
+          onClick={() => setAssistantOpen(a => !a)}
+        ><Icon name="sparkle" size={20} /></button>
         <div className="ws-activity-spacer" />
         <button
           type="button"
@@ -368,6 +378,12 @@ export default function WorkspaceShell({
       {browserOpen && (
         <Suspense fallback={<div className="tree-hint">Loading browser…</div>}>
           <BrowserPanel onClose={() => setBrowserOpen(false)} />
+        </Suspense>
+      )}
+
+      {assistantOpen && (
+        <Suspense fallback={<div className="tree-hint">Loading assistant…</div>}>
+          <WorkspaceAssistantPanel root={root} files={files} activePath={activePath} onClose={() => setAssistantOpen(false)} />
         </Suspense>
       )}
 
