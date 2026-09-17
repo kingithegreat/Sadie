@@ -962,3 +962,25 @@ test('leaving the voice alone keeps the saved setting, with nothing forced onto 
   await act(async () => { fireEvent.click(render_); });
   expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.not.objectContaining({ narrationEngine: expect.anything() }));
 });
+
+test('a title card typed on a shot is saved with it, and can be removed (MS-5)', async () => {
+  const mocks = setup();
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+
+  const heading = screen.getByLabelText('Title card heading for shot_001');
+  await act(async () => { fireEvent.change(heading, { target: { value: 'Chapter One' } }); });
+  // The rest of the card appears only once there is something to put on screen.
+  await act(async () => { fireEvent.change(screen.getByLabelText('Title card sub-line for shot_001'), { target: { value: 'Giza, 2560 BC' } }); });
+  await act(async () => { fireEvent.change(screen.getByLabelText('Title card position for shot_001'), { target: { value: 'top' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+
+  const saved = mocks.mediaStoryboardSave.mock.calls.at(-1)![0];
+  expect(saved.shots[0].textCard).toEqual({ heading: 'Chapter One', subline: 'Giza, 2560 BC', position: 'top' });
+  expect(saved.shots[1].textCard ?? null).toBeNull();
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove title card from shot_001' })); });
+  expect(screen.queryByLabelText('Title card sub-line for shot_001')).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+  expect(mocks.mediaStoryboardSave.mock.calls.at(-1)![0].shots[0].textCard).toBeNull();
+});

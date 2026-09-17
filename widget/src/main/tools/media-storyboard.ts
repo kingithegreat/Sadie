@@ -6,6 +6,7 @@
  * generate frame thumbnails via free providers, and hand off between Chat and Studio.
  */
 
+import { sanitizeTextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -76,6 +77,7 @@ export interface StoryboardShotInput {
   movement?: string;
   durationSec?: number;
   narration?: string;
+  textCard?: unknown;
   characters?: string[];
   generationMethod?: 'still' | 'image_to_animation' | 'generative_video';
 }
@@ -609,6 +611,11 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
       promptData.movement = shot.movement ?? promptData.movement ?? 'static';
       promptData.durationSec = shot.durationSec === undefined ? (promptData.durationSec ?? 5) : shot.durationSec;
+      // MS-5: an explicit null clears the card; leaving it out keeps what is saved.
+      if (shot.textCard !== undefined) {
+        const card = sanitizeTextCard(shot.textCard);
+        if (card) promptData.textCard = card; else delete promptData.textCard;
+      }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
       if (shot.narration !== undefined) {

@@ -18,6 +18,7 @@ import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
+import { sanitizeTextCard, TEXT_CARD_POSITIONS, type TextCard, type TextCardPosition } from '../../shared/text-card';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
@@ -85,11 +86,17 @@ type MediaJobState =
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
 
 /** Only editable source fields: operational export metadata cannot dirty a draft. */
+/** Edit one field of a shot's title card; an empty heading removes the card. */
+function textCardWith(card: TextCard | null | undefined, patch: Partial<TextCard>): TextCard | null {
+  return sanitizeTextCard({ position: 'bottom', ...(card || {}), ...patch });
+}
+
 function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: Array<{ sceneId: string; shots: any[] }> }): string {
   return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, captionStyle: board.project.captionStyle ?? null, outputSpec: board.project.outputSpec,
     scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
       shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
+      textCard: shot.textCard ?? null,
     })) })) });
 }
 
@@ -414,6 +421,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         frameImagePath: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
+        /** Optional title card burned over this shot (MS-5). */
+        textCard?: TextCard | null;
       }>;
     }>;
     projectDir: string;
@@ -5373,6 +5382,44 @@ ${shots.map((s, idx) => `
                           aria-label={`Narration for ${shot.shotId}`}
                           onChange={e => handleUpdateShot(shot.shotId, { narration: e.target.value })}
                         />
+                      </div>
+
+                      {/* MS-5: an optional title card burned over this shot. */}
+                      <div className="ms-shot-field">
+                        <span className="ms-shot-label">Title card (optional):</span>
+                        <input
+                          type="text"
+                          className="ms-input"
+                          style={{ fontSize: '0.78rem', padding: '5px 8px' }}
+                          value={shot.textCard?.heading || ''}
+                          placeholder="Heading shown over this shot…"
+                          aria-label={`Title card heading for ${shot.shotId}`}
+                          onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { heading: e.target.value }) })}
+                        />
+                        {shot.textCard && (
+                          <div className="ms-shot-card-row">
+                            <input
+                              type="text"
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.textCard.subline || ''}
+                              placeholder="Sub-line (optional)…"
+                              aria-label={`Title card sub-line for ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { subline: e.target.value }) })}
+                            />
+                            <select
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.textCard.position}
+                              aria-label={`Title card position for ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { position: e.target.value as TextCardPosition }) })}
+                            >
+                              {TEXT_CARD_POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                            </select>
+                            <button type="button" className="ms-storyboard-undo" aria-label={`Remove title card from ${shot.shotId}`}
+                              onClick={() => handleUpdateShot(shot.shotId, { textCard: null })}>Remove card</button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
