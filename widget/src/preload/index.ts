@@ -732,6 +732,14 @@ const electronAPI: ElectronAPI = {
   startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
     return await ipcRenderer.invoke('homebot:start-speech-recognition');
   },
+  // Whisper voice input (main/speech/whisper-ipc.ts): 16 kHz mono samples in, text out.
+  whisperTranscribe: async (args: { modelId: string; language?: string; audio: Float32Array }): Promise<{ success: boolean; text?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:voice:whisper-transcribe', args),
+  onWhisperProgress: (cb: (p: { status: 'downloading'; percent: number }) => void) => {
+    const listener = (_e: IpcRendererEvent, p: { status: 'downloading'; percent: number }) => cb(p);
+    ipcRenderer.on('homebot:voice:whisper-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:voice:whisper-progress', listener);
+  },
 
   // TTS (text-to-speech) — uses Web Speech API in renderer via main process
   ttsSpeak: async (text: string, rate?: number): Promise<{ success: boolean; error?: string }> => {
