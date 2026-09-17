@@ -5,6 +5,8 @@ import {
   ANCIENT_PATHWAYS_EPISODES,
   checkRenderLock,
   findEpisodeDeliverable,
+  deliverEpisodeToFinished,
+  deliverJobToFinished,
   humanizeStage,
   resolveAncientPathwaysDir,
   runEpisodePipeline,
@@ -273,6 +275,44 @@ describe('ancient-pathways main module', () => {
     it('returns empty array when no pipeline directory exists', () => {
       const findings = scanReachability(tmpDir);
       expect(findings).toEqual([]);
+    });
+  });
+
+  describe('deliverEpisodeToFinished and deliverJobToFinished', () => {
+    it('delivers episode renders into finished destination folder', () => {
+      const apWorkspace = path.join(tmpDir, 'ap');
+      const deliverablesDir = path.join(apWorkspace, 'workspace', 'deliverables');
+      fs.mkdirSync(deliverablesDir, { recursive: true });
+      const testVideo = path.join(deliverablesDir, 'EP01_Pyramids_Master_1080p.mp4');
+      fs.writeFileSync(testVideo, 'fake-video-bytes');
+
+      const finishedDir = path.join(tmpDir, 'finished');
+      const res = deliverEpisodeToFinished('egypt', apWorkspace, finishedDir);
+      expect(res.ok).toBe(true);
+      expect(res.filesCopied).toContain('EP01_Pyramids_Master_1080p.mp4');
+      expect(fs.existsSync(path.join(res.targetDir!, 'EP01_Pyramids_Master_1080p.mp4'))).toBe(true);
+    });
+
+    it('delivers completed media studio job master into finished destination folder', () => {
+      const renderPath = path.join(tmpDir, 'job_render.mp4');
+      fs.writeFileSync(renderPath, 'fake-job-bytes');
+
+      const finishedDir = path.join(tmpDir, 'finished', 'Exports');
+      const res = deliverJobToFinished({ id: 'job_123', title: 'Ancient Rome Short', renderPath, format: 'short' }, finishedDir);
+      expect(res.ok).toBe(true);
+      expect(fs.existsSync(res.targetPath!)).toBe(true);
+      expect(res.targetPath!).toContain('Ancient_Rome_Short_short.mp4');
+    });
+
+    it('falls back to finished directory in findEpisodeDeliverable when workspace is empty', () => {
+      const finishedDir = path.join(tmpDir, 'finished');
+      const epFolder = path.join(finishedDir, '01 - The Pyramids of Giza');
+      fs.mkdirSync(epFolder, { recursive: true });
+      const mp4Path = path.join(epFolder, 'EP01_The_Pyramids_of_Giza_1080p.mp4');
+      fs.writeFileSync(mp4Path, 'video');
+
+      const found = findEpisodeDeliverable(tmpDir, 'egypt', finishedDir);
+      expect(found).toBe(mp4Path);
     });
   });
 });

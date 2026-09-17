@@ -55,6 +55,25 @@ export function buildStudioFrameFilters(value: StudioOutputVariant): string[] {
   ];
 }
 
+export type ColorGradePreset = 'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne' | 'neutral' | string;
+
+/**
+ * Builds FFmpeg color balance and eq filter string corresponding to a color grading LUT preset.
+ */
+export function buildColorGradeFilter(preset?: string | null): string | null {
+  if (!preset || preset === 'rec709' || preset === 'neutral' || preset === 'none') return null;
+  switch (preset) {
+    case 'warm_nile':
+      return 'eq=contrast=1.1:saturation=1.2:brightness=-0.02,colorbalance=rs=0.15:gs=0.05:bs=-0.1';
+    case 'teal_orange':
+      return 'eq=contrast=1.15:saturation=1.25,colorbalance=rs=0.1:gs=-0.05:bs=-0.1:rm=-0.05:gm=0.05:bm=0.1';
+    case 'nocturne':
+      return 'eq=contrast=1.2:saturation=0.6:brightness=-0.15,colorbalance=rs=-0.1:gs=0.0:bs=0.2';
+    default:
+      return null;
+  }
+}
+
 /** -shortest alone can leave an encoder tail. Allow one frame beyond measured
  * audio length, not a rounded UI label, so the last spoken samples stay intact. */
 function boundedOutputDuration(variant: StudioOutputVariant | undefined, durationSeconds: number | undefined): string[] {
@@ -382,6 +401,8 @@ export function buildRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
   targetI?: number;
@@ -429,6 +450,10 @@ export function buildRenderArgs(opts: {
     // backdrop.
     const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
+  }
+  if (opts.colorGrade) {
+    const lut = buildColorGradeFilter(opts.colorGrade);
+    if (lut) filters.push(lut);
   }
   // yuv420p or the file will not play in most browsers or on phones.
   filters.push('format=yuv420p');
@@ -500,6 +525,8 @@ export function buildTimelineRenderArgs(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Two-pass loudness normalization measured stats. */
   loudnormStats?: LoudnormStats | null;
   targetI?: number;
@@ -532,6 +559,10 @@ export function buildTimelineRenderArgs(opts: {
   if (opts.captionsPath) {
     const style = opts.subtitleStyle ?? defaultSubtitleStyle(variant?.aspectRatio ?? opts.shape);
     filters.push(`subtitles='${escapeFilterPath(opts.captionsPath)}':force_style='${style}'`);
+  }
+  if (opts.colorGrade) {
+    const lut = buildColorGradeFilter(opts.colorGrade);
+    if (lut) filters.push(lut);
   }
   filters.push('format=yuv420p');
 
@@ -716,6 +747,8 @@ export async function renderVideo(opts: {
   musicPath?: string | null;
   /** Music level before ducking; defaults to MUSIC_VOLUME_DEFAULT. */
   musicVolume?: number;
+  /** Optional color grade preset (warm_nile, teal_orange, nocturne). */
+  colorGrade?: string | null;
   /** Pass-through or pre-measured loudnorm stats. Set to false to disable loudnorm. */
   loudnormStats?: LoudnormStats | false | null;
   targetI?: number;

@@ -572,6 +572,13 @@ export interface ElectronAPI {
   mediaDelete?: (id: string, keepFiles?: boolean) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
 
+  mediaDeliverToFinished?: (payload: { episodeId?: string; jobId?: string; customDir?: string }) =>
+    Promise<{ ok: boolean; targetDir?: string; targetPath?: string; destPath?: string; error?: string; filesCopied?: string[] }>;
+  mediaListMusicTracks?: (folderOverride?: string) =>
+    Promise<{ ok: boolean; enabled: boolean; folder: string; tracks: Array<{ path: string; name: string }>; error?: string }>;
+  mediaSaveMusicConfig?: (config: { enabled?: boolean; folder?: string }) =>
+    Promise<{ ok: boolean; enabled: boolean; folder: string; error?: string }>;
+
   // ---- Ancient Pathways (Animated Documentary Pipeline) ----
   mediaAncientPathwaysEpisodes?: () => Promise<{
     ok: boolean;
@@ -586,6 +593,7 @@ export interface ElectronAPI {
       thumbnail?: string;
       emoji?: string;
       summary?: string;
+      deliverablePath?: string | null;
     }>;
     available: boolean;
     dir?: string | null;
@@ -739,12 +747,17 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
+  mediaStoryboardSetShotImage?: (args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) => Promise<{
+    ok: boolean;
+    result?: any;
+    error?: string;
+  }>;
   mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;
   }>;
-  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) => Promise<StudioMovieResult>;
+  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: import('./narration').NarrationEngine; colorGrade?: string }) => Promise<StudioMovieResult>;
   mediaStoryboardBreakdown?: (args: {
     script: string;
     genre?: string;
