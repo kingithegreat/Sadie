@@ -730,6 +730,32 @@ export interface ShowrunnerResult {
   log?: string;
 }
 
+/**
+ * Plain reason for a failed Showrunner run.
+ *
+ * The scene compiler raises "Scene compilation failed at shot 'X': None" when
+ * shot QA rejects a clip, because the repair path never copies the reason onto
+ * the result — the reason is only in that shot's status.json. The traceback
+ * tail ("^^^^ File ...") told the user nothing.
+ */
+export function explainShowrunnerFailure(dir: string, name: string, code: number | null, stdout: string, stderr: string): string {
+  const output = `${stdout}\n${stderr}`;
+  const failedShot = output.match(/Scene compilation failed at shot '([\w.-]+)': (.*)/);
+  if (failedShot) {
+    let reason = failedShot[2].trim();
+    try {
+      const status = JSON.parse(fs.readFileSync(
+        path.join(dir, 'workspace', 'productions', name, 'scene_01', failedShot[1], 'status.json'), 'utf8'));
+      if (typeof status?.error === 'string' && status.error.trim()) reason = status.error.trim();
+    } catch { /* no status file: keep the compiler's text */ }
+    if (reason && reason !== 'None') return `Ancient Pathways rejected shot ${failedShot[1]}: ${reason.slice(0, 300)}`;
+  }
+  const lines = output.split('\n').map(l => l.trim()).filter(Boolean);
+  const raised = [...lines].reverse().find(l => /^[A-Za-z_.]*(Error|Exception)\b.*:/.test(l));
+  const excerpt = raised || lines.slice(-4).join(' ');
+  return `Showrunner exited with code ${code}: ${excerpt.slice(0, 300) || 'Check logs'}`;
+}
+
 export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerResult> {
   return new Promise((resolve) => {
     const dir = options.dir || resolveAncientPathwaysDir();
@@ -824,11 +850,9 @@ export function runShowrunner(options: ShowrunnerOptions): Promise<ShowrunnerRes
       }
 
       if (code !== 0) {
-        const errExcerpt = stderr.trim().split('\n').slice(-4).join(' ') ||
-          stdout.trim().split('\n').slice(-4).join(' ');
         resolve({
           ok: false,
-          error: `Showrunner exited with code ${code}: ${errExcerpt || 'Check logs'}`,
+          error: explainShowrunnerFailure(dir, options.name, code, stdout, stderr),
           log: `${stdout}\n${stderr}`,
         });
         return;
