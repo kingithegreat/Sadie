@@ -86,6 +86,21 @@ cd widget && npx tsc --noEmit && npm run lint && npx jest --config=jest.config.t
 cd .. && npx jest && npm run docs:check
 ```
 
+### Widget tests that do real I/O need an explicit timeout
+
+A widget unit test that runs a **real handler against a loopback HTTP server** (e.g. the
+ComfyUI server in `storyboard-frame-provider.test.ts`, which renders frames through a real
+socket and reads files) can legitimately take multiple seconds. The Jest default is
+**5000 ms**, which such tests brush right up against — that test measured ~4.6s locally and
+flaked as a timeout under CI load, taking the whole `widget` job red on several PRs at once
+(because they all ran the same suite). The fix was `jest.setTimeout(15_000)` in that file.
+
+Rule: **any test that does real loopback HTTP generation or real subprocess/file work gets an
+explicit `jest.setTimeout(...)` above the 5s default** (15s is fine), not the default. A
+timeout on such a test is a CI-load symptom, not a product bug, and it will appear as a bare
+"exceeded 5000 ms" with no failing assertion. Before believing a `widget` job is red for a
+real reason, check whether it is one such timeout.
+
 ### `npm ci` needs both packages, then native rebuilds
 
 `widget/src/main/tools/crm.ts` imports `../../../../src/crm/store` — a **root-package** file — and
