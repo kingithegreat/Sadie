@@ -22,8 +22,9 @@ import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
-import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
+import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, resolveStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
+import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
@@ -85,7 +86,7 @@ interface MediaJobEvent { at: string; from: string; to: string; by: string; note
 
 /** Only editable source fields: operational export metadata cannot dirty a draft. */
 function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: Array<{ sceneId: string; shots: any[] }> }): string {
-  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, outputSpec: board.project.outputSpec,
+  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, captionStyle: board.project.captionStyle ?? null, outputSpec: board.project.outputSpec,
     scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
       shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
@@ -99,6 +100,7 @@ interface MediaJob {
   title: string;
   format: 'short' | 'long';
   burnSubtitles?: boolean;
+  captionStyle?: unknown;
   outputSpec?: StudioOutputSpec;
   externalRenderer?: string;
   state: MediaJobState;
@@ -222,6 +224,32 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [colorGradeLut, setColorGradeLut] = useState<'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne'>('rec709');
   const [bgmDuckingLevel, setBgmDuckingLevel] = useState<number>(-18);
   const [voiceGain, setVoiceGain] = useState<number>(100);
+  const [bgmEnabled, setBgmEnabled] = useState<boolean>(false);
+  const [bgmFolder, setBgmFolder] = useState<string>('');
+  const [bgmTracks, setBgmTracks] = useState<Array<{ path: string; name: string }>>([]);
+  const [foleyPreset, setFoleyPreset] = useState<'desert' | 'temple' | 'nile' | 'study' | 'none'>('desert');
+  const [musicLoaded, setMusicLoaded] = useState<boolean>(false);
+  const [deliveringFinished, setDeliveringFinished] = useState<boolean>(false);
+
+  const loadMusicConfig = useCallback(async (folderOverride?: string) => {
+    try {
+      const res = await (window as any).electron?.mediaListMusicTracks?.(folderOverride);
+      if (res?.ok) {
+        setBgmEnabled(!!res.enabled);
+        setBgmFolder(res.folder || '');
+        setBgmTracks(res.tracks || []);
+        setMusicLoaded(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    if (inspectorTab === 'audio' && !musicLoaded) {
+      loadMusicConfig();
+    }
+  }, [inspectorTab, musicLoaded, loadMusicConfig]);
 
   // Blender Viewport & Camera Stage State
   const [stageAspectRatio, setStageAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
@@ -331,6 +359,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     sceneCount: number;
     emoji?: string;
     summary?: string;
+    deliverablePath?: string | null;
   }> | null>(null);
   const [apStatus, setApStatus] = useState<{
     available: boolean;
@@ -434,6 +463,15 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  // Output formats framed "fit" export every shot as a still (camera movement needs crop).
+  const storyboardStillFormats: string[] = (() => {
+    try {
+      return resolveStudioOutputSpec(activeStoryboard?.project?.outputSpec, 'short', '16:9').variants
+        .filter(variant => variant.framing.mode === 'fit').map(variant => variant.id);
+    } catch {
+      return [];
+    }
+  })();
   // A saved choice that is no longer offered (e.g. retired Imagen) reads as not chosen yet.
   const frameChoice: StoryboardFrameProviderId | undefined = isStoryboardFrameProviderId(activeStoryboard?.project?.frameProvider)
     ? activeStoryboard?.project?.frameProvider : undefined;
@@ -1147,6 +1185,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           sceneId: scene.sceneId,
           shots: scene.shots,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+          ...(activeStoryboard.project.captionStyle !== undefined ? { captionStyle: activeStoryboard.project.captionStyle } : {}),
           ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
@@ -1304,6 +1343,55 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       const filtered = scene.shots.filter(s => s.shotId !== shotId).map((s, idx) => ({ ...s, order: idx + 1 }));
       return { ...prev, scenes: prev.scenes.map(sc => sc.sceneId === scene.sceneId ? { ...sc, shots: filtered } : sc) };
     });
+  };
+
+  const handleDuplicateShot = (shotId: string) => {
+    if (!activeStoryboard) return;
+    setActiveStoryboard(prev => {
+      if (!prev) return null;
+      const scene = prev.scenes.find(sc => sc.sceneId === activeStoryboardScene?.sceneId);
+      if (!scene) return prev;
+      const original = scene.shots.find(s => s.shotId === shotId);
+      if (!original) return prev;
+      const count = scene.shots.length + 1;
+      let nextId = count;
+      while (scene.shots.some(shot => shot.shotId === `shot_${String(nextId).padStart(3, '0')}`)) nextId++;
+      const newShotId = `shot_${String(nextId).padStart(3, '0')}`;
+      const duplicatedShot = {
+        ...original,
+        shotId: newShotId,
+        order: original.order + 1,
+        status: original.frameImagePath ? 'IMAGE_GENERATED' : 'PLANNED',
+      };
+      const shots = [...scene.shots];
+      const origIdx = shots.findIndex(s => s.shotId === shotId);
+      shots.splice(origIdx + 1, 0, duplicatedShot);
+      const reordered = shots.map((s, idx) => ({ ...s, order: idx + 1 }));
+      return { ...prev, scenes: prev.scenes.map(sc => sc.sceneId === scene.sceneId ? { ...sc, shots: reordered } : sc) };
+    });
+  };
+
+  const handlePickShotImage = async (shotId: string, filePath: string) => {
+    if (!selectedStoryboardId || !activeStoryboardScene || !filePath) return;
+    try {
+      setStoryboardMessage('Importing shot image...');
+      const res = await api()?.mediaStoryboardSetShotImage?.({
+        projectId: selectedStoryboardId,
+        sceneId: activeStoryboardScene.sceneId,
+        shotId,
+        imagePath: filePath,
+      });
+      if (res?.ok) {
+        const destPath = (res.result as any)?.frameImagePath || filePath;
+        handleUpdateShot(shotId, { frameImagePath: destPath, status: 'IMAGE_GENERATED' });
+        setFrameVersions(prev => ({ ...prev, [destPath]: Date.now() }));
+        setStoryboardMessage(`Image for ${shotId} imported successfully.`);
+      } else {
+        setStoryboardError(res?.error || 'Failed to import shot image.');
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || 'Failed to import shot image.');
+    }
   };
 
   const handleMoveShot = (index: number, direction: 'up' | 'down') => {
@@ -1598,6 +1686,7 @@ ${shots.map((s, idx) => `
         ...(variantId ? { variantId } : {}),
         ...(sceneId ? { sceneId } : {}),
         burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+        ...(colorGradeLut && colorGradeLut !== 'rec709' ? { colorGrade: colorGradeLut } : {}),
         ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         ...(storyboardVoice ? { narrationEngine: storyboardVoice } : {}),
       });
@@ -2037,6 +2126,11 @@ ${shots.map((s, idx) => `
           />{' '}Burn captions into video
           {j.reviewSource ? ' — settings belong to this saved movie' : !canEditMediaOutput(j.state) && ' — send back for revision to change'}
         </label>}
+        {!hasExternalMediaRenderer(j) && j.burnSubtitles !== false && (
+          <CaptionStyleSettings label={j.title} value={j.captionStyle}
+            disabled={busy === j.id || !!j.reviewSource || !canEditMediaOutput(j.state)}
+            onChange={captionStyle => void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { captionStyle }), 'Saving caption style')} />
+        )}
 
         {j.reviewSource && <button type="button" className="ms-btn" onClick={() => {
           if (j.reviewSource!.type === 'job') {
@@ -2678,6 +2772,60 @@ ${shots.map((s, idx) => `
       }
     };
 
+    const handleRenderFromCuts = async () => {
+      setError(null);
+      if (!job?.renderPath) {
+        setError('No rendered video to cut. Render master video first.');
+        return;
+      }
+      if (clipCuts.length === 0) {
+        setError('No cut points placed on the timeline. Use the ✂️ Cut tool first.');
+        return;
+      }
+      setBusy('render-cuts');
+      setBusyLabel('Splicing cuts into master video...');
+      try {
+        const sortedCuts = [...new Set([0, ...clipCuts, duration])].sort((a, b) => a - b);
+        const clips: string[] = [];
+        for (let i = 0; i < sortedCuts.length - 1; i++) {
+          const start = sortedCuts[i];
+          const segDur = sortedCuts[i + 1] - start;
+          if (segDur > 0.3) {
+            const trimRes = await api()?.mediaTrimClip?.({
+              videoPath: job.renderPath,
+              startSec: start,
+              durationSec: segDur,
+            });
+            if (trimRes?.ok && (trimRes.result as any)?.path) {
+              clips.push((trimRes.result as any).path);
+            }
+          }
+        }
+        if (clips.length < 2) {
+          setError('Need at least 2 valid segments to splice.');
+          return;
+        }
+        const outName = `${job.id}-cut-master-${Date.now()}.mp4`;
+        const outDir = job.renderPath.replace(/[\\/][^\\/]+$/, '');
+        const outPath = `${outDir}/${outName}`;
+        const spliceRes = await api()?.mediaSpliceVideo?.({
+          clips,
+          outputPath: outPath,
+        });
+        if (spliceRes?.ok) {
+          setDone(`Cut master rendered successfully: ${outName}`);
+          refresh();
+        } else {
+          setError(spliceRes?.error || 'Splicing cuts failed.');
+        }
+      } catch (e: any) {
+        setError(e?.message || 'Failed to render from cuts.');
+      } finally {
+        setBusy(null);
+        setBusyLabel('');
+      }
+    };
+
     const renderTrackControls = (trackId: string, isAudio: boolean, canMute = true) => (
       <div className="ms-track-controls" aria-label={`Track ${trackId} controls`}>
         <button
@@ -3074,24 +3222,102 @@ ${shots.map((s, idx) => `
                     ? 'Playing narration audio. Export to mix with BGM and sound effects.'
                     : 'No separate audio file. Generate narration to hear audio.'}
                 </p>
-                <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">BGM Ducking:</span>
-                  <input
-                    type="range"
-                    min="-30"
-                    max="-6"
-                    value={bgmDuckingLevel}
-                    onChange={e => setBgmDuckingLevel(Number(e.target.value))}
-                    className="ms-nle-slider"
-                  />
-                  <span className="ms-nle-field-val">{bgmDuckingLevel}dB</span>
+
+                {/* BGM Bed Controls */}
+                <div style={{ marginTop: 10, padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={bgmEnabled}
+                        onChange={async e => {
+                          const next = e.target.checked;
+                          setBgmEnabled(next);
+                          await api()?.mediaSaveMusicConfig?.({ enabled: next });
+                        }}
+                      />
+                      🎵 Background Music (BGM)
+                    </label>
+                    <span style={{ fontSize: '0.72rem', color: bgmEnabled ? '#10b981' : 'var(--text-muted)' }}>
+                      {bgmEnabled ? `${bgmTracks.length} tracks ready` : 'Disabled'}
+                    </span>
+                  </div>
+
+                  {bgmEnabled && (
+                    <div style={{ marginTop: 6 }}>
+                      <div className="ms-nle-field-row" style={{ marginBottom: 6 }}>
+                        <span className="ms-nle-field-label">Folder:</span>
+                        <input
+                          type="text"
+                          className="ms-input"
+                          style={{ flex: 1, fontSize: '0.72rem', padding: '2px 6px' }}
+                          placeholder="Path to music folder (e.g. C:\Music)"
+                          value={bgmFolder}
+                          onChange={e => setBgmFolder(e.target.value)}
+                          onBlur={async () => {
+                            await api()?.mediaSaveMusicConfig?.({ folder: bgmFolder });
+                            loadMusicConfig(bgmFolder);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="ms-btn"
+                          style={{ padding: '2px 8px', fontSize: '0.72rem' }}
+                          onClick={() => loadMusicConfig(bgmFolder)}
+                        >
+                          ↻ Scan
+                        </button>
+                      </div>
+                      {bgmTracks.length > 0 && (
+                        <div style={{ maxHeight: 60, overflowY: 'auto', fontSize: '0.68rem', color: '#94a3b8', background: 'rgba(0,0,0,0.2)', padding: 4, borderRadius: 4 }}>
+                          {bgmTracks.slice(0, 5).map(t => (
+                            <div key={t.path} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              ♪ {t.name}
+                            </div>
+                          ))}
+                          {bgmTracks.length > 5 && <div>…and {bgmTracks.length - 5} more</div>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="ms-nle-field-row" style={{ marginTop: 8 }}>
+                    <span className="ms-nle-field-label">BGM Ducking:</span>
+                    <input
+                      type="range"
+                      min="-30"
+                      max="-6"
+                      value={bgmDuckingLevel}
+                      onChange={e => setBgmDuckingLevel(Number(e.target.value))}
+                      className="ms-nle-slider"
+                    />
+                    <span className="ms-nle-field-val">{bgmDuckingLevel}dB</span>
+                  </div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '4px 0' }}>
+                    Auto-attenuates BGM bed volume by {Math.abs(bgmDuckingLevel)}dB whenever narration or dialogue is detected.
+                  </p>
                 </div>
-                <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '4px 0' }}>
-                  Auto-attenuates BGM bed volume by {Math.abs(bgmDuckingLevel)}dB whenever narration or dialogue is detected.
-                </p>
-                <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">Foley Ambience:</span>
-                  <span className="ms-nle-field-val" style={{ color: '#00e5ff' }}>Desert Wind + Papyrus + Steps</span>
+
+                {/* Foley Ambience Controls */}
+                <div style={{ marginTop: 8, padding: 8, background: 'rgba(255,255,255,0.03)', borderRadius: 6, border: '1px solid rgba(255,255,255,0.07)' }}>
+                  <div className="ms-nle-field-row">
+                    <span className="ms-nle-field-label">Foley Ambience:</span>
+                    <select
+                      className="ms-select"
+                      style={{ flex: 1, fontSize: '0.75rem' }}
+                      value={foleyPreset}
+                      onChange={e => setFoleyPreset(e.target.value as any)}
+                    >
+                      <option value="desert">Desert Wind + Papyrus + Steps</option>
+                      <option value="temple">Temple Echo + Torch Crackle</option>
+                      <option value="nile">River Nile Water + Birds</option>
+                      <option value="study">Quiet Library / Study Room</option>
+                      <option value="none">None / Narration Only</option>
+                    </select>
+                  </div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', margin: '4px 0' }}>
+                    Atmospheric soundscape layered beneath dialogue for broadcast immersion.
+                  </p>
                 </div>
               </div>
             )}
@@ -3111,6 +3337,16 @@ ${shots.map((s, idx) => `
                 >
                   ⚡ Export Selection ({inPoint !== null && outPoint !== null ? `${Math.abs(outPoint - inPoint).toFixed(1)}s` : 'Full Range'})
                 </button>
+                {clipCuts.length > 0 && (
+                  <button
+                    type="button"
+                    className="ms-btn ms-btn--primary"
+                    style={{ width: '100%', marginBottom: 6, background: '#8b5cf6' }}
+                    onClick={handleRenderFromCuts}
+                  >
+                    🎬 Render Master from Cuts ({clipCuts.length} split{clipCuts.length === 1 ? '' : 's'})
+                  </button>
+                )}
                 {job && (
                   <div className="ms-inspector-actions">
                     {stageAction(job) && (
@@ -3147,6 +3383,41 @@ ${shots.map((s, idx) => `
                       >
                         ▶ Upload to YouTube…
                       </button>
+                    )}
+                    {job.renderPath && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                        <button
+                          type="button"
+                          className="ms-btn"
+                          disabled={deliveringFinished}
+                          style={{ flex: 1, background: '#059669', color: '#fff' }}
+                          onClick={async () => {
+                            setDeliveringFinished(true);
+                            try {
+                              const res = await api()?.mediaDeliverToFinished?.({ jobId: job.id });
+                              if (res?.ok) {
+                                setDone(`Delivered to: ${res.targetPath || 'Ancient Pathways - FINISHED'}`);
+                              } else {
+                                setError(res?.error || 'Delivery failed.');
+                              }
+                            } catch (e: any) {
+                              setError(e?.message || 'Delivery failed.');
+                            } finally {
+                              setDeliveringFinished(false);
+                            }
+                          }}
+                        >
+                          {deliveringFinished ? 'Delivering…' : '🚀 Deliver to FINISHED'}
+                        </button>
+                        <button
+                          type="button"
+                          className="ms-btn"
+                          onClick={() => api()?.showInFolder?.(job.renderPath!)}
+                          title={job.renderPath}
+                        >
+                          📂 Show in Explorer
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -4023,13 +4294,47 @@ ${shots.map((s, idx) => `
                   >
                     {apDoctorChecks[ep.id]?.loading ? 'Checking…' : 'Run Quality Check'}
                   </button>
-                  <button
-                    className="ms-btn ms-btn--primary ms-ap-card-btn"
-                    disabled={busy !== null || !!apStatus?.lock?.locked}
-                    onClick={() => produceAncientPathwaysEpisode(ep.id)}
-                  >
-                    Produce Episode
-                  </button>
+                  {ep.deliverablePath && (
+                    <button
+                      type="button"
+                      className="ms-btn"
+                      style={{ marginTop: 4, background: '#059669', color: '#fff', fontSize: '0.78rem' }}
+                      onClick={() => api()?.showInFolder?.(ep.deliverablePath!)}
+                      title={ep.deliverablePath}
+                    >
+                      📂 Open Finished Video
+                    </button>
+                  )}
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      className="ms-btn ms-btn--primary ms-ap-card-btn"
+                      style={{ flex: 1 }}
+                      disabled={busy !== null || !!apStatus?.lock?.locked}
+                      onClick={() => produceAncientPathwaysEpisode(ep.id)}
+                    >
+                      Produce Episode
+                    </button>
+                    <button
+                      type="button"
+                      className="ms-btn"
+                      style={{ fontSize: '0.75rem', padding: '4px 8px' }}
+                      title="Deliver this episode to Desktop/Ancient Pathways - FINISHED"
+                      disabled={busy !== null}
+                      onClick={async () => {
+                        setDone(`Delivering ${ep.title} to Ancient Pathways - FINISHED...`);
+                        const res = await api()?.mediaDeliverToFinished?.({ episodeId: ep.id });
+                        if (res?.ok) {
+                          setDone(`Delivered ${ep.title} to: ${res.targetDir || 'FINISHED'}`);
+                          loadAncientPathways();
+                        } else {
+                          setError(res?.error || 'Delivery failed.');
+                        }
+                      }}
+                    >
+                      🚀 Deliver
+                    </button>
+                  </div>
                 </li>
               ))}
               {filteredEpisodes.length === 0 && (
@@ -4442,6 +4747,10 @@ ${shots.map((s, idx) => `
               }}
             />{' '}Burn captions into video — saved with Save Board or Render Movie
           </label>
+          {activeStoryboard.project.burnSubtitles !== false && (
+            <CaptionStyleSettings label="Storyboard" value={activeStoryboard.project.captionStyle} disabled={storyboardBusy}
+              onChange={captionStyle => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, captionStyle } } : prev)} />
+          )}
           <fieldset className="ms-output-settings ms-frame-provider" aria-label="Frame images" disabled={storyboardBusy}>
             <legend>Frame images</legend>
             <select
@@ -4877,6 +5186,15 @@ ${shots.map((s, idx) => `
                         </button>
                         <button
                           type="button"
+                          className="ms-shot-icon-btn"
+                          title="Duplicate Shot"
+                          aria-label={`Duplicate ${shot.shotId}`}
+                          onClick={() => handleDuplicateShot(shot.shotId)}
+                        >
+                          📋
+                        </button>
+                        <button
+                          type="button"
                           className="ms-shot-icon-btn ms-shot-icon-btn--del"
                           title="Delete Shot"
                           aria-label={`Delete ${shot.shotId}`}
@@ -4900,7 +5218,7 @@ ${shots.map((s, idx) => `
                             alt={shot.shotId}
                             className={`ms-shot-thumb-img${shot.frameStale ? ' ms-shot-thumb-img--stale' : ''}`}
                           />
-                          <div className="ms-shot-thumb-overlay">
+                          <div className="ms-shot-thumb-overlay" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
                             <button
                               type="button"
                               className="ms-btn ms-btn--primary"
@@ -4910,6 +5228,20 @@ ${shots.map((s, idx) => `
                             >
                               {isGenerating ? 'Rendering…' : '↻ Regenerate Frame'}
                             </button>
+                            <label className="ms-btn" style={{ cursor: 'pointer', margin: 0, padding: '4px 8px', fontSize: '0.76rem' }}>
+                              📁 Pick Image
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={e => {
+                                  const file = e.target.files?.[0];
+                                  if (file && (file as any).path) {
+                                    handlePickShotImage(shot.shotId, (file as any).path);
+                                  }
+                                }}
+                              />
+                            </label>
                           </div>
                         </>
                       ) : (
@@ -4922,16 +5254,32 @@ ${shots.map((s, idx) => `
                             <>
                               <span style={{ fontSize: '1.8rem' }}>🖼️</span>
                               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>No frame rendered yet</span>
-                              <button
-                                type="button"
-                                className="ms-btn ms-btn--primary"
-                                style={{ fontSize: '0.76rem', padding: '4px 10px' }}
-                                disabled={!frameReady}
-                                title={frameReady && frameStatus ? `Make this frame with ${frameStatus.label}` : 'Choose how to make frame images first'}
-                                onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
-                              >
-                                ⚡ Generate Frame
-                              </button>
+                              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                                <button
+                                  type="button"
+                                  className="ms-btn ms-btn--primary"
+                                  style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                                  disabled={!frameReady}
+                                  title={frameReady && frameStatus ? `Make this frame with ${frameStatus.label}` : 'Choose how to make frame images first'}
+                                  onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
+                                >
+                                  ⚡ Generate Frame
+                                </button>
+                                <label className="ms-btn" style={{ cursor: 'pointer', margin: 0, padding: '4px 8px', fontSize: '0.76rem' }}>
+                                  📁 Pick Image
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    style={{ display: 'none' }}
+                                    onChange={e => {
+                                      const file = e.target.files?.[0];
+                                      if (file && (file as any).path) {
+                                        handlePickShotImage(shot.shotId, (file as any).path);
+                                      }
+                                    }}
+                                  />
+                                </label>
+                              </div>
                             </>
                           )}
                         </div>
@@ -4982,6 +5330,12 @@ ${shots.map((s, idx) => `
                             </button>
                           ))}
                         </div>
+                        {storyboardStillFormats.length > 0 && !!shot.movement && shot.movement !== 'static' && (
+                          <p className="ms-shot-motion-note" role="note" aria-label={`Camera movement note for ${shot.shotId}`}>
+                            This movement will not show in the {storyboardStillFormats.join(' and ')} video: that format uses Fit framing,
+                            which keeps the whole image still. Choose “Crop to fill” in Output format to see it.
+                          </p>
+                        )}
                       </div>
 
                       {/* Action Prompt */}

@@ -313,6 +313,30 @@ describe('media_render output trust', () => {
     expect(readJobs()[0]).toMatchObject({ renderPath: good.renderPath, latestExportAttempt: { status: 'failed', error: expect.stringContaining('no narration') } });
   });
 
+  it('a saved caption style reaches the encoder, and an unsupported one is refused before saving', async () => {
+    const job = writeReadyJob('Styled captions');
+    job.burnSubtitles = true;
+    job.outputSpec = createStudioOutputSpec('9:16');
+    writeJobs([job]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+
+    const refused = await call('media_set_output', { job: job.id, captionStyle: { font: 'Wingdings' } });
+    expect(refused.success).toBe(false);
+    expect(refused.error).toMatch(/caption font/);
+    expect(readJobs()[0].captionStyle).toBeUndefined();
+
+    expect((await call('media_set_output', { job: job.id, captionStyle: { position: 'top', font: 'Impact', color: '#ffd400' } })).success).toBe(true);
+    expect(readJobs()[0].captionStyle).toEqual({ size: 'medium', position: 'top', font: 'Impact', color: '#ffd400', background: 'outline' });
+
+    (renderVideo as jest.Mock).mockClear();
+    expect((await call('media_render', { job: job.id, image: scenePath })).success).toBe(true);
+    const options = (renderVideo as jest.Mock).mock.calls[0][0];
+    expect(options.captionsPath).toBeTruthy();
+    expect(options.subtitleStyle).toContain('FontName=Impact');
+    expect(options.subtitleStyle).toContain('Alignment=6');
+    expect(options.subtitleStyle).toContain('PrimaryColour=&H0000D4FF');
+  });
+
   it('recovers a saved interrupted attempt once without starting another render', () => {
     const job = writeReadyJob('Restart recovery');
     writeJobs([{ ...job, renderPath: 'existing-good.mp4', latestExportAttempt: {

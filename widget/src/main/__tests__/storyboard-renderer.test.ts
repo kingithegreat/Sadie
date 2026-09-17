@@ -199,6 +199,29 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     expect(res.error).toContain('No rendered keyframes found');
   });
 
+  test('a new storyboard left on its defaults exports its camera moves (crop), while a saved fit project stays still', async () => {
+    const zoompanCalls = () => (execFile as unknown as jest.Mock).mock.calls.filter(([, args]) => args.some((arg: string) => arg.includes('zoompan='))).length;
+    const shots = [{ prompt: 'Harbour at dawn', durationSec: 3, narration: 'Dawn.', movement: 'slow push in' }];
+
+    // No outputSpec: the default a user gets from the New Storyboard button.
+    const created: any = await mediaCreateStoryboardHandler({ projectId: 'default-motion', title: 'Default Motion', shots }, {} as any);
+    expect(created.success).toBe(true);
+    const saved = JSON.parse(fs.readFileSync(path.join(created.result.projectDir, 'project.json'), 'utf8'));
+    expect(saved.outputSpec).toEqual(createStudioOutputSpec('16:9', 'short', '1080p', 'crop'));
+    dropFakeFrame(created.result.projectDir, 'scene_01', 'shot_001');
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'default-motion', motion: true })).ok).toBe(true);
+    expect(zoompanCalls()).toBe(1);
+
+    // Control: the same shot in a project the owner saved as fit keeps the whole image still.
+    const fit: any = await mediaCreateStoryboardHandler({ projectId: 'fit-still', title: 'Fit Still', shots,
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'fit') }, {} as any);
+    dropFakeFrame(fit.result.projectDir, 'scene_01', 'shot_001');
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'fit-still', motion: true })).ok).toBe(true);
+    expect(zoompanCalls()).toBe(0);
+  });
+
   test('renders full 1080p movie with Ken Burns motion, voiceover, and burned subtitles', async () => {
     const created: any = await mediaCreateStoryboardHandler({
       projectId: 'full-movie-proj',
@@ -252,6 +275,36 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     const res = await renderStoryboardMovie({ projectId: 'fresh-auto-directed' });
     expect(res.ok).toBe(true);
     expect(res.totalShots).toBe(2);
+  });
+
+  test('a caption style saved through the Storyboard Deck reaches the burned captions; an invalid one is refused', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'caption-style', title: 'Caption Style', burnSubtitles: true,
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop'),
+      shots: [{ prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }],
+    }, {} as any);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+    const shots = [{ shotId: 'shot_001', prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }];
+
+    const refused: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots, captionStyle: { color: 'red' } }, {} as any);
+    expect(refused.success).toBe(false);
+    expect(refused.error).toMatch(/colour like #ffffff/);
+
+    const saved: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots,
+      captionStyle: { position: 'middle', background: 'box', size: 'small' } }, {} as any);
+    expect(saved.success).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).captionStyle)
+      .toEqual({ size: 'small', position: 'middle', font: 'Arial', color: '#ffffff', background: 'box' });
+
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'caption-style', burnSubtitles: true })).ok).toBe(true);
+    const captionArgs = (execFile as unknown as jest.Mock).mock.calls.flatMap(([, args]) => args).filter((arg: string) => arg.includes('subtitles='));
+    expect(captionArgs.length).toBeGreaterThan(0);
+    for (const arg of captionArgs) {
+      expect(arg).toContain('Alignment=10');
+      expect(arg).toContain('BorderStyle=3');
+    }
   });
 
   test('an edit made and saved through the Storyboard Deck reaches the export — the exact bug this fixes', async () => {
