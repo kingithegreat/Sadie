@@ -11,6 +11,7 @@
  * of a scene's shots to keep correct.
  */
 
+import { sanitizeTextCard, type TextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ShotStatus } from './types';
@@ -28,6 +29,8 @@ export interface AssembledShot {
   frameImagePath: string | null;
   /** True when a frame exists but was generated from a prompt that has since changed. */
   frameStale: boolean;
+  /** Optional title card burned over this shot (MS-5). */
+  textCard?: TextCard | null;
 }
 
 export interface AssembledScene {
@@ -118,6 +121,7 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,
       frameStale,
+      textCard: sanitizeTextCard(promptData.textCard),
     };
   });
 

@@ -22,6 +22,7 @@ import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor
 import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
+import { buildTextCardAss, entriesFromShots } from './text-cards';
 import type { NarrationEngine } from '../../shared/narration';
 import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
   storyboardNarrationEngine, storyboardFileDigest, updateStoryboardExportMeta } from './storyboard-export-state';
@@ -414,6 +415,15 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(outputFilename)) throw new Error('The export needs an MP4 filename inside this project.');
     if (fs.existsSync(finalMoviePath)) throw new Error('Choose a new export filename. Existing exports are preserved.');
     tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-render-'));
+
+    // Title cards are measured against THIS variant's frame, so the same board
+    // fits both 16:9 and 9:16 (movie/text-cards.ts).
+    let textCardsPath: string | null = null;
+    const cardAss = await buildTextCardAss(entriesFromShots(shots), { width, height });
+    if (cardAss) {
+      textCardsPath = path.join(tempDir, 'text-cards.ass');
+      fs.writeFileSync(textCardsPath, cardAss, 'utf-8');
+    }
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
     attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
     attempt.status = 'rendering';
@@ -462,13 +472,13 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         '-i', combinedAudioPath,
       ];
 
+      const muxFilters: string[] = [];
       if (srtPath && fs.existsSync(srtPath)) {
-        const escapedSrt = escapeFilterPath(srtPath);
-        muxArgs.push(
-          '-vf',
-          `subtitles='${escapedSrt}':force_style='${subtitleStyle}'`
-        );
+        muxFilters.push(`subtitles='${escapeFilterPath(srtPath)}':force_style='${subtitleStyle}'`);
       }
+      // After the captions, so a card sits over them rather than under.
+      if (textCardsPath) muxFilters.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
+      if (muxFilters.length) muxArgs.push('-vf', muxFilters.join(','));
 
       muxArgs.push(
         '-c:v', 'libx264',
@@ -504,6 +514,7 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         const escapedSrt = escapeFilterPath(srtPath);
         filters.push(`subtitles='${escapedSrt}':force_style='${subtitleStyle}'`);
       }
+      if (textCardsPath) filters.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
       const lutFilter = buildColorGradeFilter(opts.colorGrade);
       if (lutFilter) filters.push(lutFilter);
       filters.push('format=yuv420p');
