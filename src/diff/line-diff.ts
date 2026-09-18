@@ -160,12 +160,54 @@ export interface Hunk {
  */
 export function toHunks(diff: FileDiff, context = 3): Hunk[] {
   const { lines } = diff;
-  const changed = lines
-    .map((l, idx) => (l.type === 'equal' ? -1 : idx))
-    .filter(idx => idx >= 0);
-  if (changed.length === 0) return [];
+  // The same grouping applyHunks uses, so hunk N there is hunk N here.
+  const ranges = hunkRanges(lines, context);
+  if (ranges.length === 0) return [];
 
-  // Merge change indices whose context windows touch or overlap.
+  return ranges.map(([lo, hi]) => {
+    const slice = lines.slice(lo, hi + 1);
+    const firstBefore = slice.find(l => l.before !== null)?.before ?? 1;
+    const firstAfter = slice.find(l => l.after !== null)?.after ?? 1;
+    return { beforeStart: firstBefore, afterStart: firstAfter, lines: slice };
+  });
+}
+
+/**
+ * The result of accepting SOME of a proposed change (IDE-3).
+ *
+ * Reviewing per hunk is only trustworthy if the two promises hold exactly:
+ * a rejected hunk leaves those lines byte-identical to the file on disk, and
+ * an accepted hunk writes exactly the lines the reviewer was shown. So the
+ * text is rebuilt from the same diff the panel rendered — never by re-running
+ * a patch against a file that may have moved on.
+ *
+ * `hunkIndexes` are positions in `toHunks(diff, context)`, and `context` must
+ * be the value the reviewer's hunks were built with, or the grouping (and so
+ * the numbering) differs.
+ */
+export function applyHunks(diff: FileDiff, hunkIndexes: Iterable<number>, context = 3): string {
+  const accepted = new Set(hunkIndexes);
+  const ranges = hunkRanges(diff.lines, context);
+  const acceptedLines = new Set<number>();
+  ranges.forEach(([lo, hi], index) => {
+    if (!accepted.has(index)) return;
+    for (let i = lo; i <= hi; i++) acceptedLines.add(i);
+  });
+
+  const out: string[] = [];
+  diff.lines.forEach((line, index) => {
+    if (line.type === 'equal') { out.push(line.text); return; }
+    const inAcceptedHunk = acceptedLines.has(index);
+    // An addition only lands if its hunk was accepted; a removal only
+    // disappears if its hunk was accepted, and otherwise stays exactly as it is.
+    if (line.type === 'add' ? inAcceptedHunk : !inAcceptedHunk) out.push(line.text);
+  });
+  return out.length ? `${out.join('\n')}\n` : '';
+}
+
+/** The line ranges toHunks groups into hunks, in the same order. */
+function hunkRanges(lines: DiffLine[], context: number): Array<[number, number]> {
+  const changed = lines.map((l, idx) => (l.type === 'equal' ? -1 : idx)).filter(idx => idx >= 0);
   const ranges: Array<[number, number]> = [];
   for (const idx of changed) {
     const lo = Math.max(0, idx - context);
@@ -174,11 +216,5 @@ export function toHunks(diff: FileDiff, context = 3): Hunk[] {
     if (last && lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
     else ranges.push([lo, hi]);
   }
-
-  return ranges.map(([lo, hi]) => {
-    const slice = lines.slice(lo, hi + 1);
-    const firstBefore = slice.find(l => l.before !== null)?.before ?? 1;
-    const firstAfter = slice.find(l => l.after !== null)?.after ?? 1;
-    return { beforeStart: firstBefore, afterStart: firstAfter, lines: slice };
-  });
+  return ranges;
 }
