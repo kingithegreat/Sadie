@@ -7,6 +7,7 @@ import {
   formatSrtTimestamp,
   buildSrtFromShots,
   buildKenBurnsFilter,
+  MOTION_SUPERSAMPLE,
   getStoryboardProjectDir,
   renderStoryboardMovie,
   ShotManifest,
@@ -141,30 +142,34 @@ describe('One-Click 1080p Storyboard Renderer', () => {
   });
 
   test('constructs dynamic Ken Burns motion filters for all camera movements', () => {
-    // Slow Push In
+    // MS-8: each move is computed on a supersampled frame, and its position
+    // comes from the frame number rather than the previous position, so
+    // zoompan's whole-pixel truncation cannot make the motion uneven.
     const pushIn = buildKenBurnsFilter('slow push in', 5, 30);
-    expect(pushIn).toContain('zoompan=z=');
+    expect(pushIn).toContain(`scale=iw*${MOTION_SUPERSAMPLE}:ih*${MOTION_SUPERSAMPLE}:flags=bicubic`);
+    expect(pushIn).toContain("z='min(1+0.0015*on,1.25)'");
     expect(pushIn).toContain('s=1920x1080');
     expect(pushIn).toContain('d=150');
 
-    // Pan Right
+    // 1.5 output px per frame is 3 supersampled px — a whole number, which is
+    // what keeps the steps even.
     const panRight = buildKenBurnsFilter('pan right', 3, 30);
-    expect(panRight).toContain('zoompan');
-    expect(panRight).toContain('x+1.5');
+    expect(panRight).toContain(`on*${1.5 * MOTION_SUPERSAMPLE}`);
+    expect(panRight).not.toContain('x+');
 
-    // Tilt Up
     const tiltUp = buildKenBurnsFilter('tilt up', 4, 30);
-    expect(tiltUp).toContain('zoompan');
-    expect(tiltUp).toContain('y-1.5');
+    expect(tiltUp).toContain(`on*${1.5 * MOTION_SUPERSAMPLE}`);
+    expect(tiltUp).not.toContain('y-1.5');
 
-    // Tracking
+    // Tracking pans 1 px per frame: 1.2 does not land on the supersample grid.
     const tracking = buildKenBurnsFilter('tracking', 5, 30);
-    expect(tracking).toContain('zoompan');
-    expect(tracking).toContain('x+1.2');
+    expect(tracking).toContain(`on*${MOTION_SUPERSAMPLE}`);
+    expect(tracking).toContain("z='min(1+0.001*on,1.18)'");
 
-    // Static
+    // A locked shot has nothing to smooth, so it is not made bigger first.
     const staticFilter = buildKenBurnsFilter('static', 5, 30);
     expect(staticFilter).toContain('scale=1920:1080');
+    expect(staticFilter).not.toContain('iw*2');
   });
 
   test('resolves project directory correctly from environment', () => {
