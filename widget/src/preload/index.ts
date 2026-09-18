@@ -85,6 +85,9 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_GIT_COMMIT: 'homebot:workspace:git-commit',
   WORKSPACE_GIT_BRANCHES: 'homebot:workspace:git-branches',
   WORKSPACE_GIT_CHECKOUT: 'homebot:workspace:git-checkout',
+  WORKSPACE_PROPOSALS: 'homebot:workspace:proposals',
+  WORKSPACE_PROPOSAL_ACCEPT: 'homebot:workspace:proposal-accept',
+  WORKSPACE_PROPOSAL_REJECT: 'homebot:workspace:proposal-reject',
   ASSISTANT_TOOL_ACTIVITY: 'homebot:assistant-tool-activity',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
@@ -576,6 +579,9 @@ const electronAPI: ElectronAPI = {
   workspaceGitCommit: async (folder: string, message: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_COMMIT, folder, message),
   workspaceGitBranches: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_BRANCHES, folder),
   workspaceGitCheckout: async (folder: string, branch: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_CHECKOUT, folder, branch),
+  workspaceProposals: async (): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSALS),
+  workspaceProposalAccept: async (id: string, hunkIndexes: number[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_ACCEPT, id, hunkIndexes),
+  workspaceProposalReject: async (id: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_REJECT, id),
 
   /** Tool calls made by the external assistant (Claude Code) via the bridge.
    *  Returns an unsubscribe function. */
@@ -624,6 +630,10 @@ const electronAPI: ElectronAPI = {
   runDiagnostics: async () => {
     return await ipcRenderer.invoke('homebot:run-diagnostics');
   },
+  createProblemReport: async (note?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:create', note),
+  showProblemReport: async (file: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:show', file),
 
   exportSettings: async () => {
     return await ipcRenderer.invoke('homebot:export-settings');

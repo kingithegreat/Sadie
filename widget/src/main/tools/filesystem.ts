@@ -12,6 +12,7 @@ import ExcelJS from 'exceljs';
 import * as mammoth from 'mammoth';
 import PDFDocument from 'pdfkit';
 import { captureBefore, recordChange } from '../file-change-log';
+import { proposeEdit, shouldReviewEdit } from '../workspace-proposals';
 import { homeDir } from '../user-paths';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
@@ -846,6 +847,22 @@ export const writeFileHandler: ToolHandler = async (args, _context): Promise<Too
   // as a creation instead of failing the write.
   const prior = captureBefore(validation.resolved);
 
+  // IDE-3: inside the Workspace folder the write waits for a human. Appending
+  // is not a reviewable diff of a whole file, so it is left alone.
+  if (!args.append && shouldReviewEdit(validation.resolved)) {
+    const proposed = proposeEdit({ path: validation.resolved, nextContent: String(args.content ?? ''), tool: 'write_file' });
+    if (proposed.identical) {
+      return { success: true, result: { path: validation.resolved, proposed: false, message: 'No change: the file already has this content.' } };
+    }
+    return {
+      success: true,
+      result: {
+        path: validation.resolved, proposed: true, proposalId: proposed.id, hunks: proposed.hunkCount,
+        message: `Proposed ${proposed.hunkCount} change(s) to ${path.basename(validation.resolved)}. Nothing is written until they are accepted in the Workspace Changes panel.`,
+      },
+    };
+  }
+
   try {
     // Ensure parent directory exists
     await fsPromises.mkdir(path.dirname(validation.resolved), { recursive: true });
@@ -1236,6 +1253,18 @@ export const editFileHandler: ToolHandler = async (args, _context): Promise<Tool
     const updated = replaceAll
       ? content.split(oldString).join(newString)
       : content.replace(oldString, newString);
+
+    // IDE-3: the same review gate as write_file, on the text it just computed.
+    if (shouldReviewEdit(fullPath)) {
+      const proposed = proposeEdit({ path: fullPath, nextContent: updated, tool: 'edit_file' });
+      return {
+        success: true,
+        result: {
+          path: fullPath, proposed: true, proposalId: proposed.id, hunks: proposed.hunkCount,
+          message: `Proposed ${proposed.hunkCount} change(s) to ${path.basename(fullPath)}. Nothing is written until they are accepted in the Workspace Changes panel.`,
+        },
+      };
+    }
 
     await fsPromises.writeFile(fullPath, updated, 'utf-8');
 
