@@ -18,6 +18,7 @@ import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
+import { DEFAULT_TRANSITION_SEC, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC, type ShotTransition } from '../../shared/transitions';
 import { sanitizeTextCard, TEXT_CARD_POSITIONS, type TextCard, type TextCardPosition } from '../../shared/text-card';
 import {
   browserDraftStorage, canRedo as historyCanRedo, canUndo as historyCanUndo, clearDraft,
@@ -101,6 +102,7 @@ function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: 
     scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
       shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
+      transition: shot.transition ?? 'cut', transitionSec: shot.transitionSec ?? null,
       textCard: shot.textCard ?? null,
     })) })) });
 }
@@ -426,6 +428,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         frameImagePath: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
+        /** How this shot moves into the next one (MS-2). */
+        transition?: ShotTransition;
+        transitionSec?: number;
         /** Optional title card burned over this shot (MS-5). */
         textCard?: TextCard | null;
       }>;
@@ -5463,6 +5468,39 @@ ${shots.map((s, idx) => `
                         />
                       </div>
 
+                      {/* MS-2: how this shot moves into the next one. The last shot has no next. */}
+                      {idx < shots.length - 1 && (
+                        <div className="ms-shot-field">
+                          <span className="ms-shot-label">Into next shot:</span>
+                          <div className="ms-shot-card-row">
+                            <select
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.transition || 'cut'}
+                              aria-label={`Transition after ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { transition: e.target.value, ...(e.target.value === 'cut' ? { transitionSec: null } : {}) })}
+                            >
+                              <option value="cut">cut</option>
+                              <option value="crossfade">crossfade</option>
+                              <option value="fade_black">fade through black</option>
+                            </select>
+                            {shot.transition && shot.transition !== 'cut' && (
+                              <label style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                  type="number"
+                                  className="ms-input"
+                                  style={{ fontSize: '0.74rem', padding: '5px 8px', width: '72px' }}
+                                  min={MIN_TRANSITION_SEC} max={MAX_TRANSITION_SEC} step={0.1}
+                                  value={shot.transitionSec ?? DEFAULT_TRANSITION_SEC}
+                                  aria-label={`Transition seconds after ${shot.shotId}`}
+                                  onChange={e => handleUpdateShot(shot.shotId, { transitionSec: Number(e.target.value) })}
+                                />
+                                seconds
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       {/* MS-5: an optional title card burned over this shot. */}
                       <div className="ms-shot-field">
                         <span className="ms-shot-label">Title card (optional):</span>

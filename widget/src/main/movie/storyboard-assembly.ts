@@ -11,6 +11,7 @@
  * of a scene's shots to keep correct.
  */
 
+import { isShotTransition, type ShotTransition } from '../../shared/transitions';
 import { sanitizeTextCard, type TextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -29,6 +30,9 @@ export interface AssembledShot {
   frameImagePath: string | null;
   /** True when a frame exists but was generated from a prompt that has since changed. */
   frameStale: boolean;
+  /** How this shot moves into the next one (MS-2). */
+  transition?: ShotTransition;
+  transitionSec?: number;
   /** Optional title card burned over this shot (MS-5). */
   textCard?: TextCard | null;
 }
@@ -121,6 +125,9 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,
       frameStale,
+      ...(isShotTransition(promptData.transition) && promptData.transition !== 'cut'
+        ? { transition: promptData.transition, transitionSec: typeof promptData.transitionSec === 'number' ? promptData.transitionSec : undefined }
+        : {}),
       textCard: sanitizeTextCard(promptData.textCard),
     };
   });

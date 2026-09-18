@@ -6,6 +6,7 @@
  * generate frame thumbnails via free providers, and hand off between Chat and Studio.
  */
 
+import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
 import { sanitizeTextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -77,6 +78,8 @@ export interface StoryboardShotInput {
   movement?: string;
   durationSec?: number;
   narration?: string;
+  transition?: string | null;
+  transitionSec?: number | null;
   textCard?: unknown;
   characters?: string[];
   generationMethod?: 'still' | 'image_to_animation' | 'generative_video';
@@ -611,6 +614,17 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
       promptData.movement = shot.movement ?? promptData.movement ?? 'static';
       promptData.durationSec = shot.durationSec === undefined ? (promptData.durationSec ?? 5) : shot.durationSec;
+      // MS-2: how this shot moves into the next one. 'cut' is the absence of a transition.
+      if (shot.transition !== undefined) {
+        if (isShotTransition(shot.transition) && shot.transition !== 'cut') {
+          promptData.transition = shot.transition;
+          const seconds = typeof shot.transitionSec === 'number' ? shot.transitionSec : undefined;
+          if (seconds !== undefined) promptData.transitionSec = Math.min(MAX_TRANSITION_SEC, Math.max(MIN_TRANSITION_SEC, seconds));
+        } else {
+          delete promptData.transition;
+          delete promptData.transitionSec;
+        }
+      }
       // MS-5: an explicit null clears the card; leaving it out keeps what is saved.
       if (shot.textCard !== undefined) {
         const card = sanitizeTextCard(shot.textCard);

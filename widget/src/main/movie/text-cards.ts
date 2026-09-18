@@ -209,12 +209,17 @@ export async function buildTextCardAss(entries: TextCardEntry[], frame: Frame, m
 }
 
 /** Cards from shots in order, each over its own stretch of the timeline. */
-export function entriesFromShots(shots: Array<{ textCard?: TextCard | null; durationSec?: number }>): TextCardEntry[] {
+export function entriesFromShots(
+  shots: Array<{ textCard?: TextCard | null; durationSec?: number }>,
+  /** Shot windows on the finished timeline; without them shots simply follow each other. */
+  windows?: Array<{ startSec: number; endSec: number }>,
+): TextCardEntry[] {
   const entries: TextCardEntry[] = [];
   let at = 0;
-  for (const shot of shots) {
+  for (const [index, shot] of shots.entries()) {
     const duration = typeof shot.durationSec === 'number' && shot.durationSec > 0 ? shot.durationSec : 5;
-    if (shot.textCard) entries.push({ card: shot.textCard, startSec: at, endSec: at + duration });
+    const window = windows?.[index] ?? { startSec: at, endSec: at + duration };
+    if (shot.textCard) entries.push({ card: shot.textCard, startSec: window.startSec, endSec: window.endSec });
     at += duration;
   }
   return entries;
