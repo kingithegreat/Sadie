@@ -4,6 +4,7 @@ import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
 import { getSettings } from '../config-manager';
 import { assembleStoryboardScenes, type AssembledScene } from './storyboard-assembly';
+import { isCustomCaptionStyle, resolveCaptionStyle } from '../../shared/caption-style';
 import { resolveBurnSubtitles, resolveStudioOutputSpec, readStudioExportAttempt, type StudioExportAttempt, type StudioExportState,
   type StudioRenderedOutput } from '../../shared/media-output';
 
@@ -38,7 +39,14 @@ export async function storyboardSourceRevision(
         try { frame = await storyboardFileDigest(shot.frameImagePath); } catch { frame = 'unreadable'; }
       }
       shots.push({ shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens,
-        movement: shot.movement, durationSec: shot.durationSec, narration: shot.narration, frame });
+        movement: shot.movement, durationSec: shot.durationSec, narration: shot.narration, frame,
+        // Only a real transition joins identity, so boards of cuts keep their
+        // existing exports current.
+        ...(shot.transition && shot.transition !== 'cut'
+          ? { transition: shot.transition, transitionSec: shot.transitionSec ?? null } : {}),
+        // A title card changes the picture, so it changes identity — but only
+        // when there is one, so exports made before cards existed stay current.
+        ...(shot.textCard ? { textCard: shot.textCard } : {}) });
     }
     inputs.push({ sceneId: scene.sceneId, shots });
   }
@@ -47,6 +55,8 @@ export async function storyboardSourceRevision(
   return createHash('sha256').update(JSON.stringify({ schema: 'storyboard-source-1', scenes: inputs,
     outputSpec: meta.outputSpec === undefined ? 'legacy-1080p-crop' : resolveStudioOutputSpec(meta.outputSpec),
     burnSubtitles: resolveBurnSubtitles(meta.burnSubtitles), motion: options.motion !== false,
+    // Only a non-default style joins the identity, so exports made before caption styles existed stay current.
+    ...(isCustomCaptionStyle(meta.captionStyle) ? { captionStyle: resolveCaptionStyle(meta.captionStyle) } : {}),
     narrationEngine: narrated ? options.engine ?? storyboardNarrationEngine() : null,
   })).digest('hex');
 }

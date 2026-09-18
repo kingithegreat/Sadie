@@ -96,7 +96,7 @@ const shotStatus = () => JSON.parse(fs.readFileSync(path.join(root, 'harbour', '
 
 test('the picker never offers Ancient Pathways or local SD 1.5 for still frames', () => {
   // Imagen was removed when Google retired it (10 November 2025); Gemini is its paid replacement.
-  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['comfyui', 'gemini-image', 'pollinations']);
+  expect(STORYBOARD_FRAME_PROVIDERS.map(o => o.routerProviderId).sort()).toEqual(['codex-image', 'comfyui', 'gemini-image', 'pollinations']);
   expect(STORYBOARD_FRAME_PROVIDERS.filter(o => o.paid).map(o => o.id)).toEqual(['gemini']);
   expect(STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'online')?.label).toMatch(/may add a watermark/);
   const gemini = STORYBOARD_FRAME_PROVIDERS.find(o => o.id === 'gemini')!;
@@ -203,7 +203,7 @@ test('status checks say what each option needs, without generating anything', as
   expect(status.online).toMatchObject({ ready: false, needs: 'online' });
   expect(status['this-pc']).toMatchObject({ ready: true, needs: null });
   expect(status.gemini).toMatchObject({ ready: false, needs: 'online' });
-  expect(Object.keys(status).sort()).toEqual(['gemini', 'online', 'this-pc']);
+  expect(Object.keys(status).sort()).toEqual(['chatgpt-plan', 'gemini', 'online', 'this-pc']);
 
   mockSettings = { useCustomLLM: true };
   status = await check();

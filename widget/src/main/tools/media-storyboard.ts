@@ -6,6 +6,8 @@
  * generate frame thumbnails via free providers, and hand off between Chat and Studio.
  */
 
+import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
+import { sanitizeTextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -29,6 +31,7 @@ import {
 } from '../movie/types';
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
+import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-style';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 
@@ -75,6 +78,9 @@ export interface StoryboardShotInput {
   movement?: string;
   durationSec?: number;
   narration?: string;
+  transition?: string | null;
+  transitionSec?: number | null;
+  textCard?: unknown;
   characters?: string[];
   generationMethod?: 'still' | 'image_to_animation' | 'generative_video';
 }
@@ -531,6 +537,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       projectId: { type: 'string', description: 'ID of the storyboard project.' },
       sceneId: { type: 'string', description: 'Optional scene ID (defaults to scene_01).' },
       burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
+      captionStyle: { type: 'object', description: 'How burned-in captions look: {size: small|medium|large, position: bottom|middle|top, font: Arial|Segoe UI|Verdana|Georgia|Impact|Trebuchet MS, color: #rrggbb, background: outline|box}. Omitted fields keep the default (medium, bottom, Arial, #ffffff, outline).' },
       outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
       musicEnabled: { type: 'boolean', description: 'Save the background music enable choice. Omit to keep the saved choice.' },
       musicVolume: { type: 'number', description: 'Save the background music volume level (0.05 - 1.0).' },
@@ -556,6 +563,12 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
   if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
     return { success: false, error: 'Choose whether captions are on or off.' };
+  }
+  let captionStyle: CaptionStyle | undefined;
+  try {
+    captionStyle = args.captionStyle === undefined ? undefined : resolveCaptionStyle(args.captionStyle);
+  } catch (e) {
+    return { success: false, error: (e as Error).message };
   }
   const shots = args.shots;
   const shotIds = shots.map((shot: any) => shot?.shotId);
@@ -603,6 +616,22 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
       promptData.movement = shot.movement ?? promptData.movement ?? 'static';
       promptData.durationSec = shot.durationSec === undefined ? (promptData.durationSec ?? 5) : shot.durationSec;
+      // MS-2: how this shot moves into the next one. 'cut' is the absence of a transition.
+      if (shot.transition !== undefined) {
+        if (isShotTransition(shot.transition) && shot.transition !== 'cut') {
+          promptData.transition = shot.transition;
+          const seconds = typeof shot.transitionSec === 'number' ? shot.transitionSec : undefined;
+          if (seconds !== undefined) promptData.transitionSec = Math.min(MAX_TRANSITION_SEC, Math.max(MIN_TRANSITION_SEC, seconds));
+        } else {
+          delete promptData.transition;
+          delete promptData.transitionSec;
+        }
+      }
+      // MS-5: an explicit null clears the card; leaving it out keeps what is saved.
+      if (shot.textCard !== undefined) {
+        const card = sanitizeTextCard(shot.textCard);
+        if (card) promptData.textCard = card; else delete promptData.textCard;
+      }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
       if (shot.narration !== undefined) {
@@ -617,6 +646,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       fs.writeFileSync(stagedMeta, JSON.stringify({
         ...projectMeta,
         ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
+        ...(captionStyle !== undefined ? { captionStyle } : {}),
         ...(outputSpec !== undefined ? { outputSpec } : {}),
         ...(args.musicEnabled !== undefined ? { musicEnabled: args.musicEnabled } : {}),
         ...(typeof args.musicVolume === 'number' ? { musicVolume: args.musicVolume } : {}),
@@ -817,7 +847,7 @@ export const mediaBreakdownScriptDef: ToolDefinition = {
       frameProvider: {
         type: 'string',
         enum: STORYBOARD_FRAME_PROVIDERS.map(option => option.id),
-        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI) or "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard). Omit to let the owner choose in the Storyboard.',
+        description: 'How this storyboard makes frame images: "online" (free third-party service, may add a watermark), "this-pc" (local ComfyUI), "gemini" (Google, paid per image; makes nothing until the owner confirms paid use in the Storyboard) or "chatgpt-plan" (the owner\'s ChatGPT plan through the signed-in Codex CLI; no per-image charge, uses plan limits). Omit to let the owner choose in the Storyboard.',
       },
     },
     required: ['script'],

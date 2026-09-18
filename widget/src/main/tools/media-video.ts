@@ -1,3 +1,4 @@
+import { buildTimelineFinishGraph, finishChangesAnything, type TimelineFinish } from '../movie/timeline-finish';
 import { execFile } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -28,9 +29,12 @@ async function verifyVideoFile(ffmpeg: string, filePath: string): Promise<void> 
   }
 }
 
-function spawnFfmpeg(args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+function spawnFfmpeg(bin: string, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile('ffmpeg', args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 50 * 1024 * 1024 },
+    // The binary the handler resolved, not the bare name: HomeBot's managed
+    // FFmpeg is not on PATH, so 'ffmpeg' fails with ENOENT on a machine that
+    // never installed it globally. Trim and splice were both dead there.
+    execFile(bin, args, { timeout: timeoutMs, windowsHide: true, maxBuffer: 50 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
           if ((error as any).killed) {
@@ -120,7 +124,7 @@ const trimVideoHandler: ToolHandler = async (callArgs: Record<string, any>): Pro
     ];
 
     try {
-      await spawnFfmpeg(args, TRIM_TIMEOUT_MS);
+      await spawnFfmpeg(ffmpeg, args, TRIM_TIMEOUT_MS);
     } catch (e: any) {
       if (e.message?.includes('timed out')) {
         return { success: false, error: `ffmpeg timed out — try a shorter clip or check if the file is playing correctly. Error: ${e.message}` };
@@ -172,6 +176,14 @@ export const spliceVideoDef: ToolDefinition = {
         type: 'string',
         description: 'Full path for the output spliced video',
       },
+      finish: {
+        type: 'object',
+        description:
+          'Optional finishing pass applied to the joined video (MS-6), which re-encodes: '
+          + 'colorGrade (warm_nile, teal_orange, nocturne), volume (multiplier), mute, '
+          + 'speed (0.25-4), transition (cut, crossfade, fade_black) with transitionSec and '
+          + 'clipDurations in seconds. Omit it to stream-copy, which is faster and lossless.',
+      },
     },
     required: ['clips', 'outputPath'],
   },
@@ -215,6 +227,46 @@ const spliceVideoHandler: ToolHandler = async (callArgs: Record<string, any>): P
       return { success: false, error: 'FFmpeg is not available. Set it up in Media Studio settings.' };
     }
 
+    // MS-6: a finishing pass turns the Timeline inspector into real output.
+    // Without one the stream copy below is kept: faster, and lossless.
+    const finish = (callArgs?.finish ?? null) as TimelineFinish | null;
+    if (finishChangesAnything(finish)) {
+      let graph;
+      try {
+        graph = buildTimelineFinishGraph(resolvedClips.length, finish!);
+      } catch (e: any) {
+        return { success: false, error: errText(e) };
+      }
+      const args = ['-y', ...resolvedClips.flatMap(clip => ['-i', clip]), '-filter_complex', graph.filter,
+        '-map', graph.videoLabel];
+      if (graph.audioLabel) args.push('-map', graph.audioLabel, '-c:a', 'aac', '-b:a', '192k');
+      else args.push('-an');
+      args.push('-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p');
+      if (graph.durationSec) args.push('-t', String(graph.durationSec));
+      args.push('-movflags', '+faststart', outputPath);
+      try {
+        await spawnFfmpeg(ffmpeg, args, 600000);
+      } catch (e: any) {
+        return { success: false, error: `ffmpeg error while applying the timeline settings: ${errText(e)}` };
+      }
+      if (!fs.existsSync(outputPath)) {
+        return { success: false, error: 'The finished file was not created.' };
+      }
+      try {
+        await verifyVideoFile(ffmpeg, outputPath);
+      } catch (e: any) {
+        return { success: false, error: `The finished file is not a usable video: ${errText(e)}` };
+      }
+      return {
+        success: true,
+        result: {
+          path: outputPath, clipCount: resolvedClips.length, finished: true,
+          outputSize: fs.statSync(outputPath).size,
+          originalTotalSize: resolvedClips.reduce((sum, clip) => sum + (fs.statSync(clip).size || 0), 0),
+        },
+      };
+    }
+
     const concatListPath = path.join(os.tmpdir(), `homebot-concat-${Date.now()}.txt`);
     try {
       let concatContent = '';
@@ -227,7 +279,7 @@ const spliceVideoHandler: ToolHandler = async (callArgs: Record<string, any>): P
     }
 
     try {
-      await spawnFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', concatListPath, '-c', 'copy', outputPath], 300000);
+      await spawnFfmpeg(ffmpeg, ['-y', '-f', 'concat', '-safe', '0', '-i', concatListPath, '-c', 'copy', outputPath], 300000);
     } catch (e: any) {
       try { fs.unlinkSync(concatListPath); } catch { /* cleanup */ }
       if (e.message?.includes('timed out')) {

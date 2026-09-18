@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 import type { StudioOutputSpec } from '../shared/media-output';
+import type { CaptionStyle } from '../shared/caption-style';
 import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
@@ -78,6 +79,15 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_LIST: 'homebot:workspace:list',
   WORKSPACE_READ: 'homebot:workspace:read',
   WORKSPACE_SAVE: 'homebot:workspace:save',
+  WORKSPACE_GIT_STATUS: 'homebot:workspace:git-status',
+  WORKSPACE_GIT_STAGE: 'homebot:workspace:git-stage',
+  WORKSPACE_GIT_UNSTAGE: 'homebot:workspace:git-unstage',
+  WORKSPACE_GIT_COMMIT: 'homebot:workspace:git-commit',
+  WORKSPACE_GIT_BRANCHES: 'homebot:workspace:git-branches',
+  WORKSPACE_GIT_CHECKOUT: 'homebot:workspace:git-checkout',
+  WORKSPACE_PROPOSALS: 'homebot:workspace:proposals',
+  WORKSPACE_PROPOSAL_ACCEPT: 'homebot:workspace:proposal-accept',
+  WORKSPACE_PROPOSAL_REJECT: 'homebot:workspace:proposal-reject',
   ASSISTANT_TOOL_ACTIVITY: 'homebot:assistant-tool-activity',
   CLEAR_PERMISSION_AUDIT: 'homebot:clear-permission-audit',
   EXPORT_PERMISSION_AUDIT: 'homebot:export-permission-audit',
@@ -563,6 +573,15 @@ const electronAPI: ElectronAPI = {
   workspaceSave: async (filePath: string, content: string): Promise<any> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
   },
+  workspaceGitStatus: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STATUS, folder),
+  workspaceGitStage: async (folder: string, files: string[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STAGE, folder, files),
+  workspaceGitUnstage: async (folder: string, files: string[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_UNSTAGE, folder, files),
+  workspaceGitCommit: async (folder: string, message: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_COMMIT, folder, message),
+  workspaceGitBranches: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_BRANCHES, folder),
+  workspaceGitCheckout: async (folder: string, branch: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_CHECKOUT, folder, branch),
+  workspaceProposals: async (): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSALS),
+  workspaceProposalAccept: async (id: string, hunkIndexes: number[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_ACCEPT, id, hunkIndexes),
+  workspaceProposalReject: async (id: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_REJECT, id),
 
   /** Tool calls made by the external assistant (Claude Code) via the bridge.
    *  Returns an unsubscribe function. */
@@ -611,6 +630,10 @@ const electronAPI: ElectronAPI = {
   runDiagnostics: async () => {
     return await ipcRenderer.invoke('homebot:run-diagnostics');
   },
+  createProblemReport: async (note?: string): Promise<{ success: boolean; path?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:create', note),
+  showProblemReport: async (file: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('homebot:problem-report:show', file),
 
   exportSettings: async () => {
     return await ipcRenderer.invoke('homebot:export-settings');
@@ -732,6 +755,14 @@ const electronAPI: ElectronAPI = {
   startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
     return await ipcRenderer.invoke('homebot:start-speech-recognition');
   },
+  // Whisper voice input (main/speech/whisper-ipc.ts): 16 kHz mono samples in, text out.
+  whisperTranscribe: async (args: { modelId: string; language?: string; audio: Float32Array }): Promise<{ success: boolean; text?: string; error?: string }> =>
+    ipcRenderer.invoke('homebot:voice:whisper-transcribe', args),
+  onWhisperProgress: (cb: (p: { status: 'downloading'; percent: number }) => void) => {
+    const listener = (_e: IpcRendererEvent, p: { status: 'downloading'; percent: number }) => cb(p);
+    ipcRenderer.on('homebot:voice:whisper-progress', listener);
+    return () => ipcRenderer.removeListener('homebot:voice:whisper-progress', listener);
+  },
 
   // TTS (text-to-speech) — uses Web Speech API in renderer via main process
   ttsSpeak: async (text: string, rate?: number): Promise<{ success: boolean; error?: string }> => {
@@ -776,7 +807,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string, expectedRenderPath?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note, expectedRenderPath),
@@ -856,7 +887,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:generate-frame', args),
   mediaStoryboardSetShotImage: async (args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) =>
     ipcRenderer.invoke('homebot:media:storyboard:set-shot-image', args),
-  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; musicEnabled?: boolean; musicVolume?: number }) =>
+  mediaStoryboardSave: async (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; musicEnabled?: boolean; musicVolume?: number }) =>
     ipcRenderer.invoke('homebot:media:storyboard:save', args),
   mediaStoryboardRender: async (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: NarrationEngine; colorGrade?: string; music?: boolean | string | null; musicVolume?: number; encoder?: 'auto' | 'nvenc' | 'cpu' }) =>
     ipcRenderer.invoke('homebot:media:storyboard:render', args),

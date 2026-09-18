@@ -1,45 +1,75 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import hljs from 'highlight.js/lib/core';
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import json from 'highlight.js/lib/languages/json';
-import css from 'highlight.js/lib/languages/css';
-import xml from 'highlight.js/lib/languages/xml';
-import bash from 'highlight.js/lib/languages/bash';
-import markdown from 'highlight.js/lib/languages/markdown';
-import yaml from 'highlight.js/lib/languages/yaml';
-import sql from 'highlight.js/lib/languages/sql';
-import go from 'highlight.js/lib/languages/go';
-import rust from 'highlight.js/lib/languages/rust';
-import java from 'highlight.js/lib/languages/java';
-import csharp from 'highlight.js/lib/languages/csharp';
-import powershell from 'highlight.js/lib/languages/powershell';
-import ini from 'highlight.js/lib/languages/ini';
+import { useEffect, useRef, useState } from 'react';
+import { EditorView, basicSetup } from 'codemirror';
+import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
+import { keymap } from '@codemirror/view';
+import { indentWithTab } from '@codemirror/commands';
+import { StreamLanguage } from '@codemirror/language';
+import { oneDark } from '@codemirror/theme-one-dark';
+import { javascript } from '@codemirror/lang-javascript';
+import { python } from '@codemirror/lang-python';
+import { json } from '@codemirror/lang-json';
+import { css } from '@codemirror/lang-css';
+import { html } from '@codemirror/lang-html';
+import { markdown } from '@codemirror/lang-markdown';
+import { sql } from '@codemirror/lang-sql';
+import { yaml } from '@codemirror/lang-yaml';
+import { rust } from '@codemirror/lang-rust';
+import { java } from '@codemirror/lang-java';
+import { go } from '@codemirror/lang-go';
+import { shell } from '@codemirror/legacy-modes/mode/shell';
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
+import { properties } from '@codemirror/legacy-modes/mode/properties';
+import { csharp } from '@codemirror/legacy-modes/mode/clike';
 
 /**
- * Code editor pane.
+ * Code editor pane, on CodeMirror 6.
  *
- * Deliberately NOT Monaco. Monaco is VS Code's editor and would be the faithful
- * choice, but it needs web workers and a bundler config that this app's strict
- * CSP and electron-vite setup would have to be reworked for — a change I can't
- * visually verify. This is the well-trodden alternative: a transparent textarea
- * over a highlighted <pre>, scroll-synced, using the highlight.js already in
- * the dependency tree (see MessageBubble). Real editing, real highlighting,
- * zero new dependencies. Swapping in Monaco later only touches this file.
+ * The previous editor was a textarea over highlight.js: typing and colour, but
+ * no find/replace, multiple cursors, folding, bracket matching or real undo.
+ * Monaco was ruled out because it needs web workers and bundler configuration
+ * that this app's CSP would have to change for. CodeMirror 6 is plain ES
+ * modules with no workers, and its injected styles are allowed by the CSP's
+ * style-src 'unsafe-inline', so the policy is unchanged.
+ *
+ * basicSetup brings: search and replace (Ctrl+F / Ctrl+H via the search panel),
+ * multiple selections (Ctrl+D, Alt+click, rectangular Alt+drag), code folding,
+ * bracket matching and auto-closing, history (Ctrl+Z / Ctrl+Shift+Z), line
+ * numbers, active-line highlight and autocompletion from the document.
  */
 
-for (const [name, lang] of [
-  ['javascript', javascript], ['typescript', typescript], ['python', python],
-  ['json', json], ['css', css], ['xml', xml], ['bash', bash],
-  ['markdown', markdown], ['yaml', yaml], ['sql', sql], ['go', go],
-  ['rust', rust], ['java', java], ['csharp', csharp],
-  ['powershell', powershell], ['ini', ini],
-] as const) {
-  if (!hljs.getLanguage(name)) hljs.registerLanguage(name, lang as any);
+/** The app's own light/dark choice (App.tsx sets data-theme on <html>). */
+function appIsLight(): boolean {
+  return document.documentElement.getAttribute('data-theme') === 'light';
 }
 
-const TAB = '  ';
+/** One Dark in the dark app; CodeMirror's light default on the pane's own background in the light app. */
+export function editorTheme(light: boolean): Extension {
+  return light ? EditorView.theme({ '&': { backgroundColor: 'transparent' } }, { dark: false }) : oneDark;
+}
+
+/** Language names as the main process reports them (highlight.js names). */
+export function languageExtension(language: string): Extension {
+  switch (language) {
+    case 'javascript': return javascript({ jsx: true });
+    case 'typescript': return javascript({ jsx: true, typescript: true });
+    case 'python': return python();
+    case 'json': return json();
+    case 'css': return css();
+    case 'xml':
+    case 'html': return html();
+    case 'markdown': return markdown();
+    case 'sql': return sql();
+    case 'yaml': return yaml();
+    case 'rust': return rust();
+    case 'java': return java();
+    case 'go': return go();
+    case 'bash': return StreamLanguage.define(shell);
+    case 'powershell': return StreamLanguage.define(powerShell);
+    case 'ini': return StreamLanguage.define(properties);
+    case 'csharp': return StreamLanguage.define(csharp);
+    default: return [];
+  }
+}
 
 interface CodeEditorProps {
   value: string;
@@ -50,96 +80,77 @@ interface CodeEditorProps {
 }
 
 export default function CodeEditor({ value, language, onChange, onSave, readOnly }: CodeEditorProps) {
-  const textRef = useRef<HTMLTextAreaElement | null>(null);
-  const preRef = useRef<HTMLPreElement | null>(null);
-  const gutterRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const languageSlot = useRef(new Compartment());
+  const readOnlySlot = useRef(new Compartment());
+  const themeSlot = useRef(new Compartment());
+  // The view is created once; handlers read the latest props through refs.
+  const onChangeRef = useRef(onChange);
+  const onSaveRef = useRef(onSave);
+  onChangeRef.current = onChange;
+  onSaveRef.current = onSave;
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
 
-  const highlighted = useMemo(() => {
-    // A trailing newline keeps the final line's height in the <pre> so the
-    // overlay stays aligned with the textarea's last row.
-    const src = value.endsWith('\n') ? value + ' ' : value;
-    try {
-      if (language && language !== 'plaintext' && hljs.getLanguage(language)) {
-        return hljs.highlight(src, { language, ignoreIllegals: true }).value;
-      }
-    } catch { /* fall through to escaped plain text */ }
-    return src.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
-  }, [value, language]);
+  useEffect(() => {
+    if (!hostRef.current) return;
+    const readOnlyExtensions = (on: boolean) => [EditorState.readOnly.of(on), EditorView.editable.of(!on)];
+    const view = new EditorView({
+      parent: hostRef.current,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          basicSetup,
+          themeSlot.current.of(editorTheme(appIsLight())),
+          keymap.of([indentWithTab]),
+          // Ctrl+S must save, ahead of any default binding.
+          Prec.high(keymap.of([{ key: 'Mod-s', preventDefault: true, run: () => { onSaveRef.current(); return true; } }])),
+          languageSlot.current.of(languageExtension(language)),
+          readOnlySlot.current.of(readOnlyExtensions(!!readOnly)),
+          EditorState.tabSize.of(2),
+          EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
+          EditorView.updateListener.of(update => {
+            if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+            if (update.docChanged || update.selectionSet) {
+              const head = update.state.selection.main.head;
+              const line = update.state.doc.lineAt(head);
+              setCursor({ line: line.number, col: head - line.from + 1 });
+            }
+          }),
+        ],
+      }),
+    });
+    viewRef.current = view;
+    // Follow the app when the owner switches light/dark while the editor is open.
+    const themeWatch = new MutationObserver(() => {
+      view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) });
+    });
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => { themeWatch.disconnect(); view.destroy(); viewRef.current = null; };
+    // Created once per mount; later prop changes are applied by the effects below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const lineCount = useMemo(() => value.split('\n').length, [value]);
-
-  // Keep the highlight layer and gutter locked to the textarea's scroll.
-  const syncScroll = () => {
-    const t = textRef.current;
-    if (!t) return;
-    if (preRef.current) {
-      preRef.current.scrollTop = t.scrollTop;
-      preRef.current.scrollLeft = t.scrollLeft;
+  // A value from outside (another tab's file, a reload) replaces the document.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && view.state.doc.toString() !== value) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
     }
-    if (gutterRef.current) gutterRef.current.scrollTop = t.scrollTop;
-  };
+  }, [value]);
 
-  useEffect(syncScroll, [value]);
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: languageSlot.current.reconfigure(languageExtension(language)) });
+  }, [language]);
 
-  const updateCursor = () => {
-    const t = textRef.current;
-    if (!t) return;
-    const upto = t.value.slice(0, t.selectionStart);
-    const lines = upto.split('\n');
-    setCursor({ line: lines.length, col: lines[lines.length - 1].length + 1 });
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-      e.preventDefault();
-      onSave();
-      return;
-    }
-    // Tab must indent, not move focus out of the editor.
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const t = e.currentTarget;
-      const { selectionStart: s, selectionEnd: en } = t;
-      const next = t.value.slice(0, s) + TAB + t.value.slice(en);
-      onChange(next);
-      requestAnimationFrame(() => {
-        t.selectionStart = t.selectionEnd = s + TAB.length;
-      });
-    }
-  };
+  useEffect(() => {
+    const on = !!readOnly;
+    viewRef.current?.dispatch({ effects: readOnlySlot.current.reconfigure([EditorState.readOnly.of(on), EditorView.editable.of(!on)]) });
+  }, [readOnly]);
 
   return (
-    <div className="code-editor">
-      <div className="code-gutter" ref={gutterRef} aria-hidden="true">
-        {Array.from({ length: lineCount }, (_, i) => (
-          <div key={i} className={`code-line-no${i + 1 === cursor.line ? ' current' : ''}`}>{i + 1}</div>
-        ))}
-      </div>
-
-      <div className="code-surface">
-        <pre className="code-highlight" ref={preRef} aria-hidden="true">
-          <code dangerouslySetInnerHTML={{ __html: highlighted }} />
-        </pre>
-        <textarea
-          ref={textRef}
-          className="code-input"
-          value={value}
-          readOnly={readOnly}
-          spellCheck={false}
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="off"
-          wrap="off"
-          aria-label="Code editor"
-          onChange={(e) => { onChange(e.target.value); updateCursor(); }}
-          onScroll={syncScroll}
-          onKeyDown={onKeyDown}
-          onKeyUp={updateCursor}
-          onClick={updateCursor}
-        />
-      </div>
-
+    <div className="code-editor code-editor-cm">
+      <div className="code-cm-host" ref={hostRef} />
       <div className="code-cursor-pos" aria-live="off">
         Ln {cursor.line}, Col {cursor.col}
       </div>

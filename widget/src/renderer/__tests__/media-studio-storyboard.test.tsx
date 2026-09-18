@@ -337,6 +337,23 @@ describe('Media Studio Visual Storyboard Deck', () => {
       ] }) })));
   });
 
+  test('caption style controls appear with captions on and the chosen style is saved with the board', async () => {
+    const api = setup();
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const position = await screen.findByLabelText('Storyboard caption position');
+    fireEvent.change(position, { target: { value: 'top' } });
+    fireEvent.change(screen.getByLabelText('Storyboard caption font'), { target: { value: 'Impact' } });
+    fireEvent.change(screen.getByLabelText('Storyboard caption colour'), { target: { value: '#ffd400' } });
+    expect(screen.getByLabelText('Storyboard caption sample')).toHaveStyle({ color: '#ffd400' });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    await waitFor(() => expect(api.mediaStoryboardSave).toHaveBeenCalled());
+    expect(api.mediaStoryboardSave.mock.calls[0][0].captionStyle).toEqual({
+      size: 'medium', position: 'top', font: 'Impact', color: '#ffd400', background: 'outline' });
+
+    fireEvent.click(screen.getByLabelText('Burn captions into storyboard video'));
+    expect(screen.queryByLabelText('Storyboard caption position')).toBeNull();
+  });
+
   test('storyboard both choice saves independent portrait framing and reaches the existing render action', async () => {
     const api = setup();
     render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
@@ -817,6 +834,7 @@ describe('Storyboard frame provider picker', () => {
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
       'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
+      'ChatGPT plan · Codex on this PC · uses your plan limits, no per-image charge',
     ]);
     expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
     expect(picker.value).toBe('');
@@ -967,4 +985,50 @@ test('background music and GPU encoder controls reach the export action (MS-4 & 
     })
   );
 });
+test('a transition chosen on a shot is saved, and the last shot has none to choose (MS-2)', async () => {
+  const mocks = setup();
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
 
+  // Three shots: only the first two move into a next shot.
+  expect(screen.queryByLabelText('Transition after shot_003')).toBeNull();
+  const select = screen.getByLabelText('Transition after shot_001');
+  expect((select as HTMLSelectElement).value).toBe('cut');
+  // The length only matters once there is a transition.
+  expect(screen.queryByLabelText('Transition seconds after shot_001')).toBeNull();
+
+  await act(async () => { fireEvent.change(select, { target: { value: 'crossfade' } }); });
+  await act(async () => { fireEvent.change(screen.getByLabelText('Transition seconds after shot_001'), { target: { value: '0.8' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+
+  const saved = mocks.mediaStoryboardSave.mock.calls.at(-1)![0];
+  expect(saved.shots[0]).toMatchObject({ transition: 'crossfade', transitionSec: 0.8 });
+  expect(saved.shots[1].transition ?? 'cut').toBe('cut');
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Transition after shot_001'), { target: { value: 'cut' } }); });
+  expect(screen.queryByLabelText('Transition seconds after shot_001')).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+  expect(mocks.mediaStoryboardSave.mock.calls.at(-1)![0].shots[0].transition).toBe('cut');
+});
+
+test('a title card typed on a shot is saved with it, and can be removed (MS-5)', async () => {
+  const mocks = setup();
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+
+  const heading = screen.getByLabelText('Title card heading for shot_001');
+  await act(async () => { fireEvent.change(heading, { target: { value: 'Chapter One' } }); });
+  // The rest of the card appears only once there is something to put on screen.
+  await act(async () => { fireEvent.change(screen.getByLabelText('Title card sub-line for shot_001'), { target: { value: 'Giza, 2560 BC' } }); });
+  await act(async () => { fireEvent.change(screen.getByLabelText('Title card position for shot_001'), { target: { value: 'top' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+
+  const saved = mocks.mediaStoryboardSave.mock.calls.at(-1)![0];
+  expect(saved.shots[0].textCard).toEqual({ heading: 'Chapter One', subline: 'Giza, 2560 BC', position: 'top' });
+  expect(saved.shots[1].textCard ?? null).toBeNull();
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove title card from shot_001' })); });
+  expect(screen.queryByLabelText('Title card sub-line for shot_001')).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+  expect(mocks.mediaStoryboardSave.mock.calls.at(-1)![0].shots[0].textCard).toBeNull();
+});

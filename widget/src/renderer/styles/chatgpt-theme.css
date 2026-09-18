@@ -8986,6 +8986,27 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 }
 .ws-sidebar-body { flex: 1 1 auto; overflow: auto; padding-bottom: 8px; }
 
+/* Source Control panel */
+.scm-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px; font-size: 12px; }
+.scm-branch { display: flex; align-items: center; gap: 6px; }
+.scm-branch select { flex: 1 1 auto; min-width: 0; }
+.scm-message { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 4px 6px; }
+.scm-commit { align-self: stretch; padding: 4px 8px; cursor: pointer; }
+.scm-commit:disabled { opacity: 0.5; cursor: default; }
+.scm-section-title { display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 11px; text-transform: uppercase; opacity: 0.8; margin-top: 4px; }
+.scm-list { list-style: none; margin: 0; padding: 0; }
+.scm-row { display: flex; align-items: center; gap: 4px; }
+.scm-row:hover { background: rgba(128, 128, 128, 0.16); }
+.scm-file { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; align-items: center; background: none; border: none; color: inherit; text-align: left; padding: 2px 0; cursor: pointer; font: inherit; }
+.scm-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.scm-kind { width: 1.1em; text-align: center; font-family: var(--font-mono); font-weight: 700; }
+.scm-kind-added, .scm-kind-untracked { color: #3fb950; }
+.scm-kind-deleted, .scm-kind-conflicted { color: #f85149; }
+.scm-kind-modified, .scm-kind-renamed, .scm-kind-type-changed { color: #d29922; }
+.scm-action { background: none; border: 1px solid transparent; color: inherit; cursor: pointer; padding: 0 6px; border-radius: 4px; }
+.scm-action:hover { border-color: rgba(128, 128, 128, 0.4); }
+.scm-refresh { align-self: flex-start; background: none; border: none; color: var(--accent); cursor: pointer; padding: 2px 0; }
+
 /* File tree */
 .tree-row {
   display: flex; align-items: center; gap: 4px;
@@ -9144,6 +9165,17 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   opacity: 0.6;
   border-top: 1px solid var(--hairline);
 }
+
+/* CodeMirror 6 editor: it draws its own gutter and scrolls itself, so it fills the whole area. */
+.code-editor-cm {
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas: "surface" "cursor";
+}
+.code-cm-host { grid-area: surface; min-height: 0; min-width: 0; overflow: hidden; }
+.code-cm-host .cm-editor { height: 100%; font-family: var(--font-mono); font-size: 12.5px; }
+.code-cm-host .cm-scroller { font-family: inherit; line-height: 1.5; }
+.code-cm-host .cm-editor.cm-focused { outline: none; }
 
 /* Assistant tool activity in the workspace status bar â€” makes non-dangerous
    tool calls visible. Dangerous ones already raise the confirmation modal. */
@@ -9348,6 +9380,31 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
    underneath the page. Its only job is to have a stable, measurable box â€”
    which is why it gets flex: 1 and a min-height of 0 rather than sizing to
    content it does not have. */
+/* Workspace assistant: docked right like the browser panel. */
+.ws-assistant {
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  inline-size: clamp(300px, 30vw, 480px);
+  border-inline-start: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--ws-bg, #1e1e1e);
+}
+.ws-assistant-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.ws-assistant-turns { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 10px; display: flex; flex-direction: column; gap: 8px; }
+.ws-assistant-turn { padding: 6px 8px; border-radius: 6px; }
+.ws-assistant-turn.user { background: rgba(128, 128, 128, 0.14); align-self: flex-end; max-width: 92%; }
+.ws-assistant-turn.assistant { background: transparent; }
+.ws-assistant-turn.error { color: #f85149; }
+.ws-assistant-turn-context { font-size: 11px; opacity: 0.75; margin-bottom: 2px; }
+.ws-assistant-text { white-space: pre-wrap; word-break: break-word; }
+.ws-assistant-composer { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid rgba(128, 128, 128, 0.25); }
+.ws-assistant-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 4px 6px; }
+.ws-assistant-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.ws-assistant-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 10px; background: rgba(128, 128, 128, 0.18); font-size: 11px; }
+.ws-assistant-chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0; }
+.ws-assistant-actions { display: flex; justify-content: flex-end; }
+
 .browser-panel {
   grid-row: 1;
   display: flex;
@@ -9501,6 +9558,41 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   padding: 2px 8px;
   cursor: pointer;
 }
+
+/* IDE-3: edits waiting for a decision, above the log of what was written. */
+.changes-proposals {
+  border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.changes-section-head {
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: #fde68a;
+}
+
+.changes-hunk.rejected { opacity: 0.45; }
+.changes-hunk.accepted { border-inline-start: 2px solid rgba(80, 200, 140, 0.8); }
+
+.changes-hunk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.changes-hunk-pick { display: flex; align-items: center; gap: 4px; opacity: 0.9; cursor: pointer; }
+
+.changes-decide { display: flex; gap: 8px; padding: 8px 10px; }
+
+.changes-accept, .changes-reject {
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.changes-accept { border-color: rgba(80, 200, 140, 0.6); background: rgba(80, 200, 140, 0.18); }
+.changes-reject { border-color: rgba(255, 120, 120, 0.5); background: rgba(255, 120, 120, 0.14); }
+.changes-accept:disabled, .changes-reject:disabled { opacity: 0.45; cursor: default; }
 
 .changes-hunk { border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06)); }
 .changes-hunk-head { padding: 3px 10px; opacity: 0.5; font-size: 11px; }
@@ -12738,6 +12830,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.ms-stage-preview-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--warning, #fbbf24);
+}
+
 .ms-stage-param-group {
   display: flex;
   flex-direction: column;
@@ -13445,6 +13543,63 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(16, 185, 129, 0.35);
   color: #34d399;
+}
+
+/* Undo/redo for storyboard edits (MS-10), beside the badges they change. */
+.ms-storyboard-undo {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.ms-storyboard-undo:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ms-storyboard-undo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Unsaved edits found on open: offered, never applied on their own. */
+.ms-storyboard-draft-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  color: #fde68a;
+  font-size: 0.85rem;
+}
+
+.ms-storyboard-draft-prompt button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.18);
+  color: #fef3c7;
+  cursor: pointer;
+}
+
+.ms-storyboard-draft-prompt button:hover {
+  background: rgba(250, 204, 21, 0.3);
+}
+
+/* Per-shot transition controls (MS-2): a row of small inputs under a label. */
+.ms-shot-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .ms-storyboard-deck {

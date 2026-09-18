@@ -16,12 +16,23 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { validatePath } from './tools/filesystem';
+import { gitWorkspaceBranches, gitWorkspaceCheckout, gitWorkspaceCommit, gitWorkspaceStage, gitWorkspaceStatus, gitWorkspaceUnstage } from './workspace-git';
+import { applyProposal, listProposals, rejectProposal } from './workspace-proposals';
 
 export const WORKSPACE_CHANNELS = {
   ROOT: 'homebot:workspace:root',
   LIST: 'homebot:workspace:list',
   READ: 'homebot:workspace:read',
   SAVE: 'homebot:workspace:save',
+  GIT_STATUS: 'homebot:workspace:git-status',
+  GIT_STAGE: 'homebot:workspace:git-stage',
+  GIT_UNSTAGE: 'homebot:workspace:git-unstage',
+  GIT_COMMIT: 'homebot:workspace:git-commit',
+  GIT_BRANCHES: 'homebot:workspace:git-branches',
+  GIT_CHECKOUT: 'homebot:workspace:git-checkout',
+  PROPOSALS: 'homebot:workspace:proposals',
+  PROPOSAL_ACCEPT: 'homebot:workspace:proposal-accept',
+  PROPOSAL_REJECT: 'homebot:workspace:proposal-reject',
 } as const;
 
 /** Refuse to open anything an editor pane cannot usefully show. */
@@ -104,6 +115,26 @@ function sortEntries(a: WorkspaceEntry, b: WorkspaceEntry): number {
 
 export function registerWorkspaceIpc(getProjectPath: () => string | undefined): void {
   for (const channel of Object.values(WORKSPACE_CHANNELS)) ipcMain.removeHandler(channel);
+
+  // Source Control panel. Each returns { success, ... } and never throws across IPC.
+  const gitCall = async <T extends object>(run: () => Promise<T | void>) => {
+    try { return { success: true, ...((await run()) || {}) }; } catch (e) { return { success: false, error: fail(e) }; }
+  };
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STATUS, (_e, folder: unknown) => gitCall(() => gitWorkspaceStatus(String(folder || ''))));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STAGE, (_e, folder: unknown, files: unknown) => gitCall(() => gitWorkspaceStage(String(folder || ''), files)));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_UNSTAGE, (_e, folder: unknown, files: unknown) => gitCall(() => gitWorkspaceUnstage(String(folder || ''), files)));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_COMMIT, (_e, folder: unknown, message: unknown) => gitCall(() => gitWorkspaceCommit(String(folder || ''), message)));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_BRANCHES, (_e, folder: unknown) => gitCall(() => gitWorkspaceBranches(String(folder || ''))));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_CHECKOUT, (_e, folder: unknown, branch: unknown) => gitCall(() => gitWorkspaceCheckout(String(folder || ''), branch)));
+
+  // IDE-3: edits the assistant proposed to this folder, waiting for review.
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSALS, () => {
+    try { return { success: true, proposals: listProposals() }; }
+    catch (err: any) { return { success: false, error: err?.message || 'Could not read the proposed changes.' }; }
+  });
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_ACCEPT, (_e, id: unknown, hunkIndexes: unknown) =>
+    applyProposal(String(id || ''), Array.isArray(hunkIndexes) ? hunkIndexes.map(Number) : []));
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_REJECT, (_e, id: unknown) => rejectProposal(String(id || '')));
 
   ipcMain.handle(WORKSPACE_CHANNELS.ROOT, async (): Promise<{ success: boolean; path: string }> => {
     const configured = (getProjectPath() || '').trim();

@@ -1,5 +1,6 @@
 // ── Pro licensing / entitlements (renderer-facing mirror of src/entitlements + src/licensing) ──
 import type { StudioOutputSpec, StudioMovieResult } from './media-output';
+import type { CaptionStyle } from './caption-style';
 import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
 
 export type LicenseTier = 'free' | 'pro';
@@ -156,6 +157,13 @@ export interface AssistantToolActivity {
 }
 
 /** A file or folder in the Explorer tree. */
+/** One changed file in the Workspace Source Control panel. */
+export interface WorkspaceGitChange {
+  path: string;
+  from?: string;
+  kind: 'modified' | 'added' | 'deleted' | 'renamed' | 'copied' | 'untracked' | 'conflicted' | 'type-changed';
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;
@@ -502,6 +510,8 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  whisperTranscribe?: (args: { modelId: string; language?: string; audio: Float32Array }) => Promise<{ success: boolean; text?: string; error?: string }>;
+  onWhisperProgress?: (cb: (p: { status: 'downloading'; percent: number }) => void) => () => void;
 
   // TTS (text-to-speech)
   ttsSpeak?: (text: string, rate?: number) => Promise<{ success: boolean; error?: string }>;
@@ -543,7 +553,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -752,7 +762,7 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec }) => Promise<{
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;
@@ -866,6 +876,9 @@ export interface ElectronAPI {
   sdCppSetup?: () => Promise<{ success: boolean; message?: string; dir?: string; modelsDir?: string; instructions?: string[] }>;
   // Full system/connectivity diagnostics report
   runDiagnostics?: () => Promise<{ success: boolean; error?: string; [key: string]: any }>;
+  /** Settings → Report a problem (main/problem-report-ipc.ts). */
+  createProblemReport?: (note?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
+  showProblemReport?: (file: string) => Promise<{ success: boolean; error?: string }>;
 
   // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
   writeClipboard?: (text: string) => void;
@@ -972,6 +985,20 @@ export interface ElectronAPI {
   workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
   workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
   workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
+  workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
+    staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;
+  workspaceGitStage?: (folder: string, files: string[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceGitUnstage?: (folder: string, files: string[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceGitCommit?: (folder: string, message: string) => Promise<{ success: boolean; error?: string; hash?: string }>;
+  workspaceGitBranches?: (folder: string) => Promise<{ success: boolean; error?: string; current?: string; branches?: string[] }>;
+  workspaceGitCheckout?: (folder: string, branch: string) => Promise<{ success: boolean; error?: string }>;
+  /** IDE-3: assistant edits waiting for review, and the accept/reject decisions. */
+  workspaceProposals?: () => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
+    stats: { added: number; removed: number; approximate: boolean };
+    hunks: Array<{ beforeStart: number; afterStart: number; lines: Array<{ type: 'equal' | 'add' | 'remove'; before: number | null; after: number | null; text: string }> }> }>; error?: string }>;
+  workspaceProposalAccept?: (id: string, hunkIndexes: number[]) => Promise<{ success: boolean; path?: string; applied?: number; error?: string }>;
+  workspaceProposalReject?: (id: string) => Promise<{ success: boolean; error?: string }>;
   onAssistantToolActivity?: (callback: (info: AssistantToolActivity) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;

@@ -18,12 +18,20 @@ import { episodeToJobInput } from '../../shared/podcast-recap';
 import type { FeedEpisode } from '../../shared/podcast-recap';
 import { chatIdeaToJobInput, deriveIdeaTitle } from '../../shared/chat-idea';
 import { NARRATION_ENGINES, KOKORO_VOICES } from '../../shared/narration';
+import { DEFAULT_TRANSITION_SEC, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC, type ShotTransition } from '../../shared/transitions';
+import { sanitizeTextCard, TEXT_CARD_POSITIONS, type TextCard, type TextCardPosition } from '../../shared/text-card';
+import {
+  browserDraftStorage, canRedo as historyCanRedo, canUndo as historyCanUndo, clearDraft,
+  describeDraftAge, initialHistory, loadDraft, record, redo as historyRedo, reset as resetHistory,
+  saveDraft, undo as historyUndo, type History, type StoryboardDraft,
+} from './storyboard-history';
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
 import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, resolveStudioOutputSpec, type StudioExportState, type StudioOutputSpec, type StudioOutputVariant } from '../../shared/media-output';
 import { StudioOutputSettings } from './StudioOutputSettings';
+import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
@@ -84,11 +92,18 @@ type MediaJobState =
 interface MediaJobEvent { at: string; from: string; to: string; by: string; note?: string }
 
 /** Only editable source fields: operational export metadata cannot dirty a draft. */
+/** Edit one field of a shot's title card; an empty heading removes the card. */
+function textCardWith(card: TextCard | null | undefined, patch: Partial<TextCard>): TextCard | null {
+  return sanitizeTextCard({ position: 'bottom', ...(card || {}), ...patch });
+}
+
 function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: Array<{ sceneId: string; shots: any[] }> }): string {
-  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, outputSpec: board.project.outputSpec,
+  return JSON.stringify({ burnSubtitles: board.project.burnSubtitles !== false, captionStyle: board.project.captionStyle ?? null, outputSpec: board.project.outputSpec,
     scenes: board.scenes.map(scene => ({ sceneId: scene.sceneId, shots: scene.shots.map(shot => ({
       shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens, movement: shot.movement,
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
+      transition: shot.transition ?? 'cut', transitionSec: shot.transitionSec ?? null,
+      textCard: shot.textCard ?? null,
     })) })) });
 }
 
@@ -99,6 +114,7 @@ interface MediaJob {
   title: string;
   format: 'short' | 'long';
   burnSubtitles?: boolean;
+  captionStyle?: unknown;
   outputSpec?: StudioOutputSpec;
   externalRenderer?: string;
   state: MediaJobState;
@@ -218,7 +234,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [inspectorTab, setInspectorTab] = useState<'properties' | 'transitions' | 'audio' | 'export'>('properties');
   const [clipSpeed, setClipSpeed] = useState<number>(1.0);
   const [clipFraming, setClipFraming] = useState<'WIDE' | 'MED' | 'CU' | 'EXTREME CU'>('WIDE');
-  const [selectedTransition, setSelectedTransition] = useState<'none' | 'cross_dissolve' | 'fade_black' | 'whip_pan' | 'glitch'>('none');
+  // MS-6: only what the renderer can make. "Whip Pan" and "Glitch FX" were
+  // pills with no effect anywhere — removed rather than left looking real.
+  const [selectedTransition, setSelectedTransition] = useState<'none' | 'cross_dissolve' | 'fade_black'>('none');
   const [colorGradeLut, setColorGradeLut] = useState<'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne'>('rec709');
   const [bgmDuckingLevel, setBgmDuckingLevel] = useState<number>(-18);
   const [voiceGain, setVoiceGain] = useState<number>(100);
@@ -394,7 +412,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const storyboardLoadVersion = useRef(0);
   const [savedStoryboardDraft, setSavedStoryboardDraft] = useState<string | null>(null);
   const [selectedStoryboardSceneId, setSelectedStoryboardSceneId] = useState<string | null>(null);
-  const [activeStoryboard, setActiveStoryboard] = useState<{
+  type ActiveStoryboard = {
     project: Record<string, any>;
     scenes: Array<{
       sceneId: string;
@@ -412,11 +430,37 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         frameImagePath: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
+        /** How this shot moves into the next one (MS-2). */
+        transition?: ShotTransition;
+        transitionSec?: number;
+        /** Optional title card burned over this shot (MS-5). */
+        textCard?: TextCard | null;
       }>;
     }>;
     projectDir: string;
     exportState?: StudioExportState;
-  } | null>(null);
+  } | null;
+
+  // Storyboard edits go through an undo history (MS-10): every change is a step,
+  // typing in one field coalesces into one, and unsaved work is kept as a draft
+  // so closing the app does not lose it (storyboard-history.ts).
+  const [storyboardHistory, setStoryboardHistory] = useState<History<ActiveStoryboard>>(() => initialHistory(null as ActiveStoryboard));
+  const activeStoryboard = storyboardHistory.present;
+  const draftStorage = useRef(browserDraftStorage()).current;
+  const [pendingDraft, setPendingDraft] = useState<StoryboardDraft<ActiveStoryboard> | null>(null);
+
+  /** `key` marks which field is being edited, so held-down typing is one undo step. */
+  const setActiveStoryboard = useCallback((value: React.SetStateAction<ActiveStoryboard>, key?: string) => {
+    setStoryboardHistory(h => record(h, typeof value === 'function'
+      ? (value as (prev: ActiveStoryboard) => ActiveStoryboard)(h.present)
+      : value, { key }));
+  }, []);
+  /** Opening another storyboard starts its own history — the old steps are not its. */
+  const replaceStoryboard = useCallback((board: ActiveStoryboard) => setStoryboardHistory(resetHistory(board)), []);
+  const undoStoryboard = useCallback(() => setStoryboardHistory(h => historyUndo(h)), []);
+  const redoStoryboard = useCallback(() => setStoryboardHistory(h => historyRedo(h)), []);
+  const canUndoStoryboard = historyCanUndo(storyboardHistory);
+  const canRedoStoryboard = historyCanRedo(storyboardHistory);
   const [storyboardLoading, setStoryboardLoading] = useState<boolean>(false);
   const [storyboardSaving, setStoryboardSaving] = useState<boolean>(false);
   const [generatingShotId, setGeneratingShotId] = useState<string | null>(null);
@@ -464,6 +508,40 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
+  const storyboardUnsaved = !!activeStoryboard && savedStoryboardDraft !== null
+    && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard);
+
+  // Autosave: unsaved edits are written beside the project id shortly after
+  // typing stops, so closing the app (or a crash) does not lose them. Saving
+  // clears it; so does editing back to what is on disk.
+  useEffect(() => {
+    if (!selectedStoryboardId || !activeStoryboard || savedStoryboardDraft === null) return;
+    const board = activeStoryboard;
+    const projectId = selectedStoryboardId;
+    const savedIdentity = savedStoryboardDraft;
+    const timer = setTimeout(() => {
+      if (storyboardDraftIdentity(board) === savedIdentity) clearDraft(draftStorage, projectId);
+      else saveDraft(draftStorage, { projectId, savedIdentity, savedAt: Date.now(), board });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [activeStoryboard, savedStoryboardDraft, selectedStoryboardId, draftStorage]);
+
+  // Ctrl/Cmd+Z and Ctrl+Shift+Z (or Ctrl+Y) while editing a storyboard. A text
+  // field keeps its own undo — retyping a sentence should not rewind the board.
+  useEffect(() => {
+    if (activeWorkspace !== 'storyboard' || !activeStoryboard) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return;
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) { event.preventDefault(); undoStoryboard(); }
+      else if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); redoStoryboard(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeWorkspace, activeStoryboard, undoStoryboard, redoStoryboard]);
   // Output formats framed "fit" export every shot as a still (camera movement needs crop).
   const storyboardStillFormats: string[] = (() => {
     try {
@@ -1035,7 +1113,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     setStoryboardLoading(true);
     setStoryboardError(null);
     setStoryboardMessage(null);
-    setActiveStoryboard(null);
+    replaceStoryboard(null);
+    setPendingDraft(null);
     setRenderedMoviePath(null);
     setRenderedMovieJobId(null);
     setSavedStoryboardDraft(null);
@@ -1045,8 +1124,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       const res = await api()?.mediaStoryboardGet?.(projectId);
       if (loadVersion !== storyboardLoadVersion.current) return;
       if (res?.ok && res.result) {
-        setActiveStoryboard(res.result);
-        setSavedStoryboardDraft(storyboardDraftIdentity(res.result));
+        replaceStoryboard(res.result);
+        const savedIdentity = storyboardDraftIdentity(res.result);
+        setSavedStoryboardDraft(savedIdentity);
+        // Unsaved edits from a previous session are offered, never applied silently.
+        setPendingDraft(loadDraft<ActiveStoryboard>(draftStorage, projectId, savedIdentity, board => storyboardDraftIdentity(board!)));
         setSelectedStoryboardId(projectId);
         setSelectedStoryboardSceneId(res.result.scenes?.[0]?.sceneId || null);
         setAnimaticPlaying(false);
@@ -1169,6 +1251,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleUpdateShot = (shotId: string, updates: Record<string, any>) => {
     if (!activeStoryboard) return;
+    const editKey = `shot:${shotId}:${Object.keys(updates).sort().join(',')}`;
     setActiveStoryboard(prev => {
       if (!prev) return null;
       const scenes = prev.scenes.map(sc => sc.sceneId !== activeStoryboardScene?.sceneId ? sc : ({
@@ -1176,7 +1259,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         shots: sc.shots.map(s => s.shotId === shotId ? { ...s, ...updates } : s),
       }));
       return { ...prev, scenes };
-    });
+    }, editKey);
   };
 
   const handleSaveStoryboard = async (showMessage = true): Promise<boolean> => {
@@ -1192,6 +1275,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           sceneId: scene.sceneId,
           shots: scene.shots,
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
+          ...(activeStoryboard.project.captionStyle !== undefined ? { captionStyle: activeStoryboard.project.captionStyle } : {}),
           ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
           musicEnabled: storyboardMusic,
           musicVolume: storyboardMusicVolume,
@@ -1200,6 +1284,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       }
       if (loadVersion !== storyboardLoadVersion.current) return false;
       setSavedStoryboardDraft(savedDraft);
+      clearDraft(draftStorage, selectedStoryboardId);
+      setPendingDraft(null);
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
       if (loadVersion !== storyboardLoadVersion.current) return false;
       if (showMessage) {
@@ -2137,6 +2223,11 @@ ${shots.map((s, idx) => `
           />{' '}Burn captions into video
           {j.reviewSource ? ' — settings belong to this saved movie' : !canEditMediaOutput(j.state) && ' — send back for revision to change'}
         </label>}
+        {!hasExternalMediaRenderer(j) && j.burnSubtitles !== false && (
+          <CaptionStyleSettings label={j.title} value={j.captionStyle}
+            disabled={busy === j.id || !!j.reviewSource || !canEditMediaOutput(j.state)}
+            onChange={captionStyle => void run(j.id, () => api()?.mediaRun?.(j.id, 'output', { captionStyle }), 'Saving caption style')} />
+        )}
 
         {j.reviewSource && <button type="button" className="ms-btn" onClick={() => {
           if (j.reviewSource!.type === 'job') {
@@ -2652,7 +2743,15 @@ ${shots.map((s, idx) => `
                 </p>
               ),
               confirmLabel: 'Delete it',
-              onConfirm: () => run(j.id, () => releaseMediaThen(j.id, () => api()?.mediaDelete?.(j.id)), 'Deleting'),
+              // Bind the bridge at confirm time. releaseMediaThen awaits a
+              // macrotask so the <video> handle is gone before main removes the
+              // folder, and resolving api() lazily then let the deferred call
+              // land on whatever window.electron was current when it fired —
+              // the rotating cross-test victim in issue #229.
+              onConfirm: () => {
+                const electron = api();
+                run(j.id, () => releaseMediaThen(j.id, () => electron?.mediaDelete?.(j.id)), 'Deleting');
+              },
             })}
           >Delete</button>
         )}
@@ -2793,6 +2892,7 @@ ${shots.map((s, idx) => `
       try {
         const sortedCuts = [...new Set([0, ...clipCuts, duration])].sort((a, b) => a - b);
         const clips: string[] = [];
+        const clipLengths: number[] = [];
         for (let i = 0; i < sortedCuts.length - 1; i++) {
           const start = sortedCuts[i];
           const segDur = sortedCuts[i + 1] - start;
@@ -2804,6 +2904,7 @@ ${shots.map((s, idx) => `
             });
             if (trimRes?.ok && (trimRes.result as any)?.path) {
               clips.push((trimRes.result as any).path);
+              clipLengths.push(segDur);
             }
           }
         }
@@ -2814,9 +2915,21 @@ ${shots.map((s, idx) => `
         const outName = `${job.id}-cut-master-${Date.now()}.mp4`;
         const outDir = job.renderPath.replace(/[\\/][^\\/]+$/, '');
         const outPath = `${outDir}/${outName}`;
+        // MS-6: the inspector's settings are part of this export, not just the
+        // preview player. Anything left at its default is simply not sent, so
+        // an untouched timeline still stream-copies.
+        const transition = selectedTransition === 'cross_dissolve' ? 'crossfade'
+          : selectedTransition === 'fade_black' ? 'fade_black' : 'cut';
         const spliceRes = await api()?.mediaSpliceVideo?.({
           clips,
           outputPath: outPath,
+          finish: {
+            ...(colorGradeLut !== 'rec709' ? { colorGrade: colorGradeLut } : {}),
+            ...(voiceGain !== 100 ? { volume: voiceGain / 100 } : {}),
+            ...(trackMuted.A1 ? { mute: true } : {}),
+            ...(clipSpeed !== 1 ? { speed: clipSpeed } : {}),
+            ...(transition !== 'cut' ? { transition, transitionSec: 0.5, clipDurations: clipLengths } : {}),
+          },
         });
         if (spliceRes?.ok) {
           setDone(`Cut master rendered successfully: ${outName}`);
@@ -3152,8 +3265,6 @@ ${shots.map((s, idx) => `
                       { id: 'none', label: 'Cut (Hard)' },
                       { id: 'cross_dissolve', label: 'Cross Dissolve' },
                       { id: 'fade_black', label: 'Dip to Black' },
-                      { id: 'whip_pan', label: 'Whip Pan' },
-                      { id: 'glitch', label: 'Glitch FX' },
                     ].map(t => (
                       <button
                         key={t.id}
@@ -3168,7 +3279,7 @@ ${shots.map((s, idx) => `
                 </div>
                 <div className="ms-nle-field-row">
                   <span className="ms-nle-field-label">
-                    Color Grade LUT: <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 500 }}>(Live CSS Preview)</span>
+                    Color Grade LUT: <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 500 }}>(preview here, applied on Render Master from Cuts)</span>
                   </span>
                   <div className="ms-nle-btn-group">
                     {[
@@ -3189,7 +3300,7 @@ ${shots.map((s, idx) => `
                   </div>
                 </div>
                 <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">Viewport Canvas:</span>
+                  <span className="ms-nle-field-label">Viewport Canvas: <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(preview shape only — the export keeps the project's format)</span></span>
                   <div className="ms-nle-btn-group">
                     {(['16:9', '9:16', '1:1'] as const).map(asp => (
                       <button
@@ -3900,9 +4011,14 @@ ${shots.map((s, idx) => `
           {/* Blender N-Panel / Camera & Lighting Inspector */}
           <div className="ms-stage-inspector">
             <h3 className="ms-stage-inspector-title">🎥 Camera &amp; Staging Inspector</h3>
+            {/* The exported video does no compositing (FFmpeg takes one image per shot), so nothing here reaches an export. Say so. */}
+            <p className="ms-stage-preview-note" role="note" aria-label="Stage preview only">
+              Preview only: these settings change this on-screen stage, not your exported video. To move the camera in a video,
+              choose a camera move on each shot in Storyboard.
+            </p>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Focal Length &amp; Optics:</label>
+              <label className="ms-param-label">Focal Length &amp; Optics (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
@@ -3929,7 +4045,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Camera Motion (Multi-Plane Parallax):</label>
+              <label className="ms-param-label">Camera Motion, Multi-Plane Parallax (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
@@ -3978,7 +4094,7 @@ ${shots.map((s, idx) => `
             </div>
 
             <div className="ms-stage-param-group">
-              <label className="ms-param-label">Lighting Mood &amp; Color Grade:</label>
+              <label className="ms-param-label">Lighting Mood (preview):</label>
               <div className="ms-param-btn-row">
                 <button
                   type="button"
@@ -4771,7 +4887,7 @@ ${shots.map((s, idx) => `
                   const burnSubtitles = e.target.checked;
                   setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, burnSubtitles } } : prev);
                 }}
-              />{' '}Burn captions into video
+              />{' '}Burn captions into video — saved with Save Board or Render Movie
             </label>
             <label className="ms-job-format" style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <input
@@ -4798,6 +4914,10 @@ ${shots.map((s, idx) => `
                 />
                 <span style={{ minWidth: '32px' }}>{Math.round(storyboardMusicVolume * 100)}%</span>
               </label>
+            )}
+            {activeStoryboard.project.burnSubtitles !== false && (
+              <CaptionStyleSettings label="Storyboard" value={activeStoryboard.project.captionStyle} disabled={storyboardBusy}
+                onChange={captionStyle => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, captionStyle } } : prev)} />
             )}
           </div>
           <fieldset className="ms-output-settings ms-frame-provider" aria-label="Frame images" disabled={storyboardBusy}>
@@ -5059,11 +5179,23 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
                 {storyboardMusic && <span className="ms-storyboard-badge">🎵 BGM ({Math.round(storyboardMusicVolume * 100)}%)</span>}
                 <span className="ms-storyboard-badge">{storyboardEncoder === 'nvenc' ? '⚡ NVENC GPU' : storyboardEncoder === 'cpu' ? '💻 CPU' : '⚡ Auto (GPU/CPU)'}</span>
+                <button type="button" className="ms-storyboard-undo" aria-label="Undo" title="Undo (Ctrl+Z)"
+                  disabled={!canUndoStoryboard || storyboardBusy} onClick={undoStoryboard}>↶ Undo</button>
+                <button type="button" className="ms-storyboard-undo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"
+                  disabled={!canRedoStoryboard || storyboardBusy} onClick={redoStoryboard}>↷ Redo</button>
               </div>
             </div>
 
+            {pendingDraft && (
+              <div className="ms-storyboard-draft-prompt" data-testid="storyboard-draft-prompt" role="status">
+                <span>You have unsaved edits to this storyboard from {describeDraftAge(pendingDraft.savedAt)}.</span>
+                <button type="button" onClick={() => { replaceStoryboard(pendingDraft.board); setPendingDraft(null); }}>Restore them</button>
+                <button type="button" onClick={() => { clearDraft(draftStorage, pendingDraft.projectId); setPendingDraft(null); }}>Discard</button>
+              </div>
+            )}
+
             <StudioExportStatus state={activeStoryboard.exportState} moviePath={renderedMoviePath}
-              unsaved={savedStoryboardDraft !== null && savedStoryboardDraft !== storyboardDraftIdentity(activeStoryboard)}
+              unsaved={storyboardUnsaved}
               busy={storyboardBusy} rendering={storyboardRendering}
               onRetry={(variantId, sceneId) => { void handleRenderMovie(variantId, sceneId); }}
               onSelect={moviePath => { setRenderedMoviePath(moviePath); setRenderedMovieJobId(null); }} />
@@ -5424,6 +5556,77 @@ ${shots.map((s, idx) => `
                           aria-label={`Narration for ${shot.shotId}`}
                           onChange={e => handleUpdateShot(shot.shotId, { narration: e.target.value })}
                         />
+                      </div>
+
+                      {/* MS-2: how this shot moves into the next one. The last shot has no next. */}
+                      {idx < shots.length - 1 && (
+                        <div className="ms-shot-field">
+                          <span className="ms-shot-label">Into next shot:</span>
+                          <div className="ms-shot-card-row">
+                            <select
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.transition || 'cut'}
+                              aria-label={`Transition after ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { transition: e.target.value, ...(e.target.value === 'cut' ? { transitionSec: null } : {}) })}
+                            >
+                              <option value="cut">cut</option>
+                              <option value="crossfade">crossfade</option>
+                              <option value="fade_black">fade through black</option>
+                            </select>
+                            {shot.transition && shot.transition !== 'cut' && (
+                              <label style={{ fontSize: '0.72rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <input
+                                  type="number"
+                                  className="ms-input"
+                                  style={{ fontSize: '0.74rem', padding: '5px 8px', width: '72px' }}
+                                  min={MIN_TRANSITION_SEC} max={MAX_TRANSITION_SEC} step={0.1}
+                                  value={shot.transitionSec ?? DEFAULT_TRANSITION_SEC}
+                                  aria-label={`Transition seconds after ${shot.shotId}`}
+                                  onChange={e => handleUpdateShot(shot.shotId, { transitionSec: Number(e.target.value) })}
+                                />
+                                seconds
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {/* MS-5: an optional title card burned over this shot. */}
+                      <div className="ms-shot-field">
+                        <span className="ms-shot-label">Title card (optional):</span>
+                        <input
+                          type="text"
+                          className="ms-input"
+                          style={{ fontSize: '0.78rem', padding: '5px 8px' }}
+                          value={shot.textCard?.heading || ''}
+                          placeholder="Heading shown over this shot…"
+                          aria-label={`Title card heading for ${shot.shotId}`}
+                          onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { heading: e.target.value }) })}
+                        />
+                        {shot.textCard && (
+                          <div className="ms-shot-card-row">
+                            <input
+                              type="text"
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.textCard.subline || ''}
+                              placeholder="Sub-line (optional)…"
+                              aria-label={`Title card sub-line for ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { subline: e.target.value }) })}
+                            />
+                            <select
+                              className="ms-input"
+                              style={{ fontSize: '0.74rem', padding: '5px 8px' }}
+                              value={shot.textCard.position}
+                              aria-label={`Title card position for ${shot.shotId}`}
+                              onChange={e => handleUpdateShot(shot.shotId, { textCard: textCardWith(shot.textCard, { position: e.target.value as TextCardPosition }) })}
+                            >
+                              {TEXT_CARD_POSITIONS.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                            </select>
+                            <button type="button" className="ms-storyboard-undo" aria-label={`Remove title card from ${shot.shotId}`}
+                              onClick={() => handleUpdateShot(shot.shotId, { textCard: null })}>Remove card</button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

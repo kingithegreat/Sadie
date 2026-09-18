@@ -7,6 +7,7 @@ import {
   formatSrtTimestamp,
   buildSrtFromShots,
   buildKenBurnsFilter,
+  MOTION_SUPERSAMPLE,
   getStoryboardProjectDir,
   renderStoryboardMovie,
   ShotManifest,
@@ -141,30 +142,34 @@ describe('One-Click 1080p Storyboard Renderer', () => {
   });
 
   test('constructs dynamic Ken Burns motion filters for all camera movements', () => {
-    // Slow Push In
+    // MS-8: each move is computed on a supersampled frame, and its position
+    // comes from the frame number rather than the previous position, so
+    // zoompan's whole-pixel truncation cannot make the motion uneven.
     const pushIn = buildKenBurnsFilter('slow push in', 5, 30);
-    expect(pushIn).toContain('zoompan=z=');
+    expect(pushIn).toContain(`scale=iw*${MOTION_SUPERSAMPLE}:ih*${MOTION_SUPERSAMPLE}:flags=bicubic`);
+    expect(pushIn).toContain("z='min(1+0.0015*on,1.25)'");
     expect(pushIn).toContain('s=1920x1080');
     expect(pushIn).toContain('d=150');
 
-    // Pan Right
+    // 1.5 output px per frame is 3 supersampled px — a whole number, which is
+    // what keeps the steps even.
     const panRight = buildKenBurnsFilter('pan right', 3, 30);
-    expect(panRight).toContain('zoompan');
-    expect(panRight).toContain('x+1.5');
+    expect(panRight).toContain(`on*${1.5 * MOTION_SUPERSAMPLE}`);
+    expect(panRight).not.toContain('x+');
 
-    // Tilt Up
     const tiltUp = buildKenBurnsFilter('tilt up', 4, 30);
-    expect(tiltUp).toContain('zoompan');
-    expect(tiltUp).toContain('y-1.5');
+    expect(tiltUp).toContain(`on*${1.5 * MOTION_SUPERSAMPLE}`);
+    expect(tiltUp).not.toContain('y-1.5');
 
-    // Tracking
+    // Tracking pans 1 px per frame: 1.2 does not land on the supersample grid.
     const tracking = buildKenBurnsFilter('tracking', 5, 30);
-    expect(tracking).toContain('zoompan');
-    expect(tracking).toContain('x+1.2');
+    expect(tracking).toContain(`on*${MOTION_SUPERSAMPLE}`);
+    expect(tracking).toContain("z='min(1+0.001*on,1.18)'");
 
-    // Static
+    // A locked shot has nothing to smooth, so it is not made bigger first.
     const staticFilter = buildKenBurnsFilter('static', 5, 30);
     expect(staticFilter).toContain('scale=1920:1080');
+    expect(staticFilter).not.toContain('iw*2');
   });
 
   test('resolves project directory correctly from environment', () => {
@@ -275,6 +280,36 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     const res = await renderStoryboardMovie({ projectId: 'fresh-auto-directed' });
     expect(res.ok).toBe(true);
     expect(res.totalShots).toBe(2);
+  });
+
+  test('a caption style saved through the Storyboard Deck reaches the burned captions; an invalid one is refused', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'caption-style', title: 'Caption Style', burnSubtitles: true,
+      outputSpec: createStudioOutputSpec('16:9', 'short', '1080p', 'crop'),
+      shots: [{ prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }],
+    }, {} as any);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+    const shots = [{ shotId: 'shot_001', prompt: 'Harbour at dawn', durationSec: 3, narration: 'The boats come home.' }];
+
+    const refused: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots, captionStyle: { color: 'red' } }, {} as any);
+    expect(refused.success).toBe(false);
+    expect(refused.error).toMatch(/colour like #ffffff/);
+
+    const saved: any = await mediaSaveStoryboardHandler({ projectId: 'caption-style', sceneId: 'scene_01', shots,
+      captionStyle: { position: 'middle', background: 'box', size: 'small' } }, {} as any);
+    expect(saved.success).toBe(true);
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).captionStyle)
+      .toEqual({ size: 'small', position: 'middle', font: 'Arial', color: '#ffffff', background: 'box' });
+
+    (execFile as unknown as jest.Mock).mockClear();
+    expect((await renderStoryboardMovie({ projectId: 'caption-style', burnSubtitles: true })).ok).toBe(true);
+    const captionArgs = (execFile as unknown as jest.Mock).mock.calls.flatMap(([, args]) => args).filter((arg: string) => arg.includes('subtitles='));
+    expect(captionArgs.length).toBeGreaterThan(0);
+    for (const arg of captionArgs) {
+      expect(arg).toContain('Alignment=10');
+      expect(arg).toContain('BorderStyle=3');
+    }
   });
 
   test('an edit made and saved through the Storyboard Deck reaches the export — the exact bug this fixes', async () => {

@@ -336,3 +336,84 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
     expect(screen.getByRole('status')).toHaveTextContent(/Split cut marker added at/i);
   });
 });
+
+describe('MS-6: the inspector reaches the exported file', () => {
+  const withSplice = () => {
+    const mediaSpliceVideo = jest.fn().mockResolvedValue({ ok: true, result: { path: '/mock/export/cut-master.mp4' } });
+    return { ...setup({ mediaSpliceVideo }), mediaSpliceVideo };
+  };
+
+  const click = async (element: HTMLElement) => { await act(async () => { fireEvent.click(element); }); };
+  const tab = (name: RegExp) => screen.getByRole('tab', { name });
+
+  /** Open the Timeline with the monitor loaded and one split marker down. */
+  const openTimelineWithCut = async () => {
+    await act(async () => { render(<MediaStudioPanel />); });
+    await click(tab(/CapCut Timeline/i));
+    // jsdom reports no duration, so give the monitor one and move the playhead:
+    // a split marker only lands inside the clip (S is the split hotkey).
+    const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
+    Object.defineProperty(video, 'duration', { configurable: true, value: 12 });
+    await act(async () => { fireEvent.loadedMetadata(video); });
+    video.currentTime = 6;
+    await act(async () => { fireEvent.timeUpdate(video); });
+    await act(async () => { fireEvent.keyDown(window, { key: 's' }); });
+  };
+
+  const renderFromCuts = async () => {
+    await click(tab(/Export/i));
+    await click(screen.getByRole('button', { name: /Render Master from Cuts/i }));
+  };
+
+  test('an untouched inspector sends no finishing pass, so the splice stays a stream copy', async () => {
+    const { mediaSpliceVideo } = withSplice();
+    await openTimelineWithCut();
+    await renderFromCuts();
+
+    expect(mediaSpliceVideo).toHaveBeenCalled();
+    expect(mediaSpliceVideo.mock.calls.at(-1)![0].finish).toEqual({});
+  });
+
+  test('colour grade, a dissolve and master volume are sent with the export', async () => {
+    const { mediaSpliceVideo } = withSplice();
+    await openTimelineWithCut();
+
+    await click(tab(/Transitions & FX/i));
+    await click(screen.getByRole('button', { name: /Warm Nile/i }));
+    await click(screen.getByRole('button', { name: /Cross Dissolve/i }));
+    await click(tab(/Audio & Ducking/i));
+    await act(async () => {
+      fireEvent.change(screen.getByRole('slider', { name: 'Timeline preview volume' }), { target: { value: '40' } });
+    });
+    await renderFromCuts();
+
+    const sent = mediaSpliceVideo.mock.calls.at(-1)![0];
+    expect(sent.finish).toMatchObject({ colorGrade: 'warm_nile', volume: 0.4, transition: 'crossfade' });
+    expect(sent.finish.clipDurations).toHaveLength(sent.clips.length);
+  });
+
+  test('muting track A1 silences the export, not just the preview', async () => {
+    const { mediaSpliceVideo } = withSplice();
+    await openTimelineWithCut();
+    await click(screen.getByRole('button', { name: 'Mute track A1' }));
+    await renderFromCuts();
+
+    expect(mediaSpliceVideo.mock.calls.at(-1)![0].finish).toMatchObject({ mute: true });
+  });
+
+  test('the transitions that cannot be rendered are gone from the inspector', async () => {
+    withSplice();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await click(tab(/CapCut Timeline/i));
+    await click(tab(/Transitions & FX/i));
+
+    expect(screen.getByRole('button', { name: /Cross Dissolve/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Dip to Black/i })).toBeInTheDocument();
+    // Whip Pan and Glitch FX changed nothing anywhere, so they no longer exist.
+    expect(screen.queryByRole('button', { name: /Whip Pan/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Glitch FX/i })).toBeNull();
+    // And the controls that really are preview-only now say so.
+    expect(screen.getByText(/preview shape only/i)).toBeInTheDocument();
+    expect(screen.getByText(/applied on Render Master from Cuts/i)).toBeInTheDocument();
+  });
+});

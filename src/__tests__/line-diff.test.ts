@@ -1,4 +1,4 @@
-import { diffText, toHunks, splitLines } from '../diff/line-diff';
+import { applyHunks, diffText, toHunks, splitLines } from '../diff/line-diff';
 
 describe('splitLines', () => {
   it('does not invent a trailing empty line', () => {
@@ -124,5 +124,56 @@ describe('toHunks', () => {
     // change at index 10 => line 11; two lines of context => starts at 9
     expect(hunk.beforeStart).toBe(9);
     expect(hunk.afterStart).toBe(9);
+  });
+});
+
+describe('applyHunks — accepting some of a proposed change (IDE-3)', () => {
+  const before = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen'].join('\n') + '\n';
+  const after = before.replace('two', 'TWO CHANGED').replace('fourteen', 'FOURTEEN CHANGED');
+  const diff = diffText(before, after);
+
+  it('two separated edits are two hunks, and each can be taken on its own', () => {
+    expect(toHunks(diff, 3)).toHaveLength(2);
+    expect(applyHunks(diff, [0], 3)).toBe(before.replace('two', 'TWO CHANGED'));
+    expect(applyHunks(diff, [1], 3)).toBe(before.replace('fourteen', 'FOURTEEN CHANGED'));
+  });
+
+  it('rejecting everything leaves the text byte-identical, accepting everything gives the proposal', () => {
+    expect(applyHunks(diff, [], 3)).toBe(before);
+    expect(applyHunks(diff, [0, 1], 3)).toBe(after);
+  });
+
+  it('holds for additions, deletions and a file built from nothing', () => {
+    const added = diffText('a\nb\n', 'a\nNEW\nb\n');
+    expect(applyHunks(added, [], 3)).toBe('a\nb\n');
+    expect(applyHunks(added, [0], 3)).toBe('a\nNEW\nb\n');
+
+    const deleted = diffText('a\ngone\nb\n', 'a\nb\n');
+    expect(applyHunks(deleted, [], 3)).toBe('a\ngone\nb\n');
+    expect(applyHunks(deleted, [0], 3)).toBe('a\nb\n');
+
+    const created = diffText('', 'brand new\n');
+    expect(applyHunks(created, [], 3)).toBe('');
+    expect(applyHunks(created, [0], 3)).toBe('brand new\n');
+
+    const emptied = diffText('all gone\n', '');
+    expect(applyHunks(emptied, [0], 3)).toBe('');
+  });
+
+  it('hunk numbering follows the same grouping the reviewer saw, at any context width', () => {
+    for (const context of [0, 1, 3, 10]) {
+      const hunks = toHunks(diff, context);
+      // Accepting every hunk always reproduces the proposal exactly.
+      expect(applyHunks(diff, hunks.map((_, index) => index), context)).toBe(after);
+      // At a wide context the two edits merge into one hunk, so there is no
+      // way to take only the first — and taking "hunk 0" must then give both.
+      if (hunks.length === 1) expect(applyHunks(diff, [0], context)).toBe(after);
+    }
+  });
+
+  it('an out-of-range index changes nothing rather than throwing', () => {
+    expect(applyHunks(diff, [7], 3)).toBe(before);
+    expect(applyHunks(diffText('same\n', 'same\n'), [0], 3)).toBe('same\n');
   });
 });
