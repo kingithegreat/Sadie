@@ -234,7 +234,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [inspectorTab, setInspectorTab] = useState<'properties' | 'transitions' | 'audio' | 'export'>('properties');
   const [clipSpeed, setClipSpeed] = useState<number>(1.0);
   const [clipFraming, setClipFraming] = useState<'WIDE' | 'MED' | 'CU' | 'EXTREME CU'>('WIDE');
-  const [selectedTransition, setSelectedTransition] = useState<'none' | 'cross_dissolve' | 'fade_black' | 'whip_pan' | 'glitch'>('none');
+  // MS-6: only what the renderer can make. "Whip Pan" and "Glitch FX" were
+  // pills with no effect anywhere — removed rather than left looking real.
+  const [selectedTransition, setSelectedTransition] = useState<'none' | 'cross_dissolve' | 'fade_black'>('none');
   const [colorGradeLut, setColorGradeLut] = useState<'rec709' | 'warm_nile' | 'teal_orange' | 'nocturne'>('rec709');
   const [bgmDuckingLevel, setBgmDuckingLevel] = useState<number>(-18);
   const [voiceGain, setVoiceGain] = useState<number>(100);
@@ -2868,6 +2870,7 @@ ${shots.map((s, idx) => `
       try {
         const sortedCuts = [...new Set([0, ...clipCuts, duration])].sort((a, b) => a - b);
         const clips: string[] = [];
+        const clipLengths: number[] = [];
         for (let i = 0; i < sortedCuts.length - 1; i++) {
           const start = sortedCuts[i];
           const segDur = sortedCuts[i + 1] - start;
@@ -2879,6 +2882,7 @@ ${shots.map((s, idx) => `
             });
             if (trimRes?.ok && (trimRes.result as any)?.path) {
               clips.push((trimRes.result as any).path);
+              clipLengths.push(segDur);
             }
           }
         }
@@ -2889,9 +2893,21 @@ ${shots.map((s, idx) => `
         const outName = `${job.id}-cut-master-${Date.now()}.mp4`;
         const outDir = job.renderPath.replace(/[\\/][^\\/]+$/, '');
         const outPath = `${outDir}/${outName}`;
+        // MS-6: the inspector's settings are part of this export, not just the
+        // preview player. Anything left at its default is simply not sent, so
+        // an untouched timeline still stream-copies.
+        const transition = selectedTransition === 'cross_dissolve' ? 'crossfade'
+          : selectedTransition === 'fade_black' ? 'fade_black' : 'cut';
         const spliceRes = await api()?.mediaSpliceVideo?.({
           clips,
           outputPath: outPath,
+          finish: {
+            ...(colorGradeLut !== 'rec709' ? { colorGrade: colorGradeLut } : {}),
+            ...(voiceGain !== 100 ? { volume: voiceGain / 100 } : {}),
+            ...(trackMuted.A1 ? { mute: true } : {}),
+            ...(clipSpeed !== 1 ? { speed: clipSpeed } : {}),
+            ...(transition !== 'cut' ? { transition, transitionSec: 0.5, clipDurations: clipLengths } : {}),
+          },
         });
         if (spliceRes?.ok) {
           setDone(`Cut master rendered successfully: ${outName}`);
@@ -3227,8 +3243,6 @@ ${shots.map((s, idx) => `
                       { id: 'none', label: 'Cut (Hard)' },
                       { id: 'cross_dissolve', label: 'Cross Dissolve' },
                       { id: 'fade_black', label: 'Dip to Black' },
-                      { id: 'whip_pan', label: 'Whip Pan' },
-                      { id: 'glitch', label: 'Glitch FX' },
                     ].map(t => (
                       <button
                         key={t.id}
@@ -3243,7 +3257,7 @@ ${shots.map((s, idx) => `
                 </div>
                 <div className="ms-nle-field-row">
                   <span className="ms-nle-field-label">
-                    Color Grade LUT: <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 500 }}>(Live CSS Preview)</span>
+                    Color Grade LUT: <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 500 }}>(preview here, applied on Render Master from Cuts)</span>
                   </span>
                   <div className="ms-nle-btn-group">
                     {[
@@ -3264,7 +3278,7 @@ ${shots.map((s, idx) => `
                   </div>
                 </div>
                 <div className="ms-nle-field-row">
-                  <span className="ms-nle-field-label">Viewport Canvas:</span>
+                  <span className="ms-nle-field-label">Viewport Canvas: <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(preview shape only — the export keeps the project's format)</span></span>
                   <div className="ms-nle-btn-group">
                     {(['16:9', '9:16', '1:1'] as const).map(asp => (
                       <button
