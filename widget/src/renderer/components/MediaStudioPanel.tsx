@@ -2729,7 +2729,15 @@ ${shots.map((s, idx) => `
                 </p>
               ),
               confirmLabel: 'Delete it',
-              onConfirm: () => run(j.id, () => releaseMediaThen(j.id, () => api()?.mediaDelete?.(j.id)), 'Deleting'),
+              // Bind the bridge at confirm time. releaseMediaThen awaits a
+              // macrotask so the <video> handle is gone before main removes the
+              // folder, and resolving api() lazily then let the deferred call
+              // land on whatever window.electron was current when it fired —
+              // the rotating cross-test victim in issue #229.
+              onConfirm: () => {
+                const electron = api();
+                run(j.id, () => releaseMediaThen(j.id, () => electron?.mediaDelete?.(j.id)), 'Deleting');
+              },
             })}
           >Delete</button>
         )}
