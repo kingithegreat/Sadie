@@ -630,6 +630,7 @@ describe('storyboard export output contract', () => {
     expect(result.result.jobId).toBeUndefined();
     expect(result.result.warning).toMatch(/review queue/i);
   });
+  // Real text measurement (Pango) plus a render: past the 5s default under CI load (AGENTS.md).
   test('a title card on a shot is burned into the export, over the captions (MS-5)', async () => {
     (shots[0] as any).textCard = { heading: 'Chapter One: the ramps', subline: 'Giza, 2560 BC', position: 'top' };
     save();
@@ -659,7 +660,7 @@ describe('storyboard export output contract', () => {
     const vf = (execFile as unknown as jest.Mock).mock.calls
       .map(call => (call[1] as string[]).join(' ')).find(line => line.includes('text-cards.ass'))!;
     expect(vf.indexOf('subtitles.srt')).toBeLessThan(vf.indexOf('text-cards.ass'));
-  });
+  }, 30_000);
 
   test('a board with no cards renders no card file at all', async () => {
     await render();
