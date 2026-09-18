@@ -963,6 +963,32 @@ test('leaving the voice alone keeps the saved setting, with nothing forced onto 
   expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.not.objectContaining({ narrationEngine: expect.anything() }));
 });
 
+test('a transition chosen on a shot is saved, and the last shot has none to choose (MS-2)', async () => {
+  const mocks = setup();
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Storyboard/i })); });
+
+  // Three shots: only the first two move into a next shot.
+  expect(screen.queryByLabelText('Transition after shot_003')).toBeNull();
+  const select = screen.getByLabelText('Transition after shot_001');
+  expect((select as HTMLSelectElement).value).toBe('cut');
+  // The length only matters once there is a transition.
+  expect(screen.queryByLabelText('Transition seconds after shot_001')).toBeNull();
+
+  await act(async () => { fireEvent.change(select, { target: { value: 'crossfade' } }); });
+  await act(async () => { fireEvent.change(screen.getByLabelText('Transition seconds after shot_001'), { target: { value: '0.8' } }); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+
+  const saved = mocks.mediaStoryboardSave.mock.calls.at(-1)![0];
+  expect(saved.shots[0]).toMatchObject({ transition: 'crossfade', transitionSec: 0.8 });
+  expect(saved.shots[1].transition ?? 'cut').toBe('cut');
+
+  await act(async () => { fireEvent.change(screen.getByLabelText('Transition after shot_001'), { target: { value: 'cut' } }); });
+  expect(screen.queryByLabelText('Transition seconds after shot_001')).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/i })); });
+  expect(mocks.mediaStoryboardSave.mock.calls.at(-1)![0].shots[0].transition).toBe('cut');
+});
+
 test('a title card typed on a shot is saved with it, and can be removed (MS-5)', async () => {
   const mocks = setup();
   await act(async () => { render(<MediaStudioPanel />); });
