@@ -12,6 +12,7 @@
  */
 
 import { isShotTransition, type ShotTransition } from '../../shared/transitions';
+import { sanitizeTextCard, type TextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ShotStatus } from './types';
@@ -32,6 +33,8 @@ export interface AssembledShot {
   /** How this shot moves into the next one (MS-2). */
   transition?: ShotTransition;
   transitionSec?: number;
+  /** Optional title card burned over this shot (MS-5). */
+  textCard?: TextCard | null;
 }
 
 export interface AssembledScene {
@@ -125,6 +128,7 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       ...(isShotTransition(promptData.transition) && promptData.transition !== 'cut'
         ? { transition: promptData.transition, transitionSec: typeof promptData.transitionSec === 'number' ? promptData.transitionSec : undefined }
         : {}),
+      textCard: sanitizeTextCard(promptData.textCard),
     };
   });
 

@@ -43,7 +43,10 @@ export async function storyboardSourceRevision(
         // Only a real transition joins identity, so boards of cuts keep their
         // existing exports current.
         ...(shot.transition && shot.transition !== 'cut'
-          ? { transition: shot.transition, transitionSec: shot.transitionSec ?? null } : {}) });
+          ? { transition: shot.transition, transitionSec: shot.transitionSec ?? null } : {}),
+        // A title card changes the picture, so it changes identity — but only
+        // when there is one, so exports made before cards existed stay current.
+        ...(shot.textCard ? { textCard: shot.textCard } : {}) });
     }
     inputs.push({ sceneId: scene.sceneId, shots });
   }

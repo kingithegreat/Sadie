@@ -7,6 +7,7 @@
  */
 
 import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
+import { sanitizeTextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -79,6 +80,7 @@ export interface StoryboardShotInput {
   narration?: string;
   transition?: string | null;
   transitionSec?: number | null;
+  textCard?: unknown;
   characters?: string[];
   generationMethod?: 'still' | 'image_to_animation' | 'generative_video';
 }
@@ -622,6 +624,11 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
           delete promptData.transition;
           delete promptData.transitionSec;
         }
+      }
+      // MS-5: an explicit null clears the card; leaving it out keeps what is saved.
+      if (shot.textCard !== undefined) {
+        const card = sanitizeTextCard(shot.textCard);
+        if (card) promptData.textCard = card; else delete promptData.textCard;
       }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
