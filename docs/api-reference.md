@@ -1009,7 +1009,7 @@ interface ConnectionStatus {
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (239)** — `window.electron`
+**Preload methods (242)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1068,10 +1068,11 @@ terminalRun                         testN8nConnection                   toggleWi
 ttsSampleVoice                      ttsSpeak                            ttsStop                             unhideFeed
 updateAutomation                    updateMessage                       whisperTranscribe                   workspaceGitBranches
 workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage                   workspaceGitStatus
-workspaceGitUnstage                 workspaceList                       workspaceRead                       workspaceRoot
-workspaceSave                       writeClipboard                      writeDocument                       youtubeCancel
-youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
-youtubeRefresh                      youtubeRemove                       youtubeUpload
+workspaceGitUnstage                 workspaceList                       workspaceProposalAccept             workspaceProposalReject
+workspaceProposals                  workspaceRead                       workspaceRoot                       workspaceSave
+writeClipboard                      writeDocument                       youtubeCancel                       youtubeConnect
+youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh
+youtubeRemove                       youtubeUpload
 ```
 
 **IPC channels, renderer → main (178)**

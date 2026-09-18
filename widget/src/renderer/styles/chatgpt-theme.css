@@ -9559,6 +9559,41 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   cursor: pointer;
 }
 
+/* IDE-3: edits waiting for a decision, above the log of what was written. */
+.changes-proposals {
+  border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: rgba(250, 204, 21, 0.06);
+}
+
+.changes-section-head {
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: #fde68a;
+}
+
+.changes-hunk.rejected { opacity: 0.45; }
+.changes-hunk.accepted { border-inline-start: 2px solid rgba(80, 200, 140, 0.8); }
+
+.changes-hunk-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.changes-hunk-pick { display: flex; align-items: center; gap: 4px; opacity: 0.9; cursor: pointer; }
+
+.changes-decide { display: flex; gap: 8px; padding: 8px 10px; }
+
+.changes-accept, .changes-reject {
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+}
+
+.changes-accept { border-color: rgba(80, 200, 140, 0.6); background: rgba(80, 200, 140, 0.18); }
+.changes-reject { border-color: rgba(255, 120, 120, 0.5); background: rgba(255, 120, 120, 0.14); }
+.changes-accept:disabled, .changes-reject:disabled { opacity: 0.45; cursor: default; }
+
 .changes-hunk { border-block-end: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06)); }
 .changes-hunk-head { padding: 3px 10px; opacity: 0.5; font-size: 11px; }
 
