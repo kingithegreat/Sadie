@@ -1,13 +1,34 @@
 name: Release Gate
 
 on:
+  # Human pushes to main still fire this. But the auto-merge bot squash-merges
+  # with the repository's GITHUB_TOKEN, and GitHub does NOT fire push events for
+  # GITHUB_TOKEN pushes — so a push-only trigger left this gate dark on main for
+  # 30 consecutive merges (2026-09-16 -> 2026-09-18, commits 457bd92 back to the
+  # last real run 35079766730) while still looking healthy on its own PR branch.
+  # The schedule and workflow_dispatch below are what actually cover bot merges.
   push:
     branches:
       - main
+  # Daily check that main stays releasable. Scheduled workflows run on the
+  # default branch, so this fires regardless of who merged. 06:00 UTC is 4h
+  # after the Nightly Media E2E (02:00 UTC) so the two heavy Windows jobs never
+  # compete for runner capacity.
+  schedule:
+    - cron: '0 6 * * *'
+  # Release time: prove the current main is releasable on demand.
+  # `gh workflow run release-gate.yml --ref main`.
+  workflow_dispatch:
   # Changes to this gate prove themselves on their own PR before they reach main.
   pull_request:
     paths:
       - .github/workflows/release-gate.yml
+
+# Two full widget suites on one Windows runner at once is what made the
+# storyboard-renderer timeout flake, so never let this gate stack on itself.
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
 
 # Windows, matching ci.yml's `widget` job: HomeBot ships Windows-only, and the
 # widget suite is written for it (fixtures live in os.tmpdir(), which the
