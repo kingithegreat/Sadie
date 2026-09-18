@@ -70,3 +70,39 @@ test('only the selected retry format crosses job and storyboard IPC, and partial
   expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_render_storyboard', expect.objectContaining({ projectId: 'film', variantId: 'portrait' }));
   expect(result).toMatchObject({ ok: false, error: 'Portrait stopped', moviePath: 'C:/landscape.mp4', jobId: 'review-landscape', variants });
 });
+
+test('storyboard IPC forwards background music and GPU encoder options (MS-4 & MS-9)', async () => {
+  await handlers['homebot:media:storyboard:render']({}, {
+    projectId: 'film',
+    music: true,
+    musicVolume: 0.25,
+    encoder: 'nvenc',
+  });
+  expect(invokeTool).toHaveBeenLastCalledWith(
+    {},
+    'media_render_storyboard',
+    expect.objectContaining({
+      projectId: 'film',
+      music: true,
+      musicVolume: 0.25,
+      encoder: 'nvenc',
+    })
+  );
+
+  await handlers['homebot:media:storyboard:save']({}, {
+    projectId: 'film',
+    shots: [],
+    musicEnabled: true,
+    musicVolume: 0.25,
+  });
+  expect(invokeTool).toHaveBeenLastCalledWith(
+    {},
+    'media_save_storyboard',
+    expect.objectContaining({
+      projectId: 'film',
+      musicEnabled: true,
+      musicVolume: 0.25,
+    })
+  );
+});
+

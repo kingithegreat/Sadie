@@ -963,6 +963,28 @@ test('leaving the voice alone keeps the saved setting, with nothing forced onto 
   expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.not.objectContaining({ narrationEngine: expect.anything() }));
 });
 
+test('background music and GPU encoder controls reach the export action (MS-4 & MS-9)', async () => {
+  const mocks = setup();
+  render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+  await screen.findByLabelText('Narration voice for this export');
+  const render_ = screen.getByRole('button', { name: /Render Movie|Render both formats/ });
+  await waitFor(() => expect(render_).not.toBeDisabled());
+
+  const encoder = screen.getByLabelText('Video encoder for this export');
+  await act(async () => { fireEvent.change(encoder, { target: { value: 'nvenc' } }); });
+
+  const bgmBtn = screen.getByRole('button', { name: /Background music/i });
+  expect(bgmBtn).toBeInTheDocument();
+
+  await act(async () => { fireEvent.click(render_); });
+  expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(
+    expect.objectContaining({
+      music: true,
+      musicVolume: 0.2,
+      encoder: 'nvenc',
+    })
+  );
+});
 test('a transition chosen on a shot is saved, and the last shot has none to choose (MS-2)', async () => {
   const mocks = setup();
   await act(async () => { render(<MediaStudioPanel />); });
