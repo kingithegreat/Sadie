@@ -39,7 +39,11 @@ export async function storyboardSourceRevision(
         try { frame = await storyboardFileDigest(shot.frameImagePath); } catch { frame = 'unreadable'; }
       }
       shots.push({ shotId: shot.shotId, prompt: shot.prompt, framing: shot.framing, lens: shot.lens,
-        movement: shot.movement, durationSec: shot.durationSec, narration: shot.narration, frame });
+        movement: shot.movement, durationSec: shot.durationSec, narration: shot.narration, frame,
+        // Only a real transition joins identity, so boards of cuts keep their
+        // existing exports current.
+        ...(shot.transition && shot.transition !== 'cut'
+          ? { transition: shot.transition, transitionSec: shot.transitionSec ?? null } : {}) });
     }
     inputs.push({ sceneId: scene.sceneId, shots });
   }

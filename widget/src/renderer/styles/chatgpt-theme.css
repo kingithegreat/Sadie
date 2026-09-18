@@ -13558,6 +13558,15 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   background: rgba(250, 204, 21, 0.3);
 }
 
+/* Per-shot transition controls (MS-2): a row of small inputs under a label. */
+.ms-shot-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 .ms-storyboard-deck {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));

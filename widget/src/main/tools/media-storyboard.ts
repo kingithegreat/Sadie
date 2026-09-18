@@ -6,6 +6,7 @@
  * generate frame thumbnails via free providers, and hand off between Chat and Studio.
  */
 
+import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -76,6 +77,8 @@ export interface StoryboardShotInput {
   movement?: string;
   durationSec?: number;
   narration?: string;
+  transition?: string | null;
+  transitionSec?: number | null;
   characters?: string[];
   generationMethod?: 'still' | 'image_to_animation' | 'generative_video';
 }
@@ -609,6 +612,17 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       promptData.lens = shot.lens ?? promptData.lens ?? '35mm';
       promptData.movement = shot.movement ?? promptData.movement ?? 'static';
       promptData.durationSec = shot.durationSec === undefined ? (promptData.durationSec ?? 5) : shot.durationSec;
+      // MS-2: how this shot moves into the next one. 'cut' is the absence of a transition.
+      if (shot.transition !== undefined) {
+        if (isShotTransition(shot.transition) && shot.transition !== 'cut') {
+          promptData.transition = shot.transition;
+          const seconds = typeof shot.transitionSec === 'number' ? shot.transitionSec : undefined;
+          if (seconds !== undefined) promptData.transitionSec = Math.min(MAX_TRANSITION_SEC, Math.max(MIN_TRANSITION_SEC, seconds));
+        } else {
+          delete promptData.transition;
+          delete promptData.transitionSec;
+        }
+      }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
       if (shot.narration !== undefined) {
