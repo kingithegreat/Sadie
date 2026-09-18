@@ -9380,6 +9380,31 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
    underneath the page. Its only job is to have a stable, measurable box â€”
    which is why it gets flex: 1 and a min-height of 0 rather than sizing to
    content it does not have. */
+/* Workspace assistant: docked right like the browser panel. */
+.ws-assistant {
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  inline-size: clamp(300px, 30vw, 480px);
+  border-inline-start: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
+  background: var(--ws-bg, #1e1e1e);
+}
+.ws-assistant-header { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; font-weight: 600; font-size: 11px; text-transform: uppercase; }
+.ws-assistant-turns { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 6px 10px; display: flex; flex-direction: column; gap: 8px; }
+.ws-assistant-turn { padding: 6px 8px; border-radius: 6px; }
+.ws-assistant-turn.user { background: rgba(128, 128, 128, 0.14); align-self: flex-end; max-width: 92%; }
+.ws-assistant-turn.assistant { background: transparent; }
+.ws-assistant-turn.error { color: #f85149; }
+.ws-assistant-turn-context { font-size: 11px; opacity: 0.75; margin-bottom: 2px; }
+.ws-assistant-text { white-space: pre-wrap; word-break: break-word; }
+.ws-assistant-composer { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border-top: 1px solid rgba(128, 128, 128, 0.25); }
+.ws-assistant-composer textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; padding: 4px 6px; }
+.ws-assistant-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.ws-assistant-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 10px; background: rgba(128, 128, 128, 0.18); font-size: 11px; }
+.ws-assistant-chip button { background: none; border: none; color: inherit; cursor: pointer; padding: 0; }
+.ws-assistant-actions { display: flex; justify-content: flex-end; }
+
 .browser-panel {
   grid-row: 1;
   display: flex;
@@ -13483,6 +13508,63 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(16, 185, 129, 0.35);
   color: #34d399;
+}
+
+/* Undo/redo for storyboard edits (MS-10), beside the badges they change. */
+.ms-storyboard-undo {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.ms-storyboard-undo:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ms-storyboard-undo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Unsaved edits found on open: offered, never applied on their own. */
+.ms-storyboard-draft-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.45);
+  color: #fde68a;
+  font-size: 0.85rem;
+}
+
+.ms-storyboard-draft-prompt button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(250, 204, 21, 0.5);
+  background: rgba(250, 204, 21, 0.18);
+  color: #fef3c7;
+  cursor: pointer;
+}
+
+.ms-storyboard-draft-prompt button:hover {
+  background: rgba(250, 204, 21, 0.3);
+}
+
+/* Per-shot transition controls (MS-2): a row of small inputs under a label. */
+.ms-shot-card-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
 }
 
 .ms-storyboard-deck {

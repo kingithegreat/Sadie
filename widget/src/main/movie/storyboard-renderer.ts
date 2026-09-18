@@ -22,6 +22,9 @@ import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor
 import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
+import { planTimeline, type Timeline } from '../../shared/transitions';
+import { buildTransitionAudioGraph, buildTransitionVideoGraph, shotWindows } from './transition-graph';
+import { buildTextCardAss, entriesFromShots } from './text-cards';
 import type { NarrationEngine } from '../../shared/narration';
 import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
   storyboardNarrationEngine, storyboardFileDigest, updateStoryboardExportMeta } from './storyboard-export-state';
@@ -71,15 +74,18 @@ export function formatSrtTimestamp(seconds: number): string {
 }
 
 /** Builds an SRT subtitles string from a sequence of shots. */
-export function buildSrtFromShots(shots: ShotManifest[]): string {
+export function buildSrtFromShots(shots: ShotManifest[], timeline?: Timeline): string {
+  // Cues follow the finished timeline, so a crossfade cannot slide the words
+  // away from the pictures (MS-2).
+  const windows = shotWindows(timeline ?? planTimeline(shots));
   let currentTime = 0;
   const blocks: string[] = [];
 
   for (let i = 0; i < shots.length; i++) {
     const shot = shots[i];
     const dur = shot.durationSec || 5;
-    const startStr = formatSrtTimestamp(currentTime);
-    const endStr = formatSrtTimestamp(currentTime + dur);
+    const startStr = formatSrtTimestamp(windows[i]?.startSec ?? currentTime);
+    const endStr = formatSrtTimestamp(windows[i]?.endSec ?? currentTime + dur);
     const text = (shot.narration && shot.narration.trim()) ? shot.narration.trim() : shot.prompt;
 
     blocks.push(`${i + 1}\n${startStr} --> ${endStr}\n${text}\n`);
@@ -284,7 +290,10 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     // The voice chosen for THIS export wins over the saved setting: with Online
     // off, the online voice throws and the only way out used to be Settings.
     const engine = opts.narrationEngine ?? storyboardNarrationEngine();
-    const totalDuration = shots.reduce((acc, s) => acc + s.durationSec, 0);
+    // One timeline decides picture, voice and captions: a transition overlaps
+    // two shots, so the movie is shorter than the sum of its shots (MS-2).
+    const timeline = planTimeline(shots);
+    const totalDuration = timeline.totalSec;
     const motion = opts.motion !== false;
     const hasNarration = shots.some(shot => !!shot.narration?.trim());
 
@@ -380,12 +389,12 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     let srtPath: string | null = null;
     if (burnSubtitles) {
       srtPath = path.join(tempDir, 'subtitles.srt');
-      const srtText = buildSrtFromShots(shots);
+      const srtText = buildSrtFromShots(shots, timeline);
       fs.writeFileSync(srtPath, srtText, 'utf-8');
     }
 
     return { ffmpeg, projectDir, projectMeta, outputSpec, burnSubtitles, sceneId, shots, snapshotScenes,
-      engine, totalDuration, motion, hasNarration, combinedAudioPath, srtPath, inputDir: tempDir, rendersDir };
+      engine, totalDuration, motion, hasNarration, combinedAudioPath, audioSegments, timeline, srtPath, inputDir: tempDir, rendersDir };
   } catch (error) {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     throw error;
@@ -396,7 +405,7 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
   prepared: Awaited<ReturnType<typeof prepareStoryboardInputs>>, variant?: StudioOutputVariant,
 ): Promise<StoryboardRenderResult> {
   const { ffmpeg, projectDir, projectMeta, burnSubtitles, sceneId, shots, snapshotScenes, engine,
-    totalDuration, motion, hasNarration, combinedAudioPath, srtPath, rendersDir } = prepared;
+    totalDuration, motion, hasNarration, combinedAudioPath, audioSegments, timeline, srtPath, rendersDir } = prepared;
   const outputSpec = prepared.outputSpec ? { ...prepared.outputSpec, variants: [variant!] } : undefined;
   const outputVariant = variant;
   const width = variant?.width ?? 1920;
@@ -414,13 +423,59 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*\.mp4$/.test(outputFilename)) throw new Error('The export needs an MP4 filename inside this project.');
     if (fs.existsSync(finalMoviePath)) throw new Error('Choose a new export filename. Existing exports are preserved.');
     tempDir = fs.mkdtempSync(path.join(rendersDir, '.homebot-render-'));
+
+    // Title cards are measured against THIS variant's frame, so the same board
+    // fits both 16:9 and 9:16 (movie/text-cards.ts).
+    let textCardsPath: string | null = null;
+    const cardAss = await buildTextCardAss(entriesFromShots(shots, shotWindows(timeline)), { width, height });
+    if (cardAss) {
+      textCardsPath = path.join(tempDir, 'text-cards.ass');
+      fs.writeFileSync(textCardsPath, cardAss, 'utf-8');
+    }
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
     attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
     attempt.status = 'rendering';
     recordStoryboardAttempt(projectDir, attempt);
 
     // 3. Render Video Track
-    if (motion) {
+    if (timeline.hasTransition) {
+      // Transitions overlap two shots, so the clips cannot simply be
+      // concatenated: xfade dissolves them and the voices are placed at the
+      // start times the finished timeline gives each shot (MS-2).
+      const clips: string[] = [];
+      for (let i = 0; i < shots.length; i++) {
+        const shot = shots[i];
+        const clipPath = path.join(tempDir, `t_clip_${String(i).padStart(3, '0')}.mp4`);
+        const frameFilter = motion
+          ? buildKenBurnsFilter(shot.movement || 'static', shot.durationSec, fps, outputVariant)
+          : (outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080');
+        const vf = [frameFilter, buildColorGradeFilter(opts.colorGrade), 'format=yuv420p'].filter(Boolean).join(',');
+        await runCommand(ffmpeg, ['-y', '-loop', '1', '-i', shot.frameImagePath!, '-vf', vf,
+          '-c:v', 'libx264', '-preset', 'veryfast', '-t', String(shot.durationSec), '-r', String(fps), clipPath]);
+        clips.push(clipPath);
+      }
+
+      const video = buildTransitionVideoGraph(timeline, fps);
+      const audio = buildTransitionAudioGraph(timeline, clips.length);
+      const overlays: string[] = [];
+      if (srtPath && fs.existsSync(srtPath)) overlays.push(`subtitles='${escapeFilterPath(srtPath)}':force_style='${subtitleStyle}'`);
+      if (textCardsPath) overlays.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
+      const graph = [video.filter, overlays.length ? `${video.outLabel}${overlays.join(',')}[vfinal]` : '', audio.filter]
+        .filter(Boolean).join(';');
+      const videoOut = overlays.length ? '[vfinal]' : video.outLabel;
+
+      await runCommand(ffmpeg, [
+        '-y',
+        ...clips.flatMap(clip => ['-i', clip]),
+        ...audioSegments.flatMap(segment => ['-i', segment]),
+        '-filter_complex', graph,
+        '-map', videoOut, '-map', audio.outLabel,
+        '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '192k',
+        '-t', String(totalDuration), '-movflags', '+faststart',
+        stagedMoviePath,
+      ]);
+    } else if (motion) {
       // Per-shot Ken Burns motion clips
       const videoClips: string[] = [];
       for (let i = 0; i < shots.length; i++) {
@@ -462,13 +517,13 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         '-i', combinedAudioPath,
       ];
 
+      const muxFilters: string[] = [];
       if (srtPath && fs.existsSync(srtPath)) {
-        const escapedSrt = escapeFilterPath(srtPath);
-        muxArgs.push(
-          '-vf',
-          `subtitles='${escapedSrt}':force_style='${subtitleStyle}'`
-        );
+        muxFilters.push(`subtitles='${escapeFilterPath(srtPath)}':force_style='${subtitleStyle}'`);
       }
+      // After the captions, so a card sits over them rather than under.
+      if (textCardsPath) muxFilters.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
+      if (muxFilters.length) muxArgs.push('-vf', muxFilters.join(','));
 
       muxArgs.push(
         '-c:v', 'libx264',
@@ -504,6 +559,7 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         const escapedSrt = escapeFilterPath(srtPath);
         filters.push(`subtitles='${escapedSrt}':force_style='${subtitleStyle}'`);
       }
+      if (textCardsPath) filters.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
       const lutFilter = buildColorGradeFilter(opts.colorGrade);
       if (lutFilter) filters.push(lutFilter);
       filters.push('format=yuv420p');

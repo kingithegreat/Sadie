@@ -630,4 +630,79 @@ describe('storyboard export output contract', () => {
     expect(result.result.jobId).toBeUndefined();
     expect(result.result.warning).toMatch(/review queue/i);
   });
+  test('a crossfade dissolves the shots, shortens the movie and re-times the captions (MS-2)', async () => {
+    (shots[0] as any).transition = 'crossfade';
+    (shots[0] as any).transitionSec = 0.5;
+    save();
+    let srt = '';
+    const previous = (execFile as unknown as jest.Mock).getMockImplementation()!;
+    (execFile as unknown as jest.Mock).mockImplementation((bin, args: string[], options, callback) => {
+      for (const arg of args) {
+        const match = typeof arg === 'string' && arg.match(/subtitles='([^']*subtitles\.srt)'/);
+        // escapeFilterPath escapes the drive colon for ffmpeg; undo that to read it.
+        if (match) srt = fs.readFileSync(match[1].split('\\:').join(':'), 'utf-8');
+      }
+      return previous(bin, args, options, callback);
+    });
+    // Two 3s shots with a 0.5s dissolve make 5.5s of movie, so the duration
+    // check inside the renderer has to be told the same number.
+    movieFacts = { ...movieFacts, durationSeconds: 5.5 };
+
+    const result = await render();
+    expect(result.error).toBeUndefined();
+    const calls = (execFile as unknown as jest.Mock).mock.calls.map(call => (call[1] as string[]).join(' '));
+    const mux = calls.find(line => line.includes('xfade'))!;
+    expect(mux).toContain('xfade=transition=fade:duration=0.5:offset=2.5');
+    // Each voice is placed where its own shot starts, at full level.
+    expect(mux).toContain('adelay=2500:all=1');
+    expect(mux).toContain('amix=inputs=2:normalize=0');
+    expect(mux).toContain('-t 5.5');
+
+    // The second cue starts at 2.5s, not 3s: the words follow the pictures.
+    expect(srt).toContain('00:00:02,500 --> 00:00:05,500');
+  }, 30_000);
+
+  test('a board of cuts renders exactly as before, with no transition filters', async () => {
+    await render();
+    const calls = (execFile as unknown as jest.Mock).mock.calls.map(call => (call[1] as string[]).join(' '));
+    expect(calls.some(line => line.includes('xfade') || line.includes('adelay'))).toBe(false);
+  });
+
+  // Real text measurement (Pango) plus a render: past the 5s default under CI load (AGENTS.md).
+  test('a title card on a shot is burned into the export, over the captions (MS-5)', async () => {
+    (shots[0] as any).textCard = { heading: 'Chapter One: the ramps', subline: 'Giza, 2560 BC', position: 'top' };
+    save();
+    // The card file lives in a temp dir the render cleans up, so read it as it is used.
+    const burned: string[] = [];
+    const previous = (execFile as unknown as jest.Mock).getMockImplementation()!;
+    (execFile as unknown as jest.Mock).mockImplementation((bin, args: string[], options, callback) => {
+      for (const arg of args) {
+        const match = typeof arg === 'string' && arg.match(/subtitles='([^']*text-cards\.ass)'/);
+        // escapeFilterPath escapes the drive colon for ffmpeg; undo that to read it.
+        if (match) burned.push(fs.readFileSync(match[1].split('\\:').join(':'), 'utf-8'));
+      }
+      return previous(bin, args, options, callback);
+    });
+
+    const result = await render();
+    expect(result.error).toBeUndefined();
+    expect(burned).not.toHaveLength(0);
+    const ass = burned[0];
+    expect(ass).toContain('Chapter One: the ramps');
+    expect(ass).toContain('Giza, 2560 BC');
+    // Shot one runs 0-3s, and a top card is alignment 8.
+    expect(ass).toContain('Dialogue: 0,0:00:00.00,0:00:03.00');
+    expect(ass).toMatch(/Style: card_top_\d+,Arial,\d+.*,8,/);
+
+    // The captions filter comes first, so the card sits over them.
+    const vf = (execFile as unknown as jest.Mock).mock.calls
+      .map(call => (call[1] as string[]).join(' ')).find(line => line.includes('text-cards.ass'))!;
+    expect(vf.indexOf('subtitles.srt')).toBeLessThan(vf.indexOf('text-cards.ass'));
+  }, 30_000);
+
+  test('a board with no cards renders no card file at all', async () => {
+    await render();
+    const args = (execFile as unknown as jest.Mock).mock.calls.map(call => (call[1] as string[]).join(' '));
+    expect(args.some(line => line.includes('text-cards.ass'))).toBe(false);
+  });
 });
