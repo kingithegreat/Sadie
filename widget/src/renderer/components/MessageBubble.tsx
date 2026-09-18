@@ -4,6 +4,7 @@ import type { ContextMenuItem } from "./ContextMenu";
 import { OverlayPortal, anchoredStyle, useAnchoredPosition, useDismissOnOutside } from "./anchoredOverlay";
 import Icon from "./Icon";
 import type { ChatMessage } from "../types";
+import { copyTextToClipboard } from "../utils/clipboard";
 
 // highlight.js — core + common languages (tree-shaken)
 import hljs from 'highlight.js/lib/core';
@@ -156,14 +157,10 @@ function CodeBlock({ language, children }: { language: string; children: string 
     }
   }, [children, language]);
 
-  const handleCopy = useCallback(() => {
-    try {
-      window.electron?.writeClipboard?.(children);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (e) {
-      console.error('Failed to copy to clipboard:', e);
-    }
+  const handleCopy = useCallback(async () => {
+    const ok = await copyTextToClipboard(children);
+    setCopied(ok);
+    setTimeout(() => setCopied(false), 2000);
   }, [children]);
 
   // Build the class name for hljs — e.g. "language-python"
@@ -708,7 +705,7 @@ export function MessageBubble({
   const hasContent = Boolean(message.content && message.content.trim());
   const shouldShowBubble = hasContent || (isAssistant && state === "streaming");
   const isCompactedSummary = isSystem && message.content?.startsWith('[Conversation summary');
-  const [copiedMsg, setCopiedMsg] = useState(false);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [speaking, setSpeaking] = useState(false);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const reactionPickerRef = useRef<HTMLDivElement>(null);
@@ -736,7 +733,7 @@ export function MessageBubble({
     const items: ContextMenuItem[] = [];
     if (message.content) {
       items.push({ label: 'Copy', icon: <Icon name="copy" />, action: () => {
-        window.electron?.writeClipboard?.(message.content!);
+        void copyTextToClipboard(message.content!);
       }});
     }
     if (isUser && onEdit && message.id) {
@@ -768,15 +765,14 @@ export function MessageBubble({
     return items;
   }, [message, isAssistant, state, speaking, onRetry, onBookmark, onSendToMediaStudio, hasContent]);
 
-  const handleCopyMessage = useCallback(() => {
+  const handleCopyMessage = useCallback(async () => {
     if (!message.content) return;
-    try {
-      window.electron?.writeClipboard?.(message.content);
-      setCopiedMsg(true);
-      setTimeout(() => setCopiedMsg(false), 2000);
-    } catch (e) {
-      console.error('Failed to copy message to clipboard:', e);
-    }
+    const ok = await copyTextToClipboard(message.content);
+    // Drive the label off the real result. The old code set "Copied" *after*
+    // the call inside a try/catch, so a throwing clipboard skipped the feedback
+    // entirely — the button looked dead, which is exactly what was reported.
+    setCopyState(ok ? 'copied' : 'failed');
+    setTimeout(() => setCopyState('idle'), 2000);
   }, [message.content]);
 
   const handleSpeak = useCallback(async () => {
@@ -1064,7 +1060,8 @@ export function MessageBubble({
                       onClick={handleCopyMessage}
                       aria-label="Copy response"
                     >
-                      <Icon name={copiedMsg ? 'check' : 'copy'} /> {copiedMsg ? 'Copied' : 'Copy'}
+                      <Icon name={copyState === 'copied' ? 'check' : 'copy'} />{' '}
+                      {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
                     </button>
                     <button
                       className={`message-action-btn speak-btn${speaking ? ' speaking' : ''}`}

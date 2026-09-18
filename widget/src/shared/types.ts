@@ -880,8 +880,11 @@ export interface ElectronAPI {
   createProblemReport?: (note?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   showProblemReport?: (file: string) => Promise<{ success: boolean; error?: string }>;
 
-  // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
-  writeClipboard?: (text: string) => void;
+  // Clipboard helper. Routed to the main process — the renderer window is
+  // sandboxed, so the preload has no `clipboard` module to call directly.
+  // Resolves `{ success: false }` rather than throwing when the write fails,
+  // so a caller can tell the truth instead of always reporting "Copied".
+  writeClipboard?: (text: string) => Promise<{ success: boolean; error?: string }>;
   exportChat?: (markdown: string, format?: 'markdown' | 'docx' | 'pdf') => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;
