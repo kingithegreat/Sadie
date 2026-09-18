@@ -61,6 +61,9 @@ jobs:
             Write-Host "ffmpeg not found on PATH; installing via choco..."
             choco install ffmpeg -y
           }
+          $ffmpegPath = (Get-Command ffmpeg).Source
+          Write-Host "ffmpeg found at $ffmpegPath"
+          "HOMEBOT_FFMPEG=$ffmpegPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           ffmpeg -version
           ffprobe -version
 
