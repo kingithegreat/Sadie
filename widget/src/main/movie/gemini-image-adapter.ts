@@ -146,6 +146,80 @@ export async function generateGeminiImage(
     : 'Gemini returned no image data.');
 }
 
+// Image-to-image: Google's image guide (raw docs, checked 2026-09-17) sends
+// reference images through the Interactions API — typed `input` blocks and a
+// `response_format`. `store: false` because the default keeps every request,
+// images included, on Google's servers for 55 days.
+const GEMINI_INTERACTIONS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+
+/** Gemini 3.1 Flash Image accepts up to 10 object images plus 4 character images. */
+export const GEMINI_MAX_REFERENCE_IMAGES = 14;
+
+export interface GeminiInputImage { mimeType: 'image/png' | 'image/jpeg'; base64: string }
+
+/** The last image block anywhere in an Interactions response (`output_image` in the SDKs). */
+export function lastInteractionImage(body: unknown): { base64: string; mimeType: string } | null {
+  let found: { base64: string; mimeType: string } | null = null;
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    if (!node || typeof node !== 'object') return;
+    const o = node as Record<string, unknown>;
+    if (o.type === 'image' && typeof o.data === 'string' && o.data.length >= 100) {
+      found = { base64: o.data, mimeType: typeof o.mime_type === 'string' ? o.mime_type : 'image/png' };
+    }
+    for (const value of Object.values(o)) if (value && typeof value === 'object') walk(value);
+  };
+  walk(body);
+  return found;
+}
+
+/** Draw from a prompt plus reference images (a layout guide, the character's art). */
+export async function generateGeminiImageFromImages(
+  prompt: string,
+  images: GeminiInputImage[],
+  aspectRatio: string,
+): Promise<{ base64: string; mimeType: string }> {
+  assertProviderOnlineAccess('Gemini');
+  const key = geminiKey();
+  if (!key) throw new Error(GEMINI_IMAGE_NO_KEY_REASON);
+  if (images.length > GEMINI_MAX_REFERENCE_IMAGES) throw new Error(`Gemini takes at most ${GEMINI_MAX_REFERENCE_IMAGES} reference images.`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let resp: Response;
+  try {
+    resp = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({
+        model: GEMINI_IMAGE_MODEL,
+        input: [
+          { type: 'text', text: prompt },
+          ...images.map(image => ({ type: 'image', mime_type: image.mimeType, data: image.base64 })),
+        ],
+        response_format: { type: 'image', aspect_ratio: aspectRatio, image_size: '1K' },
+        store: false,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === 'AbortError') throw new Error('Gemini did not return an image within 2 minutes. Try again.');
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  const text = await resp.text();
+  if (!resp.ok) throw new Error(describeGeminiImageError(resp.status, text));
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { throw new Error('Gemini returned a response that is not JSON.'); }
+  const image = lastInteractionImage(body);
+  if (!image) {
+    const status = (body as { status?: string })?.status;
+    throw new Error(`Gemini returned no image${status ? ` (status ${status})` : ''}. Try again.`);
+  }
+  return image;
+}
+
 export async function generateGeminiImageShot(req: GenerationRequest): Promise<GenerationResult> {
   try {
     const { base64 } = await generateGeminiImage(req.prompt, req.width, req.height);

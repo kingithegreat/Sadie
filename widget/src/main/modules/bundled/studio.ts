@@ -5,6 +5,7 @@ import { STUDIO_WORKSPACE_VIEW_ID } from '../../../shared/modules/bundled-views'
 import { mediaToolDefs, mediaToolHandlers } from '../../tools/media';
 import { narrateClipToolDefs, narrateClipToolHandlers } from '../../tools/narrate-clip';
 import { characterSpriteToolDefs, characterSpriteToolHandlers } from '../../tools/character-sprites';
+import { rigPartToolDefs, rigPartToolHandlers } from '../../tools/media-rig-parts';
 import { movieToolDefs, movieToolHandlers } from '../../tools/media-movie';
 import { videoToolDefs, videoToolHandlers } from '../../tools/media-video';
 import { storyboardToolDefs, storyboardToolHandlers } from '../../tools/media-storyboard';
@@ -13,7 +14,7 @@ export const STUDIO_MODULE_ID = 'homebot.production-studio';
 
 const groups: Array<[ToolDefinition[], Record<string, ToolHandler>]> = [
   [mediaToolDefs, mediaToolHandlers], [narrateClipToolDefs, narrateClipToolHandlers],
-  [characterSpriteToolDefs, characterSpriteToolHandlers], [movieToolDefs, movieToolHandlers],
+  [characterSpriteToolDefs, characterSpriteToolHandlers], [rigPartToolDefs, rigPartToolHandlers], [movieToolDefs, movieToolHandlers],
   [videoToolDefs, videoToolHandlers], [storyboardToolDefs, storyboardToolHandlers],
 ];
 const tools = groups.flatMap(([definitions, handlers]) => definitions.map(definition => ({ definition, handler: handlers[definition.name] })));

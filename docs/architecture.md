@@ -162,7 +162,7 @@ HomeBot categorises its 137 tool handlers across domain-specific functional cate
 
 | Category | Tools |
 |---|---|
-| `media` | `media_create_job`, `media_list_jobs`, `media_advance_job`, `media_approve_job`, `media_reject_job`, `media_write_script`, `media_narrate`, `media_setup_research`, `media_render`, `media_list_music`, `media_delete_job`, `media_narrate_clip`, `media_generate_sprites`, `media_measure_mouth_anchors`, `media_produce_movie` |
+| `media` | `media_create_job`, `media_list_jobs`, `media_advance_job`, `media_approve_job`, `media_reject_job`, `media_write_script`, `media_narrate`, `media_setup_research`, `media_render`, `media_list_music`, `media_delete_job`, `media_narrate_clip`, `media_generate_sprites`, `media_generate_rig_parts`, `media_measure_mouth_anchors`, `media_produce_movie` |
 | `crm` | `crm_create_company`, `crm_update_company`, `crm_search_companies`, `crm_create_contact`, `crm_update_contact`, `crm_search_contacts`, `crm_create_deal`, `crm_update_deal`, `crm_advance_deal`, `crm_search_deals`, `crm_log_activity`, `crm_add_note`, `crm_create_task`, `crm_complete_task`, `crm_find_stale_deals`, `crm_daily_brief`, `crm_match_email`, `crm_get_stages`, `crm_rename_stage`, `crm_audit_log`, `crm_export` |
 | `filesystem` | `read_file`, `write_file`, `edit_file`, `list_directory`, `delete_file`, `move_file`, `copy_file`, `search_files`, `create_directory`, `create_docx`, `create_spreadsheet`, `create_pdf` |
 | `system` | `get_system_info`, `list_processes`, `get_process_info`, `kill_process`, `get_clipboard`, `set_clipboard`, `open_url`, `launch_app`, `screenshot`, `get_current_time`, `navigate_to_mode` |

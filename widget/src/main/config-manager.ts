@@ -353,6 +353,8 @@ export const DEFAULT_SETTINGS: Settings = {
     // it; spends the user's own Gemini free-tier quota, nothing else.
      media_narrate_clip: true,
     media_generate_sprites: true,
+    // Spends the owner's Gemini key per image, so it asks first.
+    media_generate_rig_parts: false,
     media_measure_mouth_anchors: true,
     media_render: true,
     media_produce_movie: true,
