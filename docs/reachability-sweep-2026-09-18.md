@@ -65,6 +65,55 @@ To fulfill the gating criteria for user testing, each category should be assigne
 
 ---
 
+## Remaining findings triage — after #391 + #393 (2026-09-19)
+
+Re-running `find-dead-capabilities.mjs` on current main shows **8** findings (down
+from 18). #393 took 4; this branch took 5. Of the **8** still listed, most are
+**not** dead code — bulk-deleting them would repeat the REL-3.3 mistake.
+
+Each was traced end-to-end before acting:
+
+### Verdicts
+
+| Finding | Where it lives | Real caller (excl. tests) | Verdict | Action taken |
+|---|---|---|---|---|
+| `hasLeakedToolCalls` | `shared/leaked-tool-calls.ts` | none (`App.tsx` imports `detectLeakedToolCalls`/`stripLeakedToolCalls`/`describeLeak` from the **same** module, not this one) | redundant helper that should not be exported | deferred (see note) |
+| `clearChanges` | `main/file-change-log.ts` | none (`ipc-handlers.ts` only imports `listChanges`/`getChange`) | genuinely dead; log is bounded (`MAX_CHANGES=50`) | deferred (see note) |
+| `placeholderGuardJsCode` | `main/n8n-auth-guard.ts` | none — used only by `auth-guard-fails-closed.test.ts` | test-only helper leaking into a production export | deferred (see note) |
+| `stopFileWatchTriggers` | `main/scheduler.ts:388` | none | documented test-only: *"used by tests so jest can exit"* | **legitimate — leave** |
+| `explainedCheckNames` | `shared/ancient-pathways-checks.ts:130` | none | test coverage assertion over `EXPLANATIONS` ("every check this module can explain") | **legitimate — leave** |
+| `useI18n` | `renderer/i18n/index.tsx` | none — `I18nProvider` **is** mounted (`renderer/index.tsx:18`) but no component consumes translations | unfinished i18n adoption, not dead code | **product decision — leave** |
+| `cancelColabJob` / `retryColabJob` | `main/colab-queue.ts` | none — zero callers, and there is **no Colab IPC** in `preload` / `ipc-handlers` / `shared/types` | the REL-3.4 track; wired into #390's error console | **needs Aden — see #390** |
+
+### Note on the three "deferred" deletions
+
+These three — `hasLeakedToolCalls`, `clearChanges`, `placeholderGuardJsCode` —
+are the only true dead exports. They are not bundled into this branch on
+purpose:
+
+1. Each is a behaviour-neutral removal with **no user-facing effect**.
+2. The repo currently treats required CI as a scarce resource (G-4). This
+   claim-retirement PR is already queued against `origin/main`; opening a
+   separate PR for two lines of deletion would pay the full required-context
+   cost for ~zero signal.
+3. They will ride the next review-window that is touching these modules anyway
+   — `placeholderGuardJsCode` is touched by any auth-guard change;
+   `hasLeakedToolCalls`/`describeLeak` sit in the hot path Aden is reworking
+   for the leaked-call honesty banner (G-4-adjacent work).
+
+### Net: what's actually unowned / next
+
+- **REL-3.4 (Colab)** — unowned, but **not** a green-field delete. It is blocked
+  on #390's MediaStudioPanel rewrite; flagged there with a comment. Removing
+  `cancelColabJob`/`retryColabJob` would contradict `MEDIA_STUDIO_PLAN.md`'s
+  commissioned interruptible Colab worker and orphans `.homebot/colab_queue`.
+- **i18n adoption / explained check-name wiring / file-change clear UI** —
+  these are the user-facing versions of the same findings, but they are
+  **feature work**, not cleanup, and belong to Aden.
+
+So the sweep's "every dead one fixed or removed" is, for the current tree,
+**done** except for the two findings whose "fix" is a product decision.
+
 ## Correction — the REL-3.3 premise was wrong (2026-09-19)
 
 The finding above says the "Hardware & Model Recommendations" functions "appear to
