@@ -18,6 +18,11 @@ import {
   mediaBreakdownScriptHandler,
 } from '../tools/media-storyboard';
 
+// This suite runs the real FFmpeg subprocess renderer (renderStoryboardMovie), so a
+// test legitimately takes multiple seconds. Jest's 5s default is what a timeout under
+// CI load looks like — raise it above the default per the repo rule.
+jest.setTimeout(15_000);
+
 // Mock findFfmpeg from media-render
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'),
