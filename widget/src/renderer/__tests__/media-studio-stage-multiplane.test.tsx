@@ -95,9 +95,17 @@ function setup(overrides: Record<string, any> = {}) {
 
   const mediaSeriesSettingsSegment = jest.fn().mockResolvedValue({
     ok: true,
+    bgBase64: 'mock-bg-base64',
     fgBase64: 'mock-fg-base64',
     engineUsed: 'cpu-rmbg-v1.4',
   });
+
+  const mediaSeriesSettingsSave = jest.fn().mockResolvedValue({
+    ok: true,
+    bundle: { manifest: { id: 'throne_room', name: 'Throne Room of Imhotep' }, bgPath: '/mock/bg.png' },
+  });
+
+  const mediaSeriesSettingsDelete = jest.fn().mockResolvedValue({ ok: true, deleted: true });
 
   (window as any).electron = {
     mediaList,
@@ -106,6 +114,8 @@ function setup(overrides: Record<string, any> = {}) {
     mediaSeriesSettingsList,
     mediaSeriesSettingsGet,
     mediaSeriesSettingsSegment,
+    mediaSeriesSettingsSave,
+    mediaSeriesSettingsDelete,
     ...overrides,
   };
 
@@ -116,6 +126,8 @@ function setup(overrides: Record<string, any> = {}) {
     mediaSeriesSettingsList,
     mediaSeriesSettingsGet,
     mediaSeriesSettingsSegment,
+    mediaSeriesSettingsSave,
+    mediaSeriesSettingsDelete,
   };
 }
 
@@ -212,7 +224,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     expect(torchBtn).toHaveClass('active');
   });
 
-  test('extract foreground via CPU RMBG button calls mediaSeriesSettingsSegment', async () => {
+  test('extract foreground via CPU RMBG segments the active plate and SAVES the result', async () => {
     const mocks = setup();
     await act(async () => {
       render(<MediaStudioPanel />);
@@ -233,10 +245,105 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
       fireEvent.click(rmbgBtn);
     });
 
+    // Must segment the SELECTED plate's file, not an empty buffer — the sandboxed
+    // renderer cannot read files, so it hands main the path instead of the bytes.
     expect(mocks.mediaSeriesSettingsSegment).toHaveBeenCalledWith({
-      imageBase64: '',
+      bgPath: '/mock/series/ancient-pathways/settings/throne_room/bg.png',
       preferCpu: true,
     });
+
+    // And the returned plates must be persisted — previously they were discarded while
+    // the UI reported success, so a real segmentation never changed anything on disk.
+    expect(mocks.mediaSeriesSettingsSave).toHaveBeenCalledTimes(1);
+    expect(mocks.mediaSeriesSettingsSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seriesId: 'ancient-pathways',
+        bgBase64: 'mock-bg-base64',
+        fgBase64: 'mock-fg-base64',
+      }),
+    );
+    const savedManifest = mocks.mediaSeriesSettingsSave.mock.calls[0][0].manifest;
+    expect(savedManifest.id).toBe('throne_room');
+  });
+
+  test('CPU RMBG is honest when no foreground layer is produced (single-plate fallback)', async () => {
+    const mocks = setup({
+      mediaSeriesSettingsSegment: jest.fn().mockResolvedValue({
+        ok: true,
+        bgBase64: 'mock-bg-base64',
+        fgBase64: '',
+        engineUsed: 'single_plate_fallback',
+      }),
+    });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /CPU RMBG/i }));
+    });
+
+    // Still saves the re-encoded background, but does not claim a foreground was split.
+    expect(mocks.mediaSeriesSettingsSave).toHaveBeenCalledWith(
+      expect.objectContaining({ bgBase64: 'mock-bg-base64', fgBase64: '' }),
+    );
+    expect(screen.getByText(/Re-encoded the background plate/)).toBeInTheDocument();
+  });
+
+  test('CPU RMBG refuses to report success when saving the plate fails', async () => {
+    setup({
+      mediaSeriesSettingsSave: jest.fn().mockResolvedValue({ ok: false, error: 'disk on fire' }),
+    });
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /CPU RMBG/i }));
+    });
+
+    expect(screen.getByText('disk on fire')).toBeInTheDocument();
+    expect(screen.queryByText(/Successfully extracted/)).not.toBeInTheDocument();
+  });
+
+  test('delete button removes the selected stage set after confirmation', async () => {
+    const mocks = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+    });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
+    });
+
+    const deleteBtn = screen.getByRole('button', { name: /Delete/i });
+    // Nothing to delete until a plate is chosen — the button is gated on selection.
+    expect(deleteBtn).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    // Irreversible, so it asks first.
+    const confirmBtn = await screen.findByRole('button', { name: 'Delete it' });
+    await act(async () => {
+      fireEvent.click(confirmBtn);
+    });
+
+    expect(mocks.mediaSeriesSettingsDelete).toHaveBeenCalledWith('ancient-pathways', 'throne_room');
+    // The list is refreshed so the deleted plate leaves the selector.
+    expect(mocks.mediaSeriesSettingsList).toHaveBeenCalledWith('ancient-pathways');
   });
 
   test('timeline video applies live CSS color grade filter', async () => {

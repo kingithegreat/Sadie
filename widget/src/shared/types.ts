@@ -814,7 +814,7 @@ export interface ElectronAPI {
     deleted?: boolean;
     error?: string;
   }>;
-  mediaSeriesSettingsSegment?: (args: { imageBase64: string; preferCpu?: boolean }) => Promise<{
+  mediaSeriesSettingsSegment?: (args: { imageBase64?: string; bgPath?: string; preferCpu?: boolean }) => Promise<{
     ok: boolean;
     bgBase64?: string;
     fgBase64?: string;
