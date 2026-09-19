@@ -8986,6 +8986,89 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 }
 .ws-sidebar-body { flex: 1 1 auto; overflow: auto; padding-bottom: 8px; }
 
+/* Search across files (IDE-9). Wider than the Explorer — a result line is
+   usually long — and still resize: horizontal from .ws-sidebar above. */
+.ws-sidebar-search { width: 340px; }
+
+.ws-search { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px 10px; font-size: 12px; }
+.ws-search-row { display: flex; align-items: center; gap: 6px; }
+.ws-search-input {
+  flex: 1 1 auto; min-width: 0;
+  background: var(--ws-bg, #111);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 6px 9px;
+  color: var(--ws-fg, #ddd);
+  font: inherit; font-size: 12.5px;
+  outline: none; transition: border-color 0.15s;
+}
+.ws-search-input:focus { border-color: var(--accent, #6366f1); }
+.ws-search-toggle, .ws-search-go, .ws-search-replace-all, .ws-search-chip {
+  background: var(--ws-side-bg, #1c1c1c);
+  border: 1px solid var(--hairline);
+  color: var(--ws-fg, #ccc);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 12px; line-height: 1;
+}
+.ws-search-toggle:hover, .ws-search-go:hover, .ws-search-replace-all:hover, .ws-search-chip:hover { border-color: var(--accent, #6366f1); }
+.ws-search-toggle.active, .ws-search-chip.active { border-color: var(--accent, #6366f1); color: #fff; background: color-mix(in srgb, var(--accent, #6366f1) 22%, var(--ws-side-bg, #1c1c1c)); }
+.ws-search-go:disabled, .ws-search-replace-all:disabled { opacity: 0.45; cursor: default; }
+.ws-search-replace-all { padding: 5px 10px; font-weight: 600; }
+.ws-search-opts { display: flex; align-items: center; gap: 6px; }
+.ws-search-glob {
+  flex: 1 1 auto; min-width: 0;
+  background: transparent; border: 1px dashed var(--hairline);
+  border-radius: 6px; padding: 4px 8px;
+  color: var(--ws-fg, #ccc);
+  font: inherit; font-size: 11.5px; outline: none;
+}
+.ws-search-glob:focus { border-color: var(--accent, #6366f1); border-style: solid; }
+.ws-search-error { padding: 4px 2px; font-size: 11.5px; color: #f87171; }
+.ws-search-note { padding: 4px 2px; font-size: 11.5px; color: #fbbf24; }
+.ws-search-note.ok { color: #34d399; }
+.ws-search-count { padding: 2px 2px 4px; font-size: 11px; opacity: 0.75; }
+.ws-search-results { display: flex; flex-direction: column; gap: 2px; }
+.ws-search-file { margin-top: 4px; }
+.ws-search-file-head { display: flex; align-items: center; gap: 6px; padding: 3px 2px; border-radius: 4px; }
+.ws-search-file-head:hover { background: rgba(128, 128, 128, 0.14); }
+.ws-search-file-name {
+  flex: 1 1 auto; min-width: 0;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--ws-fg, #ddd); font: inherit; font-size: 12px; font-weight: 600;
+  text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ws-search-file-name:hover { color: #fff; text-decoration: underline; }
+.ws-search-file-count { font-size: 10.5px; opacity: 0.6; }
+.ws-search-check { display: inline-flex; align-items: center; margin: 0; cursor: pointer; }
+.ws-search-check input { accent-color: var(--accent, #6366f1); width: 13px; height: 13px; }
+.ws-search-row-item { display: flex; align-items: flex-start; gap: 6px; border-radius: 4px; }
+.ws-search-row-item:hover { background: rgba(128, 128, 128, 0.14); }
+.ws-search-line {
+  flex: 1 1 auto; min-width: 0; display: flex; gap: 8px; align-items: baseline;
+  background: none; border: none; padding: 2px 2px 2px 0; cursor: pointer;
+  color: var(--ws-fg, #ccc); font: inherit; font-size: 11.5px; text-align: left;
+  font-family: var(--ws-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+}
+.ws-search-line:hover { color: #fff; background: rgba(128, 128, 128, 0.1); }
+.ws-search-line-num { min-width: 3ch; text-align: right; opacity: 0.55; font-size: 10.5px; }
+.ws-search-line-text {
+  min-width: 0; white-space: pre-wrap; word-break: break-word;
+  /* Leading tabs/spaces carry meaning in source; keep them visible. */
+}
+.ws-search-mark { background: rgba(250, 204, 21, 0.3); color: inherit; border-radius: 2px; padding: 0 1px; }
+.ws-search-preview { display: block; margin-top: 2px; opacity: 0.85; }
+.ws-search-preview-text { color: #6ee7b7; }
+.ws-search-empty { padding: 10px 4px; font-size: 11.5px; opacity: 0.6; line-height: 1.5; }
+.ws-search-empty-sub { display: block; margin-top: 4px; opacity: 0.7; font-size: 10.5px; }
+[data-theme='light'] .ws-search-mark { background: rgba(202, 138, 4, 0.25); }
+[data-theme='light'] .ws-search-preview-text { color: #047857; }
+[data-theme='light'] .ws-search-note.ok { color: #047857; }
+[data-theme='light'] .ws-search-note { color: #b45309; }
+[data-theme='light'] .ws-search-error { color: #b91c1c; }
+
 /* Source Control panel */
 .scm-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px; font-size: 12px; }
 .scm-branch { display: flex; align-items: center; gap: 6px; }

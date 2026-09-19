@@ -21,7 +21,7 @@ export type IconName =
   // Chat surface — the composer and the per-message actions, which were still
   // emoji long after the chrome above them stopped being.
   | 'paperclip' | 'mic' | 'copy' | 'check' | 'pencil' | 'speak'
-  | 'zap' | 'pause' | 'star' | 'starFilled' | 'spinner'
+  | 'zap' | 'pause' | 'star' | 'starFilled' | 'spinner' | 'search'
   // Mode switcher — the last row of the chrome still wearing emoji.
   | 'video' | 'quiz' | 'download' | 'code' | 'plug'
   // Chat surface avatars (replaces the illustrated PNG badges).
@@ -91,6 +91,8 @@ const PATHS: Record<IconName, JSX.Element> = {
   // Code mode — angle brackets only; the terminal glyph already exists and
   // doubling it made both read worse.
   code: <><path d="m16 18 6-6-6-6" /><path d="m8 6-6 6 6 6" /></>,
+  // Search across files (Ctrl+Shift+F) — the magnifier, on the activity bar.
+  search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
   // Connections mode — a plug, reads as "plugging something in".
   plug: <><path d="M12 22v-5" /><path d="M9 8V2" /><path d="M15 8V2" /><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z" /></>,
   // Person — head + shoulders, for the user avatar in chat.

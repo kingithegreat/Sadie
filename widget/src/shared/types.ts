@@ -985,6 +985,29 @@ export interface ElectronAPI {
   workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
   workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
   workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  /** IDE-9: search across files, and the line-exact replace. */
+  workspaceSearch?: (opts: {
+    pattern: string;
+    directory?: string;
+    file_pattern?: string;
+    case_sensitive?: boolean;
+  }) => Promise<{
+    success: boolean;
+    pattern?: string;
+    directory?: string;
+    match_count?: number;
+    matches?: Array<{ file: string; path: string; line: number; text: string }>;
+    error?: string;
+  }>;
+  workspaceReplace?: (
+    filePath: string,
+    edits: Array<{ line: number; oldText: string; newText: string }>,
+  ) => Promise<{
+    success: boolean;
+    applied?: number;
+    skipped?: Array<{ line: number; reason: string }>;
+    error?: string;
+  }>;
   // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
   workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
     staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;

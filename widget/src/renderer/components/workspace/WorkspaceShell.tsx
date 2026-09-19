@@ -12,6 +12,7 @@ const BrowserPanel = lazy(() => import('./BrowserPanel'));
 const ChangesPanel = lazy(() => import('./ChangesPanel'));
 const WorkspaceAssistantPanel = lazy(() => import('./WorkspaceAssistantPanel'));
 const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
+const SearchPanel = lazy(() => import('./SearchPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -31,7 +32,7 @@ interface OpenFile {
   language: string;
 }
 
-type SideView = 'explorer' | 'changes' | 'scm' | null;
+type SideView = 'explorer' | 'search' | 'changes' | 'scm' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -63,14 +64,24 @@ export default function WorkspaceShell({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [assistantActivity, setAssistantActivity] = useState<string | null>(null);
+  // A search result's target: open the file and land on the line. Cleared once
+  // consumed, so the editor never re-jumps on a later re-render.
+  const [reveal, setReveal] = useState<{ path: string; line: number } | null>(null);
+  // Ctrl+Shift+F bumps this; SearchPanel focuses its query box on the change.
+  const [searchFocusToken, setSearchFocusToken] = useState(0);
 
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
   const dirty = active ? active.content !== active.original : false;
 
-  const openFile = useCallback(async (path: string) => {
+  const openFile = useCallback(async (path: string, line?: number) => {
     // Already open? Just focus its tab — never reload over unsaved edits.
-    if (files.some(f => f.path === path)) { setActivePath(path); return; }
+    if (files.some(f => f.path === path)) {
+      setActivePath(path);
+      // A search result landing on an already-open tab still needs its jump.
+      if (line) setReveal({ path, line });
+      return;
+    }
     const res = await api?.workspaceRead?.(path);
     if (!res?.success) { setStatus(res?.error || 'Could not open that file.'); return; }
     setFiles(prev => [...prev, {
@@ -81,6 +92,7 @@ export default function WorkspaceShell({
       language: res.language || 'plaintext',
     }]);
     setActivePath(path);
+    if (line) setReveal({ path, line });
     setStatus(null);
   }, [files, api]);
 
@@ -192,6 +204,15 @@ export default function WorkspaceShell({
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void save(); }
       if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setTerminalOpen(t => !t); }
+      // Ctrl+Shift+F opens Search from anywhere and puts the cursor in the box.
+      // Owned here rather than in the panel because the panel is unmounted when
+      // the view is closed — the hotkey would do nothing exactly when it is most
+      // useful.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setSideView('search');
+        setSearchFocusToken(t => t + 1);
+      }
       // Escape leaves the workspace. "Back to chat" sits at the bottom of the
       // activity bar, so it is the first thing to disappear if the layout ever
       // overflows again — and the workspace covers the mode tabs, which were
@@ -231,6 +252,14 @@ export default function WorkspaceShell({
           aria-pressed={sideView === 'explorer'}
           onClick={() => setSideView(v => (v === 'explorer' ? null : 'explorer'))}
         ><Icon name="document" size={20} /></button>
+        <button
+          type="button"
+          className={`ws-activity-btn${sideView === 'search' ? ' active' : ''}`}
+          title="Search (Ctrl+Shift+F)"
+          aria-label="Search across files"
+          aria-pressed={sideView === 'search'}
+          onClick={() => setSideView(v => (v === 'search' ? null : 'search'))}
+        ><Icon name="search" size={20} /></button>
         <button
           type="button"
           className={`ws-activity-btn${terminalOpen ? ' active' : ''}`}
@@ -288,6 +317,24 @@ export default function WorkspaceShell({
           <div className="ws-sidebar-body">
             <Suspense fallback={<div className="tree-hint">Loading…</div>}>
               {root && <SourceControlPanel folder={root} onOpenFile={openFile} />}
+            </Suspense>
+          </div>
+        </aside>
+      )}
+      {sideView === 'search' && (
+        <aside className="ws-sidebar ws-sidebar-search" aria-label="Search">
+          <div className="ws-sidebar-title">Search</div>
+          <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
+          <div className="ws-sidebar-body">
+            <Suspense fallback={<div className="tree-hint">Loading…</div>}>
+              {root && (
+                <SearchPanel
+                  root={root}
+                  onOpenFile={openFile}
+                  onReplaced={(summary) => setStatus(summary)}
+                  focusToken={searchFocusToken}
+                />
+              )}
             </Suspense>
           </div>
         </aside>
@@ -365,9 +412,14 @@ export default function WorkspaceShell({
         <div className="ws-editor-area">
           {active ? (
             <CodeEditor
+              // Keyed per file: a search jump into a newly opened tab must land
+              // on its line, and a fresh view per file is also what keeps each
+              // file's undo history its own.
+              key={active.path}
               value={active.content}
               language={active.language}
               onSave={save}
+              focusLine={reveal && reveal.path === active.path ? reveal.line : undefined}
               onChange={(next) =>
                 setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, content: next } : f)))
               }
@@ -377,7 +429,7 @@ export default function WorkspaceShell({
               <Icon name="document" size={30} />
               <p>Pick a file in the Explorer to start editing.</p>
               <p className="ws-empty-sub">
-                Ctrl+S saves · Ctrl+` toggles the terminal · edits stay inside your home folder
+                Ctrl+S saves · Ctrl+` toggles the terminal · Ctrl+Shift+F searches · edits stay inside your home folder
               </p>
             </div>
           )}

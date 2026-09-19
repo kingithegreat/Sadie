@@ -16,6 +16,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { validatePath } from './tools/filesystem';
+import { runCodeSearch } from './tools/codebase';
 import { gitWorkspaceBranches, gitWorkspaceCheckout, gitWorkspaceCommit, gitWorkspaceStage, gitWorkspaceStatus, gitWorkspaceUnstage } from './workspace-git';
 import { applyProposal, listProposals, rejectProposal } from './workspace-proposals';
 
@@ -24,6 +25,8 @@ export const WORKSPACE_CHANNELS = {
   LIST: 'homebot:workspace:list',
   READ: 'homebot:workspace:read',
   SAVE: 'homebot:workspace:save',
+  SEARCH: 'homebot:workspace:search',
+  REPLACE: 'homebot:workspace:replace',
   GIT_STATUS: 'homebot:workspace:git-status',
   GIT_STAGE: 'homebot:workspace:git-stage',
   GIT_UNSTAGE: 'homebot:workspace:git-unstage',
@@ -69,6 +72,45 @@ export interface WorkspaceReadResult {
 
 export interface WorkspaceSaveResult {
   success: boolean;
+  error?: string;
+}
+
+/** One hit from a workspace content search. */
+export interface WorkspaceSearchMatch {
+  /** Path relative to the search root — what the list shows. */
+  file: string;
+  /** Absolute path — what a click needs to open the file. */
+  path: string;
+  /** 1-based line number. */
+  line: number;
+  /** The matching line. */
+  text: string;
+}
+
+export interface WorkspaceSearchResult {
+  success: boolean;
+  pattern?: string;
+  directory?: string;
+  match_count?: number;
+  matches?: WorkspaceSearchMatch[];
+  error?: string;
+}
+
+/** A single line-level replacement the preview showed and the user accepted. */
+export interface WorkspaceReplaceEdit {
+  /** 1-based line number. */
+  line: number;
+  /** The line's text as the search saw it. Asserted before writing. */
+  oldText: string;
+  /** The substitution to apply. */
+  newText: string;
+}
+
+export interface WorkspaceReplaceResult {
+  success: boolean;
+  applied?: number;
+  /** Lines that could not be changed, with a plain reason. */
+  skipped?: Array<{ line: number; reason: string }>;
   error?: string;
 }
 
@@ -204,12 +246,119 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
         if (!v.valid) return { success: false, error: v.error };
         // Only overwrite files that already exist — the editor is not a
         // create-anywhere surface, and this keeps saves inside what the user opened.
+      if (!fs.existsSync(v.resolved)) return { success: false, error: 'File no longer exists.' };
+      fs.writeFileSync(v.resolved, content, 'utf8');
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: fail(e) };
+    }
+  });
+
+  // Search across files. Human-facing, but the ENGINE is the same one
+  // `grep_code` uses — a person and the assistant cannot get two different
+  // answers for the same query, and the sandbox is not reimplemented here.
+  ipcMain.handle(
+    WORKSPACE_CHANNELS.SEARCH,
+    async (_e, opts?: unknown): Promise<WorkspaceSearchResult> => {
+      try {
+        const o = (opts || {}) as Record<string, unknown>;
+        const pattern = String(o.pattern || '').trim();
+        if (!pattern) return { success: false, error: 'Type something to search for.' };
+
+        const res = await runCodeSearch({
+          pattern,
+          directory: String(o.directory || getProjectPath() || os.homedir()),
+          caseSensitive: o.case_sensitive === true,
+          filePattern: String(o.file_pattern || ''),
+          // The panel shows one line per hit; context would double the payload
+          // for something a click already reveals by opening the file.
+          contextLines: 0,
+          maxResults: 200,
+        });
+        if (!res.success || !res.matches) return { success: false, error: res.error };
+
+        const directory = res.resolvedDirectory as string;
+        return {
+          success: true,
+          pattern,
+          directory,
+          match_count: res.matches.length,
+          matches: res.matches.map(m => ({
+            file: path.relative(directory, m.file),
+            path: m.file,
+            line: m.line,
+            text: m.text.slice(0, 500),
+          })),
+        };
+      } catch (e) {
+        return { success: false, error: fail(e) };
+      }
+    },
+  );
+
+  // Replace across files. Line-exact: every edit carries the text the search
+  // saw on that line, and the write is refused for any line that no longer
+  // matches — so a file edited since the search is reported, not clobbered.
+  ipcMain.handle(
+    WORKSPACE_CHANNELS.REPLACE,
+    async (_e, filePath?: unknown, edits?: unknown): Promise<WorkspaceReplaceResult> => {
+      try {
+        if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
+        if (!Array.isArray(edits) || edits.length === 0) return { success: false, error: 'Nothing to replace.' };
+
+        const v = validatePath(filePath);
+        if (!v.valid) return { success: false, error: v.error };
         if (!fs.existsSync(v.resolved)) return { success: false, error: 'File no longer exists.' };
-        fs.writeFileSync(v.resolved, content, 'utf8');
-        return { success: true };
+
+        const buf = fs.readFileSync(v.resolved);
+        if (looksBinary(buf)) return { success: false, error: 'Binary file — cannot edit.' };
+
+        const content = buf.toString('utf8');
+        // Keep the file's own line-ending style on the way back out.
+        const eol = content.includes('\r\n') ? '\r\n' : '\n';
+        const lines = content.split(/\r?\n/);
+
+        const parsed = edits
+          .map((e: unknown) => {
+            const r = (e || {}) as Record<string, unknown>;
+            return {
+              line: Math.floor(Number(r.line) || 0),
+              oldText: String(r.oldText ?? ''),
+              newText: String(r.newText ?? ''),
+            };
+          })
+          .filter(e => e.line >= 1)
+          // Bottom-up: a replacement containing a newline changes the line
+          // count, so indexes below an applied edit must not shift.
+          .sort((a, b) => b.line - a.line);
+
+        let applied = 0;
+        const skipped: Array<{ line: number; reason: string }> = [];
+        for (const e of parsed) {
+          const idx = e.line - 1;
+          if (idx >= lines.length) { skipped.push({ line: e.line, reason: 'line no longer exists' }); continue; }
+          if (lines[idx] !== e.oldText) { skipped.push({ line: e.line, reason: 'line changed since the search' }); continue; }
+          lines.splice(idx, 1, ...e.newText.split(/\r?\n/));
+          applied++;
+        }
+
+        if (applied === 0) {
+          return {
+            success: false,
+            applied: 0,
+            skipped,
+            error: skipped.length
+              ? 'No lines were changed — every target line had moved on since the search.'
+              : 'Nothing to replace.',
+          };
+        }
+
+        fs.writeFileSync(v.resolved, lines.join(eol), 'utf8');
+        return { success: true, applied, skipped };
       } catch (e) {
         return { success: false, error: fail(e) };
       }
     },
   );
 }
+
