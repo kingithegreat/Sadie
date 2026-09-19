@@ -577,3 +577,15 @@ export function getDocument(id: string): ParsedDocument | undefined {
 export function clearDocuments(): void {
   parsedDocuments.clear();
 }
+
+
+
+
+
+/**
+ * Clear all stored documents (for tests)
+ */
+export function _clearDocumentsForTest(): void {
+  parsedDocuments.clear();
+}
+

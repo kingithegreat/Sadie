@@ -993,6 +993,12 @@ export interface ElectronAPI {
   workspaceGitCommit?: (folder: string, message: string) => Promise<{ success: boolean; error?: string; hash?: string }>;
   workspaceGitBranches?: (folder: string) => Promise<{ success: boolean; error?: string; current?: string; branches?: string[] }>;
   workspaceGitCheckout?: (folder: string, branch: string) => Promise<{ success: boolean; error?: string }>;
+  /** IDE-3: assistant edits waiting for review, and the accept/reject decisions. */
+  workspaceProposals?: () => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
+    stats: { added: number; removed: number; approximate: boolean };
+    hunks: Array<{ beforeStart: number; afterStart: number; lines: Array<{ type: 'equal' | 'add' | 'remove'; before: number | null; after: number | null; text: string }> }> }>; error?: string }>;
+  workspaceProposalAccept?: (id: string, hunkIndexes: number[]) => Promise<{ success: boolean; path?: string; applied?: number; error?: string }>;
+  workspaceProposalReject?: (id: string) => Promise<{ success: boolean; error?: string }>;
   onAssistantToolActivity?: (callback: (info: AssistantToolActivity) => void) => () => void;
   getCrmDashboard?: () => Promise<{ success: boolean; summary?: {
     openDealCount: number;

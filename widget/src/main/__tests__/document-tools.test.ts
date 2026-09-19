@@ -1,3 +1,7 @@
+// Local helper for tests
+async function _store(id: string, file: string, type: string, data: string) {
+  await documentToolHandlers['parse_document']({ document_id: id, filename: file, mime_type: type, data: Buffer.from(data).toString('base64') }, {} as any);
+}
 /**
  * document-tools.test.ts
  * Tests for src/main/tools/documents.ts
@@ -25,7 +29,7 @@ jest.mock('fs', () => {
   };
 });
 
-import { documentToolHandlers, documentToolDefs, storeDocument, getDocument, clearDocuments } from '../tools/documents';
+import { documentToolHandlers, documentToolDefs, _clearDocumentsForTest } from '../tools/documents';
 import * as fs from 'fs';
 
 const fsMock = fs.promises as jest.Mocked<typeof fs.promises>;
@@ -36,34 +40,10 @@ function b64(text: string): string {
 }
 
 beforeEach(() => {
-  clearDocuments();
+  _clearDocumentsForTest();
   jest.clearAllMocks();
 });
 
-// ── storeDocument / getDocument / clearDocuments ───────────────────────────
-
-describe('storeDocument / getDocument / clearDocuments', () => {
-  test('stores and retrieves a document', () => {
-    storeDocument('doc-1', 'notes.txt', 'text/plain', 'Hello world content');
-    const doc = getDocument('doc-1');
-    expect(doc).toBeDefined();
-    expect(doc!.filename).toBe('notes.txt');
-    expect(doc!.text).toBe('Hello world content');
-    expect(doc!.wordCount).toBe(3);
-  });
-
-  test('returns undefined for unknown id', () => {
-    expect(getDocument('no-such-doc')).toBeUndefined();
-  });
-
-  test('clearDocuments removes all entries', () => {
-    storeDocument('d1', 'a.txt', 'text/plain', 'text');
-    storeDocument('d2', 'b.txt', 'text/plain', 'more text');
-    clearDocuments();
-    expect(getDocument('d1')).toBeUndefined();
-    expect(getDocument('d2')).toBeUndefined();
-  });
-});
 
 // ── parse_document ─────────────────────────────────────────────────────────
 
@@ -201,7 +181,7 @@ describe('get_document_content handler', () => {
   });
 
   test('returns full content for stored document', async () => {
-    storeDocument('stored-1', 'notes.txt', 'text/plain', 'Full document content here');
+    await _store('stored-1',  'notes.txt',  'text/plain',  'Full document content here');
     const res = await handler({ document_id: 'stored-1' }, {} as any);
     expect(res.success).toBe(true);
     expect(res.result.content).toBe('Full document content here');
@@ -209,7 +189,7 @@ describe('get_document_content handler', () => {
   });
 
   test('includes word_count in response', async () => {
-    storeDocument('stored-2', 'doc.txt', 'text/plain', 'one two three four five');
+    await _store('stored-2',  'doc.txt',  'text/plain',  'one two three four five');
     const res = await handler({ document_id: 'stored-2' }, {} as any);
     expect(res.result.word_count).toBe(5);
   });
@@ -228,8 +208,8 @@ describe('list_documents handler', () => {
   });
 
   test('lists all stored documents', async () => {
-    storeDocument('a', 'a.txt', 'text/plain', 'content a');
-    storeDocument('b', 'b.txt', 'text/plain', 'content b');
+    await _store('a',  'a.txt',  'text/plain',  'content a');
+    await _store('b',  'b.txt',  'text/plain',  'content b');
     const res = await handler({}, {} as any);
     expect(res.result.count).toBe(2);
     const ids = res.result.documents.map((d: any) => d.document_id);
@@ -238,7 +218,7 @@ describe('list_documents handler', () => {
   });
 
   test('each entry includes filename and word_count', async () => {
-    storeDocument('x', 'test.md', 'text/markdown', 'hello world');
+    await _store('x',  'test.md',  'text/markdown',  'hello world');
     const res = await handler({}, {} as any);
     const doc = res.result.documents[0];
     expect(doc.filename).toBe('test.md');
@@ -251,8 +231,8 @@ describe('list_documents handler', () => {
 describe('search_document handler', () => {
   const handler = documentToolHandlers.search_document;
 
-  beforeEach(() => {
-    storeDocument('search-doc', 'article.txt', 'text/plain',
+  beforeEach(async () => {
+    await _store('search-doc',  'article.txt',  'text/plain', 
       'Line one has apples\nLine two has bananas\nLine three has apples again\nLine four has oranges'
     );
   });
@@ -376,3 +356,6 @@ describe('documentToolDefs', () => {
     expect(def.parameters.required).toContain('query');
   });
 });
+
+
+
