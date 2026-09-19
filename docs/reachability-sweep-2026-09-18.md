@@ -62,3 +62,38 @@ To fulfill the gating criteria for user testing, each category should be assigne
 2. **REL-3.2 (Documents/RAG):** Remove `storeDocument`, `getDocument`, and `clearDocuments` unless an upcoming Document Manager panel requires them.
 3. **REL-3.3 (Hardware Specs):** Delete the VRAM/Hardware recommendation logic, as HomeBot currently forces Colab or defaults for large models.
 4. **REL-3.4 (Colab Queue):** Implement the Cancel/Retry buttons in the Media Studio queue UI, or remove the unused capability from the backend.
+
+---
+
+## Correction — the REL-3.3 premise was wrong (2026-09-19)
+
+The finding above says the "Hardware & Model Recommendations" functions "appear to
+belong to a speculative Hardware Profile UI ... This UI does not currently exist."
+**That is incorrect, and following it literally would have deleted live code.**
+
+Both modules are reached in production:
+
+| Live export | Reached from |
+|---|---|
+| `recommendSetupPath`, `recommendModelsForVram` | `renderer/components/FirstRunModal.tsx` |
+| `recommendedModelIdsForVram` | `renderer/components/ModelSelector.tsx` |
+| `assessModelDownloadFit` | `FirstRunModal.tsx`, `ModelSelector.tsx` |
+| `DEFAULT_HEADROOM_GB` | `shared/model-pull-guard.ts` |
+
+Only five exports were genuinely unreachable. All five are removed under REL-3.3:
+
+- `fitsInVram`, `recommendModelsForProfile` (`shared/hardware-presets.ts`)
+- `bytesToGb`, `formatGb`, `canDownloadModel` (`shared/model-download-fit.ts`)
+
+`fitsInVram` was also the assertion helper for a live invariant — that every
+recommended model fits its VRAM tier with headroom. Deleting it without re-homing
+that assertion would have dropped the guard silently, so the check is now inlined in
+the test that uses it.
+
+Measured with this repository's own audit: `node scripts/find-dead-capabilities.mjs`
+reported **18 findings before and 11 after**, with no new findings, `tsc --noEmit`
+clean, and `docs:check` in sync.
+
+Still exported but used only inside their own module, so the audit does not flag them:
+`roundGb` and `profileForVram`. They are internal helpers rather than dead code —
+un-exporting them is a separate tidy-up, not part of REL-3.3.

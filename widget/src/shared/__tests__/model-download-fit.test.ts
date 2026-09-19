@@ -1,34 +1,14 @@
 import {
   assessModelDownloadFit,
-  canDownloadModel,
-  bytesToGb,
   roundGb,
-  formatGb,
   DEFAULT_HEADROOM_GB,
 } from '../model-download-fit';
 
 describe('model-download-fit helpers', () => {
-  test('bytesToGb converts decimal GB and guards bad input', () => {
-    expect(bytesToGb(1e9)).toBeCloseTo(1);
-    expect(bytesToGb(4_400_000_000)).toBeCloseTo(4.4);
-    expect(bytesToGb(0)).toBe(0);
-    expect(bytesToGb(-5)).toBeNull();
-    expect(bytesToGb(NaN)).toBeNull();
-    expect(bytesToGb(undefined)).toBeNull();
-    expect(bytesToGb(null)).toBeNull();
-  });
-
   test('roundGb rounds to one decimal', () => {
     expect(roundGb(4.44)).toBe(4.4);
     expect(roundGb(4.45)).toBe(4.5);
     expect(roundGb(10)).toBe(10);
-  });
-
-  test('formatGb renders one-decimal GB and a placeholder for bad input', () => {
-    expect(formatGb(4.4)).toBe('4.4 GB');
-    expect(formatGb(8)).toBe('8.0 GB');
-    expect(formatGb(null)).toBe('— GB');
-    expect(formatGb(NaN)).toBe('— GB');
   });
 });
 
@@ -105,15 +85,15 @@ describe('assessModelDownloadFit severity ladder', () => {
     expect(r.freeGB).toBe(0);
   });
 
-  test('canDownloadModel mirrors fits across the ladder', () => {
-    expect(canDownloadModel({ sizeGB: 4.4, freeGB: 100 })).toBe(true); // ok
-    expect(canDownloadModel({ sizeGB: 4.4, freeGB: 5 })).toBe(true); // tight
-    expect(canDownloadModel({ sizeGB: 14, freeGB: 3 })).toBe(false); // insufficient
-    expect(canDownloadModel({ sizeGB: 4.4, freeGB: null })).toBe(true); // unknown
+  test('assessModelDownloadFit().fits is the block/allow decision across the ladder', () => {
+    expect(assessModelDownloadFit({ sizeGB: 4.4, freeGB: 100 }).fits).toBe(true); // ok
+    expect(assessModelDownloadFit({ sizeGB: 4.4, freeGB: 5 }).fits).toBe(true); // tight
+    expect(assessModelDownloadFit({ sizeGB: 14, freeGB: 3 }).fits).toBe(false); // insufficient
+    expect(assessModelDownloadFit({ sizeGB: 4.4, freeGB: null }).fits).toBe(true); // unknown
   });
 
-  test('end-to-end from bytes via bytesToGb', () => {
-    const freeGB = bytesToGb(3_000_000_000); // 3 GB
+  test('end-to-end: a byte reading from the diagnostics probe still blocks a too-large pull', () => {
+    const freeGB = 3_000_000_000 / 1e9; // diagnostics reports raw bytes; 3 GB here
     const r = assessModelDownloadFit({ sizeGB: 4.4, freeGB });
     expect(r.severity).toBe('insufficient');
   });

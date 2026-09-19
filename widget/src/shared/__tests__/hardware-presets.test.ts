@@ -5,17 +5,14 @@
  *
  * Covers:
  *  - profileForVram threshold + boundary logic
- *  - fitsInVram headroom logic
- *  - recommendModelsForVram / recommendModelsForProfile per tier
+ *  - recommendModelsForVram per tier
  *  - unknown-hardware safe-default behaviour (no regression vs old hard-coded default)
  *  - internal consistency: recommended models actually fit their tier's VRAM
  */
 
 import {
   profileForVram,
-  fitsInVram,
   recommendModelsForVram,
-  recommendModelsForProfile,
   recommendedModelIdsForVram,
   recommendSetupPath,
   LOCAL_VIABLE_MIN_VRAM,
@@ -48,25 +45,6 @@ describe('profileForVram', () => {
     expect(profileForVram(PROFILE_16GB_MIN)).toBe('16gb+');
     expect(profileForVram(16)).toBe('16gb+');
     expect(profileForVram(24)).toBe('16gb+');
-  });
-});
-
-describe('fitsInVram', () => {
-  it('treats unknown VRAM as always fitting', () => {
-    expect(fitsInVram(43, null)).toBe(true);
-    expect(fitsInVram(43, NaN)).toBe(true);
-  });
-
-  it('applies the default 0.8 headroom', () => {
-    // 8 GB * 0.8 = 6.4 GB usable
-    expect(fitsInVram(4.4, 8)).toBe(true);
-    expect(fitsInVram(6.4, 8)).toBe(true);
-    expect(fitsInVram(7.0, 8)).toBe(false);
-  });
-
-  it('respects a custom headroom', () => {
-    expect(fitsInVram(8, 8, 1.0)).toBe(true);
-    expect(fitsInVram(8, 8, 0.9)).toBe(false);
   });
 });
 
@@ -112,29 +90,22 @@ describe('recommendModelsForVram', () => {
   });
 });
 
-describe('recommendModelsForProfile', () => {
-  it('returns the matching preset for each profile', () => {
-    (['4gb', '8gb', '16gb+'] as HardwareProfile[]).forEach((p) => {
-      expect(recommendModelsForProfile(p).profile).toBe(p);
-    });
-  });
-
-  it('returns the safe default for a null profile', () => {
-    expect(recommendModelsForProfile(null).profile).toBe('unknown');
-    expect(recommendModelsForProfile(null).chat.id).toBe('qwen2.5:7b');
-  });
-});
-
 describe('preset internal consistency', () => {
   const TIER_VRAM: Record<HardwareProfile, number> = { '4gb': 4, '8gb': 8, '16gb+': 16 };
+
+  // The rule the first-run picker relies on: never offer a model that eats more
+  // than 80% of the tier's VRAM, leaving room for the KV cache. Asserted inline
+  // here rather than through a production helper, which nothing called.
+  const VRAM_HEADROOM = 0.8;
+  const fitsTier = (sizeGB: number, vramGB: number) => sizeGB <= vramGB * VRAM_HEADROOM;
 
   it('every recommended chat & coder model fits its tier VRAM with headroom', () => {
     (Object.keys(HARDWARE_PRESETS) as HardwareProfile[]).forEach((profile) => {
       const preset = HARDWARE_PRESETS[profile];
       const vram = TIER_VRAM[profile];
-      expect(fitsInVram(preset.chat.sizeGB, vram)).toBe(true);
-      expect(fitsInVram(preset.coder.sizeGB, vram)).toBe(true);
-      expect(fitsInVram(preset.fallback.sizeGB, vram)).toBe(true);
+      expect(fitsTier(preset.chat.sizeGB, vram)).toBe(true);
+      expect(fitsTier(preset.coder.sizeGB, vram)).toBe(true);
+      expect(fitsTier(preset.fallback.sizeGB, vram)).toBe(true);
     });
   });
 

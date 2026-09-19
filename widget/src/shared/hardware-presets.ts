@@ -10,9 +10,8 @@
  * isolation.
  *
  * Consumed by:
- *  - FirstRunModal (renderer) — to pick which chat model to pull
- *  - diagnostics.ts (main) — hardware profile already classified there;
- *    these presets turn that profile into concrete model choices.
+ *  - FirstRunModal (renderer) — setup-path advice, and which chat model to pull
+ *  - ModelSelector (renderer) — flags the models that best fit the detected GPU
  */
 
 export type HardwareProfile = '4gb' | '8gb' | '16gb+';
@@ -57,15 +56,6 @@ export function profileForVram(vramGB: number | null): HardwareProfile | null {
   return '4gb';
 }
 
-/**
- * True if a model of `sizeGB` comfortably fits in `vramGB`, leaving headroom
- * for the KV cache / context. headroom defaults to 0.8 (use at most 80% of VRAM).
- */
-export function fitsInVram(sizeGB: number, vramGB: number | null, headroom = 0.8): boolean {
-  if (vramGB === null || vramGB === undefined || Number.isNaN(vramGB)) return true;
-  return sizeGB <= vramGB * headroom;
-}
-
 // Concrete presets per profile. Models and sizes are drawn from the curated
 // RECOMMENDED_MODELS catalog used by ModelSelector.
 export const HARDWARE_PRESETS: Record<HardwareProfile, Omit<HardwareRecommendation, 'vramGB'>> = {
@@ -101,19 +91,6 @@ const UNKNOWN_RECOMMENDATION: Omit<HardwareRecommendation, 'vramGB'> = {
   fallback: { id: 'qwen2.5:3b', sizeGB: 2.0, label: 'Qwen 2.5 (3B)' },
   reason: "We couldn't detect your GPU, so we picked balanced 7B models that run on most machines. You can change the model any time in settings.",
 };
-
-/**
- * Recommend local models for a given hardware profile.
- * Passing null (unknown profile) returns the safe balanced default.
- */
-export function recommendModelsForProfile(
-  profile: HardwareProfile | null
-): HardwareRecommendation {
-  if (profile === null) {
-    return { ...UNKNOWN_RECOMMENDATION, vramGB: null };
-  }
-  return { ...HARDWARE_PRESETS[profile], vramGB: null };
-}
 
 /**
  * Recommend local models for a raw VRAM reading. This is the primary entry
