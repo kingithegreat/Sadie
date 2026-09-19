@@ -500,6 +500,24 @@ describe('video pixel format and color space pinning (Task 2)', () => {
     const vf = args[args.indexOf('-vf') + 1];
     expect(vf).toContain('out_color_matrix=bt709:out_range=limited');
   });
+
+  test('job render builders use a probed NVENC encoder without x264-only flags', () => {
+    const videoEncoder = { encoder: 'h264_nvenc' as const, preset: 'p4' as const, fellBack: false };
+    for (const args of [
+      buildRenderArgs({ ...base, imagePath: 'bg.jpg', videoEncoder }),
+      buildTimelineRenderArgs({
+        concatPath: 'C:\\assets\\scenes.txt', audioPath: base.audioPath,
+        outputPath: base.outputPath, shape: 'long', videoEncoder,
+      }),
+    ]) {
+      expect(args[args.indexOf('-c:v') + 1]).toBe('h264_nvenc');
+      expect(args[args.indexOf('-preset') + 1]).toBe('p4');
+      expect(args[args.indexOf('-cq') + 1]).toBe('23');
+      expect(args).not.toContain('-crf');
+      expect(args).not.toContain('-x264-params');
+      expect(args[args.indexOf('-color_primaries') + 1]).toBe('bt709');
+    }
+  });
 });
 
 describe('two-pass audio loudness normalization (Task 3)', () => {

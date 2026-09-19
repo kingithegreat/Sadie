@@ -18,7 +18,8 @@ import * as fs from 'fs';
 import { createStudioOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioExportAttempt, type StudioOutputSpec, type StudioOutputVariant, type StudioRenderedOutput, type StudioMovieResult } from '../../shared/media-output';
 import * as os from 'os';
 import * as path from 'path';
-import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor, buildColorGradeFilter } from '../media-render';
+import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor, buildColorGradeFilter, buildMusicAudioGraph,
+  MUSIC_VOLUME_DEFAULT, resolveVideoEncoder, type VideoEncoderPreference } from '../media-render';
 import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
@@ -41,9 +42,18 @@ export interface StoryboardRenderOptions {
   narrationEngine?: NarrationEngine;
   /** Optional color grading LUT preset to burn into the export. */
   colorGrade?: string | null;
+  /** Background music: true auto-picks from Settings, false disables it, or a local track path/name. */
+  music?: boolean | string | null;
+  /** Background-music gain from 0 to 1. */
+  musicVolume?: number;
+  /** Encoder preference. NVENC automatically falls back to software when its real probe fails. */
+  encoder?: StoryboardEncoderPreference;
 }
 
 export type StoryboardRenderResult = StudioMovieResult;
+export type StoryboardEncoderPreference = VideoEncoderPreference;
+export { probeNvencSupport, resetNvencProbeCache, resolveVideoEncoder } from '../media-render';
+export type { ResolvedVideoEncoder } from '../media-render';
 
 function readableFile(file: unknown): file is string {
   if (typeof file !== 'string' || !file) return false;
@@ -168,6 +178,53 @@ function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stde
   });
 }
 
+function validatedMusicVolume(value: unknown): number {
+  const volume = value === undefined ? MUSIC_VOLUME_DEFAULT : value;
+  if (typeof volume !== 'number' || !Number.isFinite(volume) || volume < 0 || volume > 1) {
+    throw new Error('Background music volume must be a number from 0 to 1.');
+  }
+  return volume;
+}
+
+async function resolveStoryboardMusic(
+  opts: StoryboardRenderOptions,
+  projectMeta: Record<string, any>,
+  totalDuration: number,
+): Promise<{ path: string | null; volume: number; warning?: string }> {
+  const { chooseMusic, isMusicFile, listMusicTracks } = await import('../media-music');
+  let mediaSettings: Record<string, any> = {};
+  try {
+    const { getSettings } = await import('../config-manager');
+    mediaSettings = getSettings();
+  } catch { /* Unit and non-Electron callers can still use an explicit track. */ }
+
+  const requested = opts.music !== undefined
+    ? opts.music !== false && opts.music !== null
+    : projectMeta.musicEnabled !== undefined
+      ? projectMeta.musicEnabled === true
+      : mediaSettings.mediaMusicEnabled === true;
+  const volume = validatedMusicVolume(opts.musicVolume ?? projectMeta.musicVolume);
+  if (!requested) return { path: null, volume };
+
+  const folder = typeof mediaSettings.mediaMusicFolder === 'string' ? mediaSettings.mediaMusicFolder.trim() : '';
+  const namedTrack = typeof opts.music === 'string' && opts.music.trim()
+    ? opts.music.trim()
+    : typeof projectMeta.musicTrack === 'string' ? projectMeta.musicTrack.trim() : '';
+  if (namedTrack) {
+    if (fs.existsSync(namedTrack) && isMusicFile(namedTrack)) return { path: namedTrack, volume };
+    if (folder && fs.existsSync(folder)) {
+      const match = listMusicTracks(folder).find(track => path.basename(track).toLowerCase() === path.basename(namedTrack).toLowerCase());
+      if (match) return { path: match, volume };
+    }
+    return { path: null, volume, warning: `The movie was exported without background music because the selected track was not found: ${namedTrack}` };
+  }
+
+  const choice = chooseMusic({ enabled: true, folder, seed: Math.round(totalDuration * 1000) });
+  return choice.path
+    ? { path: choice.path, volume }
+    : { path: null, volume, warning: `The movie was exported without background music because ${choice.reason || 'no usable track was available'}.` };
+}
+
 /**
  * Compiles a storyboard project into a broadcast 1080p MP4 movie.
  */
@@ -180,6 +237,7 @@ export async function renderStoryboardMovie(
     projectDir = getStoryboardProjectDir(opts.projectId);
     if (!fs.existsSync(projectDir)) throw new Error(`Storyboard project directory not found: ${projectDir}`);
     if (opts.sceneId !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(opts.sceneId)) throw new Error('Choose a valid storyboard scene before exporting.');
+    if (opts.musicVolume !== undefined) validatedMusicVolume(opts.musicVolume);
     attempt = beginStoryboardExport(projectDir, opts.sceneId);
   } catch (error) { return { ok: false, error: (error as Error).message }; }
   let prepared: Awaited<ReturnType<typeof prepareStoryboardInputs>> | undefined;
@@ -244,6 +302,9 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
   if (!ffmpeg) {
     throw new Error('FFmpeg was not found. Choose "Set it up for me" in Media Studio to install the video engine.');
   }
+  // Probe before speech synthesis or frame work. A missing GPU must become a
+  // cheap, transparent CPU fallback rather than failing after expensive prep.
+  const videoEncoder = await resolveVideoEncoder(ffmpeg, opts.encoder);
 
   let projectDir: string;
   try {
@@ -417,6 +478,22 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
       combinedAudioPath,
     ]);
 
+    // Resolve one deterministic local track for the complete export. A
+    // transition timeline mixes it inside the final graph below; a cut-only
+    // timeline can mix once here and reuse the resulting narration-length WAV.
+    const music = await resolveStoryboardMusic(opts, projectMeta, totalDuration);
+    let finalAudioPath = combinedAudioPath;
+    if (music.path && !timeline.hasTransition) {
+      const duckedAudioPath = path.join(tempDir, 'ducked_audio.wav');
+      const mix = buildMusicAudioGraph({ narrationInput: 0, musicInput: 1, volume: music.volume, labelPrefix: 'story' });
+      await runCommand(ffmpeg, [
+        '-y', '-i', combinedAudioPath, '-i', music.path,
+        '-filter_complex', mix.graph, '-map', mix.outLabel,
+        '-c:a', 'pcm_s16le', duckedAudioPath,
+      ]);
+      finalAudioPath = duckedAudioPath;
+    }
+
     // 2. Generate Subtitles file
     let srtPath: string | null = null;
     if (burnSubtitles) {
@@ -426,7 +503,9 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     }
 
     return { ffmpeg, projectDir, projectMeta, outputSpec, burnSubtitles, sceneId, shots, snapshotScenes,
-      engine, totalDuration, motion, hasNarration, combinedAudioPath, audioSegments, timeline, srtPath, inputDir: tempDir, rendersDir };
+      engine, totalDuration, motion, hasNarration, combinedAudioPath: finalAudioPath, audioSegments, timeline, srtPath,
+      musicTrackPath: music.path, musicVolume: music.volume, musicWarning: music.warning, videoEncoder,
+      inputDir: tempDir, rendersDir };
   } catch (error) {
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
     throw error;
@@ -437,7 +516,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
   prepared: Awaited<ReturnType<typeof prepareStoryboardInputs>>, variant?: StudioOutputVariant,
 ): Promise<StoryboardRenderResult> {
   const { ffmpeg, projectDir, projectMeta, burnSubtitles, sceneId, shots, snapshotScenes, engine,
-    totalDuration, motion, hasNarration, combinedAudioPath, audioSegments, timeline, srtPath, rendersDir } = prepared;
+    totalDuration, motion, hasNarration, combinedAudioPath, audioSegments, timeline, srtPath, rendersDir,
+    musicTrackPath, musicVolume, musicWarning, videoEncoder } = prepared;
   const outputSpec = prepared.outputSpec ? { ...prepared.outputSpec, variants: [variant!] } : undefined;
   const outputVariant = variant;
   const width = variant?.width ?? 1920;
@@ -465,7 +545,12 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       fs.writeFileSync(textCardsPath, cardAss, 'utf-8');
     }
     const stagedMoviePath = path.join(tempDir, 'movie.mp4');
-    attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, { ...projectMeta, outputSpec, burnSubtitles }, { sceneId, motion: opts.motion, engine });
+    const exportWarning = [musicWarning, videoEncoder.warning].filter(Boolean).join(' ') || undefined;
+    attempt.sourceRevision = await storyboardSourceRevision(snapshotScenes, {
+      ...projectMeta, outputSpec, burnSubtitles,
+      ...(opts.music !== undefined ? { musicEnabled: opts.music !== false && opts.music !== null } : {}),
+      ...(opts.musicVolume !== undefined ? { musicVolume } : {}),
+    }, { sceneId, motion: opts.motion, engine });
     attempt.status = 'rendering';
     recordStoryboardAttempt(projectDir, attempt);
 
@@ -483,7 +568,7 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
           : (outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080');
         const vf = [frameFilter, buildColorGradeFilter(opts.colorGrade), 'format=yuv420p'].filter(Boolean).join(',');
         await runCommand(ffmpeg, ['-y', '-loop', '1', '-i', shot.frameImagePath!, '-vf', vf,
-          '-c:v', 'libx264', '-preset', 'veryfast', '-t', String(shot.durationSec), '-r', String(fps), clipPath]);
+          '-c:v', videoEncoder.encoder, '-preset', videoEncoder.preset, '-t', String(shot.durationSec), '-r', String(fps), clipPath]);
         clips.push(clipPath);
       }
 
@@ -492,17 +577,23 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       const overlays: string[] = [];
       if (srtPath && fs.existsSync(srtPath)) overlays.push(`subtitles='${escapeFilterPath(srtPath)}':force_style='${subtitleStyle}'`);
       if (textCardsPath) overlays.push(`subtitles='${escapeFilterPath(textCardsPath)}'`);
-      const graph = [video.filter, overlays.length ? `${video.outLabel}${overlays.join(',')}[vfinal]` : '', audio.filter]
+      const music = musicTrackPath
+        ? buildMusicAudioGraph({ narrationInput: audio.outLabel, musicInput: clips.length + audioSegments.length,
+            volume: musicVolume, labelPrefix: 'transition_bgm' })
+        : null;
+      const graph = [video.filter, overlays.length ? `${video.outLabel}${overlays.join(',')}[vfinal]` : '', audio.filter, music?.graph]
         .filter(Boolean).join(';');
       const videoOut = overlays.length ? '[vfinal]' : video.outLabel;
+      const audioOut = music?.outLabel ?? audio.outLabel;
 
       await runCommand(ffmpeg, [
         '-y',
         ...clips.flatMap(clip => ['-i', clip]),
         ...audioSegments.flatMap(segment => ['-i', segment]),
+        ...(musicTrackPath ? ['-i', musicTrackPath] : []),
         '-filter_complex', graph,
-        '-map', videoOut, '-map', audio.outLabel,
-        '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p',
+        '-map', videoOut, '-map', audioOut,
+        '-c:v', videoEncoder.encoder, '-preset', videoEncoder.preset, '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '192k',
         '-t', String(totalDuration), '-movflags', '+faststart',
         stagedMoviePath,
@@ -525,8 +616,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
           '-loop', '1',
           '-i', imgPath,
           '-vf', vf,
-          '-c:v', 'libx264',
-          '-preset', 'veryfast',
+          '-c:v', videoEncoder.encoder,
+          '-preset', videoEncoder.preset,
           '-t', String(dur),
           '-r', String(fps),
           shotClipPath,
@@ -558,8 +649,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       if (muxFilters.length) muxArgs.push('-vf', muxFilters.join(','));
 
       muxArgs.push(
-        '-c:v', 'libx264',
-        '-preset', 'fast',
+        '-c:v', videoEncoder.encoder,
+        '-preset', videoEncoder.encoder === 'libx264' ? 'fast' : videoEncoder.preset,
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
@@ -603,8 +694,8 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         '-i', concatListPath,
         '-i', combinedAudioPath,
         '-vf', filters.join(','),
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
+        '-c:v', videoEncoder.encoder,
+        '-preset', videoEncoder.preset,
         '-pix_fmt', 'yuv420p',
         '-c:a', 'aac',
         '-b:a', '192k',
@@ -662,6 +753,7 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       totalShots: shots.length,
       burnSubtitles,
       ...(outputSpec ? { outputSpec } : {}), renderedOutput,
+      ...(exportWarning ? { warning: exportWarning } : {}),
     };
   } catch (error) {
     return { ok: false, error: `Movie export failed: ${(error as Error).message}` };

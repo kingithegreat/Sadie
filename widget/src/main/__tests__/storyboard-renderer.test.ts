@@ -9,6 +9,8 @@ import {
   buildKenBurnsFilter,
   MOTION_SUPERSAMPLE,
   getStoryboardProjectDir,
+  resetNvencProbeCache,
+  resolveVideoEncoder,
   renderStoryboardMovie,
   ShotManifest,
 } from '../movie/storyboard-renderer';
@@ -88,6 +90,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
       fs.writeFileSync(actual, 'controlled narration bytes');
       return { path: actual, bytes: 26, engine: 'kokoro' };
     });
+    resetNvencProbeCache();
   });
 
   afterEach(() => {
@@ -350,5 +353,102 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     const narrationCalls = (renderNarrationToFile as jest.Mock).mock.calls.map(c => c[0]);
     expect(narrationCalls).toEqual(['EDITED narration B.', 'EDITED narration A.']);
     expect(narrationCalls.join(' ')).not.toContain('Original narration');
+  });
+
+  test('MS-4 mixes a saved music bed with measured sidechain ducking, including transition exports', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'music-ducking', title: 'Music Ducking',
+      shots: [
+        { prompt: 'Opening', durationSec: 4, narration: 'A spoken opening.', transition: 'crossfade', transitionSec: 0.5 },
+        { prompt: 'Closing', durationSec: 4, narration: 'A spoken closing.' },
+      ],
+    }, {} as any);
+    const projectDir = created.result.projectDir as string;
+    dropFakeFrame(projectDir, 'scene_01', 'shot_001');
+    dropFakeFrame(projectDir, 'scene_01', 'shot_002');
+    await mediaSaveStoryboardHandler({
+      projectId: 'music-ducking', sceneId: 'scene_01',
+      musicEnabled: true, musicVolume: 0.22,
+      shots: [
+        { shotId: 'shot_001', prompt: 'Opening', durationSec: 4, narration: 'A spoken opening.', transition: 'crossfade', transitionSec: 0.5 },
+        { shotId: 'shot_002', prompt: 'Closing', durationSec: 4, narration: 'A spoken closing.' },
+      ],
+    }, {} as any);
+    expect(JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')))
+      .toMatchObject({ musicEnabled: true, musicVolume: 0.22 });
+    const music = path.join(projectDir, 'bed.wav');
+    fs.writeFileSync(music, 'controlled music bytes');
+
+    (execFile as unknown as jest.Mock).mockClear();
+    const res = await renderStoryboardMovie({ projectId: 'music-ducking', music, musicVolume: 0.22, encoder: 'cpu' });
+    expect(res.ok).toBe(true);
+    const calls = (execFile as unknown as jest.Mock).mock.calls.map(([, args]) => args as string[]);
+    const transitionMix = calls.find(args => args.includes('-filter_complex') && args.some(arg => arg.includes('xfade=')));
+    expect(transitionMix).toBeDefined();
+    expect(transitionMix).toContain(music);
+    const graph = transitionMix![transitionMix!.indexOf('-filter_complex') + 1];
+    expect(graph).toContain('sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400');
+    expect(graph).toContain('volume=0.22');
+    expect(graph).toContain('amix=inputs=2:duration=first:normalize=0');
+  });
+
+  test('MS-4 refuses a non-finite or out-of-range music level before invoking FFmpeg', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'bad-music-level', title: 'Bad Music Level',
+      shots: [{ prompt: 'Opening', durationSec: 3, narration: 'Opening.' }],
+    }, {} as any);
+    dropFakeFrame(created.result.projectDir, 'scene_01', 'shot_001');
+
+    (execFile as unknown as jest.Mock).mockClear();
+    const res = await renderStoryboardMovie({ projectId: 'bad-music-level', music: true, musicVolume: Number.NaN });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/music volume/i);
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  test('MS-9 probes NVENC with a real frame and falls back to software when the probe fails', async () => {
+    const exec = execFile as unknown as jest.Mock;
+    exec.mockClear();
+    exec.mockImplementationOnce((_bin, args, _opts, cb) => {
+      expect(args).toEqual(expect.arrayContaining(['-frames:v', '1', '-c:v', 'h264_nvenc']));
+      cb(new Error('No capable devices found'), '', 'No capable devices found');
+    });
+
+    await expect(resolveVideoEncoder('/ffmpeg', 'nvenc')).resolves.toMatchObject({
+      encoder: 'libx264', preset: 'veryfast', fellBack: true,
+    });
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  test('MS-9 uses NVENC only after its local encode probe succeeds, while CPU skips the probe', async () => {
+    const exec = execFile as unknown as jest.Mock;
+    exec.mockClear();
+    await expect(resolveVideoEncoder('/ffmpeg', 'cpu')).resolves.toMatchObject({ encoder: 'libx264', fellBack: false });
+    expect(exec).not.toHaveBeenCalled();
+
+    await expect(resolveVideoEncoder('/ffmpeg', 'auto')).resolves.toMatchObject({ encoder: 'h264_nvenc', preset: 'p4', fellBack: false });
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
+  test('MS-9 routes a real storyboard export through the probed encoder and surfaces software fallback', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'encoder-route', title: 'Encoder Route',
+      shots: [{ prompt: 'Opening', durationSec: 3, narration: 'Opening.' }],
+    }, {} as any);
+    dropFakeFrame(created.result.projectDir, 'scene_01', 'shot_001');
+    const exec = execFile as unknown as jest.Mock;
+
+    exec.mockClear();
+    const gpu = await renderStoryboardMovie({ projectId: 'encoder-route', encoder: 'auto', outputName: 'gpu.mp4' });
+    expect(gpu.ok).toBe(true);
+    expect(exec.mock.calls.some(([, args]) => args.includes('-c:v') && args[args.indexOf('-c:v') + 1] === 'h264_nvenc')).toBe(true);
+
+    resetNvencProbeCache();
+    exec.mockClear();
+    exec.mockImplementationOnce((_bin, _args, _opts, cb) => cb(new Error('No capable devices'), '', 'No capable devices'));
+    const cpu = await renderStoryboardMovie({ projectId: 'encoder-route', encoder: 'nvenc', outputName: 'fallback.mp4' });
+    expect(cpu.ok).toBe(true);
+    expect(cpu.warning).toMatch(/used the CPU encoder/i);
+    expect(exec.mock.calls.some(([, args]) => args.includes('-c:v') && args[args.indexOf('-c:v') + 1] === 'libx264')).toBe(true);
   });
 });

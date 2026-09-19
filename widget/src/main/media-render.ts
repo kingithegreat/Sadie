@@ -407,6 +407,53 @@ export async function measureAudioLoudness(opts: {
   });
 }
 
+export type VideoEncoderPreference = 'auto' | 'nvenc' | 'cpu';
+
+export interface ResolvedVideoEncoder {
+  encoder: 'h264_nvenc' | 'libx264';
+  preset: 'p4' | 'veryfast';
+  fellBack: boolean;
+  warning?: string;
+}
+
+const nvencProbeCache = new Map<string, boolean>();
+
+/** Test seam and lifecycle reset for FFmpeg changes. */
+export function resetNvencProbeCache(): void {
+  nvencProbeCache.clear();
+}
+
+/**
+ * Prove that this exact FFmpeg binary can initialise NVENC on this machine.
+ * Listing the encoder is insufficient: builds can advertise h264_nvenc while
+ * the driver or a capable NVIDIA device is unavailable.
+ */
+export async function probeNvencSupport(ffmpeg: string): Promise<boolean> {
+  const cached = nvencProbeCache.get(ffmpeg);
+  if (cached !== undefined) return cached;
+  const supported = await new Promise<boolean>((resolve) => {
+    execFile(ffmpeg, [
+      '-hide_banner', '-loglevel', 'error',
+      '-f', 'lavfi', '-i', 'color=c=black:size=320x240:rate=25',
+      '-frames:v', '1', '-an', '-c:v', 'h264_nvenc', '-f', 'null', '-',
+    ], { timeout: 30_000, maxBuffer: 1024 * 1024 * 4 }, err => resolve(!err));
+  });
+  nvencProbeCache.set(ffmpeg, supported);
+  return supported;
+}
+
+export async function resolveVideoEncoder(
+  ffmpeg: string,
+  requested: VideoEncoderPreference = 'auto',
+): Promise<ResolvedVideoEncoder> {
+  if (requested === 'cpu') return { encoder: 'libx264', preset: 'veryfast', fellBack: false };
+  if (await probeNvencSupport(ffmpeg)) return { encoder: 'h264_nvenc', preset: 'p4', fellBack: false };
+  return {
+    encoder: 'libx264', preset: 'veryfast', fellBack: true,
+    warning: 'NVENC was unavailable, so this export used the CPU encoder instead.',
+  };
+}
+
 /**
  * Arguments for a single-visual render. Pure, so the command can be asserted
  * without invoking ffmpeg — the parts that break are the filter string and the
@@ -436,6 +483,8 @@ export function buildRenderArgs(opts: {
   targetI?: number;
   targetTp?: number;
   targetLra?: number;
+  /** Already-probed encoder. Pure command builders default to CPU. */
+  videoEncoder?: ResolvedVideoEncoder;
 }): string[] {
   const variant = opts.outputVariant ? resolveStudioOutputVariant(opts.outputVariant) : undefined;
   const { w, h } = variant ? { w: variant.width, h: variant.height } : dimensionsFor(opts.shape);
@@ -508,7 +557,10 @@ export function buildRenderArgs(opts: {
       args.push('-af', buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra));
     }
   }
-  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
+  const videoEncoder = opts.videoEncoder ?? { encoder: 'libx264', preset: 'veryfast', fellBack: false };
+  args.push('-c:v', videoEncoder.encoder, '-preset', videoEncoder.preset);
+  if (videoEncoder.encoder === 'h264_nvenc') args.push('-cq', '23');
+  else args.push('-crf', '23');
   // Forced at the encoder, not just in the filter chain. A JPEG input is
   // full-range, so the encoder picked yuvj420p — the deprecated variant that
   // renders washed out on some players — even with format=yuv420p filtered.
@@ -520,8 +572,10 @@ export function buildRenderArgs(opts: {
     '-color_primaries', 'bt709',
     '-color_trc', 'bt709',
     '-colorspace', 'bt709',
-    '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off',
   );
+  if (videoEncoder.encoder === 'libx264') {
+    args.push('-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off');
+  }
   args.push('-c:a', 'aac', '-b:a', '128k');
   // The image input loops forever; the audio decides when the video ends.
   args.push('-shortest', '-movflags', '+faststart');
@@ -560,6 +614,8 @@ export function buildTimelineRenderArgs(opts: {
   targetI?: number;
   targetTp?: number;
   targetLra?: number;
+  /** Already-probed encoder. Pure command builders default to CPU. */
+  videoEncoder?: ResolvedVideoEncoder;
 }): string[] {
   const variant = opts.outputVariant ? resolveStudioOutputVariant(opts.outputVariant) : undefined;
   const { w, h } = variant ? { w: variant.width, h: variant.height } : dimensionsFor(opts.shape);
@@ -615,7 +671,10 @@ export function buildTimelineRenderArgs(opts: {
       args.push('-af', buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra));
     }
   }
-  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23');
+  const videoEncoder = opts.videoEncoder ?? { encoder: 'libx264', preset: 'veryfast', fellBack: false };
+  args.push('-c:v', videoEncoder.encoder, '-preset', videoEncoder.preset);
+  if (videoEncoder.encoder === 'h264_nvenc') args.push('-cq', '23');
+  else args.push('-crf', '23');
   // See buildRenderArgs: generated scenes arrive as JPEG/PNG and the encoder
   // otherwise settles on full-range yuvj420p.
   // Pin BT.709 color space and limited range for universal player compatibility.
@@ -625,8 +684,10 @@ export function buildTimelineRenderArgs(opts: {
     '-color_primaries', 'bt709',
     '-color_trc', 'bt709',
     '-colorspace', 'bt709',
-    '-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off',
   );
+  if (videoEncoder.encoder === 'libx264') {
+    args.push('-x264-params', 'colorprim=bt709:transfer=bt709:colormatrix=bt709:fullrange=off');
+  }
   args.push('-c:a', 'aac', '-b:a', '128k');
   args.push('-shortest', '-movflags', '+faststart');
   args.push(...boundedOutputDuration(variant, opts.durationSeconds));
@@ -725,27 +786,41 @@ export const MUSIC_VOLUME_DEFAULT = 0.18;
  * quietly drop the narration to half volume the moment music was switched on.
  */
 export function buildMusicAudioGraph(opts: {
-  narrationInput: number;
-  musicInput: number;
+  narrationInput: number | string;
+  musicInput: number | string;
   volume?: number;
   loudnormStats?: LoudnormStats | null;
   targetI?: number;
   targetTp?: number;
   targetLra?: number;
+  /** Prefix labels when this graph is embedded beside another audio graph. */
+  labelPrefix?: string;
 }): { graph: string; outLabel: string } {
   const volume = opts.volume ?? MUSIC_VOLUME_DEFAULT;
+  const stream = (input: number | string): string => {
+    if (typeof input === 'number') return `[${input}:a]`;
+    if (/^\[[a-zA-Z][a-zA-Z0-9_]*\]$/.test(input)) return input;
+    throw new Error('Music mixing received an invalid FFmpeg stream label.');
+  };
+  const prefix = opts.labelPrefix ? `${opts.labelPrefix}_` : '';
+  const narmix = `[${prefix}narmix]`;
+  const narkey = `[${prefix}narkey]`;
+  const musicloop = `[${prefix}musicloop]`;
+  const ducked = `[${prefix}ducked]`;
+  const mixout = `[${prefix}mixout]`;
+  const outLabel = `[${prefix}aout]`;
   const lnFilter = opts.loudnormStats
     ? buildLoudnormFilter(opts.loudnormStats, opts.targetI, opts.targetTp, opts.targetLra)
     : null;
   const graph = [
-    `[${opts.narrationInput}:a]asplit=2[narmix][narkey]`,
-    `[${opts.musicInput}:a]volume=${volume},aloop=loop=-1:size=2147483647[musicloop]`,
-    `[musicloop][narkey]sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400[ducked]`,
+    `${stream(opts.narrationInput)}asplit=2${narmix}${narkey}`,
+    `${stream(opts.musicInput)}volume=${volume},aloop=loop=-1:size=2147483647${musicloop}`,
+    `${musicloop}${narkey}sidechaincompress=threshold=0.03:ratio=8:attack=5:release=400${ducked}`,
     lnFilter
-      ? `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[mixout];[mixout]${lnFilter}[aout]`
-      : `[narmix][ducked]amix=inputs=2:duration=first:normalize=0[aout]`,
+      ? `${narmix}${ducked}amix=inputs=2:duration=first:normalize=0${mixout};${mixout}${lnFilter}${outLabel}`
+      : `${narmix}${ducked}amix=inputs=2:duration=first:normalize=0${outLabel}`,
   ].join(';');
-  return { graph, outLabel: '[aout]' };
+  return { graph, outLabel };
 }
 
 export interface RenderResult {
@@ -753,6 +828,8 @@ export interface RenderResult {
   bytes: number;
   args: string[];
   loudnorm?: LoudnormStats | null;
+  videoEncoder: ResolvedVideoEncoder['encoder'];
+  warning?: string;
 }
 
 /**
@@ -784,6 +861,8 @@ export async function renderVideo(opts: {
   targetI?: number;
   targetTp?: number;
   targetLra?: number;
+  /** Auto uses NVENC only after a real one-frame probe, then falls back to CPU. */
+  encoder?: VideoEncoderPreference;
 }): Promise<RenderResult> {
   if (opts.outputVariant) resolveStudioOutputVariant(opts.outputVariant);
   boundedOutputDuration(opts.outputVariant, opts.durationSeconds);
@@ -791,6 +870,7 @@ export async function renderVideo(opts: {
     throw new Error(`No narration audio at ${opts.audioPath}`);
   }
   fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
+  const videoEncoder = await resolveVideoEncoder(opts.ffmpeg, opts.encoder);
 
   let loudnormStats: LoudnormStats | null = null;
   if (opts.loudnormStats !== false) {
@@ -813,6 +893,7 @@ export async function renderVideo(opts: {
   const renderOpts = {
     ...opts,
     loudnormStats,
+    videoEncoder,
   };
   const args = opts.concatPath
     ? buildTimelineRenderArgs({ ...renderOpts, concatPath: opts.concatPath })
@@ -839,5 +920,9 @@ export async function renderVideo(opts: {
   if (bytes < 10_000) {
     throw new Error(`Rendered file is only ${bytes} bytes — the render produced no usable video`);
   }
-  return { path: opts.outputPath, bytes, args, loudnorm: loudnormStats };
+  return {
+    path: opts.outputPath, bytes, args, loudnorm: loudnormStats,
+    videoEncoder: videoEncoder.encoder,
+    ...(videoEncoder.warning ? { warning: videoEncoder.warning } : {}),
+  };
 }
