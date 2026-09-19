@@ -99,6 +99,14 @@ function setup(overrides: Record<string, any> = {}) {
     engineUsed: 'cpu-rmbg-v1.4',
   });
 
+  const mediaSeriesSettingsSave = jest.fn().mockResolvedValue({
+    success: true,
+  });
+
+  const mediaSeriesSettingsDelete = jest.fn().mockResolvedValue({
+    success: true,
+  });
+
   (window as any).electron = {
     mediaList,
     mediaStoryboardList,
@@ -106,6 +114,8 @@ function setup(overrides: Record<string, any> = {}) {
     mediaSeriesSettingsList,
     mediaSeriesSettingsGet,
     mediaSeriesSettingsSegment,
+    mediaSeriesSettingsSave,
+    mediaSeriesSettingsDelete,
     ...overrides,
   };
 
@@ -116,6 +126,8 @@ function setup(overrides: Record<string, any> = {}) {
     mediaSeriesSettingsList,
     mediaSeriesSettingsGet,
     mediaSeriesSettingsSegment,
+    mediaSeriesSettingsSave,
+    mediaSeriesSettingsDelete,
   };
 }
 
@@ -309,5 +321,43 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
 
     // Should switch to Director workspace
     expect(screen.getByLabelText('Studio Quick Launch')).toBeInTheDocument();
+  });
+
+  test('Save Setting button calls mediaSeriesSettingsSave', async () => {
+    const mocks = setup();
+    await act(async () => {
+      render(<MediaStudioPanel navContext={{ workspace: 'stage' }} />);
+    });
+
+    const saveBtn = screen.getByTestId('stage-setting-save-btn');
+    expect(saveBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(saveBtn);
+    });
+
+    expect(mocks.mediaSeriesSettingsSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        seriesId: 'ancient-pathways',
+        settingId: 'throne_room',
+      })
+    );
+  });
+
+  test('Delete Setting button calls mediaSeriesSettingsDelete when confirmed', async () => {
+    const mocks = setup();
+    jest.spyOn(window, 'confirm').mockReturnValue(true);
+    await act(async () => {
+      render(<MediaStudioPanel navContext={{ workspace: 'stage' }} />);
+    });
+
+    const deleteBtn = screen.getByTestId('stage-setting-delete-btn');
+    expect(deleteBtn).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(deleteBtn);
+    });
+
+    expect(mocks.mediaSeriesSettingsDelete).toHaveBeenCalledWith('ancient-pathways', 'throne_room');
   });
 });
