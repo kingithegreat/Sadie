@@ -20,6 +20,7 @@ import { isGateBlocked } from '../../../shared/upgrade';
 import { apiKeyForProvider } from '../../../shared/cloud-llm';
 import { knownModelsFor } from '../../../shared/subscription-models';
 import { defaultApiUrlFor } from '../../../shared/provider-urls';
+import { copyTextToClipboard } from '../../utils/clipboard';
 
 export interface Settings {
   alwaysOnTop: boolean;
@@ -315,7 +316,11 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       systemCheck: sysCheck,
     });
     try {
-      await navigator.clipboard.writeText(report);
+      // Route through main. `navigator.clipboard` is denied in this window
+      // (window-manager.ts allows only media/microphone/audioCapture), so the
+      // previous call rejected and the button silently did nothing.
+      const ok = await copyTextToClipboard(report);
+      if (!ok) return;
       setReportCopied(true);
       setTimeout(() => setReportCopied(false), 2000);
     } catch {

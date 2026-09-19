@@ -156,12 +156,14 @@ test('surfaces image-generation and code-workspace headline pillars with remedie
 });
 
 test('Track D: renders actionable command snippet and copies to clipboard with user feedback', async () => {
-  const writeTextMock = jest.fn().mockResolvedValue(undefined);
-  Object.assign(navigator, {
-    clipboard: {
-      writeText: writeTextMock,
-    },
-  });
+  // The window is sandboxed, so `navigator.clipboard` is denied by the app's
+  // permission handler (window-manager.ts allows only media/microphone/
+  // audioCapture). Copying therefore goes through the preload bridge to
+  // `homebot:clipboard-write` in main. Mocking `navigator.clipboard` here used
+  // to make this test pass against a route that rejects in the real app.
+  const writeClipboard = jest.fn().mockResolvedValue({ success: true });
+  const navigatorWriteText = jest.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText: navigatorWriteText } });
 
   mockReport([
     {
@@ -174,6 +176,9 @@ test('Track D: renders actionable command snippet and copies to clipboard with u
     },
   ]);
 
+  // Must come AFTER mockReport(): it replaces window.electron wholesale.
+  (window as any).electron = { ...(window as any).electron, writeClipboard };
+
   const { getByTestId } = render(<CapabilityReport />);
   await waitFor(() => expect(getByTestId('cap-cmd-local-chat')).toBeTruthy());
   expect(getByTestId('cap-cmd-local-chat').textContent).toBe('winget install Ollama.Ollama');
@@ -182,8 +187,45 @@ test('Track D: renders actionable command snippet and copies to clipboard with u
   expect(copyBtn.textContent).toBe('Copy');
 
   fireEvent.click(copyBtn);
-  expect(writeTextMock).toHaveBeenCalledWith('winget install Ollama.Ollama');
+  expect(writeClipboard).toHaveBeenCalledWith('winget install Ollama.Ollama');
   await waitFor(() => expect(getByTestId('cap-copy-local-chat').textContent).toContain('Copied'));
+
+  writeClipboard.mockResolvedValueOnce({ success: false, error: 'denied' });
+  fireEvent.click(getByTestId('cap-copy-local-chat'));
+  await waitFor(() => expect(getByTestId('cap-copy-local-chat').textContent).toContain('Copy failed'));
+});
+
+test('Track D: copies through the preload bridge, not navigator.clipboard', async () => {
+  // Control for the test above: assert the denied route is NOT used, so a
+  // future edit cannot quietly move the call back to it. Without this, the
+  // previous assertion passes for either implementation.
+  const writeClipboard = jest.fn().mockResolvedValue({ success: true });
+  const navigatorWriteText = jest.fn().mockResolvedValue(undefined);
+  Object.assign(navigator, { clipboard: { writeText: navigatorWriteText } });
+
+  mockReport([
+    {
+      id: 'local-chat',
+      label: 'Answer on this PC',
+      state: 'missing',
+      detail: 'The local AI service is not running.',
+      fix: 'Install Ollama.',
+      fixCommand: 'winget install Ollama.Ollama',
+    },
+  ]);
+
+  // Must come AFTER mockReport(): it replaces window.electron wholesale, so a
+  // writeClipboard set before it is silently dropped and the assertion below
+  // reads 0 calls against a bridge the component never had.
+  (window as any).electron = { ...(window as any).electron, writeClipboard };
+
+  const { getByTestId } = render(<CapabilityReport />);
+  await waitFor(() => expect(getByTestId('cap-copy-local-chat')).toBeTruthy());
+
+  fireEvent.click(getByTestId('cap-copy-local-chat'));
+
+  await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith('winget install Ollama.Ollama'));
+  expect(navigatorWriteText).not.toHaveBeenCalled();
 });
 
 test('Track D: renders direct in-app navigation button and invokes onNavigate', async () => {

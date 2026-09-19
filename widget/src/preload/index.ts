@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 import type { StudioOutputSpec } from '../shared/media-output';
 import type { CaptionStyle } from '../shared/caption-style';
@@ -928,10 +928,16 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:restart-app');
   },
 
-  // Clipboard helper — uses Electron native clipboard (works with contextIsolation)
-  writeClipboard: (text: string) => {
-    clipboard.writeText(text);
-  },
+  // Clipboard helper. This MUST go through the main process. The app window
+  // runs with `sandbox: true` (window-manager.ts), and a sandboxed preload's
+  // `require('electron')` allowlist is only
+  // [contextBridge, crashReporter, ipcRenderer, nativeImage, sharedTexture,
+  // webFrame, webUtils] — `clipboard` is NOT in it. Calling `clipboard.writeText`
+  // there threw `TypeError: Cannot read properties of undefined`, and that throw
+  // crosses contextBridge synchronously into the renderer, where every call site
+  // set its "Copied" state *after* the call — so the button looked dead.
+  writeClipboard: async (text: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke('homebot:clipboard-write', text),
 
   // Open a file or folder in the system default application
   openFile: async (filePath: string): Promise<{ success: boolean; error?: string }> => {

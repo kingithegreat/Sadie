@@ -10,6 +10,7 @@ import { ToastContainer, useToasts } from './components/ToastContainer';
 import ModelSelector from './components/ModelSelector';
 import Logo from './components/Logo';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { copyTextToClipboard } from './utils/clipboard';
 
 // Lazy-load panels that aren't visible on first render
 const ToolsPanel = lazy(() => import("./components/ToolsPanel"));
@@ -211,7 +212,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // Plain Ctrl+C is deliberately untouched — that is ordinary text copy.
         e.preventDefault();
         if (lastAssistantRef.current) {
-          window.electron?.writeClipboard?.(lastAssistantRef.current);
+          void copyTextToClipboard(lastAssistantRef.current);
         }
       }
     };
@@ -1453,13 +1454,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }]);
         }}
         backendDiagnostic={backendDiagnostic}
-        onCopyDiagnostic={(text: string) => {
-          try {
-            window.electron?.writeClipboard?.(text);
-            setMessages(prev => [...prev, { id: newId(), role: 'system', content: 'Diagnostic copied to clipboard', createdAt: Date.now(), error: null }]);
-          } catch (e) {
-            console.error('Failed to copy diagnostic to clipboard:', e);
-          }
+        onCopyDiagnostic={async (text: string) => {
+          const ok = await copyTextToClipboard(text);
+          setMessages(prev => [...prev, {
+            id: newId(), role: 'system',
+            content: ok ? 'Diagnostic copied to clipboard' : 'Could not copy diagnostic to the clipboard',
+            createdAt: Date.now(), error: null
+          }]);
         }}
         onDismissDiagnostic={() => setBackendDiagnostic(null)}
         mode={mode}

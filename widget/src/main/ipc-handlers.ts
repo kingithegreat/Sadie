@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
+import { ipcMain, BrowserWindow, app, shell, dialog, clipboard } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { registerBundledStudioIpc } from './modules/bundled/studio-gateway';
 import { registerModuleControlIpc } from './modules/module-ipc';
@@ -1418,6 +1418,35 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch (err: any) {
       console.error('Error showing in folder:', err.message);
       return { success: false, error: err.message };
+    }
+  });
+
+  /**
+   * Write text to the system clipboard.
+   *
+   * This exists because the app window is sandboxed (`window-manager.ts`
+   * sets `sandbox: true`), and a sandboxed preload's `require('electron')`
+   * allowlist is only [contextBridge, crashReporter, ipcRenderer, nativeImage,
+   * sharedTexture, webFrame, webUtils] — `clipboard` is not in it. The preload
+   * used to call `clipboard.writeText` directly, which threw
+   * `TypeError: Cannot read properties of undefined (reading 'writeText')`,
+   * and that throw crossed contextBridge synchronously into the renderer.
+   * Every renderer call site set its "Copied" feedback *after* the call, so the
+   * throw silently skipped the feedback and the button read as dead.
+   *
+   * Returns `{ success: false, error }` instead of throwing so a caller can
+   * report the truth rather than always claiming "Copied".
+   */
+  ipcMain.handle('homebot:clipboard-write', async (_event, text: unknown) => {
+    try {
+      if (typeof text !== 'string') {
+        return { success: false, error: 'Clipboard text must be a string' };
+      }
+      clipboard.writeText(text);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[IPC] clipboard-write failed:', err?.message ?? err);
+      return { success: false, error: err?.message ?? String(err) };
     }
   });
 
