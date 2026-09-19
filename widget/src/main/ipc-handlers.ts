@@ -75,7 +75,6 @@ import {
   getCurrentTier,
   getLicenseStatus,
   activateLicense,
-  validateLicense,
   deactivateLicense,
 } from './licensing';
 
@@ -272,13 +271,6 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
     ipcMain.handle('homebot:get-widget-mode', () => {
       return getWidgetMode();
-    });
-
-    ipcMain.on('homebot:set-always-on-top', (_event, value: boolean) => {
-      const win = mainWindow ?? getMainWindow();
-      if (win && !win.isDestroyed()) {
-        win.setAlwaysOnTop(value);
-      }
     });
   
   /**
@@ -1518,8 +1510,6 @@ try {
     }
     return activateLicense(String(licenseKey));
   });
-
-  ipcMain.handle('homebot:license:validate', async () => validateLicense());
 
   ipcMain.handle('homebot:license:deactivate', async () => deactivateLicense());
 
