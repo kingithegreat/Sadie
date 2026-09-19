@@ -49,21 +49,9 @@ export interface ModelDownloadFit {
   message: string | null;
 }
 
-/** Convert a raw byte count to GB (decimal, matching diagnostics.ts). */
-export function bytesToGb(bytes: number | null | undefined): number | null {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return null;
-  return bytes / 1e9;
-}
-
 /** Round a GB figure to one decimal place for display. */
 export function roundGb(gb: number): number {
   return Math.round(gb * 10) / 10;
-}
-
-/** Format a GB figure for UI (e.g. "4.4 GB"). */
-export function formatGb(gb: number | null | undefined): string {
-  if (typeof gb !== 'number' || !Number.isFinite(gb)) return '— GB';
-  return `${roundGb(gb).toFixed(1)} GB`;
 }
 
 function isValidPositive(n: number | null | undefined): n is number {
@@ -129,9 +117,4 @@ export function assessModelDownloadFit(input: ModelDownloadFitInput): ModelDownl
     headroomGB,
     message: null,
   };
-}
-
-/** Convenience boolean: would this pull be allowed? (unknown/tight/ok all allow). */
-export function canDownloadModel(input: ModelDownloadFitInput): boolean {
-  return assessModelDownloadFit(input).fits;
 }
