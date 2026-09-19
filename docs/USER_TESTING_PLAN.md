@@ -131,7 +131,11 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 |---|---|---|---|
 | REL-1 | **Installer build and fresh-profile acceptance** (MEDIA_STUDIO_PLAN Task 8): install the actual artifact on a fresh Windows profile and run the agreed flows. Skills: `homebot-test-build`, `homebot-live-e2e`. | Recorded run: install → first-run → chat → voice → Storyboard video → "Make the video" → Code mode open/edit/save → automation. Each step pass/fail with evidence. | blocked by G-1, G-2 |
 | REL-2 | **A user-testing checklist for Aden:** what to try, what each external setup needs (Online, keys, ComfyUI, Colab, FFmpeg download), and how to report a problem. | `docs/USER_TESTING_CHECKLIST.md` merged, and every step in it was performed once by an agent on a fresh profile. | blocked by REL-1 |
-| REL-3 | **No dead controls anywhere a tester will click:** a reachability sweep (skill `reachability-audit`) across all modes, not just Media Studio. | A sweep report listing each control and its effect; every dead one fixed or removed under its own ID. | open |
+| REL-3 | **No dead controls anywhere a tester will click:** a reachability sweep (skill `reachability-audit`) across all modes, not just Media Studio. | A sweep report listing each control and its effect; every dead one fixed or removed under its own ID. | swept |
+| REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | open |
+| REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | open |
+| REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | open |
+| REL-3.4 | **Dead Colab Queue features:** `cancelColabJob`, `retryColabJob` | Wired to Media Studio UI or removed | open |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | open |
 
 ## Needs Aden
