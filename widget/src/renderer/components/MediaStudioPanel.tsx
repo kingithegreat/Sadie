@@ -619,25 +619,47 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const handleExtractForegroundRmbg = async () => {
     setError(null);
-    if (!activeSettingBundle?.bgPath) {
+    if (!activeSettingBundle?.bgPath || !activeSettingBundle?.manifest) {
       setDone('To extract foreground layers with CPU RMBG, select a custom setting plate first.');
       setTimeout(() => setDone(null), 4000);
       return;
     }
+    const bgPath = activeSettingBundle.bgPath;
+    const manifest = activeSettingBundle.manifest;
     setIsSegmenting(true);
     setBusy('rmbg-segment');
     setBusyLabel('Extracting foreground occlusion layer via CPU RMBG neural model (0 MB VRAM)...');
     try {
+      // Segment the ACTUAL plate bytes (main reads the file — the sandboxed renderer
+      // cannot), then persist the result. Previously this posted an empty buffer and
+      // threw the returned plates away while reporting success.
       const res = await api()?.mediaSeriesSettingsSegment?.({
-        imageBase64: '',
+        bgPath,
         preferCpu: true,
       });
-      if (res?.ok) {
-        setDone('✓ Successfully extracted foreground occlusion layer using CPU RMBG!');
-        await loadSeriesSettings(selectedSeriesId);
-      } else {
-        setError(res?.error || 'Foreground segmentation completed with no plate changes.');
+      if (!res?.ok) {
+        setError(res?.error || 'Foreground segmentation failed.');
+        return;
       }
+      const saveRes = await api()?.mediaSeriesSettingsSave?.({
+        seriesId: selectedSeriesId,
+        manifest,
+        bgBase64: res.bgBase64 ?? '',
+        fgBase64: res.fgBase64,
+      });
+      if (!saveRes?.ok) {
+        setError(saveRes?.error || 'Segmentation ran, but saving the plate failed.');
+        return;
+      }
+      const producedForeground = !!res.fgBase64 && res.fgBase64.length > 0;
+      setDone(
+        producedForeground
+          ? '✓ Extracted a foreground occlusion plate with CPU RMBG and saved it to this setting.'
+          : '✓ Re-encoded the background plate. No foreground layer was produced (single-plate mode — install RMBG-1.4 or enable Ancient Pathways to split layers).',
+      );
+      // Refresh both the bundle the stage renders and the list label (1-Plate / 2-Plate).
+      await loadSeriesSettings(selectedSeriesId);
+      if (selectedSettingId) await handleSelectSetting(selectedSettingId);
     } catch (e: any) {
       setError(e?.message || 'Failed to extract foreground plate.');
     } finally {
@@ -646,6 +668,41 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       setBusyLabel('');
     }
   };
+
+  // Delete the selected stage set. Irreversible (rm -rf of its settings dir), so it
+  // asks first — the same rule the job Delete button follows.
+  const handleDeleteSetting = async () => {
+    if (!selectedSettingId) return;
+    const setting = availableSettings.find(s => s.id === selectedSettingId);
+    confirm({
+      title: `Delete the “${setting?.name || selectedSettingId}” stage set?`,
+      body: (
+        <p>
+          This deletes its background and foreground plates and its lighting profile from disk.
+          It cannot be undone.
+        </p>
+      ),
+      confirmLabel: 'Delete it',
+      onConfirm: async () => {
+        setError(null);
+        try {
+          const res = await api()?.mediaSeriesSettingsDelete?.(selectedSeriesId, selectedSettingId);
+          if (!res?.ok) {
+            setError(res?.error || 'Deleting the stage set failed.');
+            return;
+          }
+          setSelectedSettingId('');
+          setActiveSettingBundle(null);
+          await loadSeriesSettings(selectedSeriesId);
+          setDone('✓ Stage set deleted.');
+          setTimeout(() => setDone(null), 4000);
+        } catch (e: any) {
+          setError(e?.message || 'Deleting the stage set failed.');
+        }
+      },
+    });
+  };
+
 
   // Deep linking and cross-workspace handoff (e.g. from Chat or external tool invocation)
   useEffect(() => {
@@ -3904,6 +3961,15 @@ ${shots.map((s, idx) => `
               title="Run CPU RMBG neural model to extract foreground occlusion plate from current background"
             >
               {isSegmenting ? '⏳ Segmenting...' : '✂️ CPU RMBG'}
+            </button>
+            <button
+              type="button"
+              className="ms-dcc-toggle-btn"
+              disabled={!selectedSettingId || isSegmenting}
+              onClick={handleDeleteSetting}
+              title="Delete the selected stage set and its plates from disk"
+            >
+              🗑️ Delete
             </button>
           </div>
         </div>

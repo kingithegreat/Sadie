@@ -888,11 +888,35 @@ export function registerStudioIpc(
     }
   });
 
-  ipcMain.handle('homebot:media:series-settings:segment', async (_ev, args: { imageBase64: string; preferCpu?: boolean }) => {
+  ipcMain.handle('homebot:media:series-settings:segment', async (_ev, args: { imageBase64?: string; bgPath?: string; preferCpu?: boolean }) => {
     try {
       assertEnabled();
       const { segmentSettingImage } = await import('../../tools/media-foreground-segmenter');
-      const inBuf = Buffer.from(args.imageBase64, 'base64');
+
+      // The sandboxed renderer cannot read files, so it may name the plate instead of
+      // posting its bytes. Confine that path to the series storage root before reading
+      // it — a caller-supplied path is otherwise an arbitrary-file-read primitive.
+      let inBuf: Buffer | undefined;
+      if (args.bgPath) {
+        const { getSeriesStorageBaseDir } = await import('../../series-settings');
+        const root = getSeriesStorageBaseDir();
+        const resolved = path.resolve(args.bgPath);
+        let stat: fs.Stats;
+        try {
+          stat = fs.statSync(resolved);
+        } catch {
+          return { ok: false, error: 'Plate file not found.' };
+        }
+        if (!resolved.startsWith(root + path.sep) || stat.isDirectory()) {
+          return { ok: false, error: 'Plate path is outside the series settings storage.' };
+        }
+        inBuf = fs.readFileSync(resolved);
+      } else if (args.imageBase64) {
+        inBuf = Buffer.from(args.imageBase64, 'base64');
+      } else {
+        return { ok: false, error: 'Segment needs either imageBase64 or bgPath.' };
+      }
+
       const result = await segmentSettingImage(inBuf, { preferCpu: args.preferCpu !== false });
       return {
         ok: result.ok,
