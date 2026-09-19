@@ -40,8 +40,3 @@ export function sanitizeTextCard(value: unknown): TextCard | null {
     ? Math.min(3600, Math.round(raw.durationSec * 100) / 100) : undefined;
   return { heading, ...(subline ? { subline } : {}), position, ...(duration !== undefined ? { durationSec: duration } : {}) };
 }
-
-/** True when two cards would draw the same thing, for change detection. */
-export function sameTextCard(a: TextCard | null | undefined, b: TextCard | null | undefined): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-}

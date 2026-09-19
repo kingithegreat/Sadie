@@ -3,7 +3,7 @@
  * Verifies that getSmallModelTools never exceeds SMALL_MODEL_MAX_TOOLS
  * and always includes core tools regardless of category detection.
  */
-import { registerTool, getSmallModelTools, SMALL_MODEL_MAX_TOOLS, getOllamaTools } from '../tools';
+import { registerTool, getSmallModelTools, SMALL_MODEL_MAX_TOOLS, getAllToolDefinitions } from '../tools';
 
 // Seed registry with enough tools to exceed the cap
 function seedTools() {
@@ -74,9 +74,9 @@ describe('getSmallModelTools', () => {
     expect(tools.length).toBeLessThanOrEqual(SMALL_MODEL_MAX_TOOLS);
   });
 
-  it('returns far fewer tools than getOllamaTools with no filter', () => {
+  it('returns far fewer tools than the full tool list with no filter', () => {
     const small = getSmallModelTools();
-    const all = getOllamaTools();
+    const all = getAllToolDefinitions();
     expect(all.length).toBeGreaterThan(SMALL_MODEL_MAX_TOOLS);
     expect(small.length).toBeLessThan(all.length);
   });

@@ -7,7 +7,7 @@ async function _store(id: string, file: string, type: string, data: string) {
  * Tests for src/main/tools/documents.ts
  *
  * The module-level parsedDocuments Map persists between handlers in the same
- * Jest module instance.  We use clearDocuments() to reset between tests.
+ * Jest module instance.  We use _clearDocumentsForTest() to reset between tests.
  */
 
 // Mock heavy parser deps so tests don't need the actual binaries

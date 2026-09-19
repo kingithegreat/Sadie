@@ -129,10 +129,6 @@ export function getFocusedToolDefinitions(options?: { excludeDocumentTools?: boo
  * @param options.excludeDocumentTools - If true, excludes document parsing tools (use when no docs attached)
  * @param options.categories - If provided, only include tools in these categories (for small models)
  */
-export function getOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
-  return filterToolDefinitions(options).map(toOllamaTool);
-}
-
 export function getFocusedOllamaTools(options?: { excludeDocumentTools?: boolean; categories?: string[] }): OllamaTool[] {
   return getFocusedToolDefinitions(options).map(toOllamaTool);
 }

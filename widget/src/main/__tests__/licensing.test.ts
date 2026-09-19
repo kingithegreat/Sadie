@@ -13,7 +13,6 @@ import {
   getCurrentTier,
   getLicenseStatus,
   activateLicense,
-  validateLicense,
   deactivateLicense,
 } from '../licensing';
 
@@ -79,12 +78,6 @@ describe('main-process licensing wiring', () => {
     }
   });
 
-  test('validateLicense with no prior activation reports an error and stays Free', async () => {
-    const result = await validateLicense();
-    expect(result.valid).toBe(false);
-    expect(getCurrentTier()).toBe('free');
-  });
-
   test('deactivateLicense clears the stored state even with no instance id', async () => {
     const result = await deactivateLicense();
     expect(result.valid).toBe(true);
@@ -134,11 +127,6 @@ describe('main-process licensing wiring', () => {
     expect(result.valid).toBe(true);
     expect(getCurrentTier()).toBe('pro');
     expect(getLicenseStatus().hasLicense).toBe(true);
-
-    // Re-validation is also offline and keeps Pro.
-    const revalidated = await validateLicense();
-    expect(revalidated.valid).toBe(true);
-    expect(getCurrentTier()).toBe('pro');
 
     delete process.env.HOMEBOT_LICENSE_PUBLIC_KEY;
   });
