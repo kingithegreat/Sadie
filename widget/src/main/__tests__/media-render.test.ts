@@ -123,6 +123,14 @@ describe('building the ffmpeg command', () => {
     expect(f).toContain('d=1680'); // 56s x 30fps
   });
 
+  it('uses the shared supersampled absolute-frame camera motion for job renders', () => {
+    const f = filtersOf(buildRenderArgs({ ...base, imagePath: 'bg.jpg' }));
+    expect(f).toContain('scale=iw*2:ih*2:flags=bicubic');
+    expect(f).toContain("z='min(1+0.0015*on,1.25)'");
+    expect(f).toContain("x='iw/2-(iw/zoom/2)'");
+    expect(f).not.toContain('zoom+0.0004');
+  });
+
   it('can be told not to drift', () => {
     const f = filtersOf(buildRenderArgs({ ...base, imagePath: 'bg.jpg', zoom: false }));
     expect(f).not.toContain('zoompan');
