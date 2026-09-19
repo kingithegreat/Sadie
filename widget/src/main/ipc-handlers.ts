@@ -37,6 +37,7 @@ import {
 import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
 import { assertProviderOnlineAccess } from './utils/provider-network-policy';
 import { resolveDiscoveryPayload } from './discovery-payload';
+import { getMediaCapabilityRegistry } from './provider-capability-registry';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -559,6 +560,15 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch (err: any) {
       console.error('[IPC] Failed to fetch custom LLM models:', err?.message || err);
       return { success: false, error: err?.message || 'Unable to fetch models' };
+    }
+  });
+
+  ipcMain.handle('homebot:list-media-capabilities', async (_event, payload?: { refresh?: boolean }) => {
+    try {
+      return { success: true, registry: await getMediaCapabilityRegistry({ forceRefresh: payload?.refresh === true }) };
+    } catch (err: any) {
+      console.error('[IPC] Failed to build media capability registry:', err?.message || err);
+      return { success: false, error: err?.message || 'Unable to inspect connected media accounts' };
     }
   });
 

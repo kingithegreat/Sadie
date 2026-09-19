@@ -1,0 +1,10 @@
+{
+  "object": "list",
+  "data": [
+    { "id": "gpt-6-astra", "object": "model", "owned_by": "system" },
+    { "id": "gpt-image-2.5-flare", "object": "model", "owned_by": "system" },
+    { "id": "gpt-image-2.5-flare-2026-09-08", "object": "model", "owned_by": "system" },
+    { "id": "dall-e-3", "object": "model", "owned_by": "system" },
+    { "id": "sora-2", "object": "model", "owned_by": "system" }
+  ]
+}

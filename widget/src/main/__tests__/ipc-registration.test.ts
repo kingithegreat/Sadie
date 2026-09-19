@@ -4,6 +4,7 @@ import * as path from 'path';
 
 const mockUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ipc-registration-'));
 const mockEnsureWebFetchWorkflow = jest.fn<Promise<void>, []>(() => Promise.resolve());
+const mockGetMediaCapabilityRegistry = jest.fn();
 
 // Minimal mock of electron's ipcMain to capture registrations
 const handles: Record<string, Function> = {};
@@ -26,6 +27,9 @@ jest.mock('electron', () => {
 jest.mock('../n8n-api', () => ({
   ...jest.requireActual('../n8n-api'),
   ensureWebFetchWorkflow: () => mockEnsureWebFetchWorkflow(),
+}));
+jest.mock('../provider-capability-registry', () => ({
+  getMediaCapabilityRegistry: (options: unknown) => mockGetMediaCapabilityRegistry(options),
 }));
 
 const { registerIpcHandlers } = require('../ipc-handlers') as typeof import('../ipc-handlers');
@@ -55,6 +59,16 @@ describe('IPC registration', () => {
   it('registers homebot:get-env handler', () => {
     registerIpcHandlers();
     expect(handles['homebot:get-env']).toBeDefined();
+  });
+
+  it('registers and reaches the connected-account media registry', async () => {
+    const registry = { accounts: [], imageModels: [], videoModels: [], refreshedAt: '2026-09-20T00:00:00.000Z' };
+    mockGetMediaCapabilityRegistry.mockResolvedValue(registry);
+    registerIpcHandlers();
+    expect(handles['homebot:list-media-capabilities']).toBeDefined();
+    await expect(handles['homebot:list-media-capabilities']({}, { refresh: true }))
+      .resolves.toEqual({ success: true, registry });
+    expect(mockGetMediaCapabilityRegistry).toHaveBeenCalledWith({ forceRefresh: true });
   });
 
   it('homebot:get-env handler returns environment info', async () => {

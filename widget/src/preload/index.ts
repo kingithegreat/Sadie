@@ -57,6 +57,7 @@ const ALLOWED_CHANNELS = {
   RESET_PERMISSIONS: 'homebot:reset-permissions',
   EXPORT_CONSENT: 'homebot:export-consent',
   LIST_CUSTOM_MODELS: 'homebot:list-custom-llm-models',
+  LIST_MEDIA_CAPABILITIES: 'homebot:list-media-capabilities',
   READ_CONSENT_LOG: 'homebot:read-consent-log',
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
   READ_PERMISSION_AUDIT: 'homebot:read-permission-audit',
@@ -424,6 +425,10 @@ const electronAPI: ElectronAPI = {
 
   listCustomLLMModels: async (config: { apiUrl: string; apiKey?: string; provider?: string }) => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.LIST_CUSTOM_MODELS, config);
+  },
+
+  listMediaCapabilities: async (options?: { refresh?: boolean }) => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.LIST_MEDIA_CAPABILITIES, options);
   },
 
   resetPermissions: async (): Promise<Settings> => {
@@ -896,6 +901,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:frame-providers'),
   mediaStoryboardSetFrameProvider: async (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:set-frame-provider', args),
+  mediaStoryboardSetVideoModel: async (args: { projectId: string; videoModelRef: string }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:set-video-model', args),
   mediaStoryboardConfirmPaidFrames: async (frameProvider: StoryboardFrameProviderId) =>
     ipcRenderer.invoke('homebot:media:storyboard:confirm-paid-frames', frameProvider),
   mediaStoryboardGenerateFrame: async (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) =>

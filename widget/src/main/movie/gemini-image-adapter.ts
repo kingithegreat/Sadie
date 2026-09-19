@@ -21,7 +21,10 @@ import { saveMovieShotImage } from './image-output';
 export const GEMINI_IMAGE_MODEL = 'gemini-3.1-flash-image';
 // Request shape follows Google's generateContent image guide (REST, checked
 // 2026-09-16): v1 endpoint, aspect ratio and size under responseFormat.image.
-const GEMINI_IMAGE_ENDPOINT = `https://generativelanguage.googleapis.com/v1/models/${GEMINI_IMAGE_MODEL}:generateContent`;
+export function geminiImageEndpoint(modelId = GEMINI_IMAGE_MODEL): string {
+  if (!/^[a-z0-9][a-z0-9._-]*$/i.test(modelId)) throw new Error('The selected Gemini image model is invalid. Check the account again in Settings.');
+  return `https://generativelanguage.googleapis.com/v1/models/${modelId}:generateContent`;
+}
 
 /** Gemini API list price for one standard 1K image (US$0.067). */
 export const GEMINI_IMAGE_COST_MICRO_USD = 67_000;
@@ -104,6 +107,7 @@ export async function generateGeminiImage(
   prompt: string,
   width: number,
   height: number,
+  modelId = GEMINI_IMAGE_MODEL,
 ): Promise<{ base64: string; mimeType: string }> {
   assertProviderOnlineAccess('Gemini');
   const key = geminiKey();
@@ -113,7 +117,7 @@ export async function generateGeminiImage(
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let resp: Response;
   try {
-    resp = await fetch(GEMINI_IMAGE_ENDPOINT, {
+    resp = await fetch(geminiImageEndpoint(modelId), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
       body: JSON.stringify({
@@ -148,7 +152,7 @@ export async function generateGeminiImage(
 
 export async function generateGeminiImageShot(req: GenerationRequest): Promise<GenerationResult> {
   try {
-    const { base64 } = await generateGeminiImage(req.prompt, req.width, req.height);
+    const { base64 } = await generateGeminiImage(req.prompt, req.width, req.height, req.modelId);
     const file = saveMovieShotImage(req, base64);
     return { status: 'done', provider: 'gemini-image', files: [file], costMicroUsd: GEMINI_IMAGE_COST_MICRO_USD };
   } catch (err) {

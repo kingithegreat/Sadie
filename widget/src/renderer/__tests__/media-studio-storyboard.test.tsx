@@ -140,11 +140,18 @@ function setup(overrides: Record<string, any> = {}) {
   const mediaStoryboardFrameProviders = jest.fn().mockResolvedValue({ ok: true, providers: frameStatuses() });
   const mediaStoryboardSetFrameProvider = jest.fn().mockImplementation(async (args: { frameProvider: string }) => ({ ok: true, frameProvider: args.frameProvider }));
   const mediaStoryboardConfirmPaidFrames = jest.fn().mockResolvedValue({ ok: true });
+  const listMediaCapabilities = jest.fn().mockResolvedValue({
+    success: true,
+    registry: { accounts: [], imageModels: [], videoModels: [], refreshedAt: new Date(0).toISOString() },
+  });
+  const mediaStoryboardSetVideoModel = jest.fn().mockImplementation(async (args: { videoModelRef: string }) => ({ ok: true, videoModelRef: args.videoModelRef }));
 
   (window as any).electron = {
     mediaStoryboardFrameProviders,
     mediaStoryboardSetFrameProvider,
     mediaStoryboardConfirmPaidFrames,
+    listMediaCapabilities,
+    mediaStoryboardSetVideoModel,
     mediaList,
     mediaStoryboardList,
     mediaStoryboardGet,
@@ -160,6 +167,8 @@ function setup(overrides: Record<string, any> = {}) {
     mediaStoryboardFrameProviders,
     mediaStoryboardSetFrameProvider,
     mediaStoryboardConfirmPaidFrames,
+    listMediaCapabilities,
+    mediaStoryboardSetVideoModel,
     mediaList,
     mediaStoryboardList,
     mediaStoryboardGet,
@@ -833,7 +842,7 @@ describe('Storyboard frame provider picker', () => {
       'Choose how to make frame images…',
       'Online · free third-party service · may add a watermark',
       'This PC · ComfyUI · private, no watermark',
-      'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
+      'Gemini 3.1 Flash Image · Google AI Studio · paid',
       'ChatGPT plan · Codex on this PC · uses your plan limits, no per-image charge',
     ]);
     expect(screen.getByRole('region', { name: 'Visual Storyboard Deck' })).not.toHaveTextContent('Imagen');
@@ -875,7 +884,7 @@ describe('Storyboard frame provider picker', () => {
     await act(async () => { fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'gemini' } }); });
     expect(mocks.mediaStoryboardSetFrameProvider).toHaveBeenCalledWith({ projectId: 'pyramid-builders', frameProvider: 'gemini' });
     const dialog = await screen.findByRole('alertdialog');
-    expect(dialog).toHaveTextContent(/About US\$0\.07 per image/);
+    expect(dialog).toHaveTextContent(/Paid image generation charged by Google/);
     expect(dialog).toHaveTextContent(/invisible SynthID watermark/);
     expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
     for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
@@ -892,6 +901,42 @@ describe('Storyboard frame provider picker', () => {
     for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
     expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
     expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
+  });
+
+  test('the frame picker renders only Google image models returned by the account registry', async () => {
+    const mocks = setup();
+    const base = frameStatuses().filter(option => option.id !== 'gemini');
+    const gemini = STORYBOARD_FRAME_PROVIDERS.find(option => option.id === 'gemini')!;
+    mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: [
+      ...base,
+      { ...gemini, label: 'Gemini 3.1 Flash Image · Google AI Studio · paid', ready: false, needs: 'paid-confirmation', reason: 'Confirm paid use before the first image.' },
+      { ...gemini, id: 'gemini:gemini-3.1-flash-lite-image', modelId: 'gemini-3.1-flash-lite-image', label: 'Gemini 3.1 Flash Lite Image · Google AI Studio · paid', ready: false, needs: 'paid-confirmation', reason: 'Confirm paid use before the first image.' },
+    ] });
+    await openBoard(mocks, { frameProvider: undefined });
+
+    const options = [...(screen.getByRole('combobox', { name: 'How to make frame images' }) as HTMLSelectElement).options];
+    expect(options.map(option => option.value)).toEqual(['', 'online', 'this-pc', 'chatgpt-plan', 'gemini', 'gemini:gemini-3.1-flash-lite-image']);
+    expect(options.map(option => option.textContent).join(' ')).not.toMatch(/Gemini 3 Pro|Imagen|Veo/);
+  });
+
+  test('the shot-video picker saves a live-listed model and labels connected text-only accounts', async () => {
+    const mocks = setup();
+    const video = {
+      ref: 'google-ai-studio:video:veo-3.1-generate-preview', provider: 'google-ai-studio',
+      accountId: 'account:google-ai-studio', accountLabel: 'Google AI Studio', modelId: 'veo-3.1-generate-preview',
+      displayName: 'Veo 3.1', kind: 'video', costClass: 'paid', costLabel: 'Paid per generated second.',
+      watermark: 'invisible', watermarkLabel: 'Google applies SynthID.', source: 'live', usableIn: ['shot-video'], methods: ['predictLongRunning'],
+    };
+    mocks.listMediaCapabilities.mockResolvedValue({ success: true, registry: {
+      accounts: [{ id: 'account:anthropic', provider: 'anthropic', label: 'Anthropic API', connection: 'api-key', source: 'declared', status: 'text-only', statusLabel: 'Text only', models: [] }],
+      imageModels: [], videoModels: [video], refreshedAt: new Date(0).toISOString(),
+    } });
+    await openBoard(mocks, {});
+
+    const picker = await screen.findByRole('combobox', { name: 'Video model for generated shots' });
+    fireEvent.change(picker, { target: { value: video.ref } });
+    await waitFor(() => expect(mocks.mediaStoryboardSetVideoModel).toHaveBeenCalledWith({ projectId: 'pyramid-builders', videoModelRef: video.ref }));
+    expect(screen.getByRole('note', { name: 'Shot video model status' })).toHaveTextContent(/Paid per generated second.*SynthID.*Saved for this storyboard/);
   });
 
   test('the Auto-Director will not auto-generate frames until a provider is chosen, then passes that choice', async () => {

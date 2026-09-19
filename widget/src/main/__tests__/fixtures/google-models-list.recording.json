@@ -1,0 +1,44 @@
+{
+  "models": [
+    {
+      "name": "models/gemini-3.8-flash",
+      "displayName": "Gemini 3.8 Flash",
+      "supportedGenerationMethods": ["generateContent", "countTokens"]
+    },
+    {
+      "name": "models/gemini-3.1-flash-image",
+      "displayName": "Gemini 3.1 Flash Image",
+      "supportedGenerationMethods": ["generateContent", "countTokens"]
+    },
+    {
+      "name": "models/gemini-3.1-flash-lite-image",
+      "displayName": "Gemini 3.1 Flash Lite Image",
+      "supportedGenerationMethods": ["generateContent"]
+    },
+    {
+      "name": "models/veo-3.1-generate-preview",
+      "displayName": "Veo 3.1",
+      "supportedGenerationMethods": ["predictLongRunning"]
+    },
+    {
+      "name": "models/gemini-omni-1.1-flash",
+      "displayName": "Gemini Omni Flash",
+      "supportedGenerationMethods": []
+    },
+    {
+      "name": "models/gemini-2.5-flash-image",
+      "displayName": "Nano Banana (deprecated)",
+      "supportedGenerationMethods": ["generateContent"]
+    },
+    {
+      "name": "models/imagen-4.0-generate-001",
+      "displayName": "Imagen 4 (retired)",
+      "supportedGenerationMethods": ["predict"]
+    },
+    {
+      "name": "models/veo-2.0-generate-001",
+      "displayName": "Veo 2 (retired)",
+      "supportedGenerationMethods": ["predictLongRunning"]
+    }
+  ]
+}
