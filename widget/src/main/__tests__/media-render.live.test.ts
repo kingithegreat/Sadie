@@ -272,7 +272,12 @@ maybe('rendering a real video', () => {
       const jobs = readJobs();
       const j = jobs.find(x => x.title === 'No ffmpeg here')!;
       j.script = 'A short line.';
-      j.narrationPath = readJobs().find(x => x.title === 'Render check')?.narrationPath;
+      
+      const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'homebot-no-ffmpeg-'));
+      const dummyAudio = path.join(tmpDir, 'dummy-narration.mp3');
+      fs.writeFileSync(dummyAudio, 'dummy audio data');
+      j.narrationPath = dummyAudio;
+      
       j.state = 'media_production';
       require('../tools/media').writeJobs(jobs);
 

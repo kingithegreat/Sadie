@@ -160,6 +160,7 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
     const narrateResult = await page.evaluate(async (id: string) => {
       return await (window as any).electron.mediaRun(id, 'narrate');
     }, jobId);
+    expect(narrateResult.error).toBeUndefined();
     expect(narrateResult.ok).toBe(true);
     expect(() => JSON.stringify(narrateResult)).not.toThrow();
 
@@ -279,6 +280,9 @@ describeSuite('Media Studio Real IPC & Disposable UserData (Task 4)', () => {
       return await (window as any).electron.mediaRun(args.id, 'render', { image: args.image });
     }, { id: jobId, image: flatImagePath });
 
+    if (renderResult.ok) {
+      console.log('UNEXPECTED SUCCESS RESULT:', JSON.stringify(renderResult, null, 2));
+    }
     expect(renderResult.ok).toBe(false);
     expect(String(renderResult.error)).toMatch(/flat color|placeholder/i);
 
