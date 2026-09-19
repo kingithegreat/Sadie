@@ -79,6 +79,8 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_LIST: 'homebot:workspace:list',
   WORKSPACE_READ: 'homebot:workspace:read',
   WORKSPACE_SAVE: 'homebot:workspace:save',
+  WORKSPACE_SEARCH: 'homebot:workspace:search',
+  WORKSPACE_REPLACE: 'homebot:workspace:replace',
   WORKSPACE_GIT_STATUS: 'homebot:workspace:git-status',
   WORKSPACE_GIT_STAGE: 'homebot:workspace:git-stage',
   WORKSPACE_GIT_UNSTAGE: 'homebot:workspace:git-unstage',
@@ -572,6 +574,20 @@ const electronAPI: ElectronAPI = {
   },
   workspaceSave: async (filePath: string, content: string): Promise<any> => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SAVE, filePath, content);
+  },
+  workspaceSearch: async (opts: {
+    pattern: string;
+    directory?: string;
+    file_pattern?: string;
+    case_sensitive?: boolean;
+  }): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_SEARCH, opts);
+  },
+  workspaceReplace: async (
+    filePath: string,
+    edits: Array<{ line: number; oldText: string; newText: string }>,
+  ): Promise<any> => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_REPLACE, filePath, edits);
   },
   workspaceGitStatus: async (folder: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STATUS, folder),
   workspaceGitStage: async (folder: string, files: string[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_STAGE, folder, files),

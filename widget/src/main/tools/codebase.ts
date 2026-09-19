@@ -178,30 +178,65 @@ function matchesGlob(filename: string, pattern: string): boolean {
   return filename.includes(pattern);
 }
 
-// ============= GREP HANDLER =============
+// ============= SHARED SEARCH ENGINE =============
 
-export const grepCodeHandler: ToolHandler = async (args): Promise<ToolResult> => {
+export interface CodeSearchMatch {
+  /** Absolute path of the file containing the match. */
+  file: string;
+  /** 1-based line number of the match. */
+  line: number;
+  /** The matching line's full text. Callers truncate for their own channel. */
+  text: string;
+  /** Surrounding lines as "lineNum: text", only when context was requested. */
+  context?: string[];
+}
+
+export interface CodeSearchOptions {
+  pattern: string;
+  directory: string;
+  caseSensitive?: boolean;
+  filePattern?: string;
+  maxResults?: number;
+  contextLines?: number;
+}
+
+export interface CodeSearchResult {
+  success: boolean;
+  /** The sandbox-resolved directory the search actually ran against. */
+  resolvedDirectory?: string;
+  matches?: CodeSearchMatch[];
+  error?: string;
+}
+
+/**
+ * The ONE content-search engine. `grep_code` (what the assistant calls) and the
+ * workspace Search panel (what a person clicks) both go through here, so the two
+ * can never disagree on what "matches" means, what gets skipped, or where the
+ * sandbox boundary is.
+ *
+ * Returns ABSOLUTE paths; each caller shapes them (the tool relativises against
+ * the search root, the panel keeps them absolute so a click can open the file).
+ */
+export async function runCodeSearch(opts: CodeSearchOptions): Promise<CodeSearchResult> {
   try {
-    const pattern = String(args.pattern || '').trim();
+    const pattern = String(opts.pattern || '').trim();
     if (!pattern) return { success: false, error: 'pattern is required' };
     if (pattern.length > 500) return { success: false, error: 'pattern too long (max 500 chars)' };
 
-    const dirRaw = String(args.directory || process.cwd());
-    const v = validatePath(dirRaw);
+    const v = validatePath(String(opts.directory || process.cwd()));
     if (!v.valid) return { success: false, error: v.error };
 
-    const caseSensitive = args.case_sensitive === true;
-    const maxResults = Math.min(Math.max(1, Number(args.max_results) || 50), 200);
-    const contextLines = Math.min(Math.max(0, Number(args.context_lines) || 0), 5);
-    const filePattern = String(args.file_pattern || '');
+    const caseSensitive = opts.caseSensitive === true;
+    const maxResults = Math.min(Math.max(1, Number(opts.maxResults) || 50), 200);
+    const contextLines = Math.min(Math.max(0, Number(opts.contextLines) || 0), 5);
+    const filePattern = String(opts.filePattern || '');
 
-    // Try using ripgrep (rg) first, then fall back to a Node.js recursive search
-    let matches: Array<{ file: string; line: number; text: string; context?: string[] }> = [];
+    let matches: CodeSearchMatch[] = [];
 
     try {
       // ripgrep, invoked with an ARGV array — never a shell string. The pattern,
       // glob and directory arrive verbatim as arguments, so cmd.exe
-      // metacharacters (& | ^ %VAR%) in an LLM-supplied file_pattern cannot
+      // metacharacters (& | ^ %VAR%) in a supplied file_pattern cannot
       // break out the way they could when this was one interpolated string.
       const rgArgs = [
         '--no-heading',
@@ -237,24 +272,42 @@ export const grepCodeHandler: ToolHandler = async (args): Promise<ToolResult> =>
       matches = await nodeGrep(v.resolved, pattern, caseSensitive, filePattern, maxResults, contextLines);
     }
 
-    return {
-      success: true,
-      result: {
-        pattern,
-        directory: v.resolved,
-        case_sensitive: caseSensitive,
-        match_count: matches.length,
-        matches: matches.map(m => ({
-          file: path.relative(v.resolved, m.file),
-          line: m.line,
-          text: m.text.slice(0, 500),
-          ...(m.context && m.context.length > 0 ? { context: m.context } : {})
-        }))
-      }
-    };
+    return { success: true, resolvedDirectory: v.resolved, matches };
   } catch (err: any) {
-    return { success: false, error: `grep_code failed: ${err.message}` };
+    return { success: false, error: `search failed: ${err.message}` };
   }
+}
+
+// ============= GREP HANDLER =============
+
+export const grepCodeHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const pattern = String(args.pattern || '').trim();
+  const res = await runCodeSearch({
+    pattern,
+    directory: String(args.directory || process.cwd()),
+    caseSensitive: args.case_sensitive === true,
+    filePattern: String(args.file_pattern || ''),
+    maxResults: Number(args.max_results) || 50,
+    contextLines: Number(args.context_lines) || 0,
+  });
+  if (!res.success || !res.matches) return { success: false, error: res.error };
+
+  const directory = res.resolvedDirectory as string;
+  return {
+    success: true,
+    result: {
+      pattern,
+      directory,
+      case_sensitive: args.case_sensitive === true,
+      match_count: res.matches.length,
+      matches: res.matches.map(m => ({
+        file: path.relative(directory, m.file),
+        line: m.line,
+        text: m.text.slice(0, 500),
+        ...(m.context && m.context.length > 0 ? { context: m.context } : {})
+      }))
+    }
+  };
 };
 
 const MAX_OUTPUT_GREP = 512 * 1024; // 512 KB buffer for grep results

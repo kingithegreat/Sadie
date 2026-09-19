@@ -163,9 +163,11 @@ interface CodeEditorProps {
   onChange: (next: string) => void;
   onSave: () => void;
   readOnly?: boolean;
+  /** Land on this line (1-based) when it changes — a search result's target. */
+  focusLine?: number;
 }
 
-export default function CodeEditor({ value, language, onChange, onSave, readOnly }: CodeEditorProps) {
+export default function CodeEditor({ value, language, onChange, onSave, readOnly, focusLine }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageSlot = useRef(new Compartment());
@@ -357,6 +359,25 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     const on = !!readOnly;
     viewRef.current?.dispatch({ effects: readOnlySlot.current.reconfigure([EditorState.readOnly.of(on), EditorView.editable.of(!on)]) });
   }, [readOnly]);
+
+  // A search result asked for this line. Only a CHANGE acts, so the user's own
+  // scrolling is never yanked; the editor is keyed per file in WorkspaceShell,
+  // so a jump into a newly opened tab fires on mount.
+  const focusLineSeen = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (focusLine === undefined) { focusLineSeen.current = undefined; return; }
+    if (focusLineSeen.current === focusLine) return;
+    focusLineSeen.current = focusLine;
+    const view = viewRef.current;
+    if (!view) return;
+    const count = view.state.doc.lines;
+    const docLine = view.state.doc.line(Math.min(Math.max(1, focusLine), count));
+    view.dispatch({
+      selection: { anchor: docLine.from },
+      effects: EditorView.scrollIntoView(docLine.from, { y: 'center' }),
+    });
+    view.focus();
+  }, [focusLine]);
 
   const diffLines = inlineEdit && inlineEdit.replacement
     ? computeSimpleLineDiff(inlineEdit.range.text, inlineEdit.replacement)
