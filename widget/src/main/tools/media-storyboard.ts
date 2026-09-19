@@ -539,6 +539,8 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       burnSubtitles: { type: 'boolean', description: 'Save the project caption burn-in choice. Omit to keep the saved choice.' },
       captionStyle: { type: 'object', description: 'How burned-in captions look: {size: small|medium|large, position: bottom|middle|top, font: Arial|Segoe UI|Verdana|Georgia|Impact|Trebuchet MS, color: #rrggbb, background: outline|box}. Omitted fields keep the default (medium, bottom, Arial, #ffffff, outline).' },
       outputSpec: { type: 'object', description: 'Save the versioned output settings described by media_create_storyboard. Omit to retain the saved settings, including legacy geometry.' },
+      musicEnabled: { type: 'boolean', description: 'Save whether storyboard exports include a local background-music bed.' },
+      musicVolume: { type: 'number', description: 'Save background-music gain from 0 to 1.' },
       shots: {
         type: 'array',
         description: 'Ordered array of shot edits to persist.',
@@ -561,6 +563,12 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
   if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
     return { success: false, error: 'Choose whether captions are on or off.' };
+  }
+  if (args.musicEnabled !== undefined && typeof args.musicEnabled !== 'boolean') {
+    return { success: false, error: 'Choose whether background music is on or off.' };
+  }
+  if (args.musicVolume !== undefined && (typeof args.musicVolume !== 'number' || !Number.isFinite(args.musicVolume) || args.musicVolume < 0 || args.musicVolume > 1)) {
+    return { success: false, error: 'Background music volume must be a number from 0 to 1.' };
   }
   let captionStyle: CaptionStyle | undefined;
   try {
@@ -646,6 +654,8 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
         ...(args.burnSubtitles !== undefined ? { burnSubtitles: args.burnSubtitles } : {}),
         ...(captionStyle !== undefined ? { captionStyle } : {}),
         ...(outputSpec !== undefined ? { outputSpec } : {}),
+        ...(args.musicEnabled !== undefined ? { musicEnabled: args.musicEnabled } : {}),
+        ...(args.musicVolume !== undefined ? { musicVolume: args.musicVolume } : {}),
         updatedAt: new Date().toISOString(),
       }, null, 2), 'utf-8');
       fs.renameSync(stagedMeta, metaPath);
@@ -684,6 +694,10 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
       outputSpec: { type: 'object', description: 'Optional output override using the versioned settings described by media_create_storyboard. Omit to use the saved project settings.' },
       variantId: { type: 'string', enum: ['landscape', 'portrait', 'square'], description: 'Retry only this saved format. Omit to render every explicitly selected format.' },
       narrationEngine: { type: 'string', enum: ['edge', 'kokoro'], description: "Voice for this export: 'kokoro' speaks on this PC with no internet, 'edge' is the online voice. Omit to use the saved setting." },
+      musicEnabled: { type: 'boolean', description: 'Override whether this export includes a local background-music bed.' },
+      musicTrack: { type: 'string', description: 'Optional local music path or filename from the configured music folder.' },
+      musicVolume: { type: 'number', description: 'Background-music gain from 0 to 1. Omit to use the saved level.' },
+      encoder: { type: 'string', enum: ['auto', 'nvenc', 'cpu'], description: 'Prefer automatic NVIDIA detection, NVIDIA NVENC, or CPU software encoding. NVENC falls back to CPU when unavailable.' },
     },
     required: ['projectId'],
   },
@@ -705,6 +719,11 @@ export const mediaRenderStoryboardHandler: ToolHandler = async (args, _context) 
     ...(args.outputSpec !== undefined ? { outputSpec: args.outputSpec } : {}),
     ...(args.narrationEngine === 'edge' || args.narrationEngine === 'kokoro' ? { narrationEngine: args.narrationEngine } : {}),
     ...(typeof args.colorGrade === 'string' ? { colorGrade: args.colorGrade } : {}),
+    ...(typeof args.musicTrack === 'string' && args.musicTrack.trim()
+      ? { music: args.musicTrack.trim() }
+      : typeof args.musicEnabled === 'boolean' ? { music: args.musicEnabled } : {}),
+    ...(typeof args.musicVolume === 'number' ? { musicVolume: args.musicVolume } : {}),
+    ...(args.encoder === 'auto' || args.encoder === 'nvenc' || args.encoder === 'cpu' ? { encoder: args.encoder } : {}),
   });
 
   if (!res.ok && !res.variants) {

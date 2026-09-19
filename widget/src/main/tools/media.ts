@@ -1183,7 +1183,10 @@ async function renderMediaJobAttempt(
       const review = createStudioExportReview({ source: { type: 'job', id: job.id }, title: job.title,
         moviePath: finalPath, output: renderedOutput, brief: job.brief }, readJobs().find(item => item.id === reviewId));
       upsert(review);
-      return ok({ moviePath: finalPath, renderedOutput, jobId: review.id });
+      return ok({
+        moviePath: finalPath, renderedOutput, jobId: review.id,
+        ...(rendered.warning ? { warning: rendered.warning } : {}),
+      });
     }
     const renderedForQa = transition(
       { ...currentJob, ...(qa.ok ? { renderPath: finalPath, rejectedRenderPath: undefined, ...(renderedOutput ? { renderedOutput } : {}) }
@@ -1213,7 +1216,10 @@ async function renderMediaJobAttempt(
     upsert(updated);
 
     const mb = (rendered.bytes / (1024 * 1024)).toFixed(1);
-    const notes = [visualNote, musicNote, describeQa(qa)].filter(Boolean).join(', ');
+    const encoderNote = rendered.videoEncoder === 'h264_nvenc'
+      ? 'encoded with NVIDIA NVENC'
+      : rendered.videoEncoder === 'libx264' ? 'encoded with the CPU' : '';
+    const notes = [visualNote, musicNote, encoderNote, rendered.warning, describeQa(qa)].filter(Boolean).join(', ');
     return ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
       `video: ${finalPath}`,

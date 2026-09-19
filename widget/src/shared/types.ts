@@ -762,12 +762,12 @@ export interface ElectronAPI {
     result?: any;
     error?: string;
   }>;
-  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec }) => Promise<{
+  mediaStoryboardSave?: (args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; musicEnabled?: boolean; musicVolume?: number }) => Promise<{
     ok: boolean;
     message?: string;
     error?: string;
   }>;
-  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: import('./narration').NarrationEngine; colorGrade?: string }) => Promise<StudioMovieResult>;
+  mediaStoryboardRender?: (args: { projectId: string; sceneId?: string; motion?: boolean; burnSubtitles?: boolean; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square'; narrationEngine?: import('./narration').NarrationEngine; colorGrade?: string; musicEnabled?: boolean; musicTrack?: string; musicVolume?: number; encoder?: 'auto' | 'nvenc' | 'cpu' }) => Promise<StudioMovieResult>;
   mediaStoryboardBreakdown?: (args: {
     script: string;
     genre?: string;

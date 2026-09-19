@@ -502,6 +502,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   // Voice for the next storyboard export. '' keeps the saved setting.
   const [storyboardVoice, setStoryboardVoice] = useState<'' | 'edge' | 'kokoro'>('');
+  const [storyboardMusicEnabled, setStoryboardMusicEnabled] = useState(false);
+  const [storyboardMusicVolume, setStoryboardMusicVolume] = useState(0.18);
+  const [storyboardEncoder, setStoryboardEncoder] = useState<'auto' | 'nvenc' | 'cpu'>('auto');
   const activeStoryboardScene = activeStoryboard?.scenes.find(scene => scene.sceneId === selectedStoryboardSceneId)
     || activeStoryboard?.scenes[0];
   const storyboardBusy = storyboardLoading || storyboardRendering || storyboardSaving || generatingShotId !== null;
@@ -1188,6 +1191,11 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         setAnimaticPlaying(false);
         setAnimaticOpen(false);
         setRenderedMoviePath(res.result.renderedMoviePath || null);
+        setStoryboardMusicEnabled(res.result.project?.musicEnabled === true);
+        setStoryboardMusicVolume(typeof res.result.project?.musicVolume === 'number'
+          && Number.isFinite(res.result.project.musicVolume)
+          && res.result.project.musicVolume >= 0 && res.result.project.musicVolume <= 1
+          ? res.result.project.musicVolume : 0.18);
       } else {
         setStoryboardError(res?.error || `Could not load storyboard: ${projectId}`);
       }
@@ -1325,6 +1333,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           burnSubtitles: activeStoryboard.project.burnSubtitles !== false,
           ...(activeStoryboard.project.captionStyle !== undefined ? { captionStyle: activeStoryboard.project.captionStyle } : {}),
           ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
+          musicEnabled: storyboardMusicEnabled,
+          musicVolume: storyboardMusicVolume,
         });
         if (!res?.ok) throw new Error(res?.error || `Failed to save ${scene.sceneId}.`);
       }
@@ -1829,6 +1839,9 @@ ${shots.map((s, idx) => `
         ...(colorGradeLut && colorGradeLut !== 'rec709' ? { colorGrade: colorGradeLut } : {}),
         ...(activeStoryboard.project.outputSpec !== undefined ? { outputSpec: activeStoryboard.project.outputSpec } : {}),
         ...(storyboardVoice ? { narrationEngine: storyboardVoice } : {}),
+        musicEnabled: storyboardMusicEnabled,
+        musicVolume: storyboardMusicVolume,
+        encoder: storyboardEncoder,
       });
       if (loadVersion !== storyboardLoadVersion.current) return;
       await refreshStoryboardExport(selectedStoryboardId, loadVersion);
@@ -4904,6 +4917,44 @@ ${shots.map((s, idx) => `
             disabled={storyboardBusy} saveHint="Saved with Save Board or Render Movie."
             previewUrl={frameUrl(activeStoryboardScene?.shots[0]?.frameImagePath)}
             onChange={outputSpec => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, outputSpec } } : prev)} />
+          <fieldset className="ms-output-settings" aria-label="Storyboard sound and encoding" disabled={storyboardBusy}>
+            <legend>Sound and encoding</legend>
+            <label className="ms-job-format">
+              <input
+                type="checkbox"
+                aria-label="Include background music with automatic narration ducking"
+                checked={storyboardMusicEnabled}
+                onChange={e => setStoryboardMusicEnabled(e.target.checked)}
+              />{' '}Background music — automatically quieter while narration speaks
+            </label>
+            {storyboardMusicEnabled && (
+              <label className="ms-job-format">
+                Music volume ({Math.round(storyboardMusicVolume * 100)}%)
+                <input
+                  type="range"
+                  min="0"
+                  max="0.5"
+                  step="0.01"
+                  value={storyboardMusicVolume}
+                  onChange={e => setStoryboardMusicVolume(Number(e.target.value))}
+                  aria-label="Background music volume"
+                />
+              </label>
+            )}
+            <label className="ms-job-format">
+              Video encoder
+              <select
+                className="ms-input ms-engine-select"
+                value={storyboardEncoder}
+                onChange={e => setStoryboardEncoder(e.target.value as 'auto' | 'nvenc' | 'cpu')}
+                aria-label="Video encoder for this export"
+              >
+                <option value="auto">Auto — NVIDIA GPU when available, otherwise CPU</option>
+                <option value="nvenc">Prefer NVIDIA GPU — fall back to CPU if unavailable</option>
+                <option value="cpu">CPU — software encoding</option>
+              </select>
+            </label>
+          </fieldset>
           <label className="ms-job-format">
             <input
               type="checkbox"
@@ -5177,6 +5228,8 @@ ${shots.map((s, idx) => `
                 <span className="ms-storyboard-badge">⏱ {totalDuration}s Total</span>
                 <span className="ms-storyboard-badge">🖼 {renderedFramesCount}/{shots.length} Frames Generated</span>
                 <span className="ms-storyboard-badge">{activeStoryboard.project.burnSubtitles === false ? 'Captions off' : 'Captions on'}</span>
+                <span className="ms-storyboard-badge">{storyboardMusicEnabled ? `Music ${Math.round(storyboardMusicVolume * 100)}%` : 'Music off'}</span>
+                <span className="ms-storyboard-badge">Encoder: {storyboardEncoder === 'nvenc' ? 'NVIDIA preferred' : storyboardEncoder === 'cpu' ? 'CPU' : 'Auto'}</span>
                 <button type="button" className="ms-storyboard-undo" aria-label="Undo" title="Undo (Ctrl+Z)"
                   disabled={!canUndoStoryboard || storyboardBusy} onClick={undoStoryboard}>↶ Undo</button>
                 <button type="button" className="ms-storyboard-undo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)"

@@ -963,6 +963,32 @@ test('leaving the voice alone keeps the saved setting, with nothing forced onto 
   expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.not.objectContaining({ narrationEngine: expect.anything() }));
 });
 
+test('saved music settings load once, and music plus encoder choices reach save and export', async () => {
+  const mocks = setup();
+  const loaded = await mocks.mediaStoryboardGet();
+  mocks.mediaStoryboardGet.mockResolvedValue({
+    ...loaded,
+    result: { ...loaded.result, project: { ...loaded.result.project, musicEnabled: true, musicVolume: 0.23 } },
+  });
+  render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+
+  const music = await screen.findByLabelText('Include background music with automatic narration ducking');
+  expect((music as HTMLInputElement).checked).toBe(true);
+  const volume = screen.getByLabelText('Background music volume');
+  expect((volume as HTMLInputElement).value).toBe('0.23');
+  fireEvent.change(volume, { target: { value: '0.27' } });
+  fireEvent.change(screen.getByLabelText('Video encoder for this export'), { target: { value: 'nvenc' } });
+
+  const render_ = screen.getByRole('button', { name: /Render Movie|Render both formats/ });
+  await waitFor(() => expect(render_).not.toBeDisabled());
+  await act(async () => { fireEvent.click(render_); });
+
+  expect(mocks.mediaStoryboardSave).toHaveBeenCalledWith(expect.objectContaining({ musicEnabled: true, musicVolume: 0.27 }));
+  expect(mocks.mediaStoryboardRender).toHaveBeenCalledWith(expect.objectContaining({
+    musicEnabled: true, musicVolume: 0.27, encoder: 'nvenc',
+  }));
+});
+
 test('a transition chosen on a shot is saved, and the last shot has none to choose (MS-2)', async () => {
   const mocks = setup();
   await act(async () => { render(<MediaStudioPanel />); });

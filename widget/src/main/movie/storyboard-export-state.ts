@@ -58,6 +58,13 @@ export async function storyboardSourceRevision(
     // Only a non-default style joins the identity, so exports made before caption styles existed stay current.
     ...(isCustomCaptionStyle(meta.captionStyle) ? { captionStyle: resolveCaptionStyle(meta.captionStyle) } : {}),
     narrationEngine: narrated ? options.engine ?? storyboardNarrationEngine() : null,
+    // No-music is the legacy/default identity. Only enabled music joins the
+    // revision, so old silent exports do not become stale just because these
+    // fields now exist.
+    ...(meta.musicEnabled === true ? {
+      musicEnabled: true,
+      musicVolume: typeof meta.musicVolume === 'number' ? meta.musicVolume : 0.18,
+    } : {}),
   })).digest('hex');
 }
 
