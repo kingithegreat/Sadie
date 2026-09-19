@@ -75,7 +75,6 @@ import {
   getCurrentTier,
   getLicenseStatus,
   activateLicense,
-  validateLicense,
   deactivateLicense,
 } from './licensing';
 
