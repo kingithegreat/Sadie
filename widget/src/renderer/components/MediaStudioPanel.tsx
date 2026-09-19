@@ -41,6 +41,8 @@ import {
   type SettingLighting,
   LIGHTING_PRESETS,
 } from '../../shared/multi-plane-stage';
+import CapabilityReport from './CapabilityReport';
+
 
 /**
  * Safely format local filesystem paths into valid file:/// URLs for Chromium.
@@ -212,7 +214,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [confirmDialog, confirm] = useConfirmDestructive();
   const [jobs, setJobs] = useState<MediaJob[]>([]);
   // Workspace Mode: 'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'
-  const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard'>('director');
+  const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard' | 'health'>('director');
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [jobPreviewPaths, setJobPreviewPaths] = useState<Record<string, { path: string; current?: string }>>({});
   const [jobExportInfo, setJobExportInfo] = useState<{ job: MediaJob; state: StudioExportState } | null>(null);
@@ -5845,6 +5847,17 @@ ${shots.map((s, idx) => `
             <span className="ms-tab-name">Ancient Pathways</span>
             <span className="ms-tab-badge">{apEpisodes ? apEpisodes.length : '12'}</span>
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeWorkspace === 'health'}
+            className={`ms-workspace-tab ${activeWorkspace === 'health' ? 'active' : ''}`}
+            onClick={() => setActiveWorkspace('health')}
+          >
+            <span className="ms-tab-icon">🏥</span>
+            <span className="ms-tab-name">Diagnostics</span>
+            <span className="ms-tab-badge">Status</span>
+          </button>
         </div>
       </div>
 
@@ -5858,6 +5871,17 @@ ${shots.map((s, idx) => `
       {activeWorkspace === 'stage' && renderStageWorkspace()}
       {activeWorkspace === 'router' && renderMovieRouterWorkspace()}
       {activeWorkspace === 'ap' && renderAncientPathwaysWorkspace()}
+      {activeWorkspace === 'health' && (
+        <div className="ms-workspace-area ms-health-workspace">
+          <div className="ms-panel-header">
+            <h2 className="ms-panel-title">Media Studio Diagnostics & Recovery</h2>
+            <p className="ms-panel-subtitle">Pipeline status, FFmpeg engine availability, and active recovery workflows.</p>
+          </div>
+          <div className="ms-health-content" style={{ padding: '24px', maxWidth: '800px', margin: '0 auto', overflowY: 'auto', height: '100%' }}>
+            <CapabilityReport />
+          </div>
+        </div>
+      )}
 
       {activeWorkspace === 'director' && (
         <>
