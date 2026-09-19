@@ -21,7 +21,7 @@ import * as os from 'os';
 import * as path from 'path';
 import sharp from 'sharp';
 import { buildKenBurnsFilter, MOTION_SUPERSAMPLE } from '../movie/storyboard-renderer';
-import { findFfmpeg } from '../media-render';
+import { buildRenderArgs, findFfmpeg } from '../media-render';
 
 const live = process.env.HOMEBOT_LIVE === '1';
 const maybe = live ? describe : describe.skip;
@@ -36,6 +36,21 @@ async function rampImage(file: string): Promise<void> {
   for (let y = 0; y < HEIGHT; y++) {
     for (let x = 0; x < WIDTH; x++) {
       const value = Math.round(20 + 200 * (x / (WIDTH - 1)));
+      const at = (y * WIDTH + x) * 3;
+      pixels[at] = value; pixels[at + 1] = value; pixels[at + 2] = value;
+    }
+  }
+  await sharp(pixels, { raw: { width: WIDTH, height: HEIGHT, channels: 3 } }).png().toFile(file);
+}
+
+/** A radial ramp makes a centered push-in measurable: the crop gets darker as it tightens. */
+async function radialImage(file: string): Promise<void> {
+  const pixels = Buffer.alloc(WIDTH * HEIGHT * 3);
+  const cx = (WIDTH - 1) / 2, cy = (HEIGHT - 1) / 2;
+  const maxDistance = Math.hypot(cx, cy);
+  for (let y = 0; y < HEIGHT; y++) {
+    for (let x = 0; x < WIDTH; x++) {
+      const value = Math.round(20 + 200 * Math.min(1, Math.hypot(x - cx, y - cy) / maxDistance));
       const at = (y * WIDTH + x) * 3;
       pixels[at] = value; pixels[at + 1] = value; pixels[at + 2] = value;
     }
@@ -106,6 +121,55 @@ maybe('a slow pan', () => {
       // error (measured 0.639 -> 0.004 on this machine).
       expect(steppedJudder).toBeGreaterThan(0.2);
       expect(smoothJudder).toBeLessThan(0.05);
+      expect(smoothJudder).toBeLessThan(steppedJudder / 5);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('job-render slow push-in moves evenly with supersampling, A/B against the old filter', async () => {
+    const ffmpeg = (await findFfmpeg())!;
+    expect(ffmpeg).toBeTruthy();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-job-motion-'));
+    try {
+      const image = path.join(dir, 'radial.png');
+      await radialImage(image);
+      const frames = SECONDS * FPS;
+      const jobArgs = buildRenderArgs({
+        audioPath: path.join(dir, 'unused.wav'), outputPath: path.join(dir, 'unused.mp4'),
+        shape: 'long', imagePath: image, durationSeconds: SECONDS, fps: FPS,
+      });
+      const smooth = jobArgs[jobArgs.indexOf('-vf') + 1]!;
+      expect(smooth).toContain('scale=iw*2:ih*2:flags=bicubic');
+      // The pre-MS-8 job filter used same-size input and cumulative zoom state.
+      const stepped = `scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase:out_color_matrix=bt709:out_range=limited,crop=${WIDTH}:${HEIGHT},zoompan=z='min(zoom+0.0004,1.12)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${WIDTH}x${HEIGHT}:fps=${FPS}`;
+
+      const render = (filter: string, name: string) => {
+        const framesDir = path.join(dir, name);
+        fs.mkdirSync(framesDir, { recursive: true });
+        const started = Date.now();
+        execFileSync(ffmpeg, ['-y', '-loop', '1', '-i', image, '-vf', filter,
+          '-frames:v', String(frames), '-r', String(FPS), path.join(framesDir, 'f%04d.png')], { stdio: 'pipe' });
+        return { framesDir, seconds: (Date.now() - started) / 1000 };
+      };
+      const before = render(stepped, 'stepped-push');
+      const after = render(smooth, 'smooth-push');
+      const beforeBrightness = await frameBrightness(before.framesDir);
+      const afterBrightness = await frameBrightness(after.framesDir);
+      const steppedJudder = judder(beforeBrightness);
+      const smoothJudder = judder(afterBrightness);
+      const smoothDirection = afterBrightness.at(-1)! - afterBrightness[0]!;
+      console.log(`[MS-8] job push judder stepped=${steppedJudder.toFixed(3)} smooth=${smoothJudder.toFixed(3)} · ` +
+        `render ${before.seconds.toFixed(1)}s -> ${after.seconds.toFixed(1)}s (${(after.seconds / before.seconds).toFixed(1)}x), ` +
+        `brightness delta=${smoothDirection.toFixed(2)} for ${SECONDS}s at ${WIDTH}x${HEIGHT}`);
+
+      // Positive control: the radial field must visibly change under zoom.
+      expect(Math.abs(smoothDirection)).toBeGreaterThan(0.5);
+      expect(steppedJudder).toBeGreaterThan(0.2);
+      // A radial brightness ramp is nonlinear under zoom, so the absolute
+      // score is not expected to match the linear pan test. The useful proof is
+      // the A/B delta against the previous cumulative-zoom filter.
+      expect(smoothJudder).toBeLessThan(0.1);
       expect(smoothJudder).toBeLessThan(steppedJudder / 5);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

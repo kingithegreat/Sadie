@@ -29,6 +29,7 @@ import { buildTextCardAss, entriesFromShots } from './text-cards';
 import type { NarrationEngine } from '../../shared/narration';
 import { beginStoryboardExport, endStoryboardExport, recordStoryboardAttempt, storyboardSourceRevision,
   storyboardNarrationEngine, storyboardFileDigest, updateStoryboardExportMeta } from './storyboard-export-state';
+import { buildSupersampledKenBurnsFilter } from './ken-burns-filter';
 
 export interface StoryboardRenderOptions {
   projectId: string;
@@ -130,7 +131,7 @@ export function buildSrtFromShots(shots: ShotManifest[], timeline?: Timeline): s
  * 4x measured the same 0.007 at roughly double the filter time (1.2s vs 3.3s
  * for two seconds of 1080p).
  */
-export const MOTION_SUPERSAMPLE = 2;
+export { MOTION_SUPERSAMPLE } from './ken-burns-filter';
 
 /** Generates FFmpeg video filter for Ken Burns motion based on shot movement preset. */
 export function buildKenBurnsFilter(movement: string, durationSec: number, fps = 30, outputVariant?: StudioOutputVariant): string {
@@ -139,31 +140,7 @@ export function buildKenBurnsFilter(movement: string, durationSec: number, fps =
   const w = outputVariant?.width ?? 1920;
   const h = outputVariant?.height ?? 1080;
   fps = outputVariant?.fps ?? fps;
-  const k = MOTION_SUPERSAMPLE;
-  // Bicubic on the way up: nearest would put the same stair-step back.
-  const framed = (filter: string) => [base, `scale=iw*${k}:ih*${k}:flags=bicubic`, filter].filter(Boolean).join(',');
-  const frames = Math.max(1, Math.round(durationSec * fps));
-  const move = movement.toLowerCase().trim();
-  /** A pan speed in output pixels per frame, snapped to whole supersampled pixels. */
-  const step = (outputPixelsPerFrame: number) => Math.max(1, Math.round(outputPixelsPerFrame * k));
-
-  if (move === 'slow push in') {
-    // Zoom from 1.0 to 1.25 toward center
-    return framed(`zoompan=z='min(1+0.0015*on,1.25)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${w}x${h}:fps=${fps}`);
-  } else if (move === 'pan right') {
-    // Constant 1.15 scale with horizontal rightward pan
-    return framed(`zoompan=z='1.15':x='min((iw-iw/zoom)/2+on*${step(1.5)},iw-iw/zoom)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`);
-  } else if (move === 'tilt up') {
-    // Constant 1.15 scale with upward vertical tilt
-    return framed(`zoompan=z='1.15':x='iw/2-(iw/zoom/2)':y='max((ih-ih/zoom)/2-on*${step(1.5)},0)':d=${frames}:s=${w}x${h}:fps=${fps}`);
-  } else if (move === 'tracking') {
-    // Slight zoom with diagonal flow. 1.0 px/frame, not 1.2: 1.2 does not land
-    // on the supersample grid and measured 30x more judder (0.204 vs 0.007).
-    return framed(`zoompan=z='min(1+0.001*on,1.18)':x='min((iw-iw/zoom)/2+on*${step(1)},iw-iw/zoom)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`);
-  } else {
-    // Static locked shot: scale to fill 1920x1080 cleanly
-    return base || `scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080`;
-  }
+  return buildSupersampledKenBurnsFilter(movement, durationSec, fps, { width: w, height: h, baseFilters: base });
 }
 
 function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stderr: string }> {

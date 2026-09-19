@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { resolveStudioOutputVariant, type StudioAspectRatio, type StudioOutputVariant } from '../shared/media-output';
 import { resolveCaptionStyle, type CaptionStyle } from '../shared/caption-style';
+import { buildSupersampledKenBurnsFilter } from './movie/ken-burns-filter';
 
 /** One visual, held for a span of the video. */
 export interface Segment {
@@ -511,11 +512,13 @@ export function buildRenderArgs(opts: {
       filters.push(`crop=${w}:${h}`);
     }
     if (opts.zoom !== false && variant?.framing.mode !== 'fit') {
-      // zoompan runs per input frame, so the frame count is duration x fps.
-      const frames = Math.max(1, Math.round(opts.durationSeconds * fps));
-      filters.push(
-        `zoompan=z='min(zoom+0.0004,1.12)':d=${frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${w}x${h}:fps=${fps}`,
-      );
+      const baseFilters = filters.join(',');
+      filters.length = 0;
+      filters.push(buildSupersampledKenBurnsFilter('slow push in', opts.durationSeconds, fps, {
+        width: w,
+        height: h,
+        baseFilters,
+      }));
     }
   }
   if (opts.captionsPath) {
