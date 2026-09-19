@@ -78,7 +78,6 @@ jest.mock('../custom-llm-client', () => ({
 // ── Mock tools ───────────────────────────────────────────────────────────────
 jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
-  getOllamaTools: jest.fn(() => []),
   getSmallModelTools: jest.fn(() => []),
   getFocusedToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   getAllToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),

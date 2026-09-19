@@ -2,7 +2,7 @@ import {
   assTimestamp, buildTextCardAss, createMeasurer, entriesFromShots, escapeAssText,
   layoutTextCard, SAFE_MARGIN, wrapMeasured, type Measurer,
 } from '../movie/text-cards';
-import { sanitizeTextCard, sameTextCard } from '../../shared/text-card';
+import { sanitizeTextCard } from '../../shared/text-card';
 
 // Real text measurement (Pango through sharp) is exercised by the last test;
 // the rest use a predictable stand-in so line breaks can be asserted exactly.
@@ -123,8 +123,6 @@ describe('a card from untrusted input', () => {
     for (const nothing of [null, undefined, 'text', { subline: 'no heading' }, { heading: '   ' }]) {
       expect(sanitizeTextCard(nothing)).toBeNull();
     }
-    expect(sameTextCard({ heading: 'A', position: 'top' }, { heading: 'A', position: 'top' })).toBe(true);
-    expect(sameTextCard({ heading: 'A', position: 'top' }, null)).toBe(false);
   });
 });
 

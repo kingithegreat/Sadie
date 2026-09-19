@@ -220,24 +220,6 @@ export async function activateLicense(licenseKey: string): Promise<LicenseValida
   return result;
 }
 
-export async function validateLicense(): Promise<LicenseValidationResult> {
-  const state = loadState();
-  if (!state.licenseKey) {
-    return { valid: false, error: 'No license activated on this device.' };
-  }
-
-  // Offline signed keys re-verify locally — no network needed, ever.
-  if (state.kind === 'offline' || looksLikeSignedLicense(state.licenseKey)) {
-    const offline = activateOffline(state.licenseKey)!;
-    saveState({ ...state, kind: 'offline', cache: cacheFromResult(offline) });
-    return offline;
-  }
-
-  const result = await service().validate(state.licenseKey, state.instanceId);
-  saveState({ ...state, cache: cacheFromResult(result) });
-  return result;
-}
-
 export async function deactivateLicense(): Promise<LicenseValidationResult> {
   const state = loadState();
   // Offline keys have no server-side seat to free — just clear local state.

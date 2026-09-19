@@ -24,7 +24,6 @@ jest.mock('../memory-manager', () => ({
 }));
 jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
-  getOllamaTools: jest.fn(() => []),
   getSmallModelTools: jest.fn(() => []),
   getAllToolDefinitions: jest.fn(() => []),
   executeToolBatch: jest.fn(async () => []),

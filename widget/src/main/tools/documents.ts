@@ -549,40 +549,6 @@ export const documentToolHandlers: Record<string, ToolHandler> = {
 };
 
 /**
- * Store a document directly (used when document is received via IPC)
- */
-export function storeDocument(id: string, filename: string, mimeType: string, text: string): void {
-  const wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
-  
-  parsedDocuments.set(id, {
-    id,
-    filename,
-    mimeType,
-    text,
-    wordCount,
-    parsedAt: new Date().toISOString()
-  });
-}
-
-/**
- * Get a stored document
- */
-export function getDocument(id: string): ParsedDocument | undefined {
-  return parsedDocuments.get(id);
-}
-
-/**
- * Clear all stored documents
- */
-export function clearDocuments(): void {
-  parsedDocuments.clear();
-}
-
-
-
-
-
-/**
  * Clear all stored documents (for tests)
  */
 export function _clearDocumentsForTest(): void {
