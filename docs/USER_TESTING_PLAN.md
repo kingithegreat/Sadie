@@ -1,6 +1,6 @@
 # HomeBot — plan to user testing
 
-**Owner:** Aden. **Reconciled:** 2026-09-20, from `origin/main` at `e9f56df` and live GitHub PR/issue state. The prior status pass in PR #385 was based on an older main and conflicted; this document supersedes it.
+**Owner:** Aden. **Reconciled:** 2026-09-20, from `origin/main` at `c2614b2` and live GitHub PR/issue state. The prior status pass in PR #385 was based on an older main and conflicted; this document supersedes it.
 **Goal (Aden, 2026-09-17):** every feature complete and working end to end, so the app is ready for hands-on user testing. That means a user can customise and edit anything in Media Studio and get exactly the video they want, and Code mode offers what Cursor offers.
 
 This is the shared work queue for every agent (Claude, Codex, Gemini, Antigravity). It sits on top of the existing plans, not beside them:
@@ -42,8 +42,8 @@ Consequences:
 | ID | Problem (evidence) | Done when | Status |
 |---|---|---|---|
 | G-1 | **Release Gate was red, then stopped running on main at all.** #355 moved the gate to Windows (fixed the Linux home-boundary `filesystem.test.ts` failures). But it only fired on `push: [main]` + a `paths`-filtered `pull_request`, and every merge since 2026-09-16 09:30 was a bot squash-merge with the repo `GITHUB_TOKEN` — GitHub does not fire `push` events for `GITHUB_TOKEN` pushes, so the gate was dark for 30 consecutive merges while still looking green on its own PR branch. Fixed by #377 (daily `schedule` 06:00 UTC + `workflow_dispatch` + a `concurrency` group). | Trigger fixed and verified: scheduled main run `35438194068` on 2026-09-19 is green. | merged #377; one scheduled green observed, three-consecutive requirement still open |
-| G-2 | **Nightly Media E2E red 5 nights running** (2026-09-12 → 16). Run 35068419377, Windows: `media-render.live.test.ts` and `studio-real-ipc.test.ts`, 7 failed / 63. One case expects "install / winget / ffmpeg.org" guidance but gets "has no narration audio yet — run media_narrate first", so a precondition check fires before the ffmpeg check. Read each failure; don't label any of them flaky until the exact error text is diffed. | Each of the 7 failures is explained and fixed (product or test, stated per case). Nightly green 3 nights running. | merged #387; latest scheduled run `35428550024` is green, but the three-consecutive nightly-main criterion is still open |
-| G-3 | **Issue #229:** the full widget suite is nondeterministic; a different suite fails per run, from cross-file state pollution. Seen again 2026-09-17: `media-visuals.test.ts` timing tests failed under the full run but pass 30/30 alone. | The polluting state is found and isolated. Two consecutive full `npx jest` runs on Windows give identical results. | merged #382 — one leak fixed (delete call bound at confirm time); #229's other candidates (IPC/config singletons) unaddressed |
+| G-2 | **Nightly Media E2E red 5 nights running** (2026-09-12 → 16). Run 35068419377, Windows: `media-render.live.test.ts` and `studio-real-ipc.test.ts`, 7 failed / 63. One case expects "install / winget / ffmpeg.org" guidance but gets "has no narration audio yet — run media_narrate first", so a precondition check fires before the ffmpeg check. Read each failure; don't label any of them flaky until the exact error text is diffed. | Each of the 7 failures is explained and fixed (product or test, stated per case). Nightly green 3 nights running. | merged #387; scheduled runs `35318304278` (Sep 18) and `35428550024` (Sep 19) are green — 2/3 consecutive, with the third still open |
+| G-3 | **Issue #229:** the full widget suite is nondeterministic; a different suite fails per run, from cross-file state pollution. Seen again 2026-09-17: `media-visuals.test.ts` timing tests failed under the full run but pass 30/30 alone. | The polluting state is found and isolated. Two consecutive full `npx jest` runs on Windows give identical results. | merged #382; verified again on current main `05bce71` with two identical full runs (334 suites, 4,523 passed, 29 skipped) |
 | G-4 | Required `e2e-all` waits on queued macOS/Windows shards, often for hours, which makes every PR slow to land. | The queue time is measured, and a proposal (fewer shards, a smaller required set, or caching) goes to Aden **before** any required context changes. | needs Aden |
 
 ## MS — Media Studio: edit anything, export exactly that
@@ -133,9 +133,11 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | REL-2 | **A user-testing checklist for Aden:** what to try, what each external setup needs (Online, keys, ComfyUI, Colab, FFmpeg download), and how to report a problem. | `docs/USER_TESTING_CHECKLIST.md` merged, and every step in it was performed once by an agent on a fresh profile. | blocked by REL-1 |
 | REL-3 | **No dead controls anywhere a tester will click:** a reachability sweep (skill `reachability-audit`) across all modes, not just Media Studio. | A sweep report listing each control and its effect; every dead one fixed or removed under its own ID. | swept |
 | REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | merged #388 |
-| REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #389 |
-| REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | PR #391 (open) |
+| REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #393; #389 did not remove the production exports |
+| REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | merged #391 |
 | REL-3.4 | **Dead Colab Queue features:** `cancelColabJob`, `retryColabJob` | Wired to Media Studio UI or removed | open |
+| REL-3.5 | **Unassigned dead-export tail:** `getOllamaTools`, `validateLicense`, `sameTextCard`, plus the REL-3.2 document exports | Each candidate rechecked on current main; zero-caller exports removed without deleting live or test-only guards | merged #393 |
+| REL-3.6 | **Mounted but unused i18n scaffolding:** dictionaries and `I18nProvider` exist, but no caller reads translations and no locale picker writes the setting | Aden chooses whether multilingual UI is in scope; then wire a visible locale flow or remove the unused mount and dictionaries | needs Aden |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | merged #363 |
 
 ## Needs Aden
@@ -148,6 +150,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 - **PROV-2:** Codex CLI signed in with your ChatGPT account on this PC, for the live check.
 - **PROV-3 / PROV-4:** one paid live request each with your OpenAI and Google keys (images cost cents; Veo is charged per second of video).
 - **PROV-6:** whether you want Claude-drawn vector illustrations at all.
+- **REL-3.6:** whether multilingual UI is in scope; keep and wire the i18n system, or remove the unused scaffolding.
 
 ## Research notes (2026-09-17)
 
