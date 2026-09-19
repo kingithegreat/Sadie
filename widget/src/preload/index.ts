@@ -706,7 +706,6 @@ const electronAPI: ElectronAPI = {
   closeWindow: () => ipcRenderer.send('window-close'),
   toggleWidgetMode: () => ipcRenderer.invoke('homebot:toggle-widget-mode') as Promise<boolean>,
   getWidgetMode: () => ipcRenderer.invoke('homebot:get-widget-mode') as Promise<boolean>,
-  setAlwaysOnTop: (value: boolean) => ipcRenderer.send('homebot:set-always-on-top', value),
   onWidgetModeChanged: (callback: (isWidget: boolean) => void) => {
     const handler = (_event: any, isWidget: boolean) => callback(isWidget);
     ipcRenderer.on('homebot:widget-mode-changed', handler);
@@ -907,11 +906,10 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:series-settings:save', args),
   mediaSeriesSettingsDelete: async (seriesId: string, settingId: string) =>
     ipcRenderer.invoke('homebot:media:series-settings:delete', seriesId, settingId),
-  mediaSeriesSettingsSegment: async (args: { imageBase64: string; preferCpu?: boolean }) =>
+  mediaSeriesSettingsSegment: async (args: { imageBase64?: string; bgPath?: string; preferCpu?: boolean }) =>
     ipcRenderer.invoke('homebot:media:series-settings:segment', args),
   licenseStatus: async () => ipcRenderer.invoke('homebot:license:status'),
   licenseActivate: async (licenseKey: string) => ipcRenderer.invoke('homebot:license:activate', licenseKey),
-  licenseValidate: async () => ipcRenderer.invoke('homebot:license:validate'),
   licenseDeactivate: async () => ipcRenderer.invoke('homebot:license:deactivate'),
 
   // Uncensored mode toggle
