@@ -556,6 +556,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const frameChoice: StoryboardFrameProviderId | undefined = isStoryboardFrameProviderId(activeStoryboard?.project?.frameProvider)
     ? activeStoryboard?.project?.frameProvider : undefined;
   const frameStatus = frameProviders?.find(p => p.id === frameChoice || (frameChoice === 'gemini' && p.modelId === 'gemini-3.1-flash-image')) ?? null;
+  const frameChoiceUnavailable = !!frameChoice && frameProviders !== null && !frameStatus;
   const frameReady = !!frameStatus?.ready;
   const noFrameProviderReady = !!frameProviders && !frameProviders.some(p => p.ready);
   const renderedStoryboardJob = jobs.find(job => job.renderPath === renderedMoviePath &&
@@ -1396,7 +1397,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const handleChooseFrameProvider = async (value: string) => {
-    const option = frameProviders?.find(o => o.id === value);
+    const option = frameProviders?.find(o => o.id === value)
+      ?? STORYBOARD_FRAME_PROVIDERS.find(o => o.id === value);
     if (!option || !selectedStoryboardId) return;
     const res = await api()?.mediaStoryboardSetFrameProvider?.({ projectId: selectedStoryboardId, frameProvider: option.id });
     if (!res?.ok) {
@@ -4981,6 +4983,9 @@ ${shots.map((s, idx) => `
               onChange={e => void handleChooseFrameProvider(e.target.value)}
             >
               <option value="" disabled>Choose how to make frame images…</option>
+              {frameChoiceUnavailable && (
+                <option value={frameChoice} disabled>Saved frame model unavailable — choose another option</option>
+              )}
               {(frameProviders ?? STORYBOARD_FRAME_PROVIDERS.filter(option => option.id !== 'gemini')).map(option => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
@@ -4991,7 +4996,11 @@ ${shots.map((s, idx) => `
                 noFrameProviderReady
                   ? 'Nothing can make frame images yet. Turn on Online in Settings to use the free online service, or set up this PC below.'
                   : 'Choose one before generating. Nothing is sent anywhere until you do.'
-              ) : !frameStatus ? 'Checking…' : frameStatus.ready ? (
+              ) : !frameStatus ? (
+                frameProviders === null
+                  ? 'Checking…'
+                  : 'The saved frame model is no longer available for this account. Choose another option.'
+              ) : frameStatus.ready ? (
                 <>{frameStatus.cost}{frameStatus.watermark ? <> <strong>{frameStatus.watermark}</strong></> : null}</>
               ) : (
                 <>

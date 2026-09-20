@@ -870,6 +870,24 @@ describe('Storyboard frame provider picker', () => {
     expect(screen.getByRole('note', { name: 'Frame image status' })).toHaveTextContent('No charge. Runs on this computer; nothing is sent online.');
   });
 
+  test('fallback choices remain actionable while provider discovery is still loading', async () => {
+    let resolveProviders!: (value: { ok: true; providers: StoryboardFrameProviderStatus[] }) => void;
+    const pendingProviders = new Promise<{ ok: true; providers: StoryboardFrameProviderStatus[] }>(resolve => {
+      resolveProviders = resolve;
+    });
+    const mocks = setup({ mediaStoryboardFrameProviders: jest.fn(() => pendingProviders) });
+    await openBoard(mocks, { frameProvider: undefined });
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'How to make frame images' }), { target: { value: 'online' } });
+    await waitFor(() => expect(mocks.mediaStoryboardSetFrameProvider).toHaveBeenCalledWith({
+      projectId: 'pyramid-builders',
+      frameProvider: 'online',
+    }));
+
+    resolveProviders({ ok: true, providers: frameStatuses() });
+    await act(async () => { await pendingProviders; });
+  });
+
   test('the online option states its watermark before any frame is generated', async () => {
     const mocks = setup();
     mocks.mediaStoryboardFrameProviders.mockResolvedValue({ ok: true, providers: frameStatuses({ online: { ready: true, needs: null, reason: null } }) });
@@ -901,6 +919,18 @@ describe('Storyboard frame provider picker', () => {
     for (const button of screen.getAllByRole('button', { name: /Generate Frame/ })) expect(button).toBeDisabled();
     expect(mocks.mediaStoryboardGenerateFrame).not.toHaveBeenCalled();
     expect(mocks.mediaStoryboardConfirmPaidFrames).not.toHaveBeenCalled();
+  });
+
+  test('a live-format saved model missing after discovery is shown as unavailable', async () => {
+    const mocks = setup();
+    await openBoard(mocks, { frameProvider: 'gemini:retired-image-model' });
+
+    const status = screen.getByRole('note', { name: 'Frame image status' });
+    await waitFor(() => expect(status).toHaveTextContent('The saved frame model is no longer available for this account. Choose another option.'));
+    expect(status).not.toHaveTextContent('Checking…');
+    const picker = screen.getByRole('combobox', { name: 'How to make frame images' }) as HTMLSelectElement;
+    expect(picker.value).toBe('gemini:retired-image-model');
+    expect(picker.selectedOptions[0]).toBeDisabled();
   });
 
   test('the frame picker renders only Google image models returned by the account registry', async () => {
