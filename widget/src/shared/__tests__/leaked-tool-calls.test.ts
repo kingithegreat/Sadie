@@ -7,7 +7,6 @@
 
 import {
   detectLeakedToolCalls,
-  hasLeakedToolCalls,
   stripLeakedToolCalls,
   describeLeak,
 } from '../leaked-tool-calls';
@@ -77,29 +76,29 @@ describe('not crying wolf', () => {
   // put a scary warning under perfectly good answers until people ignored it.
 
   test('an ordinary answer is clean', () => {
-    expect(hasLeakedToolCalls('Hey! What\'s up?')).toBe(false);
-    expect(hasLeakedToolCalls('I read the file and it contains three functions.')).toBe(false);
+    expect(detectLeakedToolCalls('Hey! What\'s up?')).toHaveLength(0);
+    expect(detectLeakedToolCalls('I read the file and it contains three functions.')).toHaveLength(0);
   });
 
   test('empty and whitespace are clean', () => {
-    expect(hasLeakedToolCalls('')).toBe(false);
-    expect(hasLeakedToolCalls('   \n  ')).toBe(false);
+    expect(detectLeakedToolCalls('')).toHaveLength(0);
+    expect(detectLeakedToolCalls('   \n  ')).toHaveLength(0);
   });
 
   test('talking ABOUT tools is not leaking one', () => {
-    expect(hasLeakedToolCalls('You can use the run_terminal_command tool for that.')).toBe(false);
-    expect(hasLeakedToolCalls('The functions in that module are well named.')).toBe(false);
+    expect(detectLeakedToolCalls('You can use the run_terminal_command tool for that.')).toHaveLength(0);
+    expect(detectLeakedToolCalls('The functions in that module are well named.')).toHaveLength(0);
   });
 
   test('HTML and code in an answer are not tool calls', () => {
-    expect(hasLeakedToolCalls('<div class="invoke">hello</div>')).toBe(false);
-    expect(hasLeakedToolCalls('const invoke = (name) => name;')).toBe(false);
+    expect(detectLeakedToolCalls('<div class="invoke">hello</div>')).toHaveLength(0);
+    expect(detectLeakedToolCalls('const invoke = (name) => name;')).toHaveLength(0);
   });
 
   test('a real tool RESULT being summarised is clean', () => {
     // After a genuine tool call the model narrates what it found. That must
     // never be mistaken for a leak.
-    expect(hasLeakedToolCalls('I ran the command and it printed "Terminal tool test successful".')).toBe(false);
+    expect(detectLeakedToolCalls('I ran the command and it printed "Terminal tool test successful".')).toHaveLength(0);
   });
 });
 

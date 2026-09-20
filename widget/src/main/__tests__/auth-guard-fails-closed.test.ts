@@ -17,7 +17,7 @@
  * the new one refuses, rather than asserting on the string.
  */
 
-import { guardJsCode, placeholderGuardJsCode } from '../n8n-auth-guard';
+import { guardJsCode } from '../n8n-auth-guard';
 
 /**
  * Execute a guard body the way an n8n Code node would.
@@ -62,22 +62,22 @@ describe('the shipped placeholder guard', () => {
   test('REFUSES when no secret was ever injected — the whole point', () => {
     // Previously this returned $input.all() and the webhook ran. A hand-imported
     // workflow was an open endpoint running file and browser automation.
-    expect(() => runGuard(placeholderGuardJsCode(), { 'x-homebot-auth': 'anything' }))
+    expect(() => runGuard(guardJsCode(''), { 'x-homebot-auth': 'anything' }))
       .toThrow(/no HomeBot secret/i);
   });
 
   test('refuses even with no header at all', () => {
-    expect(() => runGuard(placeholderGuardJsCode(), {})).toThrow(/Unauthorized/);
+    expect(() => runGuard(guardJsCode(''), {})).toThrow(/Unauthorized/);
   });
 
   test('the message says what to do about it', () => {
     // "Unauthorized" alone would send someone hunting for a header to add.
     // The fix is to deploy from HomeBot, so the error says that.
-    expect(() => runGuard(placeholderGuardJsCode(), {})).toThrow(/Deploy it from HomeBot/i);
+    expect(() => runGuard(guardJsCode(''), {})).toThrow(/Deploy it from HomeBot/i);
   });
 
   test('an empty environment cannot rescue it — that was the old bug', () => {
-    expect(() => runGuard(placeholderGuardJsCode(), { 'x-homebot-auth': 'x' }, {}))
+    expect(() => runGuard(guardJsCode(''), { 'x-homebot-auth': 'x' }, {}))
       .toThrow(/Unauthorized/);
   });
 });
@@ -87,6 +87,6 @@ describe('the marker that lets HomeBot upgrade an existing guard', () => {
     // injectAuthGuards finds guards by this marker. Without it, deploying over
     // a hand-imported workflow would add a SECOND guard node.
     expect(guardJsCode(SECRET)).toContain("hdrs['x-homebot-auth']");
-    expect(placeholderGuardJsCode()).toContain("hdrs['x-homebot-auth']");
+    expect(guardJsCode('')).toContain("hdrs['x-homebot-auth']");
   });
 });

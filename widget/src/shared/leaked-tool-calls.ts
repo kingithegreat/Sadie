@@ -100,11 +100,6 @@ export function detectLeakedToolCalls(text: string): LeakedToolCall[] {
   return found;
 }
 
-/** True when a reply is describing tool calls rather than having made them. */
-export function hasLeakedToolCalls(text: string): boolean {
-  return detectLeakedToolCalls(text).length > 0;
-}
-
 /**
  * Remove leaked tool syntax from text meant for a person to read.
  *
