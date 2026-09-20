@@ -44,21 +44,6 @@ export function guardJsCode(secret: string): string {
   ].join('\n');
 }
 
-/**
- * The guard shipped inside the repo's workflow JSONs.
- *
- * Identical to the deployed guard but with an EMPTY secret, so it denies until
- * HomeBot patches it on import. The per-install secret cannot live in the repo
- * — it is generated per machine — so the shipped copy has to be the
- * deny-by-default one.
- *
- * It keeps the shared marker deliberately, so `injectAuthGuards` recognises it
- * and upgrades it in place rather than adding a second guard node.
- */
-export function placeholderGuardJsCode(): string {
-  return guardJsCode('');
-}
-
 interface N8nNode {
   name: string;
   type: string;
