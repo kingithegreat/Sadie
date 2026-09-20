@@ -1195,7 +1195,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
             ticketId: job.ticketId,
             expectedAttempts: job.attempts,
           });
-          if (!res?.ok) setMovieError(res?.error || 'Could not cancel that pending Colab ticket.');
+          if (!res?.ok) {
+            setMovieError(res?.error || 'Could not cancel that pending Colab ticket.');
+            return;
+          }
           await loadColabJobs(projectDir);
         } catch (e: any) {
           setMovieError(e?.message || 'Could not cancel that pending Colab ticket.');
@@ -1215,7 +1218,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         ticketId: job.ticketId,
         expectedAttempts: job.attempts,
       });
-      if (!res?.ok) setMovieError(res?.error || 'Could not retry that Colab ticket.');
+      if (!res?.ok) {
+        setMovieError(res?.error || 'Could not retry that Colab ticket.');
+        return;
+      }
       await loadColabJobs(projectDir);
     } catch (e: any) {
       setMovieError(e?.message || 'Could not retry that Colab ticket.');
@@ -4754,7 +4760,7 @@ ${shots.map((s, idx) => `
             </button>
           </div>
 
-          <label className="ms-state" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '10px 0', padding: '10px 12px' }}>
+          <label className="ms-colab-optin">
             <input
               type="checkbox"
               aria-label="Allow manual Colab worker"
@@ -4803,14 +4809,14 @@ ${shots.map((s, idx) => `
                       </button>
                     </div>
                     {projectJobs && (
-                      <div style={{ flexBasis: '100%', marginTop: 10 }} aria-label={`Colab queue for ${label}`}>
+                      <div className="ms-colab-queue" aria-label={`Colab queue for ${label}`}>
                         {projectJobs.length === 0 ? (
                           <div className="ms-runner-empty">No Colab tickets for this project.</div>
                         ) : projectJobs.map(job => (
-                          <div key={job.ticketId} className="ms-state" style={{ marginTop: 6, padding: '8px 10px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div key={job.ticketId} className="ms-colab-job-row">
                             <strong>{job.shotId}</strong>
                             <span>Attempt {job.attempts}</span>
-                            <span>{job.status}</span>
+                            <span className="ms-colab-job-status">{job.status}</span>
                             <span>{job.outputReady ? 'Output ready' : 'Output not ready'}</span>
                             {job.error && <span role="alert">{job.error}</span>}
                             {job.canCancel && (

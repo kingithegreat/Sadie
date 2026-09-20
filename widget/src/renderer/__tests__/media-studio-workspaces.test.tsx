@@ -228,6 +228,34 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
     expect(screen.getByRole('button', { name: 'Cancel pending ticket' })).toBeEnabled();
   });
 
+  test('keeps cancel and retry mutation errors visible instead of clearing them with a refresh', async () => {
+    const jobs = [
+      { ticketId: 'colab_ticket_pending', jobId: 'a', sceneId: 'scene_01', shotId: 'shot_001', createdAt: '', attempts: 1, status: 'AWAITING_WORKER', outputReady: false, canCancel: true, canRetry: false },
+      { ticketId: 'colab_ticket_failed', jobId: 'b', sceneId: 'scene_01', shotId: 'shot_002', createdAt: '', attempts: 2, status: 'FAILED', outputReady: false, canCancel: false, canRetry: true },
+    ];
+    const list = jest.fn().mockResolvedValue({ ok: true, jobs });
+    const controls = setup({
+      mediaMovieListColabJobs: list,
+      mediaMovieCancelColabJob: jest.fn().mockResolvedValue({ ok: false, error: 'Cancel snapshot is stale.' }),
+      mediaMovieRetryColabJob: jest.fn().mockResolvedValue({ ok: false, error: 'Retry needs Online access.' }),
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router')); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Refresh Colab queue/i })); });
+    const callsAfterRefresh = list.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel pending ticket' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel the pending ticket' })); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cancel snapshot is stale.');
+    expect(controls.mediaMovieCancelColabJob).toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(callsAfterRefresh);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Retry needs Online access.');
+    expect(controls.mediaMovieRetryColabJob).toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(callsAfterRefresh);
+  });
+
   test('presents a cancelled ticket late output as unavailable, not ready to use', async () => {
     setup({
       mediaMovieListColabJobs: jest.fn().mockResolvedValue({

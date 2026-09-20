@@ -135,7 +135,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | merged #388 |
 | REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #393; #389 did not remove the production exports |
 | REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | merged #391 |
-| REL-3.4 | **Colab Queue controls:** retain the approved operator-assisted worker and make its existing cancel/retry operations reachable without accepting renderer-supplied shot paths | Movie Router requires an explicit manual-worker opt-in, lists project-scoped tickets, cancels only pending tickets, and retries failed/cancelled tickets only while Online is on | implemented on `codex/rel34-colab-queue-ui`; pending PR/merge and fresh-profile acceptance |
+| REL-3.4 | **Colab Queue controls:** retain the approved operator-assisted worker and make its existing cancel/retry operations reachable without accepting renderer-supplied shot paths | Movie Router requires an explicit manual-worker opt-in, lists project-scoped tickets, cancels only pending tickets, and retries failed/cancelled tickets only while Online is on | implemented on `codex/rel34-colab-queue-ui`; PR #403 remains draft; packaged disposable-profile Electron acceptance passed locally 1/1 with `--retries=0` on 2026-09-21; follow-up commit is not pushed/merged |
 | REL-3.5 | **Unassigned dead-export tail:** `getOllamaTools`, `validateLicense`, `sameTextCard`, plus the REL-3.2 document exports | Each candidate rechecked on current main; zero-caller exports removed without deleting live or test-only guards | merged #393 |
 | REL-3.6 | **Unused i18n scaffolding:** the unconsumed dictionaries and `I18nProvider` mount were approved for removal; Spanish UI is not a current product commitment | Remove the unused mount, dictionaries, and self-only tests without changing the visible English UI | implemented in PR #402; awaiting merge |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | merged #363 |
@@ -154,11 +154,24 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 ### REL-3.4 acceptance limits
 
 REL-3.4 does not cancel an already-running Colab GPU cell. Cancelling marks both
-queue aliases cancelled, returns the local shot to planned, and causes HomeBot to
-ignore a result that arrives afterward. The operator may still need to stop the
-notebook manually. The existing `mediaMovieRun` path remains the resume/import
-path; a single unified recovery workflow across every Media Studio pipeline is
-still open and must not be inferred from these queue controls.
+queue aliases cancelled and returns the local shot to planned. A retry preserves
+the ticket/job IDs for compatibility but creates a new attempt identity and
+attempt-specific output path. HomeBot accepts only the project-local current
+attempt, so a late output or stale alias from a cancelled/older attempt is kept
+isolated and is not ingested as the retry result. The operator may still need to
+stop the notebook manually. The existing `mediaMovieRun` path remains the
+resume/import path; a single unified recovery workflow across every Media Studio
+pipeline is still open and must not be inferred from these queue controls.
+
+The packaged-app acceptance is
+`HOMEBOT_COLAB_QUEUE_ACCEPTANCE=1 playwright test src/renderer/e2e/colab-queue-acceptance.live.e2e.spec.ts --retries=0 --workers=1`.
+It uses a disposable HOME/profile and seeded project/queue files, with no Colab,
+provider or FFmpeg execution. It exercised the rendered Movie Router through the
+real preload and guarded IPC, proved Online-off retry refusal without mutation,
+cancel tombstones across both aliases and the local ticket, a valid late output
+shown as unavailable after cancellation, Online consent through Settings,
+attempt-scoped retry persistence, and the same state after app restart. Evidence
+is retained under `.kilo/artifacts/rel34-colab-queue-e2e/`.
 
 ## Research notes (2026-09-17)
 

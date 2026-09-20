@@ -38,10 +38,14 @@ Using the `find-dead-capabilities.mjs` script, the following functions were foun
 ### Google Colab Queue (`main/movie/colab-queue.ts`)
 - **`cancelColabJob`** — now reached from Movie Router through guarded, project-scoped IPC on the REL-3.4 branch
 - **`retryColabJob`** — now reached from Movie Router through guarded, project-scoped IPC on the REL-3.4 branch
-*Note*: Implemented on `codex/rel34-colab-queue-ui`, pending PR/merge. The UI
+*Note*: Implemented on `codex/rel34-colab-queue-ui`; PR #403 remains draft. The UI
 lists only tickets proven to belong to the selected project. Cancel is limited
 to pending tickets; retry is limited to failed/cancelled tickets and rechecks
-Online consent. Cancel does not stop a running notebook — a late result is ignored.
+Online consent. Cancel does not stop a running notebook. Retry rotates an
+attempt identity and output path while keeping stable ticket/job IDs; the local
+ticket is authoritative, so stale completion through either queue alias cannot
+satisfy a newer attempt. Packaged disposable-profile Electron acceptance passed
+locally 1/1 with `--retries=0` on 2026-09-21; the follow-up is not yet pushed or merged.
 
 ### Core Tools & Schedulers
 - **`getOllamaTools`** (`main/tools/index.ts` - 5 test refs)
@@ -64,7 +68,7 @@ To fulfill the gating criteria for user testing, each category should be assigne
 1. **REL-3.1 (IPC & Windowing):** Remove `setAlwaysOnTop` and `licenseValidate` IPC handlers, or add the missing "Pin to Top" button to the title bar.
 2. **REL-3.2 (Documents/RAG):** Remove `storeDocument`, `getDocument`, and `clearDocuments` unless an upcoming Document Manager panel requires them.
 3. **REL-3.3 (Hardware Specs):** Delete the VRAM/Hardware recommendation logic, as HomeBot currently forces Colab or defaults for large models.
-4. **REL-3.4 (Colab Queue):** Implemented on `codex/rel34-colab-queue-ui`, pending PR/merge and fresh-profile acceptance. Keep full cross-pipeline recovery open.
+4. **REL-3.4 (Colab Queue):** Implemented on `codex/rel34-colab-queue-ui`; PR #403 remains draft and the race-fix follow-up is not pushed/merged. Packaged disposable-profile acceptance passed locally 1/1 with `--retries=0`. Keep full cross-pipeline recovery open.
 
 ---
 
@@ -102,7 +106,7 @@ and `useI18n` is gone on this branch. #398 added one deliberate test-only reset:
 | `stopFileWatchTriggers` | retained: test shutdown helper |
 | `explainedCheckNames` | retained: test coverage invariant |
 | `clearMediaCapabilityRegistryCache` | retained: test-only reset for #398's process-level provider capability cache; its two callers isolate registry tests |
-| `cancelColabJob` / `retryColabJob` | reachable on the REL-3.4 branch; pending PR/merge and acceptance |
+| `cancelColabJob` / `retryColabJob` | reachable on the REL-3.4 branch; packaged Electron acceptance passed locally; PR #403 draft and follow-up not pushed/merged |
 
 ### REL-3.4 branch scan (2026-09-20)
 
@@ -126,7 +130,8 @@ the Movie Router and carries the selected project's object arguments.
 - `cancelColabJob`/`retryColabJob`: removing them contradicts
   `MEDIA_STUDIO_PLAN.md`'s commissioned operator-assisted Colab worker and
   orphans `.homebot/colab_queue`. REL-3.4 now reaches them from the Movie Router
-  with explicit opt-in and project-scoped actions. This is pending PR/merge;
+  with explicit opt-in and project-scoped actions. PR #403 remains draft and
+  its accepted race-fix follow-up is still local/unpushed;
   it does not claim active GPU cancellation or unified recovery across the
   separate Media Studio pipelines.
 

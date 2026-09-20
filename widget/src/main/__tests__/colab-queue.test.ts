@@ -139,7 +139,10 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
       expect(fs.existsSync(ticketPath)).toBe(true);
       const savedTicket = JSON.parse(fs.readFileSync(ticketPath, 'utf-8'));
       expect(savedTicket.ticketId).toBe(manifest.ticketId);
-      expect(savedTicket.relativeOutputPath).toBe(`outputs/${manifest.jobId}/shot_001.png`);
+      expect(savedTicket.attemptId).toMatch(/^attempt_1_/);
+      expect(savedTicket.relativeOutputPath).toBe(
+        `outputs/${manifest.jobId}/${savedTicket.attemptId}/shot_001.png`,
+      );
 
       // Verify local shotDir status and ticket
       const localTicket = path.join(shotDir, 'ticket.json');
@@ -208,7 +211,51 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
         // status.json must record FAILED honestly
         const statusData = JSON.parse(fs.readFileSync(path.join(shotDir, 'status.json'), 'utf-8'));
         expect(statusData.status).toBe(ShotStatus.FAILED);
+        for (const file of [
+          path.join(shotDir, 'ticket.json'),
+          path.join(q.ticketsDir, `${manifest.ticketId}.json`),
+          path.join(q.ticketsDir, `${manifest.jobId}.json`),
+        ]) {
+          expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toMatchObject({
+            status: ShotStatus.FAILED,
+            attemptId: manifest.attemptId,
+          });
+        }
+        expect(listColabJobs(projectDir, q)[0]).toMatchObject({ status: ShotStatus.FAILED, canRetry: true });
       }
+    });
+
+    it('preserves the last-good image when worker bytes change during the copy', () => {
+      const q = discoverDriveQueue(queueDir);
+      const manifest = stageColabJob(baseReq(), q);
+      const output = path.join(q.rootDir, manifest.relativeOutputPath);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, movieImageFixture);
+      const lastGood = path.join(shotDir, 'image', 'shot_001.png');
+      fs.mkdirSync(path.dirname(lastGood), { recursive: true });
+      fs.writeFileSync(lastGood, movieImageFixture);
+
+      const rawFs = require('fs') as typeof fs;
+      const originalCopy = rawFs.copyFileSync;
+      (rawFs as any).copyFileSync = (source: fs.PathLike, target: fs.PathLike) => {
+        if (path.resolve(String(source)) === path.resolve(output) && path.basename(String(target)).startsWith('.')) {
+          fs.writeFileSync(target, Buffer.from('worker changed this file mid-copy'));
+          return;
+        }
+        return originalCopy(source, target);
+      };
+      let result;
+      try {
+        result = checkAndIngestColabResult(shotDir, manifest.ticketId, q);
+      } finally {
+        (rawFs as any).copyFileSync = originalCopy;
+      }
+
+      expect(result).toMatchObject({ status: 'failed' });
+      expect(fs.existsSync(lastGood)).toBe(true);
+      expect(fs.readFileSync(lastGood)).toEqual(movieImageFixture);
+      expect(fs.readdirSync(path.dirname(lastGood)).some(name => name.endsWith('.tmp'))).toBe(false);
+      expect(listColabJobs(projectDir, q)[0]).toMatchObject({ status: ShotStatus.FAILED, canRetry: true });
     });
 
     it('rejects 0-byte empty worker output', () => {
@@ -243,6 +290,28 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
       if (result.status === 'failed') {
         expect(result.error).toContain('missing');
       }
+      expect(JSON.parse(fs.readFileSync(path.join(shotDir, 'ticket.json'), 'utf-8')).status).toBe(ShotStatus.FAILED);
+      expect(listColabJobs(projectDir, q)[0]).toMatchObject({ status: ShotStatus.FAILED, canRetry: true });
+    });
+
+    it('fails closed for traversal IDs and a ticket copied into the wrong shot', () => {
+      const q = discoverDriveQueue(queueDir);
+      const manifest = stageColabJob(baseReq(), q);
+      const otherShot = path.join(projectDir, 'scenes', 'scene_01', 'shot_other');
+      fs.mkdirSync(otherShot);
+      fs.copyFileSync(path.join(shotDir, 'ticket.json'), path.join(otherShot, 'ticket.json'));
+      const output = path.join(q.rootDir, manifest.relativeOutputPath);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, movieImageFixture);
+
+      expect(checkAndIngestColabResult(otherShot, manifest.ticketId, q)).toEqual({
+        status: 'pending', ticketId: manifest.ticketId,
+      });
+      expect(fs.existsSync(path.join(otherShot, 'image', 'shot_001.png'))).toBe(false);
+      fs.unlinkSync(path.join(otherShot, 'ticket.json'));
+      expect(checkAndIngestColabResult(otherShot, '../ticket', q)).toEqual({
+        status: 'pending', ticketId: '../ticket',
+      });
     });
   });
 
@@ -287,6 +356,8 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
 
       const output = path.join(q.rootDir, manifest.relativeOutputPath);
       fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, Buffer.from('not a decodable image'));
+      expect(listColabJobs(projectDir, q)[0].outputReady).toBe(false);
       fs.writeFileSync(output, movieImageFixture);
       expect(listColabJobs(projectDir, q)[0].outputReady).toBe(true);
     });
@@ -374,15 +445,23 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
     it('retries job, increments attempts, clears errors, and resets to AWAITING_WORKER', () => {
       const q = discoverDriveQueue(queueDir);
       const manifest = stageColabJob(baseReq(), q);
+      const firstAttemptId = manifest.attemptId;
+      const firstOutputPath = manifest.relativeOutputPath;
+      const firstOutput = path.join(q.rootDir, firstOutputPath);
+      fs.mkdirSync(path.dirname(firstOutput), { recursive: true });
+      fs.writeFileSync(firstOutput, movieImageFixture);
+      const lastGoodImage = path.join(shotDir, 'image', 'shot_001.png');
+      fs.mkdirSync(path.dirname(lastGoodImage), { recursive: true });
+      fs.writeFileSync(lastGoodImage, movieImageFixture);
 
       // Simulate failure first
       manifest.status = ShotStatus.FAILED;
       manifest.error = 'CUDA Out Of Memory';
-      fs.writeFileSync(
+      for (const file of [
         path.join(q.ticketsDir, `${manifest.ticketId}.json`),
-        JSON.stringify(manifest),
-        'utf-8',
-      );
+        path.join(q.ticketsDir, `${manifest.jobId}.json`),
+        path.join(shotDir, 'ticket.json'),
+      ]) fs.writeFileSync(file, JSON.stringify(manifest), 'utf-8');
 
       const retried = retryColabJob({ projectDir, ticketId: manifest.ticketId }, q);
       expect(retried.status).toBe(ShotStatus.AWAITING_WORKER);
@@ -398,8 +477,104 @@ describe('Colab Worker Queue & Portable Job Manifests', () => {
         const saved = JSON.parse(fs.readFileSync(path.join(q.ticketsDir, filename), 'utf-8'));
         expect(saved.status).toBe(ShotStatus.AWAITING_WORKER);
         expect(saved.attempts).toBe(2);
+        expect(saved.attemptId).not.toBe(firstAttemptId);
+        expect(saved.relativeOutputPath).not.toBe(firstOutputPath);
+        expect(saved.relativeOutputPath).toContain(`/attempt_2_`);
       }
+      expect(fs.existsSync(firstOutput)).toBe(true);
+      expect(fs.existsSync(lastGoodImage)).toBe(true);
+      expect(() => cancelColabJob({
+        projectDir, ticketId: manifest.ticketId, expectedAttempts: 1,
+      }, q)).toThrow(/changed.*refresh/i);
       expect(() => retryColabJob({ projectDir, ticketId: manifest.ticketId }, q)).toThrow(/only a failed or cancelled/i);
+    });
+
+    it.each(['ticket', 'job'] as const)(
+      'ignores an old worker completion written to only the %s alias after cancel then retry',
+      alias => {
+        const q = discoverDriveQueue(queueDir);
+        const first = stageColabJob(baseReq(), q);
+        const oldOutput = path.join(q.rootDir, first.relativeOutputPath);
+        cancelColabJob({ projectDir, ticketId: first.ticketId }, q);
+        const current = retryColabJob({ projectDir, ticketId: first.ticketId }, q);
+        expect(current.attempts).toBe(2);
+
+        fs.mkdirSync(path.dirname(oldOutput), { recursive: true });
+        fs.writeFileSync(oldOutput, movieImageFixture);
+        const lastGoodImage = path.join(shotDir, 'image', 'shot_001.png');
+        fs.mkdirSync(path.dirname(lastGoodImage), { recursive: true });
+        fs.writeFileSync(lastGoodImage, movieImageFixture);
+        const staleCompletion = { ...first, status: ShotStatus.IMAGE_GENERATED };
+        const staleAlias = alias === 'ticket' ? first.ticketId : first.jobId;
+        fs.writeFileSync(path.join(q.ticketsDir, `${staleAlias}.json`), JSON.stringify(staleCompletion));
+
+        expect(listColabJobs(projectDir, q)).toEqual([
+          expect.objectContaining({
+            ticketId: first.ticketId,
+            attempts: 2,
+            status: ShotStatus.AWAITING_WORKER,
+            outputReady: false,
+            canCancel: true,
+          }),
+        ]);
+        expect(checkAndIngestColabResult(shotDir, first.ticketId, q)).toEqual({
+          status: 'pending', ticketId: first.ticketId,
+        });
+        expect(fs.readFileSync(lastGoodImage)).toEqual(movieImageFixture);
+        expect(JSON.parse(fs.readFileSync(path.join(shotDir, 'ticket.json'), 'utf-8'))).toMatchObject({
+          attempts: 2,
+          status: ShotStatus.AWAITING_WORKER,
+        });
+      },
+    );
+
+    it.each(['ticket', 'job'] as const)(
+      'accepts the current attempt when only the %s alias reports completion',
+      alias => {
+        const q = discoverDriveQueue(queueDir);
+        const manifest = stageColabJob(baseReq(), q);
+        const output = path.join(q.rootDir, manifest.relativeOutputPath);
+        fs.mkdirSync(path.dirname(output), { recursive: true });
+        fs.writeFileSync(output, movieImageFixture);
+        const completed = { ...manifest, status: ShotStatus.IMAGE_GENERATED };
+        const completedAlias = alias === 'ticket' ? manifest.ticketId : manifest.jobId;
+        fs.writeFileSync(path.join(q.ticketsDir, `${completedAlias}.json`), JSON.stringify(completed));
+
+        expect(checkAndIngestColabResult(shotDir, manifest.ticketId, q).status).toBe('imported');
+        for (const file of [
+          path.join(q.ticketsDir, `${manifest.ticketId}.json`),
+          path.join(q.ticketsDir, `${manifest.jobId}.json`),
+          path.join(shotDir, 'ticket.json'),
+        ]) {
+          expect(JSON.parse(fs.readFileSync(file, 'utf-8'))).toMatchObject({
+            attemptId: manifest.attemptId,
+            status: ShotStatus.IMAGE_GENERATED,
+          });
+        }
+      },
+    );
+
+    it('upgrades a legacy failed manifest to an attempt-scoped output path on retry', () => {
+      const q = discoverDriveQueue(queueDir);
+      const manifest = stageColabJob(baseReq(), q);
+      const legacy = {
+        ...manifest,
+        status: ShotStatus.FAILED,
+        error: 'legacy failure',
+        relativeOutputPath: `outputs/${manifest.jobId}/${manifest.shotId}.png`,
+      } as any;
+      delete legacy.attemptId;
+      for (const file of [
+        path.join(q.ticketsDir, `${manifest.ticketId}.json`),
+        path.join(q.ticketsDir, `${manifest.jobId}.json`),
+        path.join(shotDir, 'ticket.json'),
+      ]) fs.writeFileSync(file, JSON.stringify(legacy));
+
+      const retried = retryColabJob({ projectDir, ticketId: manifest.ticketId }, q);
+      expect(retried).toMatchObject({ status: ShotStatus.AWAITING_WORKER, attempts: 2 });
+      const saved = JSON.parse(fs.readFileSync(path.join(shotDir, 'ticket.json'), 'utf-8'));
+      expect(saved.attemptId).toMatch(/^attempt_2_/);
+      expect(saved.relativeOutputPath).toBe(`outputs/${manifest.jobId}/${saved.attemptId}/shot_001.png`);
     });
 
     it('refuses retry while Online is off without changing either alias', () => {

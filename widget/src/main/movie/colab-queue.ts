@@ -18,7 +18,7 @@ import type { GenerationRequest } from './types';
 import { ShotStatus } from './types';
 import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 import { isWithinHomeDir } from '../utils/home-boundary';
-import { validateMovieImageFiles } from './image-output';
+import { validateMovieImageFile, validateMovieImageFiles } from './image-output';
 
 export const COLAB_QUEUE_VERSION = '1.0';
 
@@ -45,6 +45,8 @@ export interface ColabJobManifest {
   outputPattern?: string;
   status: ShotStatus.AWAITING_WORKER | ShotStatus.IMAGE_GENERATED | ShotStatus.FAILED | 'CANCELLED';
   attempts: number;
+  /** Unique generation identity. Absent only on tickets staged by older builds. */
+  attemptId?: string;
   completedAt?: string;
   outputFile?: string;
   error?: string;
@@ -99,6 +101,14 @@ function isSafePathSegment(value: unknown): value is string {
 
 function isSafeTicketId(value: unknown): value is string {
   return typeof value === 'string' && value.length <= MAX_TICKET_ID_LENGTH && SAFE_TICKET_ID.test(value);
+}
+
+function createAttemptId(attempts: number): string {
+  return `attempt_${attempts}_${randomUUID()}`;
+}
+
+function attemptOutputPath(jobId: string, attemptId: string, shotId: string): string {
+  return `outputs/${jobId}/${attemptId}/${shotId}.png`;
 }
 
 /**
@@ -217,6 +227,8 @@ export function stageColabJob(
   const jobId = computeColabJobId(req);
   const ticketId = `colab_ticket_${req.shotId}_${jobId.slice(0, 8)}`;
   if (!isSafeTicketId(ticketId)) throw new Error('That Colab ticket ID is too long for the queue filesystem.');
+  const attempts = 1;
+  const attemptId = createAttemptId(attempts);
 
   // Stage character reference images into queue inputs/<jobId>/
   const stagedCharacterRefs: string[] = [];
@@ -236,7 +248,7 @@ export function stageColabJob(
     });
   }
 
-  const relativeOutputPath = `outputs/${jobId}/${req.shotId}.png`;
+  const relativeOutputPath = attemptOutputPath(jobId, attemptId, req.shotId);
 
   const manifest: ColabJobManifest = {
     version: COLAB_QUEUE_VERSION,
@@ -253,7 +265,8 @@ export function stageColabJob(
     relativeOutputPath,
     outputPattern: req.shotDir ? path.join(req.shotDir, 'image', `${req.shotId}.png`) : undefined,
     status: ShotStatus.AWAITING_WORKER,
-    attempts: 1,
+    attempts,
+    attemptId,
   };
 
   // Write to queue tickets folder
@@ -319,38 +332,57 @@ export function checkAndIngestColabResult(
   customQueue?: DriveQueueInfo,
 ): ColabImportResult {
   const queue = customQueue ?? discoverDriveQueue();
-
-  // Find ticket manifest either in queue or in local shotDir
-  let manifest: ColabJobManifest | null = null;
-  const queueTicketPath = path.join(queue.ticketsDir, `${ticketIdOrJobId}.json`);
   const localTicketPath = path.join(shotDir, 'ticket.json');
+  const localManifest = readJsonFile<ColabJobManifest>(localTicketPath);
+  const localIsAuthoritative = !!localManifest && manifestOwnsShot(localManifest, localManifest, shotDir);
 
-  // The notebook can have loaded a pending alias just before the user
-  // cancels it, then write that stale alias back as complete. The local
-  // project ticket is not writable by Colab, so its cancellation is the
-  // durable tombstone that makes a late worker result ignorable.
-  const localManifest = fs.existsSync(localTicketPath)
-    ? (() => { try { return JSON.parse(fs.readFileSync(localTicketPath, 'utf-8')) as ColabJobManifest; } catch { return null; } })()
-    : null;
+  // A copied/tampered local ticket must not redirect ingestion to another
+  // project's shot. Its presence is a reason to fail closed, not to fall back
+  // to a global queue alias.
+  if (localManifest && !localIsAuthoritative) {
+    return { status: 'pending', ticketId: ticketIdOrJobId };
+  }
+
+  // The local ticket is HomeBot's attempt authority. A notebook can finish an
+  // older attempt after cancel -> retry and overwrite either queue alias, but
+  // it cannot replace this project-local identity.
   if (localManifest?.status === 'CANCELLED') {
     return { status: 'cancelled', ticketId: localManifest.ticketId || ticketIdOrJobId };
   }
 
-  if (fs.existsSync(queueTicketPath)) {
-    try {
-      manifest = JSON.parse(fs.readFileSync(queueTicketPath, 'utf-8')) as ColabJobManifest;
-    } catch {
-      // ignore
+  let manifest: ColabJobManifest | null = localManifest;
+  if (localManifest && localIsAuthoritative) {
+    const queueCandidates = [
+      readJsonFile<ColabJobManifest>(path.join(queue.ticketsDir, `${localManifest.ticketId}.json`)),
+      readJsonFile<ColabJobManifest>(path.join(queue.ticketsDir, `${localManifest.jobId}.json`)),
+    ].filter((item): item is ColabJobManifest => manifestOwnsShot(item, localManifest, shotDir) && sameAttempt(item, localManifest));
+    // Either alias may be the one the notebook processed. Prefer a terminal
+    // state from the current attempt; otherwise the local pending copy wins.
+    if (localManifest.status === ShotStatus.AWAITING_WORKER) {
+      manifest = queueCandidates.find(item => item.status === ShotStatus.FAILED) ??
+        queueCandidates.find(item => item.status === ShotStatus.IMAGE_GENERATED) ??
+        queueCandidates.find(item => item.status === 'CANCELLED') ?? localManifest;
     }
+  } else {
+    // Compatibility for a legacy/local-missing call site. Normal project runs
+    // always have ticket.json and therefore use the authority path above.
+    if (!isSafeTicketId(ticketIdOrJobId) && !isSafePathSegment(ticketIdOrJobId)) {
+      return { status: 'pending', ticketId: ticketIdOrJobId };
+    }
+    const legacy = readJsonFile<ColabJobManifest>(path.join(queue.ticketsDir, `${ticketIdOrJobId}.json`));
+    manifest = legacy &&
+      (legacy.ticketId === ticketIdOrJobId || legacy.jobId === ticketIdOrJobId) &&
+      manifestOwnsShot(legacy, legacy, shotDir)
+      ? legacy
+      : null;
   }
-
-  if (!manifest) manifest = localManifest;
 
   if (!manifest) {
     return { status: 'pending', ticketId: ticketIdOrJobId };
   }
 
-  const ticketId = manifest.ticketId || ticketIdOrJobId;
+  const authoritative = localManifest && localIsAuthoritative ? localManifest : manifest;
+  const ticketId = authoritative.ticketId || ticketIdOrJobId;
 
   // If worker or user cancelled
   if (manifest.status === 'CANCELLED') {
@@ -360,36 +392,20 @@ export function checkAndIngestColabResult(
   // If worker failed
   if (manifest.status === ShotStatus.FAILED || (manifest.status as string) === 'FAILED') {
     const error = manifest.error || 'Worker failed during image generation';
-    const statusPath = path.join(shotDir, 'status.json');
-    if (fs.existsSync(statusPath)) {
-      try {
-        const state = JSON.parse(fs.readFileSync(statusPath, 'utf-8'));
-        state.status = ShotStatus.FAILED;
-        state.lastError = error;
-        state.updatedAt = new Date().toISOString();
-        fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
-      } catch {
-        // ignore
-      }
-    }
+    markCurrentAttemptFailed(authoritative, localTicketPath, queue, shotDir, error);
     return { status: 'failed', error, ticketId };
   }
 
-  // Probe output file candidates:
-  // 1. Queue relative path: queue.rootDir / manifest.relativeOutputPath
-  // 2. manifest.outputFile (if populated by worker)
-  // 3. Local shotDir/image/<shotId>.png
-  const queueOutPath = manifest.relativeOutputPath
-    ? path.join(queue.rootDir, manifest.relativeOutputPath.replace(/\//g, path.sep))
-    : undefined;
+  // Probe only the project-local current attempt's queue path. outputFile is
+  // worker-controlled and an old local image may belong to an earlier attempt.
+  const queueOutPath = safeOutputPath(authoritative, queue) ?? undefined;
 
   let candidateFile: string | undefined;
   if (queueOutPath && fs.existsSync(queueOutPath)) {
     candidateFile = queueOutPath;
-  } else if (manifest.outputFile && fs.existsSync(manifest.outputFile)) {
-    candidateFile = manifest.outputFile;
-  } else {
-    const localImg = path.join(shotDir, 'image', `${manifest.shotId}.png`);
+  } else if (authoritative.status === ShotStatus.IMAGE_GENERATED) {
+    // Idempotent re-check after HomeBot already imported this same attempt.
+    const localImg = path.join(shotDir, 'image', `${authoritative.shotId}.png`);
     if (fs.existsSync(localImg)) {
       candidateFile = localImg;
     }
@@ -397,56 +413,54 @@ export function checkAndIngestColabResult(
 
   if (!candidateFile) {
     if (manifest.status === ShotStatus.IMAGE_GENERATED) {
-      return {
-        status: 'failed',
-        error: 'Worker marked ticket complete but output image was missing',
-        ticketId,
-      };
+      const error = 'Worker marked ticket complete but output image was missing';
+      markCurrentAttemptFailed(authoritative, localTicketPath, queue, shotDir, error);
+      return { status: 'failed', error, ticketId };
     }
     return { status: 'pending', ticketId };
   }
 
-  // Ensure output file is a readable non-empty file
+  // Validate before replacing a previous successful local artifact. A corrupt
+  // current attempt must fail without deleting the last-good image.
   try {
-    const stat = fs.statSync(candidateFile);
-    if (!stat.isFile() || stat.size === 0) {
-      throw new Error('Image output is not a usable file.');
-    }
+    validateMovieImageFile(candidateFile);
   } catch {
     const errorMsg = 'The worker image is unreadable. Replace it with a complete image and run the shot again.';
-    markShotFailed(shotDir, errorMsg);
+    markCurrentAttemptFailed(authoritative, localTicketPath, queue, shotDir, errorMsg);
     return { status: 'failed', error: errorMsg, ticketId };
   }
 
   // Atomically copy to shotDir/image/<shotId>.png if not already there
   const imageDir = path.join(shotDir, 'image');
   fs.mkdirSync(imageDir, { recursive: true });
-  const finalDest = path.join(imageDir, `${manifest.shotId}.png`);
+  const finalDest = path.join(imageDir, `${authoritative.shotId}.png`);
 
   if (path.resolve(candidateFile) !== path.resolve(finalDest)) {
     const tempDest = path.join(imageDir, `.${randomUUID()}.tmp`);
     try {
       fs.copyFileSync(candidateFile, tempDest);
+      // Validate the bytes that will actually replace the canonical image.
+      // The worker may still be writing/changing its source after the earlier
+      // probe; a bad copied snapshot must never overwrite the last-good image.
+      validateMovieImageFiles(shotDir, [tempDest]);
       fs.renameSync(tempDest, finalDest);
     } catch {
       if (fs.existsSync(tempDest)) {
         try { fs.unlinkSync(tempDest); } catch { /* ignore */ }
       }
-      const errorMsg = 'Failed to copy worker image to shot directory.';
-      markShotFailed(shotDir, errorMsg);
+      const errorMsg = 'The worker image changed or became unreadable while it was being imported. Retry the shot.';
+      markCurrentAttemptFailed(authoritative, localTicketPath, queue, shotDir, errorMsg);
       return { status: 'failed', error: errorMsg, ticketId };
     }
-  }
-
-  // Validate image integrity in the shot folder
-  try {
-    validateMovieImageFiles(shotDir, [finalDest]);
-  } catch {
-    // If validation fails, remove corrupt file and fail shot
-    try { fs.unlinkSync(finalDest); } catch { /* ignore */ }
-    const errorMsg = 'The worker image is unreadable. Replace it with a complete image and run the shot again.';
-    markShotFailed(shotDir, errorMsg);
-    return { status: 'failed', error: errorMsg, ticketId };
+  } else {
+    // Idempotent re-check of an already-imported current attempt.
+    try {
+      validateMovieImageFiles(shotDir, [finalDest]);
+    } catch {
+      const errorMsg = 'The worker image is unreadable. Replace it with a complete image and run the shot again.';
+      markCurrentAttemptFailed(authoritative, localTicketPath, queue, shotDir, errorMsg);
+      return { status: 'failed', error: errorMsg, ticketId };
+    }
   }
 
   // Update shotDir/status.json
@@ -460,29 +474,35 @@ export function checkAndIngestColabResult(
     }
   }
 
-  state.shotId = manifest.shotId;
+  state.shotId = authoritative.shotId;
   state.status = ShotStatus.IMAGE_GENERATED;
+  state.attempts = authoritative.attempts;
   state.outputFiles = [path.relative(shotDir, finalDest)];
   state.deferredTicket = undefined;
+  state.deferredProvider = undefined;
   state.lastError = undefined;
   state.updatedAt = new Date().toISOString();
   fs.writeFileSync(statusPath, JSON.stringify(state, null, 2), 'utf-8');
 
   // Update manifest status in queue
-  manifest.status = ShotStatus.IMAGE_GENERATED;
-  manifest.completedAt = new Date().toISOString();
-  manifest.outputFile = finalDest;
+  const completedManifest: ColabJobManifest = {
+    ...authoritative,
+    status: ShotStatus.IMAGE_GENERATED,
+    completedAt: new Date().toISOString(),
+    outputFile: finalDest,
+    error: undefined,
+  };
 
-  const completedManifest = JSON.stringify(manifest, null, 2);
+  const completedJson = JSON.stringify(completedManifest, null, 2);
   // Keep the two queue aliases coherent. The notebook scans both names, so a
   // stale AWAITING_WORKER alias is executable work even when its sibling says
   // this result was already imported.
   for (const manifestPath of [
-    path.join(queue.ticketsDir, `${manifest.ticketId}.json`),
-    path.join(queue.ticketsDir, `${manifest.jobId}.json`),
+    path.join(queue.ticketsDir, `${authoritative.ticketId}.json`),
+    path.join(queue.ticketsDir, `${authoritative.jobId}.json`),
     localTicketPath,
   ]) {
-    try { writeManifestAtomically(manifestPath, completedManifest); } catch { /* best-effort mirror */ }
+    try { writeManifestAtomically(manifestPath, completedJson); } catch { /* best-effort mirror */ }
   }
 
   return {
@@ -509,8 +529,9 @@ const COLAB_JOB_STATUSES = new Set<string>([
 ]);
 
 function hasValidQueueFields(item: ColabJobManifest | null): item is ColabJobManifest {
-  return !!item && isSafePathSegment(item.jobId) && isSafeTicketId(item.ticketId) && typeof item.shotId === 'string' &&
+  return !!item && isSafePathSegment(item.jobId) && isSafeTicketId(item.ticketId) && isSafePathSegment(item.shotId) &&
     typeof item.createdAt === 'string' && Number.isSafeInteger(item.attempts) && item.attempts >= 0 &&
+    (item.attemptId === undefined || isSafePathSegment(item.attemptId)) &&
     COLAB_JOB_STATUSES.has(item.status);
 }
 
@@ -520,6 +541,54 @@ function readJsonFile<T>(filePath: string): T | null {
   } catch {
     return null;
   }
+}
+
+function manifestOwnsShot(
+  item: ColabJobManifest | null,
+  local: ColabJobManifest,
+  shotDir: string,
+): item is ColabJobManifest {
+  if (!hasValidQueueFields(item) || item.ticketId !== local.ticketId || item.jobId !== local.jobId || item.shotId !== local.shotId) {
+    return false;
+  }
+  try {
+    return !!item.shotDir && path.relative(fs.realpathSync(path.resolve(item.shotDir)), fs.realpathSync(shotDir)) === '';
+  } catch {
+    return false;
+  }
+}
+
+function sameAttempt(left: ColabJobManifest, right: ColabJobManifest): boolean {
+  return left.attempts === right.attempts &&
+    (left.attemptId ?? null) === (right.attemptId ?? null) &&
+    left.relativeOutputPath === right.relativeOutputPath;
+}
+
+function markCurrentAttemptFailed(
+  current: ColabJobManifest,
+  localTicketPath: string,
+  queue: DriveQueueInfo,
+  shotDir: string,
+  error: string,
+): void {
+  const failed: ColabJobManifest = {
+    ...current,
+    status: ShotStatus.FAILED,
+    error,
+    completedAt: undefined,
+    outputFile: undefined,
+  };
+  const json = JSON.stringify(failed, null, 2);
+  // Local first: it is the attempt authority and keeps a later stale worker
+  // alias from reviving an ingestion failure.
+  for (const file of [
+    localTicketPath,
+    path.join(queue.ticketsDir, `${failed.ticketId}.json`),
+    path.join(queue.ticketsDir, `${failed.jobId}.json`),
+  ]) {
+    try { writeManifestAtomically(file, json); } catch { /* report the failure below even if one mirror is unavailable */ }
+  }
+  markShotFailed(shotDir, error);
 }
 
 function isWithinDirectory(candidate: string, parent: string): boolean {
@@ -604,21 +673,21 @@ function projectTickets(projectDir: string, queue: DriveQueueInfo): ProjectTicke
 
       const byTicket = readJsonFile<ColabJobManifest>(path.join(queue.ticketsDir, `${local.ticketId}.json`));
       const byJob = readJsonFile<ColabJobManifest>(path.join(queue.ticketsDir, `${local.jobId}.json`));
-      const matches = (item: ColabJobManifest | null): item is ColabJobManifest => {
-        if (!hasValidQueueFields(item) || item.ticketId !== local.ticketId || item.jobId !== local.jobId || item.shotId !== value) return false;
-        try { return !!item.shotDir && path.relative(fs.realpathSync(path.resolve(item.shotDir)), shotDir) === ''; }
-        catch { return false; }
-      };
-      // The ticket-id alias is canonical for UI reads. The job-id alias is a
-      // compatibility fallback for queues staged by earlier builds.
-      const queuedManifest = local.status === 'CANCELLED'
-        ? local
-        : matches(byTicket) ? byTicket : matches(byJob) ? byJob : null;
-      // If an alias exists but belongs to another shot/project, do not let the
-      // selected project mutate that global queue entry. A local-only ticket
-      // remains readable for compatibility with interrupted older staging.
-      if (!queuedManifest && (byTicket || byJob)) continue;
-      const manifest = queuedManifest ?? local;
+      const ticketOwned = !byTicket || manifestOwnsShot(byTicket, local, shotDir);
+      const jobOwned = !byJob || manifestOwnsShot(byJob, local, shotDir);
+      // An alias for another project/shot is a collision, not this project's
+      // work. A correctly-owned but older attempt is merely stale and must not
+      // hide the authoritative current local ticket.
+      if (!ticketOwned || !jobOwned) continue;
+      const currentAliases = [byTicket, byJob].filter((item): item is ColabJobManifest =>
+        manifestOwnsShot(item, local, shotDir) && sameAttempt(item, local));
+      const queuedManifest = currentAliases.find(item => item.status === ShotStatus.FAILED) ??
+        currentAliases.find(item => item.status === ShotStatus.IMAGE_GENERATED) ??
+        currentAliases.find(item => item.status === 'CANCELLED') ??
+        currentAliases[0];
+      // Once HomeBot records a terminal result locally, a worker alias cannot
+      // move it backwards. Pending local tickets may adopt a current worker state.
+      const manifest = local.status === ShotStatus.AWAITING_WORKER && queuedManifest ? queuedManifest : local;
       tickets.push({ projectDir: resolvedProject, sceneId, shotId: value, shotDir, localTicketPath, manifest });
     }
   }
@@ -638,7 +707,7 @@ function toQueueJob(ticket: ProjectTicket, queue: DriveQueueInfo): ColabQueueJob
   // A notebook may finish after cancellation. That file is intentionally
   // ignored, so do not present it as a usable ready output.
   if (status !== 'CANCELLED' && output && fs.existsSync(output)) {
-    try { outputReady = fs.statSync(output).isFile() && fs.statSync(output).size > 0; } catch { /* remains false */ }
+    try { validateMovieImageFile(output); outputReady = true; } catch { /* remains false */ }
   }
   return {
     ticketId: ticket.manifest.ticketId,
@@ -727,11 +796,14 @@ export function retryColabJob(
   }
   assertProviderOnlineAccess('Colab');
 
-  const output = safeOutputPath(ticket.manifest, queue);
-  if (output && fs.existsSync(output)) fs.unlinkSync(output);
-
   ticket.manifest.status = ShotStatus.AWAITING_WORKER;
   ticket.manifest.attempts = (ticket.manifest.attempts || 0) + 1;
+  ticket.manifest.attemptId = createAttemptId(ticket.manifest.attempts);
+  ticket.manifest.relativeOutputPath = attemptOutputPath(
+    ticket.manifest.jobId,
+    ticket.manifest.attemptId,
+    ticket.manifest.shotId,
+  );
   ticket.manifest.error = undefined;
   ticket.manifest.completedAt = undefined;
   ticket.manifest.outputFile = undefined;
