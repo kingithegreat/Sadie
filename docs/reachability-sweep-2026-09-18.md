@@ -65,6 +65,41 @@ To fulfill the gating criteria for user testing, each category should be assigne
 
 ---
 
+## Remaining findings triage — REL-3.6 (2026-09-20)
+
+Re-running `find-dead-capabilities.mjs` on `origin/main` after #391 (REL-3.3
+VRAM/hardware removals) and #393 (REL-3.5 unassigned-export sweep) merged
+shows **8** findings (down from 18). Of those **8**, most are **not** dead code —
+bulk-deleting them would repeat the REL-3.3 mistake (see correction below). Each
+was traced end-to-end (production callers checked in `preload`, `ipc-handlers`,
+`shared/types`, and every `renderer` import) before acting.
+
+The **8 remaining on `origin/main`**:
+
+| Finding | Where | Real (excl. tests) caller | Verdict |
+|---|---|---|---|
+| `hasLeakedToolCalls` | `shared/leaked-tool-calls.ts:104` | none — `App.tsx` imports `detectLeakedToolCalls`/`stripLeakedToolCalls`/`describeLeak` from the *same* module, not this wrapper | deleted in #401 (redundant) |
+| `placeholderGuardJsCode` | `main/n8n-auth-guard.ts:58` | none — only `auth-guard-fails-closed.test.ts` | deleted in #401 (alias of `guardJsCode('')`) |
+| `clearChanges` | `main/file-change-log.ts:104` | none — test `beforeEach` reset lever; `ipc-handlers.ts` only imports `listChanges`/`getChange` | retained: test-only reset, no Clear UI wired yet |
+| `stopFileWatchTriggers` | `main/scheduler.ts:388` | none | retained: docstring = *"used by tests so jest can exit"* |
+| `explainedCheckNames` | `shared/ancient-pathways-checks.ts:130` | none | retained: coverage assertion in `ancient-pathways-checks.test.ts` (`=== DOCTOR_CHECKS`) |
+| `useI18n` | `renderer/i18n/index.tsx:60` | none — `I18nProvider` **is** mounted (`renderer/index.tsx:18`) | retained: unfinished i18n adoption (product decision) |
+| `cancelColabJob` / `retryColabJob` | `main/movie/colab-queue.ts` | none; **0 Colab IPC** in preload/handlers/types | retained: REL-3.4, blocked on #390 MediaStudioPanel rewrite |
+
+### Why the retained ones are NOT deleted
+
+- `stopFileWatchTriggers`, `explainedCheckNames`: the audit flags them by design
+  (`a helper that should not be exported` / test-only). Deleting them would
+  either break test reset/isolation or weaken the coverage invariant they assert.
+- `clearChanges`: there is deliberately **no** Clear action in the IPC surface
+  yet — the change log is bounded (`MAX_CHANGES=50`) and auto-evicts. This is a
+  real but small feature gap (a Clear-history button), not cruft.
+- `useI18n`: `I18nProvider` wraps the app, but no component calls the hook — the
+  i18n layer is scaffolded, not adopted. Adoption is product work.
+- `cancelColabJob`/`retryColabJob`: removing them contradicts
+  `MEDIA_STUDIO_PLAN.md`'s commissioned interruptible Colab worker and orphans
+  `.homebot/colab_queue`. Wire-up is #390's job.
+
 ## Correction — the REL-3.3 premise was wrong (2026-09-19)
 
 The finding above says the "Hardware & Model Recommendations" functions "appear to
