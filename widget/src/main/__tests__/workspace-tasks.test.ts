@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
-import type { ChildProcess } from 'child_process';
+import { execFileSync, spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -31,7 +31,7 @@ beforeEach(() => {
   manifest({ precheck: 'echo pre', check: 'tsc --noEmit', postcheck: 'echo post' });
 });
 
-afterEach(() => fs.rmSync(home, { recursive: true, force: true }));
+afterEach(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }));
 
 test('lists only bounded string scripts from a canonical in-home project', () => {
   manifest({ check: 'tsc', ignored: 12 });
@@ -62,6 +62,13 @@ test('fails closed on over-limit manifests and option-like script names', () => 
   expect(() => prepareWorkspacePackageTask(project, '-evil')).toThrow('valid package script');
 });
 
+test('fails closed when a valid main script has an oversized lifecycle name', () => {
+  const name = 'x'.repeat(198);
+  manifest({ [name]: 'echo main', [`pre${name}`]: 'echo hidden pre' });
+  expect(listWorkspacePackageTasks(project)).toMatchObject({ success: false, error: expect.stringContaining('200') });
+  expect(() => prepareWorkspacePackageTask(project, name)).toThrow('200');
+});
+
 test('canonical project validation rejects a junction that escapes home', () => {
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-task-outside-'));
   fs.writeFileSync(path.join(outside, 'package.json'), JSON.stringify({ scripts: { check: 'echo no' } }));
@@ -81,6 +88,19 @@ test('parses chunked ANSI TypeScript and ESLint output but rejects outside files
     expect.objectContaining({ file: 'broken.ts', line: 1, column: 7, source: 'typescript', code: 'TS2322' }),
     expect.objectContaining({ file: 'broken.ts', line: 1, column: 7, source: 'eslint', code: 'no-test' }),
     expect.objectContaining({ path: '', clickable: false, source: 'typescript', code: 'TS1' }),
+  ]);
+});
+
+test('keeps missing/outside ESLint stylish diagnostics visible and never reuses a stale header', () => {
+  const parser = new WorkspaceTaskDiagnosticParser(fs.realpathSync.native(project));
+  const missing = path.join(project, 'missing.ts');
+  const outside = path.join(path.dirname(home), 'outside.ts');
+  parser.push('stdout', `${missing}\n  2:4  error  Missing file issue  missing-rule\n`);
+  parser.push('stdout', `${outside}\n  3:5  warning  Outside issue  outside-rule\n`);
+  parser.push('stdout', 'npm banner interrupts the stylish block\n  9:1  error  Must not use outside.ts  stale-rule\n');
+  expect(parser.finish()).toEqual([
+    expect.objectContaining({ path: '', file: missing, clickable: false, line: 2, code: 'missing-rule' }),
+    expect.objectContaining({ path: '', file: outside, clickable: false, line: 3, code: 'outside-rule' }),
   ]);
 });
 
@@ -153,7 +173,7 @@ test('timeout settles even when termination never produces close', async () => {
     runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child,
     timeoutMs: 1000, terminateProcessTree: jest.fn(),
   });
-  jest.advanceTimersByTime(3000);
+  await jest.advanceTimersByTimeAsync(1500);
   await expect(promise).resolves.toMatchObject({ success: false, timedOut: true });
   jest.useRealTimers();
 });
@@ -177,3 +197,78 @@ test('global concurrency cap refuses a fourth project task', async () => {
   children.slice(0, 3).forEach(child => child.emit('close', 0));
   await Promise.all(pending);
 });
+
+test('a failed tree termination is visible even if the root process closes', async () => {
+  jest.useFakeTimers();
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, { pid: 6001, stdout: new PassThrough(), stderr: new PassThrough() });
+  const promise = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
+    runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child,
+    timeoutMs: 1000, terminateProcessTree: () => false,
+  });
+  await jest.advanceTimersByTimeAsync(1000);
+  child.emit('close', null);
+  await expect(promise).resolves.toMatchObject({
+    success: false,
+    timedOut: true,
+    error: expect.stringContaining('could not prove'),
+  });
+  jest.useRealTimers();
+});
+
+const liveTreeTest = process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;
+liveTreeTest('real npm cancellation terminates its disposable parent and grandchild on Windows', async () => {
+  if (process.platform !== 'win32') return;
+  const pidFile = path.join(project, 'pids.json');
+  fs.writeFileSync(path.join(project, 'spawn-tree.cjs'), [
+    "const { spawn } = require('child_process');",
+    "const fs = require('fs');",
+    "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
+    `fs.writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ parent: process.pid, parentOfParent: process.ppid, child: child.pid }));`,
+    'setInterval(() => {}, 1000);',
+  ].join('\n'));
+  manifest({ check: 'node spawn-tree.cjs' });
+  const controller = new AbortController();
+  let npmPid: number | undefined;
+  let pids: { parent: number; parentOfParent: number; child: number } | undefined;
+  const alive = (pid: number) => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  try {
+    const running = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
+      signal: controller.signal,
+      spawnProcess: (command, args, options) => {
+        const child = spawn(command, args, options);
+        npmPid = child.pid;
+        return child;
+      },
+    });
+    for (let attempt = 0; attempt < 100 && !fs.existsSync(pidFile); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    expect(fs.existsSync(pidFile)).toBe(true);
+    pids = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    expect(npmPid).toBeTruthy();
+    expect(new Set([npmPid, pids!.parent, pids!.parentOfParent, pids!.child]).size).toBe(4);
+    expect(alive(npmPid!)).toBe(true);
+    expect(alive(pids!.parentOfParent)).toBe(true);
+    expect(alive(pids!.parent)).toBe(true);
+    expect(alive(pids!.child)).toBe(true);
+
+    controller.abort();
+    await expect(running).resolves.toMatchObject({ success: false, cancelled: true });
+    const treePids = [npmPid!, pids!.parentOfParent, pids!.parent, pids!.child];
+    for (let attempt = 0; attempt < 50 && treePids.some(alive); attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    for (const pid of treePids) expect(alive(pid)).toBe(false);
+  } finally {
+    if (!pids && fs.existsSync(pidFile)) pids = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
+    const targets = [npmPid, pids?.parentOfParent, pids?.parent, pids?.child].filter((pid): pid is number => !!pid);
+    for (const pid of targets) {
+      if (alive(pid)) {
+        try { execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* root runner reports exact survivor */ }
+      }
+    }
+  }
+}, 30_000);

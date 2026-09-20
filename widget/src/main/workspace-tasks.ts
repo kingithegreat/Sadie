@@ -60,7 +60,7 @@ export interface WorkspaceTaskExecutionOptions {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
-  terminateProcessTree?: (child: ChildProcess, platform: NodeJS.Platform) => void;
+  terminateProcessTree?: (child: ChildProcess, platform: NodeJS.Platform) => boolean | void | Promise<boolean | void>;
 }
 
 const activeTasks = new Map<string, ChildProcess>();
@@ -127,9 +127,11 @@ function readManifest(packageJsonPath: string): PackageManifest {
 function scriptEntries(manifest: PackageManifest): Array<[string, string]> {
   if (!manifest.scripts || typeof manifest.scripts !== 'object' || Array.isArray(manifest.scripts)) return [];
   const entries = Object.entries(manifest.scripts)
-    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-    .filter(([name]) => name.length > 0 && name.length <= MAX_SCRIPT_NAME && !/[\0\r\n]/.test(name));
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string');
   if (entries.length > MAX_SCRIPT_COUNT) throw new Error(`package.json has more than ${MAX_SCRIPT_COUNT} scripts and cannot be inspected safely.`);
+  if (entries.some(([name]) => name.length === 0 || name.length > MAX_SCRIPT_NAME || /[\0\r\n]/.test(name))) {
+    throw new Error(`package.json contains a script name that exceeds ${MAX_SCRIPT_NAME} characters or contains unsafe control characters.`);
+  }
   return entries.sort(([a], [b]) => a.localeCompare(b));
 }
 
@@ -242,7 +244,7 @@ function plainDiagnosticLine(raw: string): string {
 /** Stateful because ESLint stylish prints a file header followed by rows. */
 export class WorkspaceTaskDiagnosticParser {
   private readonly buffers: Record<DiagnosticStream, string> = { stdout: '', stderr: '' };
-  private readonly eslintFiles: Partial<Record<DiagnosticStream, string>> = {};
+  private readonly eslintFiles: Partial<Record<DiagnosticStream, { path: string; file: string; clickable?: false }>> = {};
   private readonly found: WorkspaceProblem[] = [];
   private readonly seen = new Set<string>();
 
@@ -295,13 +297,21 @@ export class WorkspaceTaskDiagnosticParser {
     // ESLint stylish row under the most recent absolute/relative file header.
     const stylish = /^\s*(\d+):(\d+)\s+(error|warning)\s+(.+?)(?:\s{2,}([^\s]+))?\s*$/i.exec(line);
     if (stylish && this.eslintFiles[stream]) {
-      const target = resolveProblemPath(this.projectDir, this.eslintFiles[stream]!);
-      if (target) this.add({ ...target, line: Number(stylish[1]), column: Number(stylish[2]), severity: stylish[3].toLowerCase() as 'error' | 'warning', source: 'eslint', ...(stylish[5] ? { code: stylish[5] } : {}), message: stylish[4].trim().slice(0, 2000) });
+      this.add({ ...this.eslintFiles[stream]!, line: Number(stylish[1]), column: Number(stylish[2]), severity: stylish[3].toLowerCase() as 'error' | 'warning', source: 'eslint', ...(stylish[5] ? { code: stylish[5] } : {}), message: stylish[4].trim().slice(0, 2000) });
       return;
     }
 
-    const header = resolveProblemPath(this.projectDir, line.trim());
-    if (header) this.eslintFiles[stream] = header.path;
+    const trimmed = line.trim();
+    const looksLikeHeader = !/^\s/.test(line) && (
+      path.isAbsolute(trimmed) || /^(?:\.{1,2})?[\\/]/.test(trimmed) || /\.[A-Za-z0-9]+$/.test(trimmed)
+    );
+    if (looksLikeHeader) {
+      this.eslintFiles[stream] = resolveProblemPath(this.projectDir, trimmed) || unresolvedProblem(trimmed);
+    } else {
+      // npm banners and other unmatched output terminate the previous stylish
+      // block; a later row must never inherit a stale file header.
+      delete this.eslintFiles[stream];
+    }
   }
 }
 
@@ -310,24 +320,42 @@ function appendTail(current: string, chunk: string): string {
   return next.length > MAX_RETAINED_OUTPUT ? next.slice(-MAX_RETAINED_OUTPUT) : next;
 }
 
-function terminateTaskTree(child: ChildProcess, platform: NodeJS.Platform): void {
-  if (!child.pid) return;
+async function terminateTaskTree(child: ChildProcess, platform: NodeJS.Platform): Promise<boolean> {
+  if (!child.pid) return true;
   try {
     if (platform === 'win32') {
-      const killer = nodeSpawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
-      killer.on('error', () => { try { child.kill('SIGKILL'); } catch { /* already exited */ } });
-      killer.unref();
+      return await new Promise<boolean>(resolve => {
+        const killer = nodeSpawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+        let settled = false;
+        const done = (ok: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(limit);
+          resolve(ok);
+        };
+        killer.stderr?.on('data', (value: Buffer | string) => {
+          console.warn(`[workspace-task] taskkill: ${value.toString().trim().slice(0, 1000)}`);
+        });
+        killer.once('error', () => done(false));
+        killer.once('close', code => done(code === 0));
+        const limit = setTimeout(() => {
+          try { killer.kill('SIGKILL'); } catch { /* already exited */ }
+          done(false);
+        }, 2000);
+        limit.unref?.();
+      });
     } else {
       process.kill(-child.pid, 'SIGTERM');
+      return true;
     }
   } catch {
     try { child.kill('SIGKILL'); } catch { /* already exited */ }
+    return false;
   }
 }
 
 export function closeAllWorkspaceTasks(): void {
-  for (const child of activeTasks.values()) terminateTaskTree(child, process.platform);
-  activeTasks.clear();
+  for (const child of activeTasks.values()) void terminateTaskTree(child, process.platform);
 }
 
 export async function executeWorkspacePackageTask(
@@ -367,6 +395,8 @@ export async function executeWorkspacePackageTask(
     let child: ChildProcess | undefined;
     let timer: NodeJS.Timeout | undefined;
     let forcedFinish: NodeJS.Timeout | undefined;
+    let termination: Promise<boolean> | undefined;
+    let terminationProven = true;
     let settled = false;
     const finish = (result: WorkspaceTaskRunResult) => {
       if (settled) return;
@@ -374,14 +404,31 @@ export async function executeWorkspacePackageTask(
       if (timer) clearTimeout(timer);
       if (forcedFinish) clearTimeout(forcedFinish);
       options.signal?.removeEventListener('abort', onAbort);
-      activeTasks.delete(current.projectDir);
+      if (terminationProven) activeTasks.delete(current.projectDir);
       resolve(result);
+    };
+    const stopTree = async () => {
+      if (termination) return termination;
+      try {
+        const result = (options.terminateProcessTree || terminateTaskTree)(child!, platform);
+        termination = Promise.resolve(result).then(value => value !== false, () => false);
+      } catch {
+        termination = Promise.resolve(false);
+      }
+      terminationProven = await termination;
+      return terminationProven;
+    };
+    const scheduleForcedFinish = (result: WorkspaceTaskRunResult) => {
+      if (forcedFinish) clearTimeout(forcedFinish);
+      forcedFinish = setTimeout(() => finish(result), 500);
+      forcedFinish.unref?.();
     };
     const onAbort = () => {
       aborted = true;
-      if (child) (options.terminateProcessTree || terminateTaskTree)(child, platform);
-      forcedFinish = setTimeout(() => finish({ success: false, cancelled: true, error: 'Task cancellation did not exit cleanly.' }), 2000);
-      forcedFinish.unref?.();
+      if (timer) clearTimeout(timer);
+      void stopTree().then(proven => {
+        scheduleForcedFinish({ success: false, cancelled: true, error: proven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' });
+      });
     };
 
     try {
@@ -401,9 +448,9 @@ export async function executeWorkspacePackageTask(
 
     timer = setTimeout(() => {
       timedOut = true;
-      if (child) (options.terminateProcessTree || terminateTaskTree)(child, platform);
-      forcedFinish = setTimeout(() => finish({ success: false, timedOut: true, error: `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` }), 2000);
-      forcedFinish.unref?.();
+      void stopTree().then(proven => {
+        scheduleForcedFinish({ success: false, timedOut: true, error: proven ? `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` : 'Task timed out, but HomeBot could not prove its process tree stopped.' });
+      });
     }, timeoutMs);
     timer.unref?.();
     options.signal?.addEventListener('abort', onAbort, { once: true });
@@ -418,18 +465,27 @@ export async function executeWorkspacePackageTask(
       parser.push('stderr', chunk);
       output = appendTail(output, chunk);
     });
-    child.once('error', error => finish({ success: false, error: `npm could not start: ${failMessage(error)}` }));
-    child.once('close', code => {
+    child.once('error', async error => {
+      if (termination) await termination;
+      finish({
+        success: false,
+        error: termination && !terminationProven
+          ? `npm exited while stopping, but HomeBot could not prove its process tree stopped: ${failMessage(error)}`
+          : `npm could not start: ${failMessage(error)}`,
+      });
+    });
+    child.once('close', async code => {
+      if (termination) await termination;
       const problems = parser.finish();
       finish({
         success: !aborted && !timedOut,
-        ...(aborted ? { cancelled: true, error: 'Task stopped because the HomeBot window closed.' } : {}),
+        ...(aborted ? { cancelled: true, error: terminationProven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' } : {}),
         timedOut,
         exitCode: code,
         durationMs: Date.now() - startedAt,
         problems,
         outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }),
-        ...(timedOut ? { error: `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` } : {}),
+        ...(timedOut ? { error: terminationProven ? `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` : 'Task timed out, but HomeBot could not prove its process tree stopped.' } : {}),
       });
     });
   });

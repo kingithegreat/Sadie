@@ -48,6 +48,11 @@ export function registerWorkspaceTaskIpc(): void {
     }
     const approved = await requestConfirmationFrom(event.sender, workspaceTaskConfirmationMessage(snapshot));
     if (!approved) return { success: false, cancelled: true, error: 'Task cancelled by user.' };
+    // Consent is not authority to run after the originating window/frame has
+    // gone away or been replaced while the modal was open.
+    if (!trustedSender(event) || event.sender.isDestroyed()) {
+      return { success: false, cancelled: true, error: 'Task cancelled because the HomeBot window closed.' };
+    }
 
     // A renderer that disappears cannot leave a package process tree running.
     const controller = new AbortController();

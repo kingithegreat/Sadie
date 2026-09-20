@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-test('package task reports a TypeScript problem and opens its exact editor line', async () => {
+test('package task reports a TypeScript problem and opens its exact editor line', async ({}, testInfo) => {
   test.setTimeout(60_000);
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ide11-home-'));
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ide11-profile-'));
@@ -20,7 +20,10 @@ test('package task reports a TypeScript problem and opens its exact editor line'
   fs.writeFileSync(path.join(project, 'broken.ts'), 'const ok = true;\nconst answer: string = 42;\n');
   fs.writeFileSync(path.join(profile, 'config', 'user-settings.json'), JSON.stringify({ projectPath: project }));
 
-  const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test', HOME: home, USERPROFILE: home }, profile);
+  const { app, page } = await launchElectronApp({
+    HOMEBOT_E2E: '1', NODE_ENV: 'test', HOME: home, USERPROFILE: home,
+    HOMEBOT_MOVIE_PROJECTS_DIR: path.join(home, 'movie-projects'),
+  }, profile);
   try {
     await waitForAppReady(page);
     await dismissFirstRun(page);
@@ -29,6 +32,7 @@ test('package task reports a TypeScript problem and opens its exact editor line'
     await expect(page.getByRole('combobox', { name: 'Package script' })).toHaveValue('check');
     await page.getByRole('button', { name: 'Run', exact: true }).click();
     await expect(page.getByText(/npm configuration and package-manager hooks/)).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('task-confirmation.png') });
     await page.getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Run', exact: true })).toBeEnabled({ timeout: 30_000 });
     await page.getByText('Task output').click();
@@ -38,6 +42,7 @@ test('package task reports a TypeScript problem and opens its exact editor line'
     await problem.click();
     await expect(page.locator('.ws-tab.active')).toContainText('broken.ts');
     await expect(page.locator('.code-cursor-pos')).toContainText('Ln 2');
+    await page.screenshot({ path: testInfo.outputPath('problem-editor-line.png') });
   } finally {
     await app.close();
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });

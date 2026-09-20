@@ -1,7 +1,9 @@
 const handlers = new Map<string, Function>();
 const removeHandler = jest.fn((name: string) => handlers.delete(name));
 const handle = jest.fn((name: string, fn: Function) => handlers.set(name, fn));
-const sender = { once: jest.fn(), removeListener: jest.fn() };
+let senderDestroyed = false;
+let windowDestroyed = false;
+const sender = { once: jest.fn(), removeListener: jest.fn(), isDestroyed: () => senderDestroyed };
 const mainFrame = {};
 const webContents = { ...sender, mainFrame };
 const requestConfirmationFrom = jest.fn();
@@ -10,7 +12,7 @@ const executeWorkspacePackageTask = jest.fn();
 const listWorkspacePackageTasks = jest.fn();
 
 jest.mock('electron', () => ({ ipcMain: { handle, removeHandler } }));
-jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents }) }));
+jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => windowDestroyed, webContents }) }));
 jest.mock('../message-router', () => ({ requestConfirmationFrom }));
 jest.mock('../workspace-tasks', () => ({
   prepareWorkspacePackageTask,
@@ -25,6 +27,8 @@ const event = () => ({ sender: (require('../window-manager') as any).getMainWind
 
 beforeEach(() => {
   jest.clearAllMocks();
+  senderDestroyed = false;
+  windowDestroyed = false;
   handlers.clear();
   registerWorkspaceTaskIpc();
 });
@@ -51,6 +55,16 @@ test('main resolves commands, requires confirmation, and runs only approved snap
 test('declined consent never executes', async () => {
   prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'check', lifecycle: [] });
   requestConfirmationFrom.mockResolvedValue(false);
+  await expect(handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'check' })).resolves.toMatchObject({ success: false, cancelled: true });
+  expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
+});
+
+test('approval resolving after the sender is destroyed cannot spawn', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'check', lifecycle: [] });
+  requestConfirmationFrom.mockImplementation(async () => {
+    senderDestroyed = true;
+    return true;
+  });
   await expect(handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'check' })).resolves.toMatchObject({ success: false, cancelled: true });
   expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
 });
