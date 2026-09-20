@@ -20,6 +20,11 @@ import {
   mediaBreakdownScriptHandler,
 } from '../tools/media-storyboard';
 
+// This suite exercises full render orchestration and per-test filesystem fixtures.
+// Keep CI load from turning that bounded integration work into Jest's default 5s timeout;
+// the external FFmpeg process itself remains mocked below.
+jest.setTimeout(15_000);
+
 // Mock findFfmpeg from media-render
 jest.mock('../media-render', () => ({
   ...jest.requireActual('../media-render'),
