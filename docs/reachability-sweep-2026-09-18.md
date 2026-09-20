@@ -2,7 +2,7 @@
 
 **Objective**: Enumerate the app's surface, trace callers, and identify dead controls/capabilities that are exported and unit-tested but cannot be reached by any user action.
 
-As mandated by `USER_TESTING_PLAN.md`, this report enumerates the dead capabilities. **No code has been deleted yet**; each finding will be fixed or removed under its own ID.
+As mandated by `USER_TESTING_PLAN.md`, this report enumerates the dead capabilities. This was the original pre-deletion sweep; verified outcomes are recorded in the dated triage below.
 
 ---
 
@@ -69,12 +69,13 @@ To fulfill the gating criteria for user testing, each category should be assigne
 
 Re-running `find-dead-capabilities.mjs` on `origin/main` after #391 (REL-3.3
 VRAM/hardware removals) and #393 (REL-3.5 unassigned-export sweep) merged
-shows **8** findings (down from 18). Of those **8**, most are **not** dead code —
+showed **8** findings (down from 18) at that checkpoint. Of those **8**, most
+were **not** dead code —
 bulk-deleting them would repeat the REL-3.3 mistake (see correction below). Each
 was traced end-to-end (production callers checked in `preload`, `ipc-handlers`,
 `shared/types`, and every `renderer` import) before acting.
 
-The **8 remaining on `origin/main`**:
+The **8 findings at that checkpoint**:
 
 | Finding | Where | Real (excl. tests) caller | Verdict |
 |---|---|---|---|
@@ -83,19 +84,32 @@ The **8 remaining on `origin/main`**:
 | `clearChanges` | `main/file-change-log.ts:104` | none — test `beforeEach` reset lever; `ipc-handlers.ts` only imports `listChanges`/`getChange` | retained: test-only reset, no Clear UI wired yet |
 | `stopFileWatchTriggers` | `main/scheduler.ts:388` | none | retained: docstring = *"used by tests so jest can exit"* |
 | `explainedCheckNames` | `shared/ancient-pathways-checks.ts:130` | none | retained: coverage assertion in `ancient-pathways-checks.test.ts` (`=== DOCTOR_CHECKS`) |
-| `useI18n` | `renderer/i18n/index.tsx:60` | none — `I18nProvider` **is** mounted (`renderer/index.tsx:18`) | retained: unfinished i18n adoption (product decision) |
+| `useI18n` | `renderer/i18n/index.tsx:60` | none — `I18nProvider` **is** mounted (`renderer/index.tsx:18`) | deleted in #402 after Aden approved removing unused i18n scaffolding; Spanish UI is not a current product commitment |
 | `cancelColabJob` / `retryColabJob` | `main/movie/colab-queue.ts` | none; **0 Colab IPC** in preload/handlers/types | retained: REL-3.4, blocked on #390 MediaStudioPanel rewrite |
+
+### Current scan after PROV-1 and REL-3.6
+
+On the #402 head after #398 (PROV-1) merged, the same audit reports **6**
+findings. `hasLeakedToolCalls` and `placeholderGuardJsCode` are gone via #401,
+and `useI18n` is gone on this branch. #398 added one deliberate test-only reset:
+
+| Current finding | Verdict |
+|---|---|
+| `clearChanges` | retained: test reset plus a possible future Clear-history action |
+| `stopFileWatchTriggers` | retained: test shutdown helper |
+| `explainedCheckNames` | retained: test coverage invariant |
+| `clearMediaCapabilityRegistryCache` | retained: test-only reset for #398's process-level provider capability cache; its two callers isolate registry tests |
+| `cancelColabJob` / `retryColabJob` | retained: REL-3.4 product work, not abandoned code |
 
 ### Why the retained ones are NOT deleted
 
-- `stopFileWatchTriggers`, `explainedCheckNames`: the audit flags them by design
+- `stopFileWatchTriggers`, `explainedCheckNames`,
+  `clearMediaCapabilityRegistryCache`: the audit flags them by design
   (`a helper that should not be exported` / test-only). Deleting them would
   either break test reset/isolation or weaken the coverage invariant they assert.
 - `clearChanges`: there is deliberately **no** Clear action in the IPC surface
   yet — the change log is bounded (`MAX_CHANGES=50`) and auto-evicts. This is a
   real but small feature gap (a Clear-history button), not cruft.
-- `useI18n`: `I18nProvider` wraps the app, but no component calls the hook — the
-  i18n layer is scaffolded, not adopted. Adoption is product work.
 - `cancelColabJob`/`retryColabJob`: removing them contradicts
   `MEDIA_STUDIO_PLAN.md`'s commissioned interruptible Colab worker and orphans
   `.homebot/colab_queue`. Wire-up is #390's job.
