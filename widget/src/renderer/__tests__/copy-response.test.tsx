@@ -5,7 +5,7 @@ import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '../types';
 
 // Mock clipboard via Electron's preload bridge
-const writeClipboard = jest.fn();
+const writeClipboard = jest.fn().mockResolvedValue({ success: true });
 beforeAll(() => {
   (window as any).electron = { ...(window as any).electron, writeClipboard };
 });

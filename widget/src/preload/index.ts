@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, IpcRendererEvent, clipboard } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 import { debug as logDebug } from '../shared/logger';
 import type { StudioOutputSpec } from '../shared/media-output';
 import type { CaptionStyle } from '../shared/caption-style';
@@ -66,6 +66,7 @@ const ALLOWED_CHANNELS = {
   SUPERVISOR_STATUS_PUSH: 'homebot:supervisor-status',
   GET_BATCH_SUMMARIES: 'homebot:get-batch-summaries',
   GET_CRM_DASHBOARD: 'homebot:get-crm-dashboard',
+  CLIPBOARD_WRITE: 'homebot:clipboard-write',
   BATCH_SUMMARY_PUSH: 'homebot:batch-summary',
   // Interactive terminal panel
   TERMINAL_CREATE: 'homebot:terminal:create',
@@ -959,10 +960,10 @@ const electronAPI: ElectronAPI = {
     return await ipcRenderer.invoke('homebot:restart-app');
   },
 
-  // Clipboard helper — uses Electron native clipboard (works with contextIsolation)
-  writeClipboard: (text: string) => {
-    clipboard.writeText(text);
-  },
+  // Clipboard helper — routed through the trusted main process because this
+  // window's sandboxed preload cannot access Electron's clipboard module.
+  writeClipboard: async (text: string): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke(ALLOWED_CHANNELS.CLIPBOARD_WRITE, text),
 
   // Open a file or folder in the system default application
   openFile: async (filePath: string): Promise<{ success: boolean; error?: string }> => {
