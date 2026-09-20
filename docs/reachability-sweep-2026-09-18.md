@@ -36,9 +36,12 @@ Using the `find-dead-capabilities.mjs` script, the following functions were foun
 *Note*: These appear to belong to a speculative "Hardware Profile" UI that would recommend models based on VRAM. This UI does not currently exist.
 
 ### Google Colab Queue (`main/movie/colab-queue.ts`)
-- **`cancelColabJob`** (2 test refs)
-- **`retryColabJob`** (2 test refs)
-*Note*: The Colab orchestration logic can queue jobs, but the UI has no button to cancel or retry them once they are staged. 
+- **`cancelColabJob`** — now reached from Movie Router through guarded, project-scoped IPC on the REL-3.4 branch
+- **`retryColabJob`** — now reached from Movie Router through guarded, project-scoped IPC on the REL-3.4 branch
+*Note*: Implemented on `codex/rel34-colab-queue-ui`, pending PR/merge. The UI
+lists only tickets proven to belong to the selected project. Cancel is limited
+to pending tickets; retry is limited to failed/cancelled tickets and rechecks
+Online consent. Cancel does not stop a running notebook — a late result is ignored.
 
 ### Core Tools & Schedulers
 - **`getOllamaTools`** (`main/tools/index.ts` - 5 test refs)
@@ -61,7 +64,7 @@ To fulfill the gating criteria for user testing, each category should be assigne
 1. **REL-3.1 (IPC & Windowing):** Remove `setAlwaysOnTop` and `licenseValidate` IPC handlers, or add the missing "Pin to Top" button to the title bar.
 2. **REL-3.2 (Documents/RAG):** Remove `storeDocument`, `getDocument`, and `clearDocuments` unless an upcoming Document Manager panel requires them.
 3. **REL-3.3 (Hardware Specs):** Delete the VRAM/Hardware recommendation logic, as HomeBot currently forces Colab or defaults for large models.
-4. **REL-3.4 (Colab Queue):** Implement the Cancel/Retry buttons in the Media Studio queue UI, or remove the unused capability from the backend.
+4. **REL-3.4 (Colab Queue):** Implemented on `codex/rel34-colab-queue-ui`, pending PR/merge and fresh-profile acceptance. Keep full cross-pipeline recovery open.
 
 ---
 
@@ -85,7 +88,7 @@ The **8 findings at that checkpoint**:
 | `stopFileWatchTriggers` | `main/scheduler.ts:388` | none | retained: docstring = *"used by tests so jest can exit"* |
 | `explainedCheckNames` | `shared/ancient-pathways-checks.ts:130` | none | retained: coverage assertion in `ancient-pathways-checks.test.ts` (`=== DOCTOR_CHECKS`) |
 | `useI18n` | `renderer/i18n/index.tsx:60` | none — `I18nProvider` **is** mounted (`renderer/index.tsx:18`) | deleted in #402 after Aden approved removing unused i18n scaffolding; Spanish UI is not a current product commitment |
-| `cancelColabJob` / `retryColabJob` | `main/movie/colab-queue.ts` | none; **0 Colab IPC** in preload/handlers/types | retained: REL-3.4, blocked on #390 MediaStudioPanel rewrite |
+| `cancelColabJob` / `retryColabJob` | `main/movie/colab-queue.ts` | Movie Router queue controls → namespaced preload → guarded Studio IPC → project-scoped queue primitive (REL-3.4 branch) | implemented pending PR/merge; retained by design |
 
 ### Current scan after PROV-1 and REL-3.6
 
@@ -99,7 +102,17 @@ and `useI18n` is gone on this branch. #398 added one deliberate test-only reset:
 | `stopFileWatchTriggers` | retained: test shutdown helper |
 | `explainedCheckNames` | retained: test coverage invariant |
 | `clearMediaCapabilityRegistryCache` | retained: test-only reset for #398's process-level provider capability cache; its two callers isolate registry tests |
-| `cancelColabJob` / `retryColabJob` | retained: REL-3.4 product work, not abandoned code |
+| `cancelColabJob` / `retryColabJob` | reachable on the REL-3.4 branch; pending PR/merge and acceptance |
+
+### REL-3.4 branch scan (2026-09-20)
+
+`npm run audit:dead` on `codex/rel34-colab-queue-ui` reports **4** exported
+functions with no production caller: `clearChanges`,
+`clearMediaCapabilityRegistryCache`, `stopFileWatchTriggers`, and
+`explainedCheckNames`. `cancelColabJob` and `retryColabJob` no longer appear in
+the dead-export result. That proves a production caller exists; the focused
+renderer and guarded-IPC tests separately prove the caller is reachable from
+the Movie Router and carries the selected project's object arguments.
 
 ### Why the retained ones are NOT deleted
 
@@ -111,8 +124,11 @@ and `useI18n` is gone on this branch. #398 added one deliberate test-only reset:
   yet — the change log is bounded (`MAX_CHANGES=50`) and auto-evicts. This is a
   real but small feature gap (a Clear-history button), not cruft.
 - `cancelColabJob`/`retryColabJob`: removing them contradicts
-  `MEDIA_STUDIO_PLAN.md`'s commissioned interruptible Colab worker and orphans
-  `.homebot/colab_queue`. Wire-up is #390's job.
+  `MEDIA_STUDIO_PLAN.md`'s commissioned operator-assisted Colab worker and
+  orphans `.homebot/colab_queue`. REL-3.4 now reaches them from the Movie Router
+  with explicit opt-in and project-scoped actions. This is pending PR/merge;
+  it does not claim active GPU cancellation or unified recovery across the
+  separate Media Studio pipelines.
 
 ## Correction — the REL-3.3 premise was wrong (2026-09-19)
 

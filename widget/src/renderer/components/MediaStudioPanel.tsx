@@ -43,6 +43,8 @@ import {
   LIGHTING_PRESETS,
 } from '../../shared/multi-plane-stage';
 import CapabilityReport from './CapabilityReport';
+import { resolveCloudLLM } from '../../shared/cloud-llm';
+import type { ColabQueueJobView } from '../../shared/types';
 
 /**
  * Safely format local filesystem paths into valid file:/// URLs for Chromium.
@@ -398,6 +400,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [movieRunning, setMovieRunning] = useState(false);
   const [movieResult, setMovieResult] = useState<string | null>(null);
   const [movieError, setMovieError] = useState<string | null>(null);
+  const [allowManualColab, setAllowManualColab] = useState(false);
+  const [movieOnline, setMovieOnline] = useState(false);
+  const [colabJobs, setColabJobs] = useState<Record<string, ColabQueueJobView[]>>({});
+  const [colabQueueBusy, setColabQueueBusy] = useState<string | null>(null);
 
   // Visual Storyboard Deck State
   const [storyboardProjects, setStoryboardProjects] = useState<Array<{
@@ -1112,7 +1118,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     setMovieError(null);
     setMovieResult(null);
     try {
-      const res = await api()?.mediaMovieRun?.({ projectDir });
+      const res = await api()?.mediaMovieRun?.({
+        projectDir,
+        ...(allowManualColab ? { allowDeferred: true } : {}),
+      });
       if (res?.ok && res.report) {
         const r = res.report;
         const msg = [];
@@ -1121,6 +1130,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         if (r.deferredShots > 0) msg.push(`${r.deferredShots} deferred to worker`);
         if (r.failedShots > 0) msg.push(`${r.failedShots} failed`);
         setMovieResult(msg.join(', ') || 'Pipeline complete');
+        await loadColabJobs(projectDir);
       } else {
         setMovieError(res?.error || 'Generation router failed.');
       }
@@ -1132,17 +1142,85 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const loadMovieProjects = async () => {
-    if (!movieProjects) {
-      try {
-        const res = await api()?.mediaMovieListProjects?.();
-        if (res?.ok) {
-          setMovieProjects(res.projects ?? []);
-        } else {
-          setMovieError(res?.error || 'Could not list movie projects.');
-        }
-      } catch (e: any) {
-        setMovieError(e?.message || 'Could not list movie projects.');
+    try {
+      const res = await api()?.mediaMovieListProjects?.();
+      if (res?.ok) {
+        setMovieProjects(res.projects ?? []);
+      } else {
+        setMovieError(res?.error || 'Could not list movie projects.');
       }
+    } catch (e: any) {
+      setMovieError(e?.message || 'Could not list movie projects.');
+    }
+  };
+
+  const loadColabJobs = async (projectDir: string) => {
+    setColabQueueBusy(`list:${projectDir}`);
+    setMovieError(null);
+    try {
+      const [settings, res] = await Promise.all([
+        api()?.getSettings?.(),
+        api()?.mediaMovieListColabJobs?.({ projectDir }),
+      ]);
+      setMovieOnline(resolveCloudLLM(settings as any).intended);
+      if (!res?.ok) {
+        setMovieError(res?.error || 'Could not refresh the Colab queue.');
+        return;
+      }
+      setColabJobs(previous => ({ ...previous, [projectDir]: res.jobs ?? [] }));
+    } catch (e: any) {
+      setMovieError(e?.message || 'Could not refresh the Colab queue.');
+    } finally {
+      setColabQueueBusy(null);
+    }
+  };
+
+  const cancelColabTicket = (projectDir: string, job: ColabQueueJobView) => {
+    const bridge = api();
+    confirm({
+      title: `Cancel pending ticket for ${job.shotId}?`,
+      body: (
+        <p>
+          This cancels the pending ticket only. An active Colab notebook may still finish,
+          but HomeBot will ignore its result.
+        </p>
+      ),
+      confirmLabel: 'Cancel the pending ticket',
+      onConfirm: async () => {
+        setColabQueueBusy(`cancel:${job.ticketId}`);
+        setMovieError(null);
+        try {
+          const res = await bridge?.mediaMovieCancelColabJob?.({
+            projectDir,
+            ticketId: job.ticketId,
+            expectedAttempts: job.attempts,
+          });
+          if (!res?.ok) setMovieError(res?.error || 'Could not cancel that pending Colab ticket.');
+          await loadColabJobs(projectDir);
+        } catch (e: any) {
+          setMovieError(e?.message || 'Could not cancel that pending Colab ticket.');
+        } finally {
+          setColabQueueBusy(null);
+        }
+      },
+    });
+  };
+
+  const retryColabTicket = async (projectDir: string, job: ColabQueueJobView) => {
+    setColabQueueBusy(`retry:${job.ticketId}`);
+    setMovieError(null);
+    try {
+      const res = await api()?.mediaMovieRetryColabJob?.({
+        projectDir,
+        ticketId: job.ticketId,
+        expectedAttempts: job.attempts,
+      });
+      if (!res?.ok) setMovieError(res?.error || 'Could not retry that Colab ticket.');
+      await loadColabJobs(projectDir);
+    } catch (e: any) {
+      setMovieError(e?.message || 'Could not retry that Colab ticket.');
+    } finally {
+      setColabQueueBusy(null);
     }
   };
 
@@ -4676,27 +4754,90 @@ ${shots.map((s, idx) => `
             </button>
           </div>
 
+          <label className="ms-state" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, margin: '10px 0', padding: '10px 12px' }}>
+            <input
+              type="checkbox"
+              aria-label="Allow manual Colab worker"
+              checked={allowManualColab}
+              onChange={event => setAllowManualColab(event.target.checked)}
+            />
+            <span>
+              <strong>Allow manual Colab worker</strong><br />
+              If another provider cannot make a shot, create a pending ticket for the operator-run Colab notebook.
+              HomeBot cannot start or stop the notebook for you.
+            </span>
+          </label>
+
           {movieProjects && movieProjects.length > 0 ? (
             <div className="ms-movie-projects-list">
               {movieProjects.map((p: any) => {
                 const label = p.name || p.id;
+                const projectDir = (p as any).projectDir || p.id;
+                const projectJobs = colabJobs[projectDir];
                 return (
-                  <div key={p.id} className="ms-movie-project-item">
+                  <div key={p.id} className="ms-movie-project-item" style={{ flexWrap: 'wrap' }}>
                     <div className="ms-project-meta">
                       <span className="ms-project-icon">🎞️</span>
                       <div>
                         <div className="ms-project-title">{label}</div>
-                        <div className="ms-project-path">{(p as any).projectDir || p.id}</div>
+                        <div className="ms-project-path">{projectDir}</div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="ms-btn ms-btn--primary"
-                      disabled={movieRunning}
-                      onClick={() => runMovieRouter((p as any).projectDir || p.id)}
-                    >
-                      {movieRunning ? 'Routing…' : '⚡ Route & Generate'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="ms-btn"
+                        aria-label={`Refresh Colab queue for ${label}`}
+                        disabled={colabQueueBusy !== null}
+                        onClick={() => loadColabJobs(projectDir)}
+                      >
+                        {colabQueueBusy === `list:${projectDir}` ? 'Refreshing…' : 'Refresh Colab queue'}
+                      </button>
+                      <button
+                        type="button"
+                        className="ms-btn ms-btn--primary"
+                        disabled={movieRunning}
+                        onClick={() => runMovieRouter(projectDir)}
+                      >
+                        {movieRunning ? 'Routing…' : '⚡ Route & Generate'}
+                      </button>
+                    </div>
+                    {projectJobs && (
+                      <div style={{ flexBasis: '100%', marginTop: 10 }} aria-label={`Colab queue for ${label}`}>
+                        {projectJobs.length === 0 ? (
+                          <div className="ms-runner-empty">No Colab tickets for this project.</div>
+                        ) : projectJobs.map(job => (
+                          <div key={job.ticketId} className="ms-state" style={{ marginTop: 6, padding: '8px 10px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <strong>{job.shotId}</strong>
+                            <span>Attempt {job.attempts}</span>
+                            <span>{job.status}</span>
+                            <span>{job.outputReady ? 'Output ready' : 'Output not ready'}</span>
+                            {job.error && <span role="alert">{job.error}</span>}
+                            {job.canCancel && (
+                              <button
+                                type="button"
+                                className="ms-btn"
+                                disabled={colabQueueBusy !== null}
+                                onClick={() => cancelColabTicket(projectDir, job)}
+                              >
+                                Cancel pending ticket
+                              </button>
+                            )}
+                            {job.canRetry && (
+                              <button
+                                type="button"
+                                className="ms-btn"
+                                disabled={!movieOnline || colabQueueBusy !== null}
+                                title={!movieOnline ? 'Turn on Online in Settings to retry this Colab ticket.' : undefined}
+                                onClick={() => retryColabTicket(projectDir, job)}
+                              >
+                                Retry
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}

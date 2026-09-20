@@ -73,6 +73,9 @@ test.each([
   ['advance', 'job-1', 'researching'],
   ['approve', 'job-1'],
   ['reject', 'job-1', false],
+  ['movie:colab:list', { projectDir: 'C:\\Users\\owner\\movie' }],
+  ['movie:colab:cancel', { projectDir: 'C:\\Users\\owner\\movie', ticketId: 'colab_ticket_shot_1_a' }],
+  ['movie:colab:retry', { projectDir: 'C:\\Users\\owner\\movie', ticketId: 'colab_ticket_shot_1_a' }],
 ] as const)('%s rejects foreign senders before dispatch', async (channel, ...validArgs) => {
   const foreignSenders = [
     {},
@@ -131,6 +134,12 @@ test.each([
   ['reject', ['job-1', 'false']],
   ['reject', ['job-1', true, 'note', 'extra']],
   ['reject', [123, false]],
+  ['movie:colab:list', []],
+  ['movie:colab:list', ['C:\\Users\\owner\\movie']],
+  ['movie:colab:cancel', []],
+  ['movie:colab:cancel', ['colab_ticket_shot_1_a']],
+  ['movie:colab:retry', []],
+  ['movie:colab:retry', [{ projectDir: 'x' }, 'extra']],
 ] as const)('%s rejects malformed arguments before dispatch', async (channel, args) => {
   await expect(invoke(channel, trustedEvent(), ...args)).resolves.toMatchObject({
     ok: false,
@@ -152,6 +161,13 @@ test('advance lets an invalid state reach the handler without dispatching a tran
   expect(mockReadJobs).toHaveBeenCalledTimes(1);
   expect(mockTransition).not.toHaveBeenCalled();
   expect(mockWriteJobs).not.toHaveBeenCalled();
+});
+
+test('trusted Colab queue requests dispatch inside the Studio module guard', async () => {
+  const result = await invoke('movie:colab:list', trustedEvent(), { projectDir: 'Z:\\missing-homebot-project' });
+
+  expect(result).toMatchObject({ ok: false });
+  expect(mockInvoke).toHaveBeenCalledWith('homebot.production-studio', expect.any(Function));
 });
 
 test('approve treats an empty job id as a missing job rather than an IPC type error', async () => {

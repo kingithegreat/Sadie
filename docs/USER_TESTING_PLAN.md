@@ -135,7 +135,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | merged #388 |
 | REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #393; #389 did not remove the production exports |
 | REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | merged #391 |
-| REL-3.4 | **Dead Colab Queue features:** `cancelColabJob`, `retryColabJob` | Wired to Media Studio UI or removed | open |
+| REL-3.4 | **Colab Queue controls:** retain the approved operator-assisted worker and make its existing cancel/retry operations reachable without accepting renderer-supplied shot paths | Movie Router requires an explicit manual-worker opt-in, lists project-scoped tickets, cancels only pending tickets, and retries failed/cancelled tickets only while Online is on | implemented on `codex/rel34-colab-queue-ui`; pending PR/merge and fresh-profile acceptance |
 | REL-3.5 | **Unassigned dead-export tail:** `getOllamaTools`, `validateLicense`, `sameTextCard`, plus the REL-3.2 document exports | Each candidate rechecked on current main; zero-caller exports removed without deleting live or test-only guards | merged #393 |
 | REL-3.6 | **Unused i18n scaffolding:** the unconsumed dictionaries and `I18nProvider` mount were approved for removal; Spanish UI is not a current product commitment | Remove the unused mount, dictionaries, and self-only tests without changing the visible English UI | implemented in PR #402; awaiting merge |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | merged #363 |
@@ -150,6 +150,15 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 - **PROV-2:** Codex CLI signed in with your ChatGPT account on this PC, for the live check.
 - **PROV-3 / PROV-4:** one paid live request each with your OpenAI and Google keys (images cost cents; Veo is charged per second of video).
 - **PROV-6:** whether you want Claude-drawn vector illustrations at all.
+
+### REL-3.4 acceptance limits
+
+REL-3.4 does not cancel an already-running Colab GPU cell. Cancelling marks both
+queue aliases cancelled, returns the local shot to planned, and causes HomeBot to
+ignore a result that arrives afterward. The operator may still need to stop the
+notebook manually. The existing `mediaMovieRun` path remains the resume/import
+path; a single unified recovery workflow across every Media Studio pipeline is
+still open and must not be inferred from these queue controls.
 
 ## Research notes (2026-09-17)
 
