@@ -137,7 +137,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | merged #391 |
 | REL-3.4 | **Dead Colab Queue features:** `cancelColabJob`, `retryColabJob` | Wired to Media Studio UI or removed | open |
 | REL-3.5 | **Unassigned dead-export tail:** `getOllamaTools`, `validateLicense`, `sameTextCard`, plus the REL-3.2 document exports | Each candidate rechecked on current main; zero-caller exports removed without deleting live or test-only guards | merged #393 |
-| REL-3.6 | **Mounted but unused i18n scaffolding:** dictionaries and `I18nProvider` exist, but no caller reads translations and no locale picker writes the setting | Aden chooses whether multilingual UI is in scope; then wire a visible locale flow or remove the unused mount and dictionaries | needs Aden |
+| REL-3.6 | **Unused i18n scaffolding:** the unconsumed dictionaries and `I18nProvider` mount were approved for removal; Spanish UI is not a current product commitment | Remove the unused mount, dictionaries, and self-only tests without changing the visible English UI | implemented in PR #402; awaiting merge |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | merged #363 |
 
 ## Needs Aden
@@ -150,7 +150,6 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 - **PROV-2:** Codex CLI signed in with your ChatGPT account on this PC, for the live check.
 - **PROV-3 / PROV-4:** one paid live request each with your OpenAI and Google keys (images cost cents; Veo is charged per second of video).
 - **PROV-6:** whether you want Claude-drawn vector illustrations at all.
-- **REL-3.6:** whether multilingual UI is in scope; keep and wire the i18n system, or remove the unused scaffolding.
 
 ## Research notes (2026-09-17)
 
