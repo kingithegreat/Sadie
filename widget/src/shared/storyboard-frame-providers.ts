@@ -11,10 +11,10 @@
  * it has no free tier, so it needs a first-use confirmation like any paid option.
  */
 
-export type StoryboardFrameProviderId = 'online' | 'this-pc' | 'gemini' | 'chatgpt-plan';
+export type StoryboardFrameProviderId = 'online' | 'this-pc' | 'gemini' | 'chatgpt-plan' | `gemini:${string}`;
 
 /** What the owner still has to do before this choice can make frames. */
-export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 'codex' | 'paid-confirmation';
+export type StoryboardFrameProviderNeed = 'online' | 'comfyui' | 'gemini-key' | 'codex' | 'paid-confirmation' | 'model-list';
 
 export interface StoryboardFrameProviderOption {
   id: StoryboardFrameProviderId;
@@ -29,6 +29,9 @@ export interface StoryboardFrameProviderOption {
   mayWatermark: boolean;
   /** Needs setup a normal user should not meet on the happy path. */
   advanced: boolean;
+  /** Exact provider model selected from this account's live model list. */
+  modelId?: string;
+  accountId?: string;
 }
 
 export const STORYBOARD_FRAME_PROVIDERS: readonly StoryboardFrameProviderOption[] = [
@@ -53,14 +56,18 @@ export const STORYBOARD_FRAME_PROVIDERS: readonly StoryboardFrameProviderOption[
     advanced: true,
   },
   {
+    // Compatibility identity for saved projects. Main only exposes this after
+    // the same exact model appears in the connected key's model list.
     id: 'gemini',
     routerProviderId: 'gemini-image',
-    label: 'Gemini · Google cloud with your API key · paid, about US$0.07 per image',
-    cost: 'About US$0.07 per image (Gemini 3.1 Flash Image), charged by Google to your Gemini API key. There is no free tier; your prompt is sent to Google.',
-    watermark: 'Google adds its invisible SynthID watermark to every image. It does not show in your movie.',
+    label: 'Gemini 3.1 Flash Image · Google AI Studio · paid',
+    cost: 'Paid image generation charged by Google to your API project. There is no free image tier.',
+    watermark: 'Google adds an invisible SynthID watermark. It does not show in your movie.',
     paid: true,
     mayWatermark: true,
     advanced: false,
+    modelId: 'gemini-3.1-flash-image',
+    accountId: 'account:google-ai-studio',
   },
   {
     // Aden, 2026-09-17: image generation through the ChatGPT plan he already pays for.
@@ -76,11 +83,31 @@ export const STORYBOARD_FRAME_PROVIDERS: readonly StoryboardFrameProviderOption[
 ];
 
 export function isStoryboardFrameProviderId(value: unknown): value is StoryboardFrameProviderId {
-  return typeof value === 'string' && STORYBOARD_FRAME_PROVIDERS.some(option => option.id === value);
+  return typeof value === 'string' && (
+    STORYBOARD_FRAME_PROVIDERS.some(option => option.id === value)
+    // `gemini` is a saved-project compatibility alias. New choices always
+    // carry the exact live-listed model after the colon.
+    || value === 'gemini'
+    || /^gemini:[a-z0-9][a-z0-9._-]*$/i.test(value)
+  );
 }
 
 export function storyboardFrameProvider(id: StoryboardFrameProviderId): StoryboardFrameProviderOption {
-  return STORYBOARD_FRAME_PROVIDERS.find(option => option.id === id)!;
+  const fixed = STORYBOARD_FRAME_PROVIDERS.find(option => option.id === id);
+  if (fixed) return fixed;
+  const modelId = id === 'gemini' ? 'gemini-3.1-flash-image' : id.slice('gemini:'.length);
+  return {
+    id,
+    routerProviderId: 'gemini-image',
+    label: `${modelId} · Google AI Studio · paid`,
+    cost: 'Paid image generation charged by Google to your API project. There is no free image tier.',
+    watermark: 'Google adds an invisible SynthID watermark. It does not show in your movie.',
+    paid: true,
+    mayWatermark: true,
+    advanced: false,
+    modelId,
+    accountId: 'account:google-ai-studio',
+  };
 }
 
 /** One option plus what the main process found when it checked it just now. */

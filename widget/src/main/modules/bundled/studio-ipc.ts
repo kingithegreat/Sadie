@@ -768,6 +768,12 @@ export function registerStudioIpc(
     return res.success ? { ok: true, frameProvider: (res.result as any).frameProvider } : { ok: false, error: res.error };
   });
 
+  ipcMain.handle('homebot:media:storyboard:set-video-model', async (_ev, args: { projectId: string; videoModelRef: string }) => {
+    const { setStoryboardVideoModel } = await import('../../tools/media-storyboard');
+    const res = await setStoryboardVideoModel(args || {});
+    return res.success ? { ok: true, videoModelRef: (res.result as any).videoModelRef } : { ok: false, error: res.error };
+  });
+
   ipcMain.handle('homebot:media:storyboard:confirm-paid-frames', async (_ev, frameProvider: string) => {
     const { recordPaidFrameConfirmation } = await import('../../movie/storyboard-frame-providers');
     return recordPaidFrameConfirmation(frameProvider);

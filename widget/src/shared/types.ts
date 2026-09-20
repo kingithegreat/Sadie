@@ -2,6 +2,7 @@
 import type { StudioOutputSpec, StudioMovieResult } from './media-output';
 import type { CaptionStyle } from './caption-style';
 import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
+import type { MediaCapabilityRegistry } from './media-capability-registry';
 
 export type LicenseTier = 'free' | 'pro';
 
@@ -750,6 +751,8 @@ export interface ElectronAPI {
   mediaStoryboardFrameProviders?: () => Promise<{ ok: boolean; providers?: StoryboardFrameProviderStatus[]; error?: string }>;
   /** Save this project's frame provider choice. */
   mediaStoryboardSetFrameProvider?: (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) => Promise<{ ok: boolean; frameProvider?: StoryboardFrameProviderId; error?: string }>;
+  /** Save the live-listed video model future generated shots will use. */
+  mediaStoryboardSetVideoModel?: (args: { projectId: string; videoModelRef: string }) => Promise<{ ok: boolean; videoModelRef?: string; error?: string }>;
   /** Record the owner's first-use confirmation for a paid frame provider. */
   mediaStoryboardConfirmPaidFrames?: (frameProvider: StoryboardFrameProviderId) => Promise<{ ok: boolean; error?: string }>;
   mediaStoryboardGenerateFrame?: (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => Promise<{
@@ -862,6 +865,7 @@ export interface ElectronAPI {
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
+  listMediaCapabilities?: (options?: { refresh?: boolean }) => Promise<{ success: boolean; registry?: MediaCapabilityRegistry; error?: string }>;
 
   // Image generation helper
   executeImageGenerate?: (params: { action: string; payload?: any }) => Promise<any>;

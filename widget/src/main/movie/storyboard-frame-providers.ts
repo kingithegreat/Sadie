@@ -24,6 +24,8 @@ import { geminiImageProvider } from './gemini-image-adapter';
 import { codexImageProvider } from './codex-image-adapter';
 import type { GenerationProvider, GenerationRequest } from './types';
 import { resolveStudioOutputSpec, type StudioAspectRatio } from '../../shared/media-output';
+import { getMediaCapabilityRegistry } from '../provider-capability-registry';
+import type { MediaCapabilityModel } from '../../shared/media-capability-registry';
 
 /** Storyboard frames, 16:9. Kept for availability probes and legacy callers. */
 export const STORYBOARD_FRAME_SIZE = { width: 1024, height: 576 } as const;
@@ -138,5 +140,34 @@ export async function describeStoryboardFrameProvider(option: StoryboardFramePro
 }
 
 export async function describeStoryboardFrameProviders(): Promise<StoryboardFrameProviderStatus[]> {
-  return Promise.all(STORYBOARD_FRAME_PROVIDERS.map(describeStoryboardFrameProvider));
+  const registry = await getMediaCapabilityRegistry();
+  const discovered = registry.imageModels
+    .filter(model => model.provider === 'google-ai-studio' && model.usableIn.includes('storyboard-frame'))
+    .map(storyboardOptionForMediaModel);
+  const fixed = STORYBOARD_FRAME_PROVIDERS.filter(option => option.id !== 'gemini');
+  return Promise.all([...fixed, ...discovered].map(describeStoryboardFrameProvider));
+}
+
+function storyboardOptionForMediaModel(model: MediaCapabilityModel): StoryboardFrameProviderOption {
+  return {
+    id: model.modelId === 'gemini-3.1-flash-image' ? 'gemini' : `gemini:${model.modelId}`,
+    routerProviderId: 'gemini-image',
+    label: `${model.displayName} · ${model.accountLabel} · paid`,
+    cost: model.costLabel,
+    watermark: model.watermarkLabel,
+    paid: model.costClass === 'paid',
+    mayWatermark: model.watermark !== 'none',
+    advanced: false,
+    modelId: model.modelId,
+    accountId: model.accountId,
+  };
+}
+
+/** Resolve a saved choice against the account's current/cached list. */
+export async function resolveAvailableStoryboardFrameProvider(id: StoryboardFrameProviderId): Promise<StoryboardFrameProviderStatus | null> {
+  const providers = await describeStoryboardFrameProviders();
+  if (id === 'gemini') {
+    return providers.find(provider => provider.modelId === 'gemini-3.1-flash-image') ?? null;
+  }
+  return providers.find(provider => provider.id === id) ?? null;
 }

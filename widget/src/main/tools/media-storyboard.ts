@@ -19,11 +19,11 @@ import {
 } from '../movie/project-runner';
 import {
   storyboardFrameShape,
-  hasPaidFrameConfirmation,
   routerForStoryboardFrame,
   storyboardFrameRequestPolicy,
+  resolveAvailableStoryboardFrameProvider,
 } from '../movie/storyboard-frame-providers';
-import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
+import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, storyboardFrameProvider, type StoryboardFrameProviderId } from '../../shared/storyboard-frame-providers';
 import {
   ShotStatus,
   type ShotBibleEntry,
@@ -34,6 +34,7 @@ import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSp
 import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-style';
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
+import { getMediaCapabilityRegistry } from '../provider-capability-registry';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -56,6 +57,10 @@ export async function setStoryboardFrameProvider(args: { projectId?: unknown; fr
   const projectId = String(args?.projectId ?? '').trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
   if (!isStoryboardFrameProviderId(args?.frameProvider)) return { success: false, error: 'Choose one of the listed ways to make frame images.' };
+  if (args.frameProvider === 'gemini' || String(args.frameProvider).startsWith('gemini:')) {
+    const available = await resolveAvailableStoryboardFrameProvider(args.frameProvider as StoryboardFrameProviderId);
+    if (!available) return { success: false, error: 'That Gemini image model is no longer listed for the saved Google key. Check the account again.' };
+  }
   const metaPath = path.join(getStoryboardsRootDir(), projectId, 'project.json');
   if (!fs.existsSync(metaPath)) return { success: false, error: `Storyboard project not found: ${projectId}` };
   try {
@@ -64,6 +69,27 @@ export async function setStoryboardFrameProvider(args: { projectId?: unknown; fr
     fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: args.frameProvider, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
     fs.renameSync(staged, metaPath);
     return { success: true, result: { frameProvider: args.frameProvider } };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+
+/** Save the live-listed video model PROV-4 will use for generated shot clips. */
+export async function setStoryboardVideoModel(args: { projectId?: unknown; videoModelRef?: unknown }): Promise<ToolResult> {
+  const projectId = String(args?.projectId ?? '').trim();
+  const videoModelRef = String(args?.videoModelRef ?? '').trim();
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
+  const registry = await getMediaCapabilityRegistry();
+  const model = registry.videoModels.find(candidate => candidate.ref === videoModelRef && candidate.usableIn.includes('shot-video'));
+  if (!model) return { success: false, error: 'That video model is not listed for a connected account. Check the account again.' };
+  const metaPath = path.join(getStoryboardsRootDir(), projectId, 'project.json');
+  if (!fs.existsSync(metaPath)) return { success: false, error: `Storyboard project not found: ${projectId}` };
+  try {
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+    const staged = `${metaPath}.saving`;
+    fs.writeFileSync(staged, JSON.stringify({ ...meta, videoModelRef, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+    fs.renameSync(staged, metaPath);
+    return { success: true, result: { videoModelRef } };
   } catch (err: any) {
     return { success: false, error: err?.message || String(err) };
   }
@@ -454,17 +480,17 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     if (!isStoryboardFrameProviderId(chosen)) {
       return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
     }
-    const option = storyboardFrameProvider(chosen);
-    if (option.paid && !hasPaidFrameConfirmation(option.id)) {
-      return { success: false, error: `${option.label} costs money. Confirm paid use in the Storyboard before generating.` };
-    }
+    const available = await resolveAvailableStoryboardFrameProvider(chosen);
+    if (!available) return { success: false, error: 'That frame model is no longer available to this connected account. Choose another one.' };
+    const option = storyboardFrameProvider(available.id);
+    if (!available.ready) return { success: false, error: available.reason || 'This frame model is not ready.' };
 
     const policy = storyboardFrameRequestPolicy(option);
     // Draw the frame in the shape this project exports. A 16:9 frame in a 9:16
     // export loses the middle 32% of every shot to the crop.
     const shape = storyboardFrameShape(readProjectMeta(projectMetaPath).outputSpec);
     const req: GenerationRequest = {
-      kind: 'image', prompt, width: shape.width, height: shape.height, shotId, shotDir, ...policy,
+      kind: 'image', prompt, modelId: option.modelId, width: shape.width, height: shape.height, shotId, shotDir, ...policy,
     };
 
     const { decision, result: res } = await routerForStoryboardFrame(option.id).generate(req, { freeOnly: policy.freeOnly });

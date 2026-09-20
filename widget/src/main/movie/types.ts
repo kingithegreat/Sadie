@@ -68,6 +68,8 @@ export interface GenerationCapability {
 export interface GenerationRequest {
   kind: MediaKind;
   prompt: string;
+  /** Exact model selected from this connected account's capability registry. */
+  modelId?: string;
   width: number;
   height: number;
   /** Required for kind === 'video'. */

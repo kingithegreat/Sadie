@@ -20,6 +20,20 @@ jest.mock('../../shared/cloud-llm', () => ({
   ...jest.requireActual('../../shared/cloud-llm'),
   apiKeyForProvider: (_s: unknown, provider: string) => (provider === 'google-ai-studio' ? mockGeminiKey : ''),
 }));
+jest.mock('../provider-capability-registry', () => ({
+  getMediaCapabilityRegistry: async () => {
+    const model = {
+      ref: 'google-ai-studio:image:gemini-3.1-flash-image',
+      provider: 'google-ai-studio', accountId: 'account:google-ai-studio', accountLabel: 'Google AI Studio',
+      modelId: 'gemini-3.1-flash-image', displayName: 'Gemini 3.1 Flash Image', kind: 'image',
+      costClass: 'paid', costLabel: 'Paid through Google.', watermark: 'invisible',
+      watermarkLabel: 'Google adds an invisible SynthID watermark.', source: 'live',
+      usableIn: ['storyboard-frame'], methods: ['generateContent'],
+    };
+    const video = { ...model, ref: 'google-ai-studio:video:veo-3.1-generate-preview', modelId: 'veo-3.1-generate-preview', displayName: 'Veo 3.1', kind: 'video', usableIn: ['shot-video'], methods: ['predictLongRunning'] };
+    return { accounts: [], imageModels: mockGeminiKey ? [model] : [], videoModels: mockGeminiKey ? [video] : [], refreshedAt: new Date(0).toISOString() };
+  },
+}));
 
 import { movieImageFixture } from './helpers/movie-image';
 import {
@@ -27,11 +41,12 @@ import {
   mediaGenerateStoryboardFrameHandler,
   mediaGetStoryboardHandler,
   setStoryboardFrameProvider,
+  setStoryboardVideoModel,
 } from '../tools/media-storyboard';
 import { describeStoryboardFrameProviders, recordPaidFrameConfirmation } from '../movie/storyboard-frame-providers';
 import { STORYBOARD_FRAME_PROVIDERS } from '../../shared/storyboard-frame-providers';
 import { createStudioOutputSpec } from '../../shared/media-output';
-import { geminiAspectRatio } from '../movie/gemini-image-adapter';
+import { geminiAspectRatio, geminiImageEndpoint } from '../movie/gemini-image-adapter';
 
 // These are real-handler tests that render frames through a loopback ComfyUI
 // server; the 3-frame auto-generation test takes ~4.6s alone, so the Jest
@@ -122,6 +137,21 @@ test('the choice persists per project and unknown providers are refused', async 
   expect(JSON.parse(fs.readFileSync(path.join(root, 'harbour', 'project.json'), 'utf8')).frameProvider).toBe('this-pc');
 });
 
+test('the shot-video picker can save only a model listed for the connected account', async () => {
+  const ref = 'google-ai-studio:video:veo-3.1-generate-preview';
+  expect((await setStoryboardVideoModel({ projectId: 'harbour', videoModelRef: ref })).success).toBe(false);
+  mockGeminiKey = 'AIza-test-key';
+  expect((await setStoryboardVideoModel({ projectId: 'harbour', videoModelRef: ref })).success).toBe(true);
+  expect(JSON.parse(fs.readFileSync(path.join(root, 'harbour', 'project.json'), 'utf8')).videoModelRef).toBe(ref);
+  expect((await setStoryboardVideoModel({ projectId: 'harbour', videoModelRef: 'google-ai-studio:video:veo-2.0-generate-001' })).success).toBe(false);
+});
+
+test('a live-listed Gemini frame model reaches its own endpoint, not the old hard-coded model', () => {
+  expect(geminiImageEndpoint('gemini-3.1-flash-lite-image'))
+    .toBe('https://generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-lite-image:generateContent');
+  expect(() => geminiImageEndpoint('../retired')).toThrow(/invalid/);
+});
+
 test('the frame is drawn in the shape the project exports, not always 16:9', async () => {
   // A 16:9 frame in a 9:16 export loses the middle 32% of every shot.
   await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'this-pc' });
@@ -188,6 +218,15 @@ test('a project that saved Imagen before it was retired is asked to choose again
   expect((await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'imagen' })).success).toBe(false);
 });
 
+test('the legacy Gemini alias cannot be newly saved unless the connected key lists its model', async () => {
+  mockSettings = { useCustomLLM: true };
+  mockGeminiKey = '';
+  const res = await setStoryboardFrameProvider({ projectId: 'harbour', frameProvider: 'gemini' });
+  expect(res.success).toBe(false);
+  expect(res.error).toMatch(/no longer listed/i);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test('only the paid option can record a paid confirmation', () => {
   for (const id of ['imagen', 'online', 'this-pc', 'ancient-pathways']) {
     expect(recordPaidFrameConfirmation(id).ok).toBe(false);
@@ -202,14 +241,13 @@ test('status checks say what each option needs, without generating anything', as
   let status = await check();
   expect(status.online).toMatchObject({ ready: false, needs: 'online' });
   expect(status['this-pc']).toMatchObject({ ready: true, needs: null });
-  expect(status.gemini).toMatchObject({ ready: false, needs: 'online' });
-  expect(Object.keys(status).sort()).toEqual(['chatgpt-plan', 'gemini', 'online', 'this-pc']);
+  expect(status.gemini).toBeUndefined();
+  expect(Object.keys(status).sort()).toEqual(['chatgpt-plan', 'online', 'this-pc']);
 
   mockSettings = { useCustomLLM: true };
   status = await check();
   expect(status.online).toMatchObject({ ready: true });
-  expect(status.gemini).toMatchObject({ ready: false, needs: 'gemini-key' });
-  expect(status.gemini.reason).toMatch(/Gemini API key in Settings/);
+  expect(status.gemini).toBeUndefined();
 
   mockGeminiKey = 'AIza-test-key';
   status = await check();
@@ -246,7 +284,7 @@ describe('Gemini frames (paid, owner-confirmed)', () => {
     await chooseGemini();
     const res = await generate();
     expect(res.success).toBe(false);
-    expect(res.error).toMatch(/costs money\. Confirm paid use/);
+    expect(res.error).toMatch(/Confirm paid use/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

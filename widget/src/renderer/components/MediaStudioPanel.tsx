@@ -33,6 +33,7 @@ import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, r
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
+import StoryboardVideoModelPicker from './StoryboardVideoModelPicker';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
 import {
@@ -554,7 +555,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   // A saved choice that is no longer offered (e.g. retired Imagen) reads as not chosen yet.
   const frameChoice: StoryboardFrameProviderId | undefined = isStoryboardFrameProviderId(activeStoryboard?.project?.frameProvider)
     ? activeStoryboard?.project?.frameProvider : undefined;
-  const frameStatus = frameProviders?.find(p => p.id === frameChoice) ?? null;
+  const frameStatus = frameProviders?.find(p => p.id === frameChoice || (frameChoice === 'gemini' && p.modelId === 'gemini-3.1-flash-image')) ?? null;
+  const frameChoiceUnavailable = !!frameChoice && frameProviders !== null && !frameStatus;
   const frameReady = !!frameStatus?.ready;
   const noFrameProviderReady = !!frameProviders && !frameProviders.some(p => p.ready);
   const renderedStoryboardJob = jobs.find(job => job.renderPath === renderedMoviePath &&
@@ -1373,7 +1375,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const confirmPaidFrames = (id: StoryboardFrameProviderId) => {
-    const option = STORYBOARD_FRAME_PROVIDERS.find(o => o.id === id);
+    const option = frameProviders?.find(o => o.id === id);
     if (!option?.paid) return;
     confirm({
       title: `Pay per image with ${option.label.split(' · ')[0]}?`,
@@ -1395,7 +1397,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const handleChooseFrameProvider = async (value: string) => {
-    const option = STORYBOARD_FRAME_PROVIDERS.find(o => o.id === value);
+    const option = frameProviders?.find(o => o.id === value)
+      ?? STORYBOARD_FRAME_PROVIDERS.find(o => o.id === value);
     if (!option || !selectedStoryboardId) return;
     const res = await api()?.mediaStoryboardSetFrameProvider?.({ projectId: selectedStoryboardId, frameProvider: option.id });
     if (!res?.ok) {
@@ -4976,11 +4979,14 @@ ${shots.map((s, idx) => `
             <select
               className="ms-select"
               aria-label="How to make frame images"
-              value={frameChoice ?? ''}
+              value={frameStatus?.id ?? frameChoice ?? ''}
               onChange={e => void handleChooseFrameProvider(e.target.value)}
             >
               <option value="" disabled>Choose how to make frame images…</option>
-              {STORYBOARD_FRAME_PROVIDERS.map(option => (
+              {frameChoiceUnavailable && (
+                <option value={frameChoice} disabled>Saved frame model unavailable — choose another option</option>
+              )}
+              {(frameProviders ?? STORYBOARD_FRAME_PROVIDERS.filter(option => option.id !== 'gemini')).map(option => (
                 <option key={option.id} value={option.id}>{option.label}</option>
               ))}
             </select>{' '}
@@ -4990,7 +4996,11 @@ ${shots.map((s, idx) => `
                 noFrameProviderReady
                   ? 'Nothing can make frame images yet. Turn on Online in Settings to use the free online service, or set up this PC below.'
                   : 'Choose one before generating. Nothing is sent anywhere until you do.'
-              ) : !frameStatus ? 'Checking…' : frameStatus.ready ? (
+              ) : !frameStatus ? (
+                frameProviders === null
+                  ? 'Checking…'
+                  : 'The saved frame model is no longer available for this account. Choose another option.'
+              ) : frameStatus.ready ? (
                 <>{frameStatus.cost}{frameStatus.watermark ? <> <strong>{frameStatus.watermark}</strong></> : null}</>
               ) : (
                 <>
@@ -5010,7 +5020,13 @@ ${shots.map((s, idx) => `
                 </p>
               </details>
             )}
-          </fieldset></>
+          </fieldset>
+          <StoryboardVideoModelPicker
+            projectId={selectedStoryboardId || String(activeStoryboard.project.id || '')}
+            value={activeStoryboard.project.videoModelRef}
+            disabled={storyboardBusy}
+            onChange={videoModelRef => setActiveStoryboard(prev => prev ? { ...prev, project: { ...prev.project, videoModelRef } } : prev)}
+          /></>
         )}
 
         {/* Inline Create Drawer */}
@@ -5163,7 +5179,7 @@ ${shots.map((s, idx) => `
                   onChange={e => setDirectorFrameProvider(e.target.value as StoryboardFrameProviderId | '')}
                 >
                   <option value="" disabled>Choose how to make frame images…</option>
-                  {STORYBOARD_FRAME_PROVIDERS.map(option => (
+                  {(frameProviders ?? STORYBOARD_FRAME_PROVIDERS.filter(option => option.id !== 'gemini')).map(option => (
                     <option key={option.id} value={option.id}>{option.label}</option>
                   ))}
                 </select>
