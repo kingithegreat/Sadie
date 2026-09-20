@@ -4,7 +4,7 @@
  * Director Quick Launch Hub, Movie Router 5-tier view, and navigation.
  */
 
-import { render, screen, fireEvent, act, within } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 
 function setup(overrides: Record<string, any> = {}) {
@@ -40,6 +40,17 @@ function setup(overrides: Record<string, any> = {}) {
     ok: true,
     report: { totalShots: 4, completedShots: 4, results: [] },
   });
+  const getCapabilityReport = jest.fn().mockResolvedValue({
+    success: true,
+    capabilities: [{
+      id: 'media-studio',
+      label: 'Make videos',
+      state: 'missing',
+      detail: 'The video engine is not installed.',
+      fix: 'Install an FFmpeg video engine.',
+    }],
+    summary: { ready: 0, total: 1, needsAttention: [] },
+  });
 
   (window as any).electron = {
     mediaList,
@@ -47,6 +58,7 @@ function setup(overrides: Record<string, any> = {}) {
     mediaAncientPathwaysStatus,
     mediaMovieListProjects,
     mediaMovieRun,
+    getCapabilityReport,
     onMediaAncientPathwaysProgress: jest.fn().mockReturnValue(() => {}),
     ...overrides,
   };
@@ -57,6 +69,7 @@ function setup(overrides: Record<string, any> = {}) {
     mediaAncientPathwaysStatus,
     mediaMovieListProjects,
     mediaMovieRun,
+    getCapabilityReport,
   };
 }
 
@@ -198,5 +211,22 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
     });
 
     expect(screen.getByLabelText('Studio Quick Launch')).toBeInTheDocument();
+  });
+
+  test('opening Diagnostics invokes the current capability API and shows its result', async () => {
+    const { getCapabilityReport } = setup();
+    await act(async () => {
+      render(<MediaStudioPanel />);
+    });
+
+    expect(getCapabilityReport).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: /Diagnostics/i }));
+    });
+
+    await waitFor(() => {
+      expect(getCapabilityReport).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('cap-media-studio')).toHaveTextContent('The video engine is not installed.');
+    });
   });
 });
