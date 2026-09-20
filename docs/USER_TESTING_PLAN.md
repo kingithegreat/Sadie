@@ -29,7 +29,7 @@ The [HomeBot current Drive plan](https://docs.google.com/document/d/1sh2ss0epsUx
 
 Inspected integration base: main `8da27fd`. The MS-4/MS-8/MS-9/IDE-9 status corrections and IDE-9 claim retirement are semantically replayed from PR #399, whose original branch conflicts with current main; #399 itself is not merged. Retain the full requirements below, including owner-only gates; clearing a merged prerequisite is not authorization to skip acceptance.
 
-1. **Pick the highest open item whose dependencies are merged.** Gates (G) come first: until they are green, no other result can be trusted.
+1. **Follow the live Drive priority and preserve claimed owners.** MS-RIG-0 is the first visual-production task, ahead of another episode or provider trial. Gate failures that invalidate verification must be repaired first, but waiting for G-1's next scheduled run does not block safe, non-overlapping rig work by its existing owner. Green gates remain mandatory for release readiness. Other agents continue the separate integration queue; do not duplicate the rig owner or treat pending owner acceptance as permission to edit the shared rig tree.
 2. **Check before you build.** Look for an open PR or a `CLAIMS.md` row on the same ID (`gh pr list --state open`). If one exists, help land it instead of writing a second version.
 3. **Put the ID in the branch and PR title,** e.g. `claude/ms-3-caption-style`, `feat(storyboard): MS-3 caption style`. One item per PR.
 4. **Done means the "Done when" evidence exists,** with the verification level stated (unit, real FFmpeg, real Electron, installed build). A unit test through a mock is not proof that a video changed. Render it and measure the file.
@@ -37,6 +37,12 @@ Inspected integration base: main `8da27fd`. The MS-4/MS-8/MS-9/IDE-9 status corr
 6. **Stop and ask Aden** for anything under "Needs Aden": keys, accounts, payments, publishing, or a product decision the plan does not already record.
 
 Status values: `open` · `PR #n` · `merged #n` · `needs Aden` · `blocked by <ID>`.
+
+### First visual-production task
+
+| ID | Item | Done when | Owner / next action | Status |
+|---|---|---|---|---|
+| MS-RIG-0 | Prove the existing programmatic Leila rig with approved, revisioned assets before another full episode. | Six-second 1920×1080, 30 fps review export, captions off: torso still, elbow bends, shoulder/wrist attached, expression changes without jumping, prop stays in hand; inspect frames for duplicate limbs, gaps, clipping and overlap, then obtain owner visual acceptance. | Existing Ancient Pathways Claude Code rig owner; coordinate with HomeBot #368. Attribute current dirty files and recheck render.lock before applying the prepared isolated proof patch. No second agent edits/renders in that shared tree. | blocked by existing rig-owner handoff and visual acceptance |
 
 ## This machine (the setup we optimise for)
 

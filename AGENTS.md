@@ -3,14 +3,15 @@
 Any agent, any tool: Claude Code, Cline, GitHub Copilot, Codex, Antigravity. Several of us work
 this repo at the same time, often within minutes of each other. Read this before your first edit.
 
-## The three files that hold the state
+## Planning authority and repository state
 
 | File | What it holds |
 |---|---|
+| [HomeBot current Drive plan](https://docs.google.com/document/d/1sh2ss0epsUxe6VcbF7GwULs4_TFgSPJh9R_I46xYoH8/edit) | **The single live priority queue**, per Aden's later instruction: "drive is now the new brain." |
 | `CLAUDE.md` | **The contract.** Non-negotiable operating rules. It overrides this file. |
 | `CLAIMS.md` | **Who is building what right now**, plus rules of the road that changed recently. Read the tail first — newest section is last. |
 | `docs/USER_TESTING_PLAN.md` | **The shared work queue to user testing** (2026-09-17): gates, Media Studio, providers, Code mode vs Cursor, release. Pick items by ID, one item per PR, put the ID in the PR title. |
-| `C:\Users\adenk\Documents\Brain\Ai-Brain\01_Projects\HomeBot\Plan.md` | **The plan** — tracks A–I, owners, and what Aden has actually asked for, in his words. Outside the repo, on this machine, readable directly. |
+| `C:\Users\adenk\Documents\Brain\Ai-Brain\01_Projects\HomeBot\Plan.md` | Historical project context and earlier tracks. Outside the repo, readable directly; not a competing live queue. |
 
 The vault at `C:\Users\adenk\Documents\Brain\Ai-Brain` is Aden's notes, not repo content. **Read it
 freely; never copy it into the repo** — it holds project history that does not belong in git.
@@ -19,12 +20,13 @@ Useful paths: `01_Projects/HomeBot/` (Plan, Bugs, Decisions, Testing_Log),
 
 ## Before you build
 
-**Notion cadence (Aden, 2026-09-08):** fetch the current HomeBot plan before each
-task and check for changed requirements/priorities. After every meaningful
-verified success, update the corresponding Notion record with evidence and
-the next step; re-fetch before writing to preserve concurrent edits. Follow the
-[Codex Autonomous Build Loop](https://app.notion.com/p/3d5829ebf7be81308c58c474f6aed6c7).
-Codex's reusable local skill is `~/.codex/skills/homebot-notion-progress/SKILL.md`.
+**Drive cadence (supersedes the earlier Notion cadence):** read the current
+HomeBot Drive plan before each task and check for changed requirements/priorities.
+After meaningful verified progress, update that plan with evidence and the next
+step; re-read before writing to preserve concurrent edits. Retain Notion pages
+as reference history, not an active queue, and do not write them merely to mirror
+Drive. If Drive is unavailable, report that limitation rather than silently
+switching authority. Use the shared Google Drive skill for this workflow.
 Continue already-authorized work; keep existing publication/credential boundaries.
 
 1. `git worktree list` and `git status` — **three trees are live at once.** `reset --hard`,

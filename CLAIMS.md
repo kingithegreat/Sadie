@@ -1,5 +1,7 @@
 # Work Claims
 
+**Current planning authority:** Aden's later "drive is now the new brain" instruction supersedes the Notion cadence recorded below. The [current Drive plan](https://docs.google.com/document/d/1sh2ss0epsUxe6VcbF7GwULs4_TFgSPJh9R_I46xYoH8/edit) owns priorities; this file owns repository work claims. Preserve earlier Notion links and dated notes as history, not as instructions to maintain a second live queue.
+
 Repo-native companion to the Notion [ðŸ”— Work Claims Ledger](https://app.notion.com/p/63dec393c18546ee9b924a472e9c59a3) and [ðŸ¤� Coordination Protocol](https://app.notion.com/p/390829ebf7be81e09866e1cd3a6bed6e). This file exists because Notion is easy to skip; this file is not â€” anyone building here sees it just by looking at the repo.
 
 **Before starting a new feature build:**
