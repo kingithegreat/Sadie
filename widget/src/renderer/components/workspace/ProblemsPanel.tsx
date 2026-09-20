@@ -38,15 +38,20 @@ export default function ProblemsPanel({
     setRunning(true);
     setError('');
     setOutput('');
-    const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected });
-    setRunning(false);
-    if (!result) { setError('Package tasks are unavailable.'); return; }
-    if (result.cancelled) { onStatus?.('Task cancelled.'); return; }
-    setProblems(result.problems || []);
-    setOutput(result.outputExcerpt || '');
-    if (!result.success && result.error) setError(result.error);
-    const code = result.exitCode == null ? '' : ` (exit ${result.exitCode})`;
-    onStatus?.(`${selected}: ${result.problems?.length || 0} problem${result.problems?.length === 1 ? '' : 's'}${code}`);
+    try {
+      const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected });
+      if (!result) { setError('Package tasks are unavailable.'); return; }
+      if (result.cancelled) { onStatus?.('Task cancelled.'); return; }
+      setProblems(result.problems || []);
+      setOutput(result.outputExcerpt || '');
+      if (!result.success && result.error) setError(result.error);
+      const code = result.exitCode == null ? '' : ` (exit ${result.exitCode})`;
+      onStatus?.(`${selected}: ${result.problems?.length || 0} problem${result.problems?.length === 1 ? '' : 's'}${code}`);
+    } catch {
+      setError('Could not run the package task. Refresh the scripts and try again.');
+    } finally {
+      setRunning(false);
+    }
   };
 
   return (

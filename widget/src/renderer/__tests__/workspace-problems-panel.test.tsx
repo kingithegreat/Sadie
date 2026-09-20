@@ -16,3 +16,22 @@ test('runs the selected script and opens a problem at its exact line', async () 
   expect(open).toHaveBeenCalledWith('C:\\fixture\\broken.ts', 7);
   await waitFor(() => expect(screen.getByText(/broken.ts:7:3/)).toBeInTheDocument());
 });
+
+test('shows an IPC failure and allows the selected task to be retried', async () => {
+  const run = jest.fn()
+    .mockRejectedValueOnce(new Error('Fixture IPC failure'))
+    .mockResolvedValueOnce({ success: true, exitCode: 0, problems: [] });
+  (window as any).electron = {
+    workspaceTaskList: jest.fn(async () => ({ success: true, tasks: [{ name: 'check', command: 'tsc' }] })),
+    workspaceTaskRun: run,
+  };
+  render(<ProblemsPanel root={'C:\\fixture'} onOpenFile={jest.fn()} />);
+  await screen.findByRole('option', { name: 'check' });
+  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not run the package task');
+  expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});

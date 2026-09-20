@@ -38,6 +38,8 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
+IDE-11 root integration checkpoint: semantic refresh `532fcd5` preserves main `6b939e5` (clipboard + IDE-9). Independent full widget run passed 345 suites / 4,654 tests, 31 skipped, and exited 0 after a delayed-shutdown warning; root tests passed 232/232, both typechecks/build/docs passed and lint had 0 errors/7 existing warnings. Post-refresh real Electron Tasks/Problems acceptance passed 1/1 without retries (`.kilo/artifacts/ide11-root-ui-main/`). Independent review then reproduced an IPC-rejection UI defect: Run stayed disabled without an error. The regression failed before `try/catch/finally` and passed after; updated focused suites pass 22/22 with live process-tree proof enabled and widget typecheck clean. That small final UI/test delta is newer than the full-suite checkpoint; fresh CI and final integration evidence remain required. No push/merge yet.
+
 DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates and nine E2E shards passed, and the landed tree matches tested head `3f96f3f`. The live Drive priority, owner boundaries and all original acceptance criteria remain; no runtime or owner-only gate was closed by the documentation change.
 
 | Feature | Branch | Status | Notes |
