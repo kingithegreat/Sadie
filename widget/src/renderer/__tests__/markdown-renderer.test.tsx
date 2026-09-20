@@ -5,7 +5,7 @@ import { MessageBubble } from '../components/MessageBubble';
 import type { ChatMessage } from '../types';
 
 // Mock clipboard via Electron's preload bridge
-const writeClipboard = jest.fn();
+const writeClipboard = jest.fn().mockResolvedValue({ success: true });
 beforeAll(() => {
   (window as any).electron = { ...(window as any).electron, writeClipboard };
 });
@@ -58,7 +58,7 @@ describe('MessageBubble markdown renderer', () => {
     fireEvent.click(codeBlockCopyBtns[0]);
 
     await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith('const x = 1;'));
-    expect(screen.getByText('Copied')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Copied')).toBeInTheDocument());
   });
 
   test('renders bold text', () => {

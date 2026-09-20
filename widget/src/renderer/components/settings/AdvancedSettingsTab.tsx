@@ -31,6 +31,7 @@ export default function AdvancedSettingsTab() {
     sysCheckError,
     runSystemCheck,
     reportCopied,
+    reportCopyFailed,
     copySupportReport,
     gpuInfo,
     handleDetectGpu,
@@ -674,7 +675,7 @@ export default function AdvancedSettingsTab() {
             </button>
             <Tooltip content="Copy a summary of how HomeBot is running, to paste into a support message">
               <button type="button" className="button button-cancel" style={{ marginTop: 8, marginLeft: 8 }} onClick={() => { void copySupportReport(); }}>
-                {reportCopied ? '\u2713 Copied' : '\ud83d\udccb Copy support report'}
+                {reportCopied ? '\u2713 Copied' : reportCopyFailed ? 'Copy failed' : '\ud83d\udccb Copy support report'}
               </button>
             </Tooltip>
           </div>
