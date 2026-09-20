@@ -16,6 +16,8 @@ import { startSupervisorService, SupervisorServiceHandle } from './supervisor-se
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
+import { registerWorkspaceTaskIpc } from './workspace-task-ipc';
+import { closeAllWorkspaceTasks } from './workspace-tasks';
 import { registerProblemReportIpc } from './problem-report-ipc';
 import { registerWhisperIpc } from './speech/whisper-ipc';
 import { startAssistantBridge, stopAssistantBridge, CODING_TOOLS } from './assistant-bridge';
@@ -349,6 +351,7 @@ app.whenReady().then(async () => {
   // Explorer + code editor. Shares the home-directory sandbox with the
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
+  registerWorkspaceTaskIpc();
   // Settings → Report a problem: a local, secret-free text report the tester chooses to share.
   registerProblemReportIpc();
   // Voice input: Whisper runs here, not in the renderer (whose CSP blocks the model download).
@@ -634,6 +637,7 @@ app.whenReady().then(async () => {
 });
 
 app.on('before-quit', () => {
+  try { closeAllWorkspaceTasks(); } catch (e) { safeCatch(e); }
   try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
   try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
   globalShortcut.unregisterAll();

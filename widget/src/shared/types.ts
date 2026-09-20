@@ -172,6 +172,45 @@ export interface WorkspaceEntry {
   size: number;
 }
 
+/** One package.json script offered by the Workspace Tasks view. */
+export interface WorkspacePackageTask {
+  name: string;
+  command: string;
+}
+
+/** A compiler/linter diagnostic whose path was validated by main. */
+export interface WorkspaceProblem {
+  path: string;
+  /** False when a tool reported a missing/out-of-project file. */
+  clickable?: boolean;
+  file: string;
+  line: number;
+  column: number;
+  severity: 'error' | 'warning';
+  source: 'typescript' | 'eslint';
+  code?: string;
+  message: string;
+}
+
+export interface WorkspaceTaskListResult {
+  success: boolean;
+  projectDir?: string;
+  tasks?: WorkspacePackageTask[];
+  error?: string;
+}
+
+export interface WorkspaceTaskRunResult {
+  /** The request completed. A task may still have a non-zero exitCode. */
+  success: boolean;
+  cancelled?: boolean;
+  timedOut?: boolean;
+  exitCode?: number | null;
+  durationMs?: number;
+  problems?: WorkspaceProblem[];
+  outputExcerpt?: string;
+  error?: string;
+}
+
 /** One streamed chunk of output from an interactive terminal session. */
 export interface TerminalOutputChunk {
   sessionId: string;
@@ -1047,6 +1086,9 @@ export interface ElectronAPI {
     skipped?: Array<{ line: number; reason: string }>;
     error?: string;
   }>;
+  /** IDE-11: package scripts and parsed compiler/linter Problems. */
+  workspaceTaskList?: (args: { projectDir: string }) => Promise<WorkspaceTaskListResult>;
+  workspaceTaskRun?: (args: { projectDir: string; scriptName: string }) => Promise<WorkspaceTaskRunResult>;
   // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
   workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
     staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;

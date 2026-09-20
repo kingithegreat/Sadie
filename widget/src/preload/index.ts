@@ -109,7 +109,9 @@ const ALLOWED_CHANNELS = {
   GET_CONFIG_PATH: 'homebot:get-config-path',
   GET_GENERATED_IMAGE: 'homebot:get-generated-image',
   MEDIA_TRIM_CLIP: 'homebot:media:trim-clip',
-  MEDIA_SPLICE_VIDEO: 'homebot:media:splice-video'
+  MEDIA_SPLICE_VIDEO: 'homebot:media:splice-video',
+  WORKSPACE_TASK_LIST: 'homebot:workspace:tasks:list',
+  WORKSPACE_TASK_RUN: 'homebot:workspace:tasks:run',
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -603,6 +605,8 @@ const electronAPI: ElectronAPI = {
   workspaceProposals: async (): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSALS),
   workspaceProposalAccept: async (id: string, hunkIndexes: number[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_ACCEPT, id, hunkIndexes),
   workspaceProposalReject: async (id: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_REJECT, id),
+  workspaceTaskList: async (args: { projectDir: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_LIST, args),
+  workspaceTaskRun: async (args: { projectDir: string; scriptName: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_RUN, args),
 
   /** Tool calls made by the external assistant (Claude Code) via the bridge.
    *  Returns an unsubscribe function. */
