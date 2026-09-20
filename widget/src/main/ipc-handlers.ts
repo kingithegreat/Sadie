@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app, shell, dialog } from 'electron';
+import { ipcMain, BrowserWindow, app, shell, dialog, clipboard } from 'electron';
 import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager';
 import { registerBundledStudioIpc } from './modules/bundled/studio-gateway';
 import { registerModuleControlIpc } from './modules/module-ipc';
@@ -1420,6 +1420,26 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     } catch (err: any) {
       console.error('Error showing in folder:', err.message);
       return { success: false, error: err.message };
+    }
+  });
+
+  /** Write text to the OS clipboard from the trusted main process. */
+  ipcMain.handle('homebot:clipboard-write', async (event, text: unknown) => {
+    const trustedWindow = mainWindow ?? getMainWindow();
+    if (!trustedWindow || trustedWindow.isDestroyed()
+      || event.sender !== trustedWindow.webContents
+      || event.senderFrame !== trustedWindow.webContents.mainFrame) {
+      return { success: false, error: 'Clipboard request came from an untrusted window' };
+    }
+    try {
+      if (typeof text !== 'string') {
+        return { success: false, error: 'Clipboard text must be a string' };
+      }
+      clipboard.writeText(text);
+      return { success: true };
+    } catch (err: any) {
+      console.error('[IPC] clipboard-write failed:', err?.message ?? err);
+      return { success: false, error: err?.message ?? String(err) };
     }
   });
 

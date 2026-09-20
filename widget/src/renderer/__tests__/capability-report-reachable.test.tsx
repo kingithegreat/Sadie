@@ -156,6 +156,7 @@ test('surfaces image-generation and code-workspace headline pillars with remedie
 });
 
 test('Track D: renders actionable command snippet and copies to clipboard with user feedback', async () => {
+  const writeClipboard = jest.fn().mockResolvedValue({ success: true });
   const writeTextMock = jest.fn().mockResolvedValue(undefined);
   Object.assign(navigator, {
     clipboard: {
@@ -173,6 +174,7 @@ test('Track D: renders actionable command snippet and copies to clipboard with u
       fixCommand: 'winget install Ollama.Ollama',
     },
   ]);
+  (window as any).electron = { ...(window as any).electron, writeClipboard };
 
   const { getByTestId } = render(<CapabilityReport />);
   await waitFor(() => expect(getByTestId('cap-cmd-local-chat')).toBeTruthy());
@@ -182,8 +184,13 @@ test('Track D: renders actionable command snippet and copies to clipboard with u
   expect(copyBtn.textContent).toBe('Copy');
 
   fireEvent.click(copyBtn);
-  expect(writeTextMock).toHaveBeenCalledWith('winget install Ollama.Ollama');
+  expect(writeClipboard).toHaveBeenCalledWith('winget install Ollama.Ollama');
+  expect(writeTextMock).not.toHaveBeenCalled();
   await waitFor(() => expect(getByTestId('cap-copy-local-chat').textContent).toContain('Copied'));
+
+  writeClipboard.mockResolvedValueOnce({ success: false, error: 'denied' });
+  fireEvent.click(copyBtn);
+  await waitFor(() => expect(getByTestId('cap-copy-local-chat').textContent).toContain('Copy failed'));
 });
 
 test('Track D: renders direct in-app navigation button and invokes onNavigate', async () => {

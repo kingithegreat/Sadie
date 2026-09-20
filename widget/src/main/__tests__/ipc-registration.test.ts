@@ -5,6 +5,9 @@ import * as path from 'path';
 const mockUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ipc-registration-'));
 const mockEnsureWebFetchWorkflow = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockGetMediaCapabilityRegistry = jest.fn();
+const mockClipboardWriteText = jest.fn();
+const mockWebContents = { mainFrame: {} };
+const mockMainWindow = { isDestroyed: () => false, webContents: mockWebContents };
 
 // Minimal mock of electron's ipcMain to capture registrations
 const handles: Record<string, Function> = {};
@@ -17,6 +20,7 @@ jest.mock('electron', () => {
       on: jest.fn(),
     },
     BrowserWindow: jest.fn(),
+    clipboard: { writeText: (text: string) => mockClipboardWriteText(text) },
     app: {
       isPackaged: false,
       getPath: (name: string) => name === 'userData' ? mockUserData : path.join(mockUserData, name),
@@ -37,6 +41,7 @@ const { registerIpcHandlers } = require('../ipc-handlers') as typeof import('../
 describe('IPC registration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockClipboardWriteText.mockReset();
     // reset captured handles for each test
     for (const k of Object.keys(handles)) delete handles[k];
     // reset global idempotency flag used by registerIpcHandlers
@@ -97,5 +102,39 @@ describe('IPC registration', () => {
     expect(mockEnsureWebFetchWorkflow).toHaveBeenCalledTimes(1);
 
     get.mockRestore();
+  });
+
+  it('registers clipboard IPC and writes only for the trusted main frame', async () => {
+    registerIpcHandlers(mockMainWindow as any);
+    const trustedEvent = { sender: mockWebContents, senderFrame: mockWebContents.mainFrame };
+    await expect(handles['homebot:clipboard-write'](trustedEvent, 'copied from chat'))
+      .resolves.toEqual({ success: true });
+    expect(mockClipboardWriteText).toHaveBeenCalledWith('copied from chat');
+
+    const foreignEvent = { sender: {}, senderFrame: mockWebContents.mainFrame };
+    await expect(handles['homebot:clipboard-write'](foreignEvent, 'should not write'))
+      .resolves.toMatchObject({ success: false });
+    expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);
+
+    const childFrameEvent = { sender: mockWebContents, senderFrame: {} };
+    await expect(handles['homebot:clipboard-write'](childFrameEvent, 'should not write'))
+      .resolves.toMatchObject({ success: false });
+    expect(mockClipboardWriteText).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses non-string clipboard input without writing', async () => {
+    registerIpcHandlers(mockMainWindow as any);
+    const trustedEvent = { sender: mockWebContents, senderFrame: mockWebContents.mainFrame };
+    const result = await handles['homebot:clipboard-write'](trustedEvent, { nope: true });
+    expect(result).toEqual({ success: false, error: 'Clipboard text must be a string' });
+    expect(mockClipboardWriteText).not.toHaveBeenCalled();
+  });
+
+  it('reports clipboard write failures instead of throwing', async () => {
+    registerIpcHandlers(mockMainWindow as any);
+    mockClipboardWriteText.mockImplementationOnce(() => { throw new Error('clipboard is locked'); });
+    const trustedEvent = { sender: mockWebContents, senderFrame: mockWebContents.mainFrame };
+    await expect(handles['homebot:clipboard-write'](trustedEvent, 'x'))
+      .resolves.toEqual({ success: false, error: 'clipboard is locked' });
   });
 });

@@ -17,6 +17,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Capability } from '../../shared/capability-report';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 const STATE_ICON: Record<Capability['state'], string> = {
   ready: '✅',
@@ -51,20 +52,14 @@ export default function CapabilityReport({ onNavigate }: CapabilityReportProps =
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<{ id: string; ok: boolean } | null>(null);
 
   const handleCopy = useCallback(async (id: string, command: string) => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(command);
-      }
-      setCopiedId(id);
-      setTimeout(() => {
-        setCopiedId(prev => (prev === id ? null : prev));
-      }, 2000);
-    } catch {
-      // ignore copy failures in non-secure or test environments
-    }
+    const ok = await copyTextToClipboard(command);
+    setCopyState({ id, ok });
+    setTimeout(() => {
+      setCopyState(prev => (prev?.id === id && prev.ok === ok ? null : prev));
+    }, 2000);
   }, []);
 
   const load = useCallback(async () => {
@@ -158,7 +153,7 @@ export default function CapabilityReport({ onNavigate }: CapabilityReportProps =
                       aria-label="Copy command"
                       data-testid={`cap-copy-${cap.id}`}
                     >
-                      {copiedId === cap.id ? '✓ Copied' : 'Copy'}
+                      {copyState?.id === cap.id ? (copyState.ok ? '✓ Copied' : '✕ Copy failed') : 'Copy'}
                     </button>
                   </div>
                 )}

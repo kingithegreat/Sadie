@@ -919,8 +919,8 @@ export interface ElectronAPI {
   createProblemReport?: (note?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   showProblemReport?: (file: string) => Promise<{ success: boolean; error?: string }>;
 
-  // Clipboard helper (uses Electron native clipboard, works with contextIsolation)
-  writeClipboard?: (text: string) => void;
+  // Clipboard helper routed through the trusted main process.
+  writeClipboard?: (text: string) => Promise<{ success: boolean; error?: string }>;
   exportChat?: (markdown: string, format?: 'markdown' | 'docx' | 'pdf') => Promise<{ success: boolean; path?: string; error?: string }>;
   listTools?: () => Promise<{ success: boolean; tools?: { name: string; description: string; category: string }[]; error?: string }>;
   onReminderFired?: (cb: (data: { message: string; label: string }) => void) => () => void;

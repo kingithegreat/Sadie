@@ -20,6 +20,7 @@ import { isGateBlocked } from '../../../shared/upgrade';
 import { apiKeyForProvider } from '../../../shared/cloud-llm';
 import { knownModelsFor } from '../../../shared/subscription-models';
 import { defaultApiUrlFor } from '../../../shared/provider-urls';
+import { copyTextToClipboard } from '../../utils/clipboard';
 
 export interface Settings {
   alwaysOnTop: boolean;
@@ -307,6 +308,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   // Copy a combined diagnostics "support report" (perf + system check + env)
   // to the clipboard so users can paste a full snapshot when reporting issues.
   const [reportCopied, setReportCopied] = useState(false);
+  const [reportCopyFailed, setReportCopyFailed] = useState(false);
   const copySupportReport = async () => {
     const report = buildSupportReport({
       generatedAt: new Date().toISOString(),
@@ -314,13 +316,13 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       perf: perfStats,
       systemCheck: sysCheck,
     });
-    try {
-      await navigator.clipboard.writeText(report);
-      setReportCopied(true);
-      setTimeout(() => setReportCopied(false), 2000);
-    } catch {
-      /* clipboard unavailable — non-critical */
-    }
+    const ok = await copyTextToClipboard(report);
+    setReportCopied(ok);
+    setReportCopyFailed(!ok);
+    setTimeout(() => {
+      setReportCopied(false);
+      setReportCopyFailed(false);
+    }, 2000);
   };
 
   // Fetch installed Ollama models on mount
@@ -1022,6 +1024,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setSysCheckError,
     runSystemCheck,
     reportCopied,
+    reportCopyFailed,
     setReportCopied,
     copySupportReport,
     PERMISSION_DESCRIPTIONS,
