@@ -13360,6 +13360,37 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   gap: 8px;
 }
 
+.ms-colab-optin {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ms-colab-optin input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.ms-colab-optin span {
+  min-width: 0;
+  color: #cbd5e1;
+}
+
+.ms-colab-optin strong {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
 .ms-movie-project-item {
   display: flex;
   justify-content: space-between;
@@ -13375,6 +13406,12 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.ms-project-meta > div {
+  min-width: 0;
 }
 
 .ms-project-icon {
@@ -13389,8 +13426,46 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 .ms-project-path {
   font-size: 0.72rem;
-  color: var(--text-muted);
+  color: #b8c4d0;
   font-family: monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ms-colab-queue {
+  flex-basis: 100%;
+  min-width: 0;
+  margin-top: 10px;
+}
+
+.ms-colab-job-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: #cbd5e1;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  min-width: 0;
+  white-space: normal;
+}
+
+.ms-colab-job-row strong {
+  color: #fff;
+  overflow-wrap: anywhere;
+}
+
+.ms-colab-job-status {
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: #dbe7d5;
 }
 
 .ms-runner-status {

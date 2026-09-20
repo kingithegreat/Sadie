@@ -885,6 +885,12 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:movie:run', options),
   mediaMovieListProjects: async () =>
     ipcRenderer.invoke('homebot:media:movie:list-projects'),
+  mediaMovieListColabJobs: async (args: { projectDir: string }) =>
+    ipcRenderer.invoke('homebot:media:movie:colab:list', args),
+  mediaMovieCancelColabJob: async (args: { projectDir: string; ticketId: string; expectedAttempts?: number }) =>
+    ipcRenderer.invoke('homebot:media:movie:colab:cancel', args),
+  mediaMovieRetryColabJob: async (args: { projectDir: string; ticketId: string; expectedAttempts?: number }) =>
+    ipcRenderer.invoke('homebot:media:movie:colab:retry', args),
   mediaDeliverToFinished: async (payload: { episodeId?: string; jobId?: string; customDir?: string }) =>
     ipcRenderer.invoke('homebot:media:deliver-finished', payload),
   mediaListMusicTracks: async (folderOverride?: string) =>

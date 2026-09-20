@@ -395,6 +395,26 @@ export interface BrowserPanelState {
   loading: boolean;
 }
 
+export interface ColabQueueJobView {
+  ticketId: string;
+  jobId: string;
+  sceneId: string;
+  shotId: string;
+  createdAt: string;
+  attempts: number;
+  status: 'AWAITING_WORKER' | 'IMAGE_GENERATED' | 'FAILED' | 'CANCELLED';
+  error?: string;
+  outputReady: boolean;
+  canCancel: boolean;
+  canRetry: boolean;
+}
+
+export interface ColabQueueMutationArgs {
+  projectDir: string;
+  ticketId: string;
+  expectedAttempts?: number;
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -730,6 +750,21 @@ export interface ElectronAPI {
   mediaMovieListProjects?: () => Promise<{
     ok: boolean;
     projects?: Array<Record<string, unknown>>;
+    error?: string;
+  }>;
+  mediaMovieListColabJobs?: (args: { projectDir: string }) => Promise<{
+    ok: boolean;
+    jobs?: ColabQueueJobView[];
+    error?: string;
+  }>;
+  mediaMovieCancelColabJob?: (args: ColabQueueMutationArgs) => Promise<{
+    ok: boolean;
+    job?: ColabQueueJobView;
+    error?: string;
+  }>;
+  mediaMovieRetryColabJob?: (args: ColabQueueMutationArgs) => Promise<{
+    ok: boolean;
+    job?: ColabQueueJobView;
     error?: string;
   }>;
   mediaStoryboardCreate?: (data: any) => Promise<{

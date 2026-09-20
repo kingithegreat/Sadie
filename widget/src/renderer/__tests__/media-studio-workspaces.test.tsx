@@ -40,6 +40,10 @@ function setup(overrides: Record<string, any> = {}) {
     ok: true,
     report: { totalShots: 4, completedShots: 4, results: [] },
   });
+  const mediaMovieListColabJobs = jest.fn().mockResolvedValue({ ok: true, jobs: [] });
+  const mediaMovieCancelColabJob = jest.fn().mockResolvedValue({ ok: true });
+  const mediaMovieRetryColabJob = jest.fn().mockResolvedValue({ ok: true });
+  const getSettings = jest.fn().mockResolvedValue({ useCustomLLM: true });
   const getCapabilityReport = jest.fn().mockResolvedValue({
     success: true,
     capabilities: [{
@@ -58,6 +62,10 @@ function setup(overrides: Record<string, any> = {}) {
     mediaAncientPathwaysStatus,
     mediaMovieListProjects,
     mediaMovieRun,
+    mediaMovieListColabJobs: overrides.mediaMovieListColabJobs ?? mediaMovieListColabJobs,
+    mediaMovieCancelColabJob: overrides.mediaMovieCancelColabJob ?? mediaMovieCancelColabJob,
+    mediaMovieRetryColabJob: overrides.mediaMovieRetryColabJob ?? mediaMovieRetryColabJob,
+    getSettings,
     getCapabilityReport,
     onMediaAncientPathwaysProgress: jest.fn().mockReturnValue(() => {}),
     ...overrides,
@@ -69,6 +77,10 @@ function setup(overrides: Record<string, any> = {}) {
     mediaAncientPathwaysStatus,
     mediaMovieListProjects,
     mediaMovieRun,
+    mediaMovieListColabJobs: (window as any).electron.mediaMovieListColabJobs,
+    mediaMovieCancelColabJob: (window as any).electron.mediaMovieCancelColabJob,
+    mediaMovieRetryColabJob: (window as any).electron.mediaMovieRetryColabJob,
+    getSettings,
     getCapabilityReport,
   };
 }
@@ -140,6 +152,128 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
     });
 
     expect(screen.getByLabelText('Studio Quick Launch')).toBeInTheDocument();
+  });
+
+  test('manual Colab is opt-in and only a checked run enables deferred providers', async () => {
+    const { mediaMovieRun } = setup();
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => {
+      fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router'));
+    });
+
+    const route = await screen.findByRole('button', { name: /Route & Generate/i });
+    await act(async () => { fireEvent.click(route); });
+    expect(mediaMovieRun).toHaveBeenLastCalledWith({ projectDir: '/mock/proj-01' });
+
+    fireEvent.click(screen.getByLabelText('Allow manual Colab worker'));
+    await act(async () => { fireEvent.click(route); });
+    expect(mediaMovieRun).toHaveBeenLastCalledWith({ projectDir: '/mock/proj-01', allowDeferred: true });
+  });
+
+  test('shows project Colab jobs and cancel/retry calls refresh with stale-attempt guards', async () => {
+    const pending = {
+      ticketId: 'colab_ticket_shot_001_aaaa', jobId: 'aaaa', sceneId: 'scene_01', shotId: 'shot_001',
+      createdAt: '2026-09-20T00:00:00.000Z', attempts: 2, status: 'AWAITING_WORKER', error: undefined,
+      outputReady: false, canCancel: true, canRetry: false,
+    };
+    const failed = {
+      ticketId: 'colab_ticket_shot_002_bbbb', jobId: 'bbbb', sceneId: 'scene_01', shotId: 'shot_002',
+      createdAt: '2026-09-20T00:00:01.000Z', attempts: 3, status: 'FAILED', error: 'CUDA ran out of memory',
+      outputReady: true, canCancel: false, canRetry: true,
+    };
+    const controls = setup({
+      mediaMovieListColabJobs: jest.fn().mockResolvedValue({ ok: true, jobs: [pending, failed] }),
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => {
+      fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router'));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Refresh Colab queue for Imhotep at Karnak' }));
+    });
+
+    expect(screen.getByLabelText('Colab queue for Imhotep at Karnak')).toHaveTextContent('shot_001');
+    expect(screen.getByLabelText('Colab queue for Imhotep at Karnak')).toHaveTextContent('Attempt 3');
+    expect(screen.getByText('CUDA ran out of memory')).toBeInTheDocument();
+    expect(screen.getByText('Output ready')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel pending ticket' }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(/active Colab notebook may still finish/i);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel the pending ticket' })); });
+    await waitFor(() => expect(controls.mediaMovieCancelColabJob).toHaveBeenCalledWith({
+      projectDir: '/mock/proj-01', ticketId: pending.ticketId, expectedAttempts: 2,
+    }));
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    await waitFor(() => expect(controls.mediaMovieRetryColabJob).toHaveBeenCalledWith({
+      projectDir: '/mock/proj-01', ticketId: failed.ticketId, expectedAttempts: 3,
+    }));
+    expect(controls.mediaMovieListColabJobs.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('retry stays unavailable with Online off while pending-ticket cancel remains available', async () => {
+    const jobs = [
+      { ticketId: 'colab_ticket_pending', jobId: 'a', sceneId: 'scene_01', shotId: 'shot_001', createdAt: '', attempts: 1, status: 'AWAITING_WORKER', outputReady: false, canCancel: true, canRetry: false },
+      { ticketId: 'colab_ticket_failed', jobId: 'b', sceneId: 'scene_01', shotId: 'shot_002', createdAt: '', attempts: 1, status: 'FAILED', outputReady: false, canCancel: false, canRetry: true },
+    ];
+    setup({
+      getSettings: jest.fn().mockResolvedValue({ useCustomLLM: false }),
+      mediaMovieListColabJobs: jest.fn().mockResolvedValue({ ok: true, jobs }),
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router')); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Refresh Colab queue/i })); });
+
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel pending ticket' })).toBeEnabled();
+  });
+
+  test('keeps cancel and retry mutation errors visible instead of clearing them with a refresh', async () => {
+    const jobs = [
+      { ticketId: 'colab_ticket_pending', jobId: 'a', sceneId: 'scene_01', shotId: 'shot_001', createdAt: '', attempts: 1, status: 'AWAITING_WORKER', outputReady: false, canCancel: true, canRetry: false },
+      { ticketId: 'colab_ticket_failed', jobId: 'b', sceneId: 'scene_01', shotId: 'shot_002', createdAt: '', attempts: 2, status: 'FAILED', outputReady: false, canCancel: false, canRetry: true },
+    ];
+    const list = jest.fn().mockResolvedValue({ ok: true, jobs });
+    const controls = setup({
+      mediaMovieListColabJobs: list,
+      mediaMovieCancelColabJob: jest.fn().mockResolvedValue({ ok: false, error: 'Cancel snapshot is stale.' }),
+      mediaMovieRetryColabJob: jest.fn().mockResolvedValue({ ok: false, error: 'Retry needs Online access.' }),
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router')); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Refresh Colab queue/i })); });
+    const callsAfterRefresh = list.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel pending ticket' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel the pending ticket' })); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Cancel snapshot is stale.');
+    expect(controls.mediaMovieCancelColabJob).toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(callsAfterRefresh);
+
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Retry needs Online access.');
+    expect(controls.mediaMovieRetryColabJob).toHaveBeenCalled();
+    expect(list).toHaveBeenCalledTimes(callsAfterRefresh);
+  });
+
+  test('presents a cancelled ticket late output as unavailable, not ready to use', async () => {
+    setup({
+      mediaMovieListColabJobs: jest.fn().mockResolvedValue({
+        ok: true,
+        jobs: [{
+          ticketId: 'colab_ticket_cancelled', jobId: 'c', sceneId: 'scene_01', shotId: 'shot_cancelled',
+          createdAt: '', attempts: 1, status: 'CANCELLED', outputReady: false, canCancel: false, canRetry: true,
+        }],
+      }),
+    });
+    await act(async () => { render(<MediaStudioPanel />); });
+    await act(async () => { fireEvent.click(within(screen.getByLabelText('Studio Quick Launch')).getByText('Movie Router')); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /Refresh Colab queue/i })); });
+
+    const queue = screen.getByLabelText('Colab queue for Imhotep at Karnak');
+    expect(queue).toHaveTextContent('CANCELLED');
+    expect(queue).toHaveTextContent('Output not ready');
+    expect(within(queue).queryByText('Output ready')).not.toBeInTheDocument();
   });
 
   test('switching to CapCut Timeline displays NLE tools and Back button', async () => {

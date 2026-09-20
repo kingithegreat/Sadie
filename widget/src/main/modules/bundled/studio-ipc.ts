@@ -745,6 +745,51 @@ export function registerStudioIpc(
   });
 
   // ── Storyboard & Visual Deck IPC Handlers ────────────────────────────────────
+  ipcMain.handle('homebot:media:movie:colab:list', async (_e, args: { projectDir?: unknown }) => {
+    try {
+      const { listColabJobs } = await import('../../movie/colab-queue');
+      return { ok: true, jobs: listColabJobs(String(args?.projectDir ?? '')) };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not refresh the Colab queue.' };
+    }
+  });
+
+  ipcMain.handle('homebot:media:movie:colab:cancel', async (_e, args: {
+    projectDir?: unknown;
+    ticketId?: unknown;
+    expectedAttempts?: unknown;
+  }) => {
+    try {
+      const { cancelColabJob } = await import('../../movie/colab-queue');
+      const job = cancelColabJob({
+        projectDir: String(args?.projectDir ?? ''),
+        ticketId: String(args?.ticketId ?? ''),
+        expectedAttempts: args?.expectedAttempts as number | undefined,
+      });
+      return { ok: true, job };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not cancel that pending Colab ticket.' };
+    }
+  });
+
+  ipcMain.handle('homebot:media:movie:colab:retry', async (_e, args: {
+    projectDir?: unknown;
+    ticketId?: unknown;
+    expectedAttempts?: unknown;
+  }) => {
+    try {
+      const { retryColabJob } = await import('../../movie/colab-queue');
+      const job = retryColabJob({
+        projectDir: String(args?.projectDir ?? ''),
+        ticketId: String(args?.ticketId ?? ''),
+        expectedAttempts: args?.expectedAttempts as number | undefined,
+      });
+      return { ok: true, job };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not retry that Colab ticket.' };
+    }
+  });
+
   ipcMain.handle('homebot:media:storyboard:create', async (_ev, args: any) => {
     const res = await invokeTool(_ev, 'media_create_storyboard', args || {});
     return { ok: res.success, result: res.result, error: res.error };

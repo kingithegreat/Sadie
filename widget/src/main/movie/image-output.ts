@@ -40,6 +40,14 @@ function decode(bytes: Buffer): 'png' | 'jpg' {
   return png ? 'png' : 'jpg';
 }
 
+/** Validate image bytes without assigning trust to their current directory. */
+export function validateMovieImageFile(file: string): void {
+  if (typeof file !== 'string' || !path.isAbsolute(file)) throw new Error('Image output needs an absolute file path.');
+  const stat = fs.statSync(file);
+  if (!stat.isFile() || stat.size === 0 || stat.size > MAX_IMAGE_BYTES) throw new Error('Image output is not a usable file.');
+  decode(fs.readFileSync(file));
+}
+
 /** Decode first, then replace the canonical shot image with a complete file. */
 export function saveMovieShotImage(req: GenerationRequest, base64: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(req.shotId)) throw new Error('Image output has an invalid shot ID.');
@@ -76,9 +84,7 @@ export function validateMovieImageFiles(shotDir: string, files: string[]): void 
     if (typeof file !== 'string' || !path.isAbsolute(file) || !inside(root, fs.realpathSync(file))) {
       throw new Error('Image output must stay inside its shot folder.');
     }
-    const stat = fs.statSync(file);
-    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_IMAGE_BYTES) throw new Error('Image output is not a usable file.');
-    decode(fs.readFileSync(file));
+    validateMovieImageFile(file);
   }
 }
 

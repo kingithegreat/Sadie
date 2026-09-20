@@ -23,7 +23,7 @@ The [HomeBot current Drive plan](https://docs.google.com/document/d/1sh2ss0epsUx
 - **G-4: merged #400.** Matrix parallelism is 6; all nine shards and the required `e2e-all` aggregate remain. No required context was removed. Live main protection still requires `build`, `duplicate-export-guard`, `ESLint (React Hooks)`, `Permissions smoke test`, `widget`, and `e2e-all`, with strict base freshness.
 - **PROV-1 and REL-3.6:** merged as #398 and #402 respectively. Model-specific recorded-request coverage does not replace the owner-authorized live-generation check. Unused i18n scaffolding was removed with approval; Spanish UI is not a current product commitment.
 - **#390:** merged as Diagnostics-tab integration only. Full operation/shot/job recovery, working next actions, bounded retry/cancel and last-good-output/no-double-pay acceptance remain open.
-- **REL-3.4:** PR #403 is held as draft at `24614f5` pending the cancel→retry stale-worker fix, regression tests and real-app acceptance. Earlier passing tests did not cover that race. Keep the commissioned operator-assisted worker; do not delete the feature to close the gate.
+- **REL-3.4:** PR #403 now includes the cancel→retry isolation fix reviewed at `9ba803e`. Independent verification passed 90 focused tests and disposable-profile real Electron acceptance (1/1, no retries), including restart. Required CI and merged-content verification remain open. Keep the commissioned operator-assisted worker; active-notebook interruption and unified cross-pipeline recovery are not claimed.
 - **IDE-4:** local semantic integration and mutation-coverage review are in progress. Preserve IDE-9 and current API contracts. Checkpoints are same-session; restore must preserve later non-overlapping user edits or require confirmation for overlap. No full mutation-coverage or merged claim is made here.
 - **Dependency corrections:** IDE-1, IDE-2 and IDE-3 are merged (#360, #364, #378). They no longer block IDE-4/6/8/12/13, but those dependent items are not thereby complete. PROV-1 no longer blocks PROV-4 implementation; its paid live request remains an owner gate. REL-1 still needs G-1 and fresh-profile installer acceptance; G-2 is no longer its outstanding dependency.
 
@@ -159,7 +159,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | merged #388 |
 | REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #393; #389 did not remove the production exports |
 | REL-3.3 | **Dead Hardware checks:** VRAM/Model recommendations | Removed | merged #391 |
-| REL-3.4 | **Dead Colab Queue features:** `cancelColabJob`, `retryColabJob` | Wired to Media Studio UI or removed | open |
+| REL-3.4 | **Colab Queue controls:** retain the approved operator-assisted worker and make its existing cancel/retry operations reachable without accepting renderer-supplied shot paths | Movie Router requires an explicit manual-worker opt-in, lists project-scoped tickets, cancels only pending tickets, and retries failed/cancelled tickets only while Online is on | PR #403; independent 90-test and real Electron acceptance passed; required CI and merge pending |
 | REL-3.5 | **Unassigned dead-export tail:** `getOllamaTools`, `validateLicense`, `sameTextCard`, plus the REL-3.2 document exports | Each candidate rechecked on current main; zero-caller exports removed without deleting live or test-only guards | merged #393 |
 | REL-3.6 | **Unused i18n scaffolding:** the unconsumed dictionaries and `I18nProvider` mount were approved for removal; Spanish UI is not a current product commitment | Remove the unused mount, dictionaries, and self-only tests without changing the visible English UI | merged #402 |
 | REL-4 | **Crash and error reporting a tester can send:** a local log bundle via "Report a problem", with no secrets or keys included. | The bundle is created, contains recent logs, and a seeded API key does not appear in it (asserted). | merged #363 |
@@ -174,6 +174,28 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 - **PROV-2:** Codex CLI signed in with your ChatGPT account on this PC, for the live check.
 - **PROV-3 / PROV-4:** one paid live request each with your OpenAI and Google keys (images cost cents; Veo is charged per second of video).
 - **PROV-6:** whether you want Claude-drawn vector illustrations at all.
+
+### REL-3.4 acceptance limits
+
+REL-3.4 does not cancel an already-running Colab GPU cell. Cancelling marks both
+queue aliases cancelled and returns the local shot to planned. A retry preserves
+the ticket/job IDs for compatibility but creates a new attempt identity and
+attempt-specific output path. HomeBot accepts only the project-local current
+attempt, so a late output or stale alias from a cancelled/older attempt is kept
+isolated and is not ingested as the retry result. The operator may still need to
+stop the notebook manually. The existing `mediaMovieRun` path remains the
+resume/import path; a single unified recovery workflow across every Media Studio
+pipeline is still open and must not be inferred from these queue controls.
+
+The packaged-app acceptance is
+`HOMEBOT_COLAB_QUEUE_ACCEPTANCE=1 playwright test src/renderer/e2e/colab-queue-acceptance.live.e2e.spec.ts --retries=0 --workers=1`.
+It uses a disposable HOME/profile and seeded project/queue files, with no Colab,
+provider or FFmpeg execution. It exercised the rendered Movie Router through the
+real preload and guarded IPC, proved Online-off retry refusal without mutation,
+cancel tombstones across both aliases and the local ticket, a valid late output
+shown as unavailable after cancellation, Online consent through Settings,
+attempt-scoped retry persistence, and the same state after app restart. Evidence
+is retained under `.kilo/artifacts/rel34-colab-queue-e2e/`.
 
 ## Research notes (2026-09-17)
 
