@@ -328,7 +328,7 @@ export default function AdvancedSettingsTab() {
               setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
             }
           />
-          <small className="setting-hint">For GPT models and DALL-E 3 image generation. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer noopener">platform.openai.com</a></small>
+          <small className="setting-hint">For GPT models and OpenAI image generation. Get a key at <a href="https://platform.openai.com" target="_blank" rel="noreferrer noopener">platform.openai.com</a></small>
 
           <label className="setting-sub-label sp-sub-label-mt8">Google Gemini API Key</label>
           <input

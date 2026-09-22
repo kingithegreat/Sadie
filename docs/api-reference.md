@@ -407,15 +407,16 @@ Get current weather using wttr.in (no API key required).
 ---
 
 #### `image_generate`
-Generate an image from a text prompt. Auto-detects available backends: local Stable Diffusion WebUI (`localhost:7860`), ComfyUI (`localhost:8188`), DALL-E 3 (requires `OPENAI_API_KEY`), Pollinations.ai, or Stable Horde fallback.
+Generate an image from a text prompt. Tries your own local engines first (stable-diffusion.cpp, AUTOMATIC1111 on `localhost:7860`, ComfyUI on `localhost:8188`), then the free cloud services (Pollinations.ai, Stable Horde), and only last the paid OpenAI image API (`gpt-image-2.5-flare`) when an OpenAI API key is configured. A paid result reports `costMicroUsd` and the model in its metadata. Google Imagen 3 was retired by Google in November 2025 and is not offered.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `prompt` | string | ✓ | — | Image description. |
-| `width` | number | | `512` | Image width (px). |
-| `height` | number | | `512` | Image height (px). |
-| `steps` | number | | `20` | Sampling steps. |
-| `provider` | string | | `'auto'` | `'sd'`, `'comfyui'`, `'dalle3'`, or `'auto'`. |
+| `width` | number | | `512` | Image width (px), clamped to 64–1024. |
+| `height` | number | | `512` | Image height (px), clamped to 64–1024. |
+| `steps` | number | | `20` | Sampling steps, clamped to 1–50. Honoured by the local engines. |
+| `backend` | string | | `'hybrid'` | `'local'` (local engines only), `'cloud'` (free cloud services, then paid OpenAI images), or `'hybrid'` (local first, then cloud). |
+| `seed` | number | | — | Reuse one seed across several prompts to keep the results consistent with each other. Honoured by the backends that accept one. |
 
 ---
 

@@ -54,7 +54,7 @@ It combines:
 | **Browser Automation** | Automated browser interactions and content extraction |
 | **API Tool** | External HTTPS requests restricted to an approved host allowlist |
 | **Code Cloud API** | Route coding queries to OpenAI, Anthropic, OpenRouter, Groq, DeepSeek, Google AI Studio, or a custom endpoint |
-| **Image Generation** | Text-to-image via local Stable Diffusion WebUI, ComfyUI, DALL-E 3, Pollinations.ai, or Stable Horde — auto-detected with progress indicator |
+| **Image Generation** | Text-to-image via your own local engines (stable-diffusion.cpp, Stable Diffusion WebUI, ComfyUI), the free Pollinations.ai and Stable Horde services, or OpenAI's paid GPT Image model when a key is set — auto-detected with progress indicator |
 | **Sports / NBA** | Live scores, full-season results, standings, and player stats via ESPN integration |
 | **Word Documents** | Generate `.docx` files with headings, paragraphs, and formatting |
 | **Archive Ops** | ZIP archive creation, extraction, and inspection with size and path-traversal guards |

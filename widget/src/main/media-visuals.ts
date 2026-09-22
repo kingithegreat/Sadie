@@ -3,9 +3,9 @@
  *
  * The renderer takes timed segments; this produces the images that fill them.
  * It reuses HomeBot's existing image_generate tool rather than adding a
- * second image pipeline: that already tries local Stable Diffusion, then
- * Pollinations (free, no key), then Stable Horde, then DALL·E, and getting a
- * picture is not the interesting part of this file.
+ * second image pipeline: that already tries the local engines, then the free
+ * Pollinations and Stable Horde services, then OpenAI images when a key is
+ * set, and getting a picture is not the interesting part of this file.
  *
  * What IS interesting is that a video must never fail because a picture did.
  * Generation is best-effort per scene: a scene whose image fails reuses the

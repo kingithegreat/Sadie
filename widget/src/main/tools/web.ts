@@ -1432,9 +1432,9 @@ export const imageGenerateDef: ToolDefinition = {
   name: 'image_generate',
   description:
     'Generate an image from a text prompt. ' +
-    'Tries local Stable Diffusion (AUTOMATIC1111 / ComfyUI) first, ' +
-    'then Pollinations.ai (free, no API key), ' +
-    'then falls back to DALL·E if an OpenAI API key is configured. ' +
+    'Uses your own local engines first (stable-diffusion.cpp, AUTOMATIC1111, ComfyUI) when one is running, ' +
+    'then the free cloud services (Pollinations.ai, Stable Horde), ' +
+    'and finally OpenAI images (gpt-image-2.5) if an OpenAI API key is configured. ' +
     'Returns a base64-encoded image.',
   category: 'utility',
   requiresConfirmation: false,
@@ -1462,7 +1462,7 @@ export const imageGenerateDef: ToolDefinition = {
       },
       backend: {
         type: 'string',
-        description: '"local" (SD/ComfyUI only), "cloud" (Pollinations free → Stable Horde → DALL-E), or "hybrid" (local first, then cloud, default). Google Imagen 3 was retired by Google in November 2025 and is not available.',
+        description: '"local" (local engines only), "cloud" (Pollinations free → Stable Horde → paid OpenAI images), or "hybrid" (local first, then cloud, default). Google Imagen 3 was retired by Google in November 2025 and is not available.',
         enum: ['local', 'cloud', 'hybrid'],
         default: 'hybrid'
       },
@@ -1891,17 +1891,86 @@ export async function tryImagen3(prompt: string, width: number, height: number, 
   }
 }
 
-// ── Backend 3: OpenAI DALL-E 3 ───────────────────────────────────────────────
-async function tryDallE(prompt: string, width: number, height: number): Promise<string | null> {
+// ── Backend: OpenAI images ───────────────────────────────────────────────────
+// DALL·E 3 is no longer called. OpenAI's deprecations page ("2025-11-14:
+// DALL·E model snapshots") gives dall-e-2 and dall-e-3 a removal date of
+// 2026-05-12 and names the GPT Image models as the replacement. The id is still
+// printed in the API reference's model enum and in our recorded model list, so
+// this is a supersession by the vendor's schedule rather than a 404 we watched.
+// gpt-image-2.5-flare is the current fast model in the pricing page's "Image
+// generation models" table and in the image generation guide (2026-09-22). It
+// takes a plain prompt: response_format is unsupported for the GPT Image
+// models, which always answer with data[0].b64_json.
+//
+// It is billed per token, so a flat per-image price would be a guess: the
+// published rates are $5.00/1M text input, $8.00/1M image input and
+// $30.00/1M image output. The guide says to read the real figure from the
+// response's `usage`, because "token consumption can differ by model and
+// quality setting" — a 1024x1024 image is 439 output tokens at medium quality
+// but 7,024 at max, i.e. $0.013 versus $0.211.
+const OPENAI_IMAGE_MODEL = 'gpt-image-2.5-flare';
+const OPENAI_IMAGE_TEXT_INPUT_MICRO_USD_PER_TOKEN = 5;
+const OPENAI_IMAGE_IMAGE_INPUT_MICRO_USD_PER_TOKEN = 8;
+const OPENAI_IMAGE_OUTPUT_MICRO_USD_PER_TOKEN = 30;
+// Used only if a response arrives without `usage`: the top of OpenAI's own GPT
+// Image token calculator for this model (7,024 output tokens = `max` quality at
+// 1024x1024, the largest documented setting). Erring high keeps a paid image
+// from ever being reported as free.
+const OPENAI_IMAGE_COST_FALLBACK_MICRO_USD = 7024 * OPENAI_IMAGE_OUTPUT_MICRO_USD_PER_TOKEN;
+// The three named presets in the reference. It also accepts any WIDTHxHEIGHT
+// string (up to 3840px an edge), but the presets keep this consistent with the
+// other backends' size mapping.
+const OPENAI_IMAGE_SIZES = [
+  { size: '1024x1024', ratio: 1 },
+  { size: '1536x1024', ratio: 1.5 },
+  { size: '1024x1536', ratio: 1024 / 1536 }
+];
+
+/**
+ * What one OpenAI generation cost, in micro-USD, from the API's own `usage`
+ * block. Text and image input tokens bill separately from image output tokens,
+ * so they are counted separately rather than lumped into `input_tokens`.
+ */
+function openAIImageCostMicroUsd(usage: any): number {
+  const tokens = (value: unknown): number => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  // `input_tokens_details`/`output_tokens_details` are the precise split; the
+  // totals are the fallback, with input tokens billed at the text rate.
+  const textTokens = tokens(usage?.input_tokens_details?.text_tokens) || tokens(usage?.input_tokens);
+  const imageInputTokens = tokens(usage?.input_tokens_details?.image_tokens);
+  const outputTokens = tokens(usage?.output_tokens_details?.image_tokens) || tokens(usage?.output_tokens);
+
+  const cost = Math.round(
+    textTokens * OPENAI_IMAGE_TEXT_INPUT_MICRO_USD_PER_TOKEN +
+    imageInputTokens * OPENAI_IMAGE_IMAGE_INPUT_MICRO_USD_PER_TOKEN +
+    outputTokens * OPENAI_IMAGE_OUTPUT_MICRO_USD_PER_TOKEN
+  );
+  return cost > 0 ? cost : OPENAI_IMAGE_COST_FALLBACK_MICRO_USD;
+}
+
+/** The allowed OpenAI size closest to the requested aspect ratio. */
+function openAIImageSize(width: number, height: number): string {
+  const wanted = width / height;
+  return OPENAI_IMAGE_SIZES.reduce((best, candidate) =>
+    Math.abs(candidate.ratio - wanted) < Math.abs(best.ratio - wanted) ? candidate : best
+  ).size;
+}
+
+async function tryOpenAIImage(prompt: string, width: number, height: number): Promise<{ b64: string; costMicroUsd: number } | null> {
   const key = _openaiApiKey;
   if (!key) return null;
   try {
-    // DALL-E 3 supports: 1024x1024, 1792x1024, 1024x1792
-    const size = width > height ? '1792x1024' : width < height ? '1024x1792' : '1024x1024';
-    const payload = JSON.stringify({ model: 'dall-e-3', prompt, n: 1, size, response_format: 'b64_json' });
+    const payload = JSON.stringify({
+      model: OPENAI_IMAGE_MODEL,
+      prompt,
+      n: 1,
+      size: openAIImageSize(width, height)
+    });
     const res = await httpPost('https://api.openai.com/v1/images/generations', payload, { Authorization: `Bearer ${key}` }, 120000);
     const b64 = res?.data?.[0]?.b64_json as string | undefined;
-    return b64 || null;
+    return b64 ? { b64, costMicroUsd: openAIImageCostMicroUsd(res?.usage) } : null;
   } catch {
     return null;
   }
@@ -1922,6 +1991,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
 
     let image_base64: string | null = null;
     let source = '';
+    let paidCostMicroUsd = 0;
 
     if (backend === 'imagen' || backend === 'imagen-3') {
       image_base64 = await tryImagen3(prompt, width, height, seed);
@@ -1965,16 +2035,23 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
     }
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
-      // Fall back to DALL-E 3 if OpenAI key is set
-      image_base64 = await tryDallE(prompt, width, height);
-      if (image_base64) { source = 'dall-e-3'; }
-    }
-
-    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Retry Pollinations once more with backoff reset in case it was a transient failure
       _pollinationsLastFailAt = 0;
       image_base64 = await tryPollinations(prompt, width, height, seed);
       if (image_base64) { source = 'pollinations'; }
+    }
+
+    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
+      // The paid option, and deliberately the last resort: every free engine above
+      // has already been tried, so configuring an OpenAI key never bills a user for
+      // an image a free service could have drawn. This is the slot the DALL·E
+      // fallback used to occupy.
+      const openai = await tryOpenAIImage(prompt, width, height);
+      if (openai) {
+        image_base64 = openai.b64;
+        source = 'gpt-image';
+        paidCostMicroUsd = openai.costMicroUsd;
+      }
     }
 
     if (!image_base64) {
@@ -1986,13 +2063,26 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
           `3. ComfyUI: Run ComfyUI on port 8188\n` +
           `Or switch to "Hybrid" to use free cloud generation.`
         : 'All image backends failed. ' +
-          'Google AI Studio (Imagen 3), Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
+          'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
-          'For DALL-E 3, add an OpenAI API key in Settings.';
+          'For OpenAI images, add an OpenAI API key in Settings.';
       return { success: false, error: msg };
     }
 
-    return { success: true, result: { image_base64, source, metadata: { prompt, width, height } } };
+    return {
+      success: true,
+      result: {
+        image_base64,
+        source,
+        metadata: {
+          prompt,
+          width,
+          height,
+          // A paid backend reports what it cost, so a caller can show it.
+          ...(paidCostMicroUsd > 0 ? { costMicroUsd: paidCostMicroUsd, model: OPENAI_IMAGE_MODEL } : {})
+        }
+      }
+    };
   } catch (err: any) {
     return { success: false, error: `image_generate failed: ${err.message}` };
   }

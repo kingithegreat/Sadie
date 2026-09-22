@@ -92,7 +92,7 @@ The renderer supports eleven modes (`APP_MODES`), switchable via the sidebar, ke
 |---|---|---|---|
 | `chat` | Ctrl+1 | `App.tsx` (inline) | Main conversational interface |
 | `automation` | Ctrl+2 | `AutomationCenter.tsx` | Create, schedule, and run reusable automations |
-| `image` | Ctrl+3 | `ImagePanel` | AI image generation via SD WebUI / ComfyUI / DALL-E 3 / Pollinations / Stable Horde |
+| `image` | Ctrl+3 | `ImagePanel` | AI image generation via local engines (stable-diffusion.cpp / SD WebUI / ComfyUI), then Pollinations / Stable Horde, or OpenAI GPT Image when a key is set |
 | `documents` | Ctrl+4 | `DocumentViewer.tsx` | Document viewer/editor with Add to RAG and Send to Chat |
 | `quiz` | Ctrl+5 | `QuizPanel.tsx` | Interactive coding quiz |
 | `media` | — | `MediaStudioPanel.tsx` | Content Command Center: automated video rendering, podcast recaps, Ancient Pathways animation, and autonomous movie production |

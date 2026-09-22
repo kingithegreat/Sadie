@@ -190,7 +190,11 @@ export function classifyOpenAIMediaModels(
       costLabel: 'Paid usage through your OpenAI API account.',
       watermark: 'metadata',
       watermarkLabel: 'OpenAI image provenance can include C2PA metadata.',
-      // PROV-3 supplies the Image API adapter; do not make a broken frame option.
+      // OpenAI images are generated through the image_generate tool, whose paid
+      // route is gpt-image-2.5 (see tools/web.ts). That is not a storyboard frame
+      // provider: storyboard-frame-providers.ts serves frames through Google only,
+      // so offering these in the frame picker would be the broken option this
+      // entry exists to avoid. Stays empty until an OpenAI frame provider exists.
       usableIn: [],
     });
   }
