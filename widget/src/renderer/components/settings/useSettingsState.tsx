@@ -399,7 +399,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     get_news: 'Fetch news articles from configured RSS feeds.',
     list_news_feeds: 'List available news feed sources (safe).',
     get_weather: 'Get current weather and forecast for a location.',
-    image_generate: 'Generate images using AI (Stable Horde or DALL-E).',
+    image_generate: 'Generate images using AI (local engines, free cloud services, or OpenAI images).',
     // Documents
     parse_document: 'Parse uploaded documents (PDF, Word, text).',
     get_document_content: 'Read parsed document content (safe).',
