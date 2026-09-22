@@ -35,6 +35,7 @@ import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-sty
 import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 import { getMediaCapabilityRegistry } from '../provider-capability-registry';
+import { generateStoryboardShotClip } from '../movie/storyboard-video-providers';
 
 export function getStoryboardsRootDir(): string {
   const custom = process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
@@ -841,6 +842,33 @@ async function registerStoryboardReview(projectId: string, sceneId: string | und
   return { ...res, jobId, ...(warning ? { warning } : {}) };
 }
 
+// --- 5c. media_generate_storyboard_clip --------------------------------------
+
+export const mediaGenerateStoryboardClipDef: ToolDefinition = {
+  name: 'media_generate_storyboard_clip',
+  description:
+    'Generate a video clip for one storyboard shot with the connected Google Veo 3.1 model saved on this project ' +
+    '(optionally animating the shot\'s frame). Google charges per second of video with no free tier; the exact ' +
+    'estimate is shown and paid use must be confirmed in the Storyboard before the first request is made.',
+  category: 'media',
+  parameters: {
+    type: 'object',
+    properties: {
+      projectId: { type: 'string', description: 'ID of the storyboard project.' },
+      sceneId: { type: 'string', description: 'Scene ID (defaults to "scene_01").' },
+      shotId: { type: 'string', description: 'Shot ID (e.g. "shot_001").' },
+      useFrame: { type: 'boolean', description: 'Animate the shot\'s saved frame (image-to-video) instead of text-to-video. Default: true when the shot has a frame.' },
+    },
+    required: ['projectId', 'shotId'],
+  },
+};
+
+export const mediaGenerateStoryboardClipHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const res = await generateStoryboardShotClip(args as any);
+  if (!res.ok) return { success: false, error: res.error };
+  return { success: true, result: res.result };
+};
+
 // --- 6. media_breakdown_script ----------------------------------------------
 
 export const mediaBreakdownScriptDef: ToolDefinition = {
@@ -1028,6 +1056,7 @@ export const storyboardToolDefs: ToolDefinition[] = [
   mediaRenderStoryboardDef,
   mediaBreakdownScriptDef,
   mediaSetStoryboardImageDef,
+  mediaGenerateStoryboardClipDef,
 ];
 
 export const storyboardToolHandlers: Record<string, ToolHandler> = {
@@ -1039,6 +1068,7 @@ export const storyboardToolHandlers: Record<string, ToolHandler> = {
   media_render_storyboard: mediaRenderStoryboardHandler,
   media_breakdown_script: mediaBreakdownScriptHandler,
   media_set_storyboard_image: (args) => setStoryboardShotImage(args as any),
+  media_generate_storyboard_clip: (args) => generateStoryboardShotClip(args as any),
 };
 
 

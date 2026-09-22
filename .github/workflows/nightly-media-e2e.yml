@@ -88,7 +88,7 @@ jobs:
           # chain end to end, on a schedule instead of only ad hoc.
           HOMEBOT_LIVE: '1'
         run: |
-          npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts src/main/__tests__/media-render.live.test.ts --runInBand --no-coverage --forceExit
+          npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts src/main/__tests__/media-render.live.test.ts src/main/__tests__/storyboard-video-shot-render.live.test.ts --runInBand --no-coverage --forceExit
 
       - name: Upload artifacts on failure
         if: failure()

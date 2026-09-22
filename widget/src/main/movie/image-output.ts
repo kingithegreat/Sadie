@@ -76,6 +76,40 @@ export function saveMovieShotImage(req: GenerationRequest, base64: string): stri
   return output;
 }
 
+/**
+ * Decode-check first, then replace the canonical shot video with a complete file.
+ *
+ * The Movie Runner wrote video shots to video/<shotId>.mp4 but nothing saved
+ * through a provider-shaped path did, and PROV-4's Veo clips need the same
+ * staged-write/inside-home guarantees the image saver has. Veo returns MP4, so
+ * the bytes are checked for the 'ftyp' box before they are trusted.
+ */
+export function saveMovieShotVideo(req: GenerationRequest, bytes: Buffer): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(req.shotId)) throw new Error('Video output has an invalid shot ID.');
+  if (!bytes || bytes.length === 0 || bytes.length > MAX_VIDEO_BYTES) {
+    throw new Error('Video output is empty or exceeds 512 MB.');
+  }
+  if (bytes.length < 12 || bytes.subarray(4, 8).toString('latin1') !== 'ftyp') {
+    throw new Error('Video output is not an MP4 file.');
+  }
+  const root = shotRoot(req.shotDir);
+  fs.mkdirSync(root, { recursive: true });
+  const realRoot = fs.realpathSync(root);
+  const videoDir = path.join(root, 'video');
+  if (fs.existsSync(videoDir) && !inside(realRoot, fs.realpathSync(videoDir))) {
+    throw new Error('Video output folder leaves the shot through a link.');
+  }
+  fs.mkdirSync(videoDir, { recursive: true });
+  const output = path.join(videoDir, `${req.shotId}.mp4`);
+  const temporary = path.join(videoDir, `.${randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temporary, bytes, { flag: 'wx' });
+    fs.renameSync(temporary, output);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
+  return output;
+}
 /** Do not trust a provider's done flag, a filename, or a cached state alone. */
 export function validateMovieImageFiles(shotDir: string, files: string[]): void {
   if (!Array.isArray(files) || files.length === 0) throw new Error('No image output was saved.');

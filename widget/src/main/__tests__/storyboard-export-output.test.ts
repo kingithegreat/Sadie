@@ -68,7 +68,7 @@ describe('storyboard export output contract', () => {
       return {
         shotId: `shot_00${n}`, order: n, prompt: `Scene ${n}`, framing: 'wide',
         lens: '24mm', movement: 'static', durationSec: 3,
-        narration: `Narration ${n}`, status: 'IMAGE_GENERATED', frameImagePath: frame, frameStale: false,
+        narration: `Narration ${n}`, status: 'IMAGE_GENERATED', frameImagePath: frame, videoClipPath: null, frameStale: false,
       };
     });
     save();

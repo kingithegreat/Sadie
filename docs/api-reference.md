@@ -1076,7 +1076,7 @@ youtubeConnect                      youtubeConnectUpload                youtubeC
 youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
-**IPC channels, renderer → main (182)**
+**IPC channels, renderer → main (185)**
 
 ```
 homebot:__e2e_get_router_logs                   homebot:__e2e_invoke_tool_batch
@@ -1132,44 +1132,46 @@ homebot:media:reject                            homebot:media:run
 homebot:media:series-settings:delete            homebot:media:series-settings:get
 homebot:media:series-settings:list              homebot:media:series-settings:save
 homebot:media:series-settings:segment           homebot:media:splice-video
-homebot:media:storyboard:breakdown              homebot:media:storyboard:confirm-paid-frames
+homebot:media:storyboard:breakdown              homebot:media:storyboard:clip-quote
+homebot:media:storyboard:confirm-paid-frames    homebot:media:storyboard:confirm-paid-video
 homebot:media:storyboard:create                 homebot:media:storyboard:frame-providers
-homebot:media:storyboard:generate-frame         homebot:media:storyboard:get
-homebot:media:storyboard:list                   homebot:media:storyboard:render
-homebot:media:storyboard:save                   homebot:media:storyboard:set-frame-provider
-homebot:media:storyboard:set-shot-image         homebot:media:storyboard:set-video-model
-homebot:media:trim-clip                         homebot:media:youtube:cancel
-homebot:media:youtube:connect                   homebot:media:youtube:connect-upload
-homebot:media:youtube:import                    homebot:media:youtube:refresh
-homebot:media:youtube:remove                    homebot:media:youtube:status
-homebot:media:youtube:upload                    homebot:message
-homebot:modules:list                            homebot:modules:set-enabled
-homebot:n8n-test-connection                     homebot:open-browse
-homebot:open-external-url                       homebot:open-file
-homebot:open-web-service                        homebot:parse-document
-homebot:permission-response                     homebot:pull-model
-homebot:pull-model-stream                       homebot:rag-clear
-homebot:rag-index                               homebot:rag-list
-homebot:read-consent-log                        homebot:read-debug-logs
-homebot:read-permission-audit                   homebot:read-telemetry-events
-homebot:remove-feed                             homebot:reset-permissions
-homebot:resolve-active-model                    homebot:restart-app
-homebot:run-automation                          homebot:run-diagnostics
-homebot:save-conversation                       homebot:save-quiz-progress
-homebot:save-settings                           homebot:scheduler-add
-homebot:scheduler-list                          homebot:scheduler-remove
-homebot:scheduler-toggle                        homebot:sd-cpp:auto-setup
-homebot:sd-cpp:setup                            homebot:sd-cpp:status
-homebot:search-conversations                    homebot:set-active-conversation
-homebot:set-uncensored-mode                     homebot:show-in-folder
-homebot:skills-list                             homebot:skills-open-folder
-homebot:start-ollama                            homebot:start-speech-recognition
-homebot:stream-cancel                           homebot:stream-message
-homebot:toggle-widget-mode                      homebot:tts-list-voices
-homebot:tts-sample-voice                        homebot:tts-speak
-homebot:tts-stop                                homebot:unhide-feed
-homebot:update-automation                       homebot:update-message
-homebot:web-service-status                      homebot:write-document
+homebot:media:storyboard:generate-clip          homebot:media:storyboard:generate-frame
+homebot:media:storyboard:get                    homebot:media:storyboard:list
+homebot:media:storyboard:render                 homebot:media:storyboard:save
+homebot:media:storyboard:set-frame-provider     homebot:media:storyboard:set-shot-image
+homebot:media:storyboard:set-video-model        homebot:media:trim-clip
+homebot:media:youtube:cancel                    homebot:media:youtube:connect
+homebot:media:youtube:connect-upload            homebot:media:youtube:import
+homebot:media:youtube:refresh                   homebot:media:youtube:remove
+homebot:media:youtube:status                    homebot:media:youtube:upload
+homebot:message                                 homebot:modules:list
+homebot:modules:set-enabled                     homebot:n8n-test-connection
+homebot:open-browse                             homebot:open-external-url
+homebot:open-file                               homebot:open-web-service
+homebot:parse-document                          homebot:permission-response
+homebot:pull-model                              homebot:pull-model-stream
+homebot:rag-clear                               homebot:rag-index
+homebot:rag-list                                homebot:read-consent-log
+homebot:read-debug-logs                         homebot:read-permission-audit
+homebot:read-telemetry-events                   homebot:remove-feed
+homebot:reset-permissions                       homebot:resolve-active-model
+homebot:restart-app                             homebot:run-automation
+homebot:run-diagnostics                         homebot:save-conversation
+homebot:save-quiz-progress                      homebot:save-settings
+homebot:scheduler-add                           homebot:scheduler-list
+homebot:scheduler-remove                        homebot:scheduler-toggle
+homebot:sd-cpp:auto-setup                       homebot:sd-cpp:setup
+homebot:sd-cpp:status                           homebot:search-conversations
+homebot:set-active-conversation                 homebot:set-uncensored-mode
+homebot:show-in-folder                          homebot:skills-list
+homebot:skills-open-folder                      homebot:start-ollama
+homebot:start-speech-recognition                homebot:stream-cancel
+homebot:stream-message                          homebot:toggle-widget-mode
+homebot:tts-list-voices                         homebot:tts-sample-voice
+homebot:tts-speak                               homebot:tts-stop
+homebot:unhide-feed                             homebot:update-automation
+homebot:update-message                          homebot:web-service-status
+homebot:write-document
 ```
 
 **IPC channels, main → renderer (33)**

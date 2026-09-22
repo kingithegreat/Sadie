@@ -28,6 +28,8 @@ export interface AssembledShot {
   narration: string;
   status: string;
   frameImagePath: string | null;
+  /** Newest generated clip in the shot's video/ folder, when the shot is a video (PROV-4). */
+  videoClipPath: string | null;
   /** True when a frame exists but was generated from a prompt that has since changed. */
   frameStale: boolean;
   /** How this shot moves into the next one (MS-2). */
@@ -104,6 +106,20 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       }
     }
 
+    // A video shot keeps its clip in video/. Newest write wins for the same
+    // reason the frame image does: retries keep earlier attempts on disk.
+    let videoClipPath: string | null = null;
+    const vidDir = path.join(shotPath, 'video');
+    if (fs.existsSync(vidDir)) {
+      const newest = fs.readdirSync(vidDir)
+        .filter((f) => f.endsWith('.mp4') || f.endsWith('.webm'))
+        .map((f) => ({ f, mtime: fs.statSync(path.join(vidDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime || a.f.localeCompare(b.f))[0];
+      if (newest) {
+        videoClipPath = path.join(vidDir, newest.f);
+      }
+    }
+
     // Stale only when a frame exists AND we know what prompt made it AND it no
     // longer matches — a shot generated before this field existed is never
     // flagged, so existing projects don't suddenly show false warnings.
@@ -124,6 +140,7 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       narration,
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,
+      videoClipPath,
       frameStale,
       ...(isShotTransition(promptData.transition) && promptData.transition !== 'cut'
         ? { transition: promptData.transition, transitionSec: typeof promptData.transitionSec === 'number' ? promptData.transitionSec : undefined }

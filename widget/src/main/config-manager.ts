@@ -90,6 +90,7 @@ export interface Settings {
   // Storyboard frame providers the owner has confirmed paying for, keyed by
   // provider id → ISO time of the confirmation. Written only by the Storyboard UI.
   paidFrameConfirmations?: Record<string, string>;
+  paidShotVideoConfirmations?: Record<string, string>;
   // Model selection
   modelRoutingMode?: 'off' | 'prompt' | 'auto';
   chatModel?: string;
@@ -362,6 +363,7 @@ export const DEFAULT_SETTINGS: Settings = {
     media_list_storyboards: true,
     media_get_storyboard: true,
     media_generate_storyboard_frame: true,
+    media_generate_storyboard_clip: true,
     media_save_storyboard: true,
     media_set_storyboard_image: true,
     media_render_storyboard: true,
