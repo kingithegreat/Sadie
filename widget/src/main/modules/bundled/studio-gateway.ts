@@ -22,6 +22,7 @@ const signatures: Record<string, string[]> = {
   'storyboard:get': ['string'], 'storyboard:generate-frame': ['object'], 'storyboard:save': ['object'],
   'storyboard:render': ['object'], 'storyboard:breakdown': ['object'],
   'storyboard:frame-providers': [], 'storyboard:set-frame-provider': ['object'], 'storyboard:set-video-model': ['object'], 'storyboard:confirm-paid-frames': ['string'],
+  'storyboard:clip-quote': ['object'], 'storyboard:confirm-paid-video': ['string'], 'storyboard:generate-clip': ['object'],
   'youtube:status': [], 'youtube:import': [], 'youtube:connect': [],
   'youtube:connect-upload': [], 'youtube:refresh': [], 'youtube:cancel': [], 'youtube:remove': [],
   'youtube:upload': ['string', 'object'],

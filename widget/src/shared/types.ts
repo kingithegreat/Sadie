@@ -788,6 +788,9 @@ export interface ElectronAPI {
   mediaStoryboardSetFrameProvider?: (args: { projectId: string; frameProvider: StoryboardFrameProviderId }) => Promise<{ ok: boolean; frameProvider?: StoryboardFrameProviderId; error?: string }>;
   /** Save the live-listed video model future generated shots will use. */
   mediaStoryboardSetVideoModel?: (args: { projectId: string; videoModelRef: string }) => Promise<{ ok: boolean; videoModelRef?: string; error?: string }>;
+  mediaStoryboardClipQuote?: (args: { projectId: string; sceneId?: string; shotId: string }) => Promise<{ ok: boolean; quote?: { videoModelRef: string; modelLabel: string; clipDurationSec: number; pricePerSecondUsd: number; estimatedUsd: number; fromFrame: boolean }; confirmed?: boolean; error?: string }>;
+  mediaStoryboardConfirmPaidVideo?: (videoModelRef: string) => Promise<{ ok: boolean; error?: string }>;
+  mediaStoryboardGenerateClip?: (args: { projectId: string; sceneId?: string; shotId: string; useFrame?: boolean }) => Promise<{ ok: boolean; result?: { videoClipPath: string; clipDurationSec: number; costUsd: number; provider: string; message?: string }; error?: string }>;
   /** Record the owner's first-use confirmation for a paid frame provider. */
   mediaStoryboardConfirmPaidFrames?: (frameProvider: StoryboardFrameProviderId) => Promise<{ ok: boolean; error?: string }>;
   mediaStoryboardGenerateFrame?: (args: { projectId: string; sceneId?: string; shotId: string; prompt?: string }) => Promise<{

@@ -834,6 +834,28 @@ export function registerStudioIpc(
     return { ok: res.success, result: res.result, error: res.error };
   });
 
+  // PROV-4: the cost quote the confirmation dialog shows, the one-time paid
+  // confirmation, and the clip generation itself. The quote touches no network;
+  // the confirmed generate-clip call is what reaches Google, and the adapter
+  // keeps Online as a hard gate on every request it makes.
+  ipcMain.handle('homebot:media:storyboard:clip-quote', async (_ev, args: { projectId: string; sceneId?: string; shotId: string }) => {
+    const { prepareStoryboardShotClip } = await import('../../movie/storyboard-video-providers');
+    const quote = await prepareStoryboardShotClip(args || {});
+    return quote.ok
+      ? { ok: true, quote: quote.quote, confirmed: quote.confirmed }
+      : { ok: false, error: quote.error };
+  });
+
+  ipcMain.handle('homebot:media:storyboard:confirm-paid-video', async (_ev, videoModelRef: string) => {
+    const { recordPaidShotVideoConfirmation } = await import('../../movie/storyboard-video-providers');
+    return recordPaidShotVideoConfirmation(videoModelRef);
+  });
+
+  ipcMain.handle('homebot:media:storyboard:generate-clip', async (_ev, args: { projectId: string; sceneId?: string; shotId: string; useFrame?: boolean }) => {
+    const res = await invokeTool(_ev, 'media_generate_storyboard_clip', args || {});
+    return { ok: res.success, result: res.result, error: res.error };
+  });
+
   ipcMain.handle('homebot:media:storyboard:set-shot-image', async (_ev, args: { projectId: string; sceneId?: string; shotId: string; imagePath: string }) => {
     const res = await invokeTool(_ev, 'media_set_storyboard_image', args || {});
     return { ok: res.success, result: res.result, error: res.error };
