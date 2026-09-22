@@ -61,6 +61,8 @@ export interface WorkspaceTaskExecutionOptions {
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
   terminateProcessTree?: (child: ChildProcess, platform: NodeJS.Platform) => boolean | void | Promise<boolean | void>;
+  /** Renderer-supplied projectDir before canonicalisation; diagnostic click paths are returned in this raw form. */
+  rawProjectDir?: string;
 }
 
 const activeTasks = new Map<string, ChildProcess>();
@@ -216,15 +218,22 @@ export function resolveWorkspaceNpmRunner(
   throw new Error('npm was not found on PATH. Install Node.js to run package scripts.');
 }
 
-function resolveProblemPath(projectDir: string, rawPath: string): { path: string; file: string } | null {
+function resolveProblemPath(projectDir: string, rawPath: string, rawBase = projectDir): { path: string; file: string } | null {
   const cleaned = rawPath.trim().replace(/^['"]|['"]$/g, '');
   if (!cleaned || cleaned.includes('\0')) return null;
-  const candidate = path.isAbsolute(cleaned) ? path.normalize(cleaned) : path.resolve(projectDir, cleaned);
-  if (!isWithin(projectDir, candidate)) return null;
+  // The task runs with cwd = canonical project, but tsc/eslint usually print
+  // cwd-relative paths. Resolve them against the raw project root the request
+  // came from too, so the click returns a path the renderer's own lexical
+  // HOME sandbox can open (junction/8.3/symlink homes make raw != realpath).
+  const lexical = path.resolve(projectDir, cleaned);
+  if (!isWithin(projectDir, lexical)) return null;
   try {
-    const real = canonicalExistingPath(candidate);
+    const real = canonicalExistingPath(path.resolve(rawBase, cleaned));
     if (!isWithin(projectDir, real) || !fs.statSync(real).isFile()) return null;
-    return { path: real, file: path.relative(projectDir, real) || path.basename(real) };
+    const file = path.relative(projectDir, real) || path.basename(real);
+    // Raw form of the SAME verified real file; rawBase defaults to projectDir,
+    // where raw == canonical and this returns exactly the old value.
+    return { path: path.join(rawBase, file), file };
   } catch {
     return null;
   }
@@ -248,7 +257,7 @@ export class WorkspaceTaskDiagnosticParser {
   private readonly found: WorkspaceProblem[] = [];
   private readonly seen = new Set<string>();
 
-  constructor(private readonly projectDir: string) {}
+  constructor(private readonly projectDir: string, private readonly rawProjectDir = projectDir) {}
 
   push(stream: DiagnosticStream, chunk: string): void {
     let combined = this.buffers[stream] + chunk;
@@ -281,7 +290,7 @@ export class WorkspaceTaskDiagnosticParser {
     // TypeScript: src/file.ts(2,7): error TS2322: Type ...
     const ts = /^(.*)\((\d+),(\d+)\):\s*(error|warning)\s+(TS\d+):\s*(.+)$/i.exec(line);
     if (ts) {
-      const target = resolveProblemPath(this.projectDir, ts[1]) || unresolvedProblem(ts[1]);
+      const target = resolveProblemPath(this.projectDir, ts[1], this.rawProjectDir) || unresolvedProblem(ts[1]);
       this.add({ ...target, line: Number(ts[2]), column: Number(ts[3]), severity: ts[4].toLowerCase() as 'error' | 'warning', source: 'typescript', code: ts[5], message: ts[6].trim().slice(0, 2000) });
       return;
     }
@@ -289,7 +298,7 @@ export class WorkspaceTaskDiagnosticParser {
     // ESLint unix formatter: file.ts:2:7: message [Error/rule-name]
     const unix = /^(.+):(\d+):(\d+):\s*(.+?)(?:\s+\[(Error|Warning)\/([^\]]+)\])$/i.exec(line);
     if (unix) {
-      const target = resolveProblemPath(this.projectDir, unix[1]) || unresolvedProblem(unix[1]);
+      const target = resolveProblemPath(this.projectDir, unix[1], this.rawProjectDir) || unresolvedProblem(unix[1]);
       this.add({ ...target, line: Number(unix[2]), column: Number(unix[3]), severity: unix[5].toLowerCase() as 'error' | 'warning', source: 'eslint', code: unix[6], message: unix[4].trim().slice(0, 2000) });
       return;
     }
@@ -306,7 +315,7 @@ export class WorkspaceTaskDiagnosticParser {
       path.isAbsolute(trimmed) || /^(?:\.{1,2})?[\\/]/.test(trimmed) || /\.[A-Za-z0-9]+$/.test(trimmed)
     );
     if (looksLikeHeader) {
-      this.eslintFiles[stream] = resolveProblemPath(this.projectDir, trimmed) || unresolvedProblem(trimmed);
+      this.eslintFiles[stream] = resolveProblemPath(this.projectDir, trimmed, this.rawProjectDir) || unresolvedProblem(trimmed);
     } else {
       // npm banners and other unmatched output terminate the previous stylish
       // block; a later row must never inherit a stale file header.
@@ -385,7 +394,7 @@ export async function executeWorkspacePackageTask(
   const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
   const platform = options.platform || process.platform;
   const timeoutMs = Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
-  const parser = new WorkspaceTaskDiagnosticParser(current.projectDir);
+  const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
   let output = '';
   let timedOut = false;
   let aborted = false;

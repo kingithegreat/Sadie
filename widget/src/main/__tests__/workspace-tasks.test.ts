@@ -91,6 +91,20 @@ test('parses chunked ANSI TypeScript and ESLint output but rejects outside files
   ]);
 });
 
+test('returns diagnostic click paths in the raw project form when the project canonicalises differently', () => {
+  const rawProject = path.join(home, 'raw-view');
+  fs.symlinkSync(project, rawProject, process.platform === 'win32' ? 'junction' : 'dir');
+  const canonical = fs.realpathSync.native(project);
+  const parser = new WorkspaceTaskDiagnosticParser(canonical, rawProject);
+  parser.push('stdout', `broken.ts(2,7): error TS2322: Type 'number' is not assignable to type 'string'\n`);
+  parser.push('stdout', `${canonical}${path.sep}broken.ts\n  2:7  error  Wrong type  ts-rule\n`);
+  const problems = parser.finish();
+  expect(problems[0]).toMatchObject({ path: path.join(rawProject, 'broken.ts'), file: 'broken.ts', line: 2, column: 7 });
+  expect(problems[1]).toMatchObject({ path: path.join(rawProject, 'broken.ts'), file: 'broken.ts', line: 2 });
+  expect(problems[0].clickable).not.toBe(false);
+  expect(fs.realpathSync.native(problems[0].path)).toBe(path.join(canonical, 'broken.ts'));
+});
+
 test('keeps missing/outside ESLint stylish diagnostics visible and never reuses a stale header', () => {
   const parser = new WorkspaceTaskDiagnosticParser(fs.realpathSync.native(project));
   const missing = path.join(project, 'missing.ts');

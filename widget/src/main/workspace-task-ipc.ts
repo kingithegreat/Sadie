@@ -59,7 +59,13 @@ export function registerWorkspaceTaskIpc(): void {
     const abort = () => controller.abort();
     event.sender.once('destroyed', abort);
     try {
-      return await executeWorkspacePackageTask(snapshot, { signal: controller.signal });
+      return await executeWorkspacePackageTask(snapshot, {
+        signal: controller.signal,
+        // Keep the renderer's raw root: the click path must be returned in a
+        // form the renderer's lexical HOME sandbox accepts even when the
+        // project canonicalises differently (junction/8.3/symlink homes).
+        rawProjectDir: typeof args.projectDir === 'string' ? args.projectDir : undefined,
+      });
     } finally {
       event.sender.removeListener('destroyed', abort);
     }
