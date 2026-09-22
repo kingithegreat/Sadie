@@ -436,6 +436,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         narration: string;
         status: string;
         frameImagePath: string | null;
+        /** Newest generated clip, when the shot is a video (PROV-4). */
+        videoClipPath?: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
         /** How this shot moves into the next one (MS-2). */
@@ -1543,6 +1545,68 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     for (const shot of missing) {
       await handleGenerateFrame(shot.shotId, shot.prompt);
     }
+  };
+
+  /** PROV-4 — the cost is quoted and paid use confirmed before the request. */
+  const runClipGeneration = async (shotId: string, sceneId: string) => {
+    if (!selectedStoryboardId) return;
+    setGeneratingShotId(shotId);
+    setStoryboardError(null);
+    try {
+      const res = await api()?.mediaStoryboardGenerateClip?.({ projectId: selectedStoryboardId, sceneId, shotId });
+      if (res?.ok && res.result?.videoClipPath) {
+        handleUpdateShot(shotId, {
+          status: 'VIDEO_GENERATED',
+          ...(res.result.videoClipPath ? { videoClipPath: res.result.videoClipPath } : {}),
+        } as any);
+        setStoryboardMessage(res.result.message || `Generated clip for ${shotId}.`);
+        setTimeout(() => setStoryboardMessage(null), 5000);
+      } else {
+        setStoryboardError(res?.error || `Could not generate clip for ${shotId}`);
+      }
+    } catch (e: any) {
+      setStoryboardError(e?.message || `Could not generate clip for ${shotId}`);
+    } finally {
+      setGeneratingShotId(null);
+    }
+  };
+
+  const requestShotClip = (shotId: string) => {
+    if (!selectedStoryboardId) return;
+    const sceneId = activeStoryboardScene?.sceneId || 'scene_01';
+    void (async () => {
+      const quote = await api()?.mediaStoryboardClipQuote?.({ projectId: selectedStoryboardId, sceneId, shotId });
+      if (!quote?.ok || !quote.quote) {
+        setStoryboardError(quote?.error || 'Could not check the clip cost. Choose a shot video model first.');
+        return;
+      }
+      if (!quote.confirmed) {
+        confirm({
+          title: `Pay per second with ${quote.quote.modelLabel}?`,
+          body: (
+            <p>
+              This clip is about {quote.quote.clipDurationSec} seconds of video — around
+              {' '}<strong>${quote.quote.estimatedUsd.toFixed(2)}</strong>{' '}
+              (Google charges ${quote.quote.pricePerSecondUsd.toFixed(2)} per second of video and has no free tier).
+              Every clip, and every regenerate, is a separate paid request.
+            </p>
+          ),
+          confirmLabel: 'Confirm paid video',
+          onConfirm: () => {
+            void (async () => {
+              const res = await api()?.mediaStoryboardConfirmPaidVideo?.(quote.quote!.videoModelRef);
+              if (!res?.ok) {
+                setStoryboardError(res?.error || 'Paid use was not confirmed.');
+                return;
+              }
+              await runClipGeneration(shotId, sceneId);
+            })();
+          },
+        });
+        return;
+      }
+      await runClipGeneration(shotId, sceneId);
+    })();
   };
 
   const handleAddShot = () => {
@@ -5608,6 +5672,9 @@ ${shots.map((s, idx) => `
                       <div className="ms-shot-frame-guide" />
                       {shot.frameImagePath ? (
                         <>
+                          {shot.videoClipPath && (
+                            <span className="ms-shot-stale-badge" style={{ bottom: 8, top: 'auto' }}>🎬 video clip</span>
+                          )}
                           {shot.frameStale && (
                             <span className="ms-shot-stale-badge">⚠ Prompt changed — regenerate</span>
                           )}
@@ -5625,6 +5692,15 @@ ${shots.map((s, idx) => `
                               onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
                             >
                               {isGenerating ? 'Rendering…' : '↻ Regenerate Frame'}
+                            </button>
+                            <button
+                              type="button"
+                              className="ms-btn"
+                              disabled={isGenerating || !activeStoryboard.project.videoModelRef}
+                              title={activeStoryboard.project.videoModelRef ? 'Make a paid per-second Veo video clip for this shot — the cost is shown before it runs' : 'Choose a shot video model first'}
+                              onClick={() => requestShotClip(shot.shotId)}
+                            >
+                              🎬 Make Clip
                             </button>
                             <label className="ms-btn" style={{ cursor: 'pointer', margin: 0, padding: '4px 8px', fontSize: '0.76rem' }}>
                               📁 Pick Image
@@ -5662,6 +5738,16 @@ ${shots.map((s, idx) => `
                                   onClick={() => handleGenerateFrame(shot.shotId, shot.prompt)}
                                 >
                                   ⚡ Generate Frame
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ms-btn"
+                                  style={{ fontSize: '0.76rem', padding: '4px 10px' }}
+                                  disabled={isGenerating || !activeStoryboard.project.videoModelRef}
+                                  title={activeStoryboard.project.videoModelRef ? 'Make a paid per-second Veo video clip for this shot (cost shown before it runs)' : 'Choose a shot video model first'}
+                                  onClick={() => requestShotClip(shot.shotId)}
+                                >
+                                  🎬 Make Clip
                                 </button>
                                 <label className="ms-btn" style={{ cursor: 'pointer', margin: 0, padding: '4px 8px', fontSize: '0.76rem' }}>
                                   📁 Pick Image
