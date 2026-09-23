@@ -9069,6 +9069,23 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 [data-theme='light'] .ws-search-note { color: #b45309; }
 [data-theme='light'] .ws-search-error { color: #b91c1c; }
 
+.ws-sidebar-problems { width: 360px; }
+.ws-problems { display: flex; flex-direction: column; gap: 8px; padding: 6px 10px 12px; font-size: 12px; }
+.ws-problems-controls { display: flex; gap: 6px; }
+.ws-problems-controls select { min-width: 0; flex: 1; background: var(--ws-side-bg); color: inherit; border: 1px solid rgba(128,128,128,.35); border-radius: 4px; padding: 5px; }
+.ws-problems-controls button { border: 1px solid rgba(128,128,128,.35); border-radius: 4px; padding: 5px 8px; background: transparent; color: inherit; cursor: pointer; }
+.ws-problems-controls button:disabled { opacity: .5; cursor: default; }
+.ws-problems-consent, .ws-problems-count { opacity: .72; line-height: 1.4; }
+.ws-problems-error { color: #f87171; line-height: 1.4; }
+.ws-problems-list { display: flex; flex-direction: column; gap: 3px; }
+.ws-problem { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; color: inherit; background: transparent; border: 0; border-left: 3px solid #f87171; padding: 6px 7px; cursor: pointer; }
+.ws-problem.warning { border-left-color: #fbbf24; }
+.ws-problem:hover { background: rgba(128,128,128,.14); }
+.ws-problem-message { line-height: 1.35; overflow-wrap: anywhere; }
+.ws-problem-location { font-size: 10.5px; opacity: .7; overflow-wrap: anywhere; }
+.ws-problems-output pre { max-height: 180px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+[data-theme='light'] .ws-problems-error { color: #b91c1c; }
+
 /* Source Control panel */
 .scm-panel { display: flex; flex-direction: column; gap: 6px; padding: 4px 10px; font-size: 12px; }
 .scm-branch { display: flex; align-items: center; gap: 6px; }
