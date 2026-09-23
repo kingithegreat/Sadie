@@ -195,27 +195,54 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     await player.evaluate((video: HTMLVideoElement) => video.pause());
     await player.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath('studio-export-preserved.png') });
+    // Milestone A / #390 last-good-output: after the injected re-render failure,
+    // restart on the same isolated profile and prove the last-good movie path,
+    // sha256, and player remain intact (mock-free Electron proof).
+    await app.close();
+    ({ app, page } = await launchElectronApp(launchEnv, profile));
+    await waitForAppReady(page);
+    await trapSpeechNetwork(app);
+    await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    await page.getByRole('tab', { name: /Storyboard/ }).click();
+    await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
+    await expect(page.getByText(/Previous successful export.*latest attempt failed/i)).toBeVisible();
+    expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
+    const playerAfterRestart = page.getByLabel('Exported storyboard video');
+    await expect(playerAfterRestart).toBeVisible();
+    await expect.poll(() => playerAfterRestart.evaluate((video: HTMLVideoElement) => ({ width: video.videoWidth, duration: video.duration })))
+      .toEqual({ width: 1920, duration: 8 });
+    await playerAfterRestart.evaluate(async (video: HTMLVideoElement) => { await video.play(); });
+    await expect.poll(() => playerAfterRestart.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.15);
+    await playerAfterRestart.evaluate((video: HTMLVideoElement) => video.pause());
+    await page.screenshot({ path: testInfo.outputPath('studio-export-last-good-after-restart.png') });
     // Correct the edit and export a new immutable movie while the previous
     // player's file has been open. The reviewed original must remain unchanged.
+    const boardAfterRestart = page.getByRole('region', { name: 'Visual Storyboard Deck' });
+    await page.getByRole('combobox', { name: 'Select Storyboard Scene' }).selectOption('scene_02');
     await page.getByLabel('Duration for shot_01').fill('4');
     await page.getByRole('button', { name: /Save Board/ }).click();
-    await expect(board.getByRole('status')).toHaveText('Storyboard saved successfully.');
+    await expect(boardAfterRestart.getByRole('status')).toHaveText('Storyboard saved successfully.');
     const previousModified = fs.statSync(movie).mtimeMs;
     await page.getByRole('button', { name: /Render Movie/ }).click();
-    await expect(board.getByRole('status')).toContainText('Successfully rendered', { timeout: 180_000 });
+    await expect(boardAfterRestart.getByRole('status')).toContainText('Successfully rendered', { timeout: 180_000 });
     const replacementRecord = JSON.parse(fs.readFileSync(path.join(projectDir, 'project.json'), 'utf8')).latestSuccessfulOutput;
     const replacementMovie = path.join(projectDir, 'renders', replacementRecord.filename);
     expect(replacementMovie).not.toBe(movie);
     expect(fs.statSync(movie).mtimeMs).toBe(previousModified);
     expect(createHash('sha256').update(fs.readFileSync(movie)).digest('hex')).toBe(evidence.sha256);
-    await expect(player).toBeVisible();
-    await expect.poll(() => player.evaluate((video: HTMLVideoElement) => ({ width: video.videoWidth, duration: video.duration })))
+    const playerAfterRepair = page.getByLabel('Exported storyboard video');
+    await expect(playerAfterRepair).toBeVisible();
+    await expect.poll(() => playerAfterRepair.evaluate((video: HTMLVideoElement) => ({ width: video.videoWidth, duration: video.duration })))
       .toEqual({ width: 1920, duration: 8 });
     expect(await app.evaluate(() => (globalThis as any).exportSpeechAttempts)).toEqual([]);
     fs.writeFileSync(testInfo.outputPath('export-evidence.json'), JSON.stringify({
       ...evidence, replacementMovie, finalSha256: createHash('sha256').update(fs.readFileSync(replacementMovie)).digest('hex'),
       sceneCount: 2, lastSceneEditsSavedByRender: true, fullEndingPlayedWithoutLoop: true, reviewQueueReachable: true,
       reopenedAfterRestart: true, playerDecodedAndPlayed: true, failedReplacementPreserved: true, replacementWithPlayerLoaded: true,
+      milestoneALastGoodAfterRestart: true,
+      milestoneALastGoodPath: movie,
+      milestoneALastGoodSha256: evidence.sha256,
+      isolatedProfile: profile,
     }, null, 2));
   } finally {
     await app.close();
