@@ -1,3 +1,10 @@
+jest.mock('../../shared/cloud-llm', () => ({ apiKeyForProvider: jest.fn(() => '') }));
+jest.mock('../config-manager', () => ({ getSettings: jest.fn(() => ({})) }));
+jest.mock('electron', () => ({ app: { getPath: () => '/tmp', getAppPath: () => '/tmp' } }));
+jest.mock('../movie/gemini-image-adapter', () => ({
+  generateGeminiImage: jest.fn(async () => { throw new Error('Gemini not configured in this test'); }),
+  GEMINI_IMAGE_COST_MICRO_USD: 67000,
+}));
 /**
  * Image Generate Tool Tests
  *
@@ -160,6 +167,18 @@ describe('imageGenerateDef', () => {
 });
 
 describe('imageGenerateHandler', () => {
+
+  beforeEach(() => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    const { getSettings } = require('../config-manager');
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    (apiKeyForProvider as jest.Mock).mockReset().mockReturnValue('');
+    (getSettings as jest.Mock).mockReset().mockReturnValue({});
+    (generateGeminiImage as jest.Mock).mockReset().mockImplementation(async () => {
+      throw new Error('Gemini not configured in this test');
+    });
+  });
+
   test('rejects empty prompt', async () => {
     const res = await imageGenerateHandler({ prompt: '' }, {} as any);
     expect(res.success).toBe(false);
@@ -191,6 +210,20 @@ describe('imageGenerateHandler', () => {
     expect(mockGenerateImagen3).toHaveBeenCalledTimes(1);
     await expect(mockGenerateImagen3.mock.results[0].value).rejects.toMatchObject({ code: 'IMAGEN3_RETIRED' });
     expect(res.result?.source).not.toBe('imagen-3');
+  });
+
+  
+  test('hybrid mode prefers Gemini over Pollinations when a Google key is saved', async () => {
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    (apiKeyForProvider as jest.Mock).mockImplementation((_s: any, p: string) => p === 'google-ai-studio' ? 'test-gemini-key' : '');
+    (generateGeminiImage as jest.Mock).mockResolvedValue({ base64: 'Z2VtaW5pLWltYWdl', mimeType: 'image/png' });
+    mockN8nResponse({ images: [] });
+    const res = await imageGenerateHandler({ prompt: 'a harbour at dusk', backend: 'hybrid' }, {} as any);
+    expect(res.success).toBe(true);
+    expect(res.result.source).toBe('gemini-3.1-flash-image');
+    expect(generateGeminiImage).toHaveBeenCalled();
+    expect(JSON.stringify(res)).not.toMatch(/pollinations/i);
   });
 
   test('a recorded OpenAI request uses the current GPT Image model, not a retired one', async () => {

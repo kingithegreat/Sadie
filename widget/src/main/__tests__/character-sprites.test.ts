@@ -20,10 +20,15 @@ jest.mock('../config-manager', () => ({
 let mockGoogleKey = '';
 jest.mock('../../shared/cloud-llm', () => ({
   apiKeyForProvider: (_settings: any, provider: string) =>
-    provider === 'google-ai-studio' ? mockGoogleKey : '',
+    provider === 'google-ai-studio' || provider === 'google-gemini' ? mockGoogleKey : '',
 }));
 
 const mockResolveAncientPathwaysDir = jest.fn();
+const mockGenerateGeminiImage = jest.fn(async () => ({ base64: Buffer.from('FAKE_PNG_BYTES').toString('base64'), mimeType: 'image/png' }));
+jest.mock('../movie/gemini-image-adapter', () => ({
+  generateGeminiImage: (...args: any[]) => mockGenerateGeminiImage(...args),
+}));
+
 jest.mock('../ancient-pathways', () => ({
   resolveAncientPathwaysDir: () => mockResolveAncientPathwaysDir(),
 }));
@@ -64,6 +69,10 @@ import {
 } from '../tools/character-sprites';
 
 beforeEach(() => {
+    if (typeof mockGenerateGeminiImage !== 'undefined') {
+      mockGenerateGeminiImage.mockReset();
+      mockGenerateGeminiImage.mockResolvedValue({ base64: Buffer.from('FAKE_PNG_BYTES').toString('base64'), mimeType: 'image/png' });
+    }
   mockGetSettings.mockReset();
   mockSpawn.mockReset();
   mockResolveAncientPathwaysDir.mockReset();
@@ -191,6 +200,7 @@ describe('mediaGenerateSpritesHandler', () => {
   });
 
   it('returns sheetPath when Ancient Pathways is not installed locally', async () => {
+    mockGoogleKey = 'fake-gemini-key';
     // Mock Pollinations fetch
     const fakeImage = Buffer.from('FAKE_PNG_BYTES');
     mockHttpsGet.mockImplementation((_url, _opts, callback) => {
@@ -221,9 +231,7 @@ describe('mediaGenerateSpritesHandler', () => {
   });
 
   it('successfully slices and auto-rigs sprites when Ancient Pathways slicer succeeds', async () => {
-    // A Gemini key is saved, but Google retired Imagen 3: it must not be
-    // contacted (and the key must not leave the machine). The sheet comes from
-    // the existing Pollinations fallback.
+    // A Gemini key is saved: the sheet must come from Gemini (mocked here), not Pollinations.
     mockGoogleKey = 'fake-gemini-key';
     const fakeImage = Buffer.from('FAKE_PNG_BYTES');
     const requestedUrls: string[] = [];
@@ -271,18 +279,19 @@ describe('mediaGenerateSpritesHandler', () => {
       expect(res.success).toBe(true);
       expect(res.result?.spriteCount).toBe(39);
       expect(res.result?.character).toBe('cleopatra');
-      expect(res.result?.source).toBe('pollinations-flux');
+      expect(res.result?.source).toBe('gemini-3.1-flash-image');
       expect(res.result?.message).toContain('Generated and auto-rigged 39 sprites');
       expect(mockSpawn).toHaveBeenCalled();
       expect(mockHttpsRequest).not.toHaveBeenCalled(); // no Imagen POST
-      expect(requestedUrls.some(u => /googleapis|fake-gemini-key/.test(u))).toBe(false);
+      expect(requestedUrls.some(u => /googleapis|fake-gemini-key/.test(u))).toBe(false); // sheet bytes come from mocked generateGeminiImage, not raw https
     } finally {
       fs.rmSync(fakeApDir, { recursive: true, force: true });
     }
   });
 
   it('handles slicer failure cleanly and returns error message', async () => {
-    // Mock Pollinations fetch
+    mockGoogleKey = 'fake-gemini-key';
+    // Gemini sheet mocked; exercise slicer failure path
     const fakeImage = Buffer.from('FAKE_PNG_BYTES');
     mockHttpsGet.mockImplementation((_url, _opts, callback) => {
       const res = new EventEmitter() as any;
@@ -323,16 +332,8 @@ describe('mediaGenerateSpritesHandler', () => {
   });
 
   it('handles image generation failure cleanly when network errors out', async () => {
-    mockHttpsGet.mockImplementation((_url, _opts, _callback) => {
-      const req = new EventEmitter() as any;
-      req.write = jest.fn();
-      req.end = jest.fn();
-      req.destroy = jest.fn();
-      setImmediate(() => {
-        req.emit('error', new Error('Network offline'));
-      });
-      return req;
-    });
+    mockGoogleKey = 'fake-gemini-key';
+    mockGenerateGeminiImage.mockRejectedValueOnce(new Error('Network offline'));
 
     const res = await mediaGenerateSpritesHandler(
       {
@@ -345,6 +346,17 @@ describe('mediaGenerateSpritesHandler', () => {
     expect(res.success).toBe(false);
     expect(res.error).toContain('Failed to generate character model sheet');
     expect(res.error).toContain('Network offline');
+  });
+
+  it('fails clearly when no Gemini key is saved (no Pollinations fallback)', async () => {
+    mockGoogleKey = '';
+    const res = await mediaGenerateSpritesHandler(
+      { name: 'cleopatra', description: 'Ptolemaic queen' },
+      dummyContext
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Gemini API key is required|Gemini key/);
+    expect(JSON.stringify(res)).not.toMatch(/pollinations/i);
   });
 });
 
@@ -398,7 +410,7 @@ describe('mediaMeasureMouthAnchorsHandler', () => {
       const res = await mediaMeasureMouthAnchorsHandler({}, dummyContext);
       expect(res.success).toBe(true);
       expect(res.result?.output).toContain('195 hand-placed anchors');
-      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py'], expect.objectContaining({ cwd: fakeApDir }));
+      expect(mockSpawn).toHaveBeenCalledWith(expect.stringMatching(/^python3?$/), ['scripts/learn_from_anchors.py'], expect.objectContaining({ cwd: fakeApDir }));
     } finally {
       fs.rmSync(fakeApDir, { recursive: true, force: true });
     }
@@ -414,7 +426,7 @@ describe('mediaMeasureMouthAnchorsHandler', () => {
     try {
       const res = await mediaMeasureMouthAnchorsHandler({ measure: true }, dummyContext);
       expect(res.success).toBe(true);
-      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--measure'], expect.anything());
+      expect(mockSpawn).toHaveBeenCalledWith(expect.stringMatching(/^python3?$/), ['scripts/learn_from_anchors.py', '--measure'], expect.anything());
     } finally {
       fs.rmSync(fakeApDir, { recursive: true, force: true });
     }
@@ -430,7 +442,7 @@ describe('mediaMeasureMouthAnchorsHandler', () => {
     try {
       const res = await mediaMeasureMouthAnchorsHandler({ suggest: true }, dummyContext);
       expect(res.success).toBe(true);
-      expect(mockSpawn).toHaveBeenCalledWith('python', ['scripts/learn_from_anchors.py', '--suggest'], expect.anything());
+      expect(mockSpawn).toHaveBeenCalledWith(expect.stringMatching(/^python3?$/), ['scripts/learn_from_anchors.py', '--suggest'], expect.anything());
     } finally {
       fs.rmSync(fakeApDir, { recursive: true, force: true });
     }

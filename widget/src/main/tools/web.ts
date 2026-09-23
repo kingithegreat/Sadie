@@ -15,6 +15,9 @@ import * as fs from 'fs';
 import * as childProcess from 'child_process';
 import { app } from 'electron';
 import { isE2E } from '../env';
+import { getSettings } from '../config-manager';
+import { apiKeyForProvider } from '../../shared/cloud-llm';
+import { generateGeminiImage, GEMINI_IMAGE_COST_MICRO_USD } from '../movie/gemini-image-adapter';
 import { isPrivateIPv6 } from '../utils/url-boundary';
 
 // Keep-alive agents — reuse TCP+TLS connections across requests
@@ -1433,8 +1436,8 @@ export const imageGenerateDef: ToolDefinition = {
   description:
     'Generate an image from a text prompt. ' +
     'Uses your own local engines first (stable-diffusion.cpp, AUTOMATIC1111, ComfyUI) when one is running, ' +
-    'then the free cloud services (Pollinations.ai, Stable Horde), ' +
-    'and finally OpenAI images (gpt-image-2.5) if an OpenAI API key is configured. ' +
+    'then Gemini (gemini-3.1-flash-image) when a Google/Gemini key is saved, then Stable Horde, ' +
+    'and finally OpenAI images (gpt-image-2.5) if an OpenAI API key is configured. Pollinations is not used as an automatic fallback. ' +
     'Returns a base64-encoded image.',
   category: 'utility',
   requiresConfirmation: false,
@@ -1462,7 +1465,7 @@ export const imageGenerateDef: ToolDefinition = {
       },
       backend: {
         type: 'string',
-        description: '"local" (local engines only), "cloud" (Pollinations free → Stable Horde → paid OpenAI images), or "hybrid" (local first, then cloud, default). Google Imagen 3 was retired by Google in November 2025 and is not available.',
+        description: '"local" (local engines only), "cloud" (Gemini when keyed → Stable Horde → paid OpenAI images), or "hybrid" (local first, then cloud, default). Google Imagen 3 was retired by Google in November 2025 and is not available. Pollinations is not an automatic fallback.',
         enum: ['local', 'cloud', 'hybrid'],
         default: 'hybrid'
       },
@@ -1878,6 +1881,21 @@ export async function trySDCpp(prompt: string, width: number, height: number, st
 }
 
 // ── Backend 2.5: Google AI Studio Imagen 3 ───────────────────────────────────
+
+// ── Backend: Gemini image (default cloud engine when a Google/Gemini key is saved) ──
+async function tryGeminiImage(prompt: string, width: number, height: number): Promise<{ b64: string; costMicroUsd: number } | null> {
+  try {
+    const settings = getSettings() as any;
+    const key = apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
+    if (!key) return null;
+    const { base64 } = await generateGeminiImage(prompt, width, height);
+    return base64 ? { b64: base64, costMicroUsd: GEMINI_IMAGE_COST_MICRO_USD } : null;
+  } catch (err: any) {
+    console.warn('[ImageGen] Gemini failed:', err?.message || err);
+    return null;
+  }
+}
+
 export async function tryImagen3(prompt: string, width: number, height: number, seed?: number): Promise<string | null> {
   try {
     const { generateImagen3 } = await import('./imagen');
@@ -2022,10 +2040,16 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       if (image_base64) { source = 'imagen-3'; }
     }
 
+
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
-      // Try Pollinations.ai — free, no API key required
-      image_base64 = await tryPollinations(prompt, width, height, seed);
-      if (image_base64) { source = 'pollinations'; }
+      // Gemini is the default cloud engine when a Google/Gemini key is saved.
+      // Failures surface; Pollinations is not used as a silent fallback.
+      const gemini = await tryGeminiImage(prompt, width, height);
+      if (gemini) {
+        image_base64 = gemini.b64;
+        source = 'gemini-3.1-flash-image';
+        paidCostMicroUsd = gemini.costMicroUsd;
+      }
     }
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
@@ -2034,12 +2058,6 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       if (image_base64) { source = 'stable-horde'; }
     }
 
-    if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
-      // Retry Pollinations once more with backoff reset in case it was a transient failure
-      _pollinationsLastFailAt = 0;
-      image_base64 = await tryPollinations(prompt, width, height, seed);
-      if (image_base64) { source = 'pollinations'; }
-    }
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // The paid option, and deliberately the last resort: every free engine above
@@ -2063,9 +2081,9 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
           `3. ComfyUI: Run ComfyUI on port 8188\n` +
           `Or switch to "Hybrid" to use free cloud generation.`
         : 'All image backends failed. ' +
-          'Pollinations.ai and Stable Horde (both free) were tried — check your internet connection. ' +
+          'Gemini (when a key is saved) and Stable Horde were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
-          'For OpenAI images, add an OpenAI API key in Settings.';
+          'For Gemini images, add a Google AI Studio key in Settings. For OpenAI images, add an OpenAI API key in Settings.';
       return { success: false, error: msg };
     }
 
@@ -2079,7 +2097,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
           width,
           height,
           // A paid backend reports what it cost, so a caller can show it.
-          ...(paidCostMicroUsd > 0 ? { costMicroUsd: paidCostMicroUsd, model: OPENAI_IMAGE_MODEL } : {})
+          ...(paidCostMicroUsd > 0 ? { costMicroUsd: paidCostMicroUsd, model: source === 'gemini-3.1-flash-image' ? 'gemini-3.1-flash-image' : OPENAI_IMAGE_MODEL } : {})
         }
       }
     };

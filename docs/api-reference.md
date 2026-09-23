@@ -407,7 +407,7 @@ Get current weather using wttr.in (no API key required).
 ---
 
 #### `image_generate`
-Generate an image from a text prompt. Tries your own local engines first (stable-diffusion.cpp, AUTOMATIC1111 on `localhost:7860`, ComfyUI on `localhost:8188`), then the free cloud services (Pollinations.ai, Stable Horde), and only last the paid OpenAI image API (`gpt-image-2.5-flare`) when an OpenAI API key is configured. A paid result reports `costMicroUsd` and the model in its metadata. Google Imagen 3 was retired by Google in November 2025 and is not offered.
+Generate an image from a text prompt. Tries your own local engines first (stable-diffusion.cpp, AUTOMATIC1111 on `localhost:7860`, ComfyUI on `localhost:8188`), then Gemini (`gemini-3.1-flash-image`) when a Google AI Studio / Gemini key is saved, then Stable Horde, and finally the paid OpenAI image API (`gpt-image-2.5-flare`) when an OpenAI API key is configured. A paid result reports `costMicroUsd` and the model in its metadata. Pollinations is not used as an automatic fallback. Google Imagen 3 was retired by Google in November 2025 and is not offered.
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
