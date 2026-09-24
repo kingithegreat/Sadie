@@ -12,6 +12,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { getSettings } from '../config-manager';
+import { apiKeyForProvider } from '../../shared/cloud-llm';
 import {
   MovieProjectRunner,
   type MovieProject,
@@ -53,6 +55,19 @@ function readProjectMeta(file: string): Record<string, any> {
  * Auto-Director. Only listed options are accepted, and saving a paid choice
  * grants nothing: it still needs the owner's confirmation in the Storyboard.
  */
+
+/** When a Gemini key is saved, new/unset storyboards default to Gemini (picker remains an override). */
+export function defaultStoryboardFrameProvider(): 'gemini' | undefined {
+  try {
+    const settings = getSettings() as any;
+    const key = apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
+    return key ? 'gemini' : undefined;
+  } catch {
+    // Outside Electron (unit tests, tools-only) there is no app.getPath — treat as no key.
+    return undefined;
+  }
+}
+
 export async function setStoryboardFrameProvider(args: { projectId?: unknown; frameProvider?: unknown }): Promise<ToolResult> {
   const projectId = String(args?.projectId ?? '').trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
@@ -167,7 +182,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
   const projectDir = path.join(rootDir, projectId);
 
   try {
-    const projectMeta: MovieProject = {
+    const projectMeta: MovieProject & { frameProvider?: string } = {
       projectId,
       name: title,
       createdAt: new Date().toISOString(),
@@ -178,6 +193,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
+      frameProvider: (typeof args.frameProvider === 'string' ? args.frameProvider : defaultStoryboardFrameProvider()) as any,
     };
 
     MovieProjectRunner.createProject(projectDir, projectMeta, []);
@@ -476,9 +492,26 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     // Frames are made only by the provider the owner chose for this project —
     // never by automatic routing, which could reach a paid or watermarking service.
     const projectMetaPath = path.join(rootDir, projectId, 'project.json');
-    const chosen = readProjectMeta(projectMetaPath).frameProvider;
+    let chosen = readProjectMeta(projectMetaPath).frameProvider;
     if (!isStoryboardFrameProviderId(chosen)) {
-      return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+      // Auto-default only when unset. An explicit retired/invalid value (e.g. Imagen)
+      // must ask the owner to choose again — never silently swap to Gemini.
+      const unset = chosen == null || chosen === '';
+      if (unset) {
+        const auto = defaultStoryboardFrameProvider();
+        if (auto) {
+          chosen = auto;
+          try {
+            const meta = readProjectMeta(projectMetaPath);
+            const staged = projectMetaPath + '.tmp';
+            fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: auto, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+            fs.renameSync(staged, projectMetaPath);
+          } catch { /* best-effort persist */ }
+        }
+      }
+      if (!isStoryboardFrameProviderId(chosen)) {
+        return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+      }
     }
     const available = await resolveAvailableStoryboardFrameProvider(chosen);
     if (!available) return { success: false, error: 'That frame model is no longer available to this connected account. Choose another one.' };

@@ -142,6 +142,7 @@ export const KNOWN_PERMISSION_COPY: Record<string, PermissionCopy> = {
   media_narrate: { label: 'Record narration', detail: 'Turn a video script into an audio file using the built-in voice. Nothing is uploaded.' },
   media_narrate_clip: { label: 'Narrate one of your videos', detail: 'Watch a video clip already on this machine, write a commentary for it and save a narrated copy beside it. The clip is analysed with your Google AI Studio key; nothing else is uploaded.' },
    media_generate_sprites: { label: 'Generate character sprites', detail: 'Generate a 2D animation character model sheet, slice it into transparent sprites and register them for video animation. Uses your Google AI Studio key if configured.' },
+  media_generate_rig_parts: { label: 'Generate cutout-rig parts', detail: 'Paint jointed cutout limbs and a finished under-layer plate with Gemini, staged under HomeBot userData. Never writes Ancient Pathways.' },
    media_measure_mouth_anchors: { label: 'Measure mouth anchors', detail: 'Run the Ancient Pathways mouth anchor audit to measure where mouth anchors sit on each character\'s face and compare them to Aden\'s hand-placed anchors. Read-only — reports only.' },
   media_write_script: { label: 'Write a video script', detail: 'Research a video and write its narration using your configured model.' },
   media_render: { label: 'Render a video', detail: 'Combine the narration, captions and a background into a video file on your machine. Nothing is uploaded.' },
