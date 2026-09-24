@@ -58,9 +58,14 @@ function readProjectMeta(file: string): Record<string, any> {
 
 /** When a Gemini key is saved, new/unset storyboards default to Gemini (picker remains an override). */
 export function defaultStoryboardFrameProvider(): 'gemini' | undefined {
-  const settings = getSettings() as any;
-  const key = apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
-  return key ? 'gemini' : undefined;
+  try {
+    const settings = getSettings() as any;
+    const key = apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
+    return key ? 'gemini' : undefined;
+  } catch {
+    // Outside Electron (unit tests, tools-only) there is no app.getPath — treat as no key.
+    return undefined;
+  }
 }
 
 export async function setStoryboardFrameProvider(args: { projectId?: unknown; frameProvider?: unknown }): Promise<ToolResult> {
@@ -489,16 +494,22 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     const projectMetaPath = path.join(rootDir, projectId, 'project.json');
     let chosen = readProjectMeta(projectMetaPath).frameProvider;
     if (!isStoryboardFrameProviderId(chosen)) {
-      const auto = defaultStoryboardFrameProvider();
-      if (auto) {
-        chosen = auto;
-        try {
-          const meta = readProjectMeta(projectMetaPath);
-          const staged = projectMetaPath + '.tmp';
-          fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: auto, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
-          fs.renameSync(staged, projectMetaPath);
-        } catch { /* best-effort persist */ }
-      } else {
+      // Auto-default only when unset. An explicit retired/invalid value (e.g. Imagen)
+      // must ask the owner to choose again — never silently swap to Gemini.
+      const unset = chosen == null || chosen === '';
+      if (unset) {
+        const auto = defaultStoryboardFrameProvider();
+        if (auto) {
+          chosen = auto;
+          try {
+            const meta = readProjectMeta(projectMetaPath);
+            const staged = projectMetaPath + '.tmp';
+            fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: auto, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+            fs.renameSync(staged, projectMetaPath);
+          } catch { /* best-effort persist */ }
+        }
+      }
+      if (!isStoryboardFrameProviderId(chosen)) {
         return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
       }
     }
