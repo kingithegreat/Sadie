@@ -26,7 +26,7 @@ jest.mock('../../shared/cloud-llm', () => ({
 const mockResolveAncientPathwaysDir = jest.fn();
 const mockGenerateGeminiImage = jest.fn(async () => ({ base64: Buffer.from('FAKE_PNG_BYTES').toString('base64'), mimeType: 'image/png' }));
 jest.mock('../movie/gemini-image-adapter', () => ({
-  generateGeminiImage: (...args: any[]) => mockGenerateGeminiImage(...args),
+  generateGeminiImage: mockGenerateGeminiImage,
 }));
 
 jest.mock('../ancient-pathways', () => ({

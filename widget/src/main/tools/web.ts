@@ -26,7 +26,6 @@ const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 6, timeout: 6000
 
 // Response body size limits (bytes)
 const MAX_TEXT_RESPONSE = 2 * 1024 * 1024;   // 2 MB for HTML/text fetches
-const MAX_BINARY_RESPONSE = 10 * 1024 * 1024; // 10 MB for image buffers
 const MAX_API_RESPONSE = 5 * 1024 * 1024;     // 5 MB for API JSON responses
 
 // Search/image API keys — loaded from settings on first use
@@ -1520,79 +1519,6 @@ function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, 
     req.write(payload);
     req.end();
   });
-}
-
-// ── Buffer GET (for binary responses like images) ──────────────────────────
-function httpGetBuffer(urlStr: string, timeoutMs = 30000): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const isHttps = urlStr.startsWith('https');
-    const lib = isHttps ? https : http;
-    const req = lib.get(urlStr, { timeout: timeoutMs, agent: isHttps ? httpsAgent : httpAgent } as any, (res: any) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        resolve(httpGetBuffer(res.headers.location as string, timeoutMs));
-        return;
-      }
-      if (res.statusCode >= 400) {
-        res.resume();
-        reject(new Error(`HTTP ${res.statusCode}`));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      let bytes = 0;
-      res.on('data', (c: Buffer) => {
-        bytes += c.length;
-        if (bytes > MAX_BINARY_RESPONSE) {
-          req.destroy();
-          reject(new Error(`Response too large (>${MAX_BINARY_RESPONSE / 1024 / 1024} MB)`));
-          return;
-        }
-        chunks.push(c);
-      });
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('httpGetBuffer timed out')); });
-  });
-}
-
-// ── Backend 0: Pollinations.ai (free, no API key required) ───────────────────
-// Cache Pollinations availability so we don't burn an HTTPS round-trip on every
-// image request when the service is known-down.  The "down" state expires after
-// 5 minutes so we transparently recover when Pollinations comes back.
-let _pollinationsLastFailAt = 0;
-const POLLINATIONS_BACKOFF_MS = 5 * 60 * 1000; // 5 minutes
-
-async function tryPollinations(prompt: string, width: number, height: number, seedOverride?: number): Promise<string | null> {
-  // Skip quickly if we recently saw a failure
-  if (Date.now() - _pollinationsLastFailAt < POLLINATIONS_BACKOFF_MS) return null;
-
-  try {
-    // A caller-supplied seed keeps a SET of images consistent with each other:
-    // the Media Studio renders one video from several prompts, and with a
-    // random seed each one came back in a different style — the same ship as a
-    // different vessel from shot to shot. Same seed, different prompt, related
-    // palette and composition.
-    const seed = seedOverride ?? Math.floor(Math.random() * 1e9);
-    const encodedPrompt = encodeURIComponent(prompt);
-    const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true`;
-    const buf = await httpGetBuffer(url, 60000);
-    if (!buf || buf.length < 1024) {
-      _pollinationsLastFailAt = Date.now();
-      return null;
-    }
-    const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
-    const isJpeg = buf[0] === 0xFF && buf[1] === 0xD8;
-    const isWebp = buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46;
-    if (!isPng && !isJpeg && !isWebp) {
-      _pollinationsLastFailAt = Date.now();
-      return null;
-    }
-    _pollinationsLastFailAt = 0;
-    return buf.toString('base64');
-  } catch {
-    _pollinationsLastFailAt = Date.now();
-    return null;
-  }
 }
 
 // ── Backend 0b: Stable Horde (free community-powered distributed inference) ──

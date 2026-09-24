@@ -8,8 +8,6 @@
 
 import { spawn } from 'child_process';
 import * as fs from 'fs';
-import * as http from 'http';
-import * as https from 'https';
 import * as os from 'os';
 import * as path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
@@ -133,33 +131,9 @@ export function buildCharacterSpritePrompt(description: string, styleOverride?: 
   );
 }
 
-function httpGetBuffer(urlStr: string, timeoutMs = 60000): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const isHttps = urlStr.startsWith('https');
-    const lib = isHttps ? https : http;
-    const req = lib.get(urlStr, { timeout: timeoutMs }, (res) => {
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        resolve(httpGetBuffer(res.headers.location, timeoutMs));
-        return;
-      }
-      if (res.statusCode && res.statusCode >= 400) {
-        reject(new Error(`HTTP GET failed with status ${res.statusCode}`));
-        return;
-      }
-      const chunks: Buffer[] = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
-    });
-    req.on('error', reject);
-    req.on('timeout', () => {
-      req.destroy();
-      reject(new Error('Image fetch timed out'));
-    });
-  });
-}
 
 /**
- * Generates the sheet via Pollinations FLUX. Google's Imagen 3, previously tried
+ * Generates the sheet via Gemini when a Google/Gemini key is saved. Google's Imagen 3, previously tried
  * first when a Gemini key was saved, was retired by Google on 10 November 2025,
  * so no request is sent to it (and no key leaves the machine).
  */
