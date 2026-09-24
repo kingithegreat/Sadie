@@ -12,10 +12,8 @@
  * Output: HomeBot userData/rig-parts staging only. Never writes Ancient Pathways.
  */
 
-import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
-import sharp from 'sharp';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { resolveAncientPathwaysDir } from '../ancient-pathways';
 import {
@@ -50,6 +48,20 @@ import {
   UNDERLAYER_ASPECT,
   underlayerSockets,
 } from '../movie/rig-part-underlayer';
+
+/** Native sharp must stay off the cold-start path — static import hang packaged Electron before ready. */
+type SharpFn = typeof import('sharp').default;
+let sharpLoader: Promise<SharpFn> | null = null;
+function loadSharp(): Promise<SharpFn> {
+  if (!sharpLoader) sharpLoader = import('sharp').then((m) => m.default);
+  return sharpLoader;
+}
+
+function electronApp() {
+  // Lazy require so evaluating this module during studio boot never touches Electron bindings.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('electron') as typeof import('electron')).app;
+}
 
 const DEFAULT_PARTS = ['upper_arm_l', 'forearm_l'];
 const MAX_ATTEMPTS = 3;
@@ -121,7 +133,7 @@ export interface RigPartDeps {
 
 const defaultDeps: RigPartDeps = {
   generate: generateGeminiImageFromImages,
-  outputRoot: () => path.join(app.getPath('userData'), 'rig-parts'),
+  outputRoot: () => path.join(electronApp().getPath('userData'), 'rig-parts'),
   charactersDir: () => {
     const ap = resolveAncientPathwaysDir();
     return ap ? path.join(ap, 'workspace', 'branding', 'characters') : null;
@@ -130,17 +142,20 @@ const defaultDeps: RigPartDeps = {
 };
 
 async function toRgba(buffer: Buffer): Promise<RgbaImage> {
+  const sharp = await loadSharp();
   const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   return { width: info.width, height: info.height, data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) };
 }
 
-function png(img: RgbaImage): Promise<Buffer> {
+async function png(img: RgbaImage): Promise<Buffer> {
+  const sharp = await loadSharp();
   return sharp(Buffer.from(img.data.buffer, img.data.byteOffset, img.data.byteLength), {
     raw: { width: img.width, height: img.height, channels: 4 },
   }).png().toBuffer();
 }
 
 async function jointOverlay(img: RgbaImage, joints: Point[]): Promise<Buffer> {
+  const sharp = await loadSharp();
   const rings = joints
     .map(p => `<circle cx="${p.x}" cy="${p.y}" r="9" fill="none" stroke="#00e000" stroke-width="3"/><circle cx="${p.x}" cy="${p.y}" r="2.5" fill="#00e000"/>`)
     .join('');
