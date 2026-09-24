@@ -50,10 +50,16 @@ import {
 } from '../movie/rig-part-underlayer';
 
 /** Native sharp must stay off the cold-start path — static import hang packaged Electron before ready. */
-type SharpFn = typeof import('sharp').default;
-let sharpLoader: Promise<SharpFn> | null = null;
-function loadSharp(): Promise<SharpFn> {
-  if (!sharpLoader) sharpLoader = import('sharp').then((m) => m.default);
+type SharpModule = typeof import('sharp');
+type SharpFn = SharpModule & { default?: SharpModule };
+let sharpLoader: Promise<SharpModule> | null = null;
+function loadSharp(): Promise<SharpModule> {
+  if (!sharpLoader) {
+    sharpLoader = import('sharp').then((m) => {
+      const mod = m as SharpFn;
+      return (mod.default ?? mod) as SharpModule;
+    });
+  }
   return sharpLoader;
 }
 
