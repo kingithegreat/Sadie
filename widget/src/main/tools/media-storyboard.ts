@@ -1101,7 +1101,7 @@ export const storyboardToolHandlers: Record<string, ToolHandler> = {
   media_render_storyboard: mediaRenderStoryboardHandler,
   media_breakdown_script: mediaBreakdownScriptHandler,
   media_set_storyboard_image: (args) => setStoryboardShotImage(args as any),
-  media_generate_storyboard_clip: (args) => generateStoryboardShotClip(args as any),
+  media_generate_storyboard_clip: mediaGenerateStoryboardClipHandler,
 };
 
 
