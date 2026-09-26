@@ -47,3 +47,22 @@ IPC. They assert the settings payload passed to persistence and the App callback
 they do not prove disk persistence, a real Ollama download or a completed chat
 request. No paid request, provider access or real profile change occurred. Full
 suite/build and real Electron acceptance remain with the coordinating root agent.
+
+Root independent review and broader checks:
+
+- Production diff reviewed at `e6979acc`; root full widget lint exited 0 with
+  7 existing warnings and no errors.
+- Full Windows widget run: 335 suites / 4,601 tests passed; 11 suites failed
+  because the restricted shell refused home fixtures and subprocess work.
+  11 suites / 31 tests were pre-existing skips. Initial log retained at
+  `.kilo/finish-20260927/onboarding-widget-suite.log`.
+- Escalated rerun of the 11 affected suites in an isolated test home:
+  119/120 passed. The remaining non-repository Git control discovered the real
+  parent checkout because the test home was inside HomeBot. Moving only that
+  fixture outside every checkout gave 5/5 passing Git tests.
+- Combined verification covers all 346 executed suites / 4,652 unique tests;
+  every initial failure was recovered without changing product code or tests.
+  This is a full discovery run plus targeted environment corrections, not a
+  single all-green invocation. The 31 intentional skips remain unclaimed.
+- Logs: `onboarding-widget-blocked-rerun.log` and
+  `onboarding-workspace-git-rerun.log` under the same evidence directory.
