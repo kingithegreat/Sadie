@@ -50,10 +50,10 @@ jest.mock('../media-visuals', () => ({
 
 jest.mock('../media-qa', () => {
   const actual = jest.requireActual('../media-qa');
-  return { ...actual, inspectRender: jest.fn() };
+  return { ...actual, inspectRender: jest.fn(), grabFrame: jest.fn() };
 });
 
-import { inspectRender } from '../media-qa';
+import { inspectRender, grabFrame } from '../media-qa';
 import { renderVideo } from '../media-render';
 import { generateSceneImages } from '../media-visuals';
 import { createJob } from '../media-studio';
@@ -68,6 +68,7 @@ import {
 } from '../tools/media';
 
 const mockedInspectRender = inspectRender as jest.MockedFunction<typeof inspectRender>;
+const mockedGrabFrame = grabFrame as jest.MockedFunction<typeof grabFrame>;
 const call = (name: string, args: Record<string, unknown>) =>
   mediaToolHandlers[name](args, { executionId: 'qa-trust-test' } as any);
 
@@ -106,6 +107,8 @@ beforeEach(() => {
   testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-qa-trust-'));
   process.env.HOMEBOT_QA_TEST_USER_DATA = testRoot;
   mockedInspectRender.mockReset();
+  mockedGrabFrame.mockReset();
+  mockedGrabFrame.mockResolvedValue(Buffer.from(Array.from({ length: 64 * 64 }, (_, index) => index % 2 ? 220 : 20)));
   __resetMediaJobsForTests();
 });
 
@@ -396,6 +399,54 @@ describe('media_render output trust', () => {
     expect(readJobs()[0].scenePaths![0]).not.toBe(first.scenePaths![0]);
     expect(fs.readFileSync(readJobs()[0].scenePaths![0]!)).toEqual(fs.readFileSync(first.scenePaths![0]!));
     expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(2);
+  });
+
+  it('refuses a failed generated fallback before encoding even when captions are enabled', async () => {
+    const job = writeReadyJob('Failed scene with captions');
+    job.burnSubtitles = true;
+    writeJobs([job]);
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath, source: 'fallback-plate', error: 'provider failed' }]);
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 1.*Replace or regenerate/);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+    expect(readJobs()[0].latestExportAttempt?.status).toBe('failed');
+    expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(0);
+  });
+
+  it('checks reused scene bytes again and preserves the prior successful movie on failure', async () => {
+    const job = writeReadyJob('Reused scene quality');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const first = readJobs()[0];
+    const previousMovie = fs.readFileSync(first.renderPath!);
+    const generationCalls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    mockedGrabFrame.mockResolvedValueOnce(Buffer.alloc(64 * 64, 30));
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 1.*plain color/);
+    expect(generateSceneImages).toHaveBeenCalledTimes(generationCalls);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+    expect(readJobs()[0].renderPath).toBe(first.renderPath);
+    expect(fs.readFileSync(first.renderPath!)).toEqual(previousMovie);
+    expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(1);
+  });
+
+  it('names a missing scene file and refuses neighbour substitution before encoding', async () => {
+    const job = writeReadyJob('Missing second picture');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([
+      { index: 0, path: scenePath }, { index: 1, path: path.join(testRoot, 'missing.png') },
+    ]);
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 2.*missing/);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
   });
 
   it('keeps the saved music choice on retry and snapshots its bytes', async () => {

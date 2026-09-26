@@ -1009,7 +1009,11 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
           fallbackPlates: true,
         });
         const frozenImages = images.map((entry, index) => ({ ...entry,
-          path: entry.path ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+          path: entry.path && fs.existsSync(entry.path) ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+        // Inspect every frozen source, including cached/reused bytes whose original
+        // generation provenance may be absent. Captions cannot supply scene art.
+        const { preflightScenePictures } = await import('../media-scene-source-qa');
+        await preflightScenePictures(ffmpeg, frozenImages);
         const filled = fillMissingImages(frozenImages);
         const made = filled.filter(Boolean).length;
         // Record the slides whether or not the concat file gets built: if every
