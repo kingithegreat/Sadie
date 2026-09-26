@@ -273,3 +273,8 @@ Not done: no installer was produced and no fresh Windows profile was exercised, 
 REL-1 itself is still open. The live Drive priority queue could not be read or
 updated from this session (no Drive access), so this note is the repo-side record
 only.
+
+## 2026-09-27 - FINISH-MEDIA-QA-1 (Codex)
+| Feature | Branch | Status | Notes |
+|---|---|---|---|
+| FINISH-MEDIA-QA-1 per-shot source picture QA | claude/finish-media-qa-1 | Building - Codex | Explicit hash-bound plain-background intent in reachable shot editor; source preflight before narration/overlays; preserve last-good. Isolated worktree finish-media-qa-1. No AP/provider changes. |
