@@ -45,6 +45,14 @@ behavior. Final decode/audio/duration gates and atomic last-good storage remain
 unchanged. This does not claim semantic image quality, animation quality or
 voice quality.
 
+Source-QA failures use the shared `SCENE_PICTURE_FAILURE` identifier, persisted
+and sanitized in the failed export attempt. Only that identified failure offers
+**Regenerate scene pictures** in the normal job. Its typed IPC/tool flag bypasses
+saved scene reuse and generated-image cache for that invocation; it deletes no
+cache/source/movie files and cannot reinterpret explicit plain/supplied artwork.
+Current privacy and payment rules still apply, with no inferred paid consent.
+Public API behavior is documented in `docs/api-reference.md`.
+
 ## Verification checkpoint
 
 Before edits: ordinary render trust suite 31/31 passed. After correction:
@@ -52,12 +60,22 @@ source helper / render trust / renderer 101/101 passed; compatibility across
 media tools, scene generation and output IPC 90/90 passed. Widget typecheck
 passes; lint has zero errors and seven existing unrelated warnings.
 
+Recovery checks: 63 tests across source helper, real handler/store, IPC and
+normal UI pass. They prove rejected reused art reaches generation again with
+cache bypass, preserves originals/last-good on paid denial, and accepts corrected
+art. Unrelated provider text cannot offer the recovery action. Export-state,
+output-format and status compatibility: 32 pass. Typecheck/lint/docs pass.
+
 The opt-in `studio-scene-source-qa.live.e2e.spec.ts` exercises normal **Make the
-video** with an isolated generated-image cache. It uses a detailed control,
-then injects retained actual production failure-plate bytes into that cache and
-checks refusal, last-good hash/pointer and restart playback. Fresh generator
-failure is covered separately by the direct seam reproduction and handler
-unit test. No test-only product hook or provider call is introduced.
+video** with an isolated generated-image cache. A detailed control exports, then
+retained actual production failure-plate bytes injected into that cache are
+refused. Explicit regeneration reaches actual generator transport into a bounded
+AUTOMATIC1111-compatible loopback fixture: first response flat (refused), second
+detailed (accepted). Request counts, unchanged cache/old-movie hashes and restart
+playback are asserted. It refuses an occupied fixture port rather than touching
+an owner's service. No test-only product hook or real provider/model call is
+introduced. Fresh generator failure is covered separately by the direct seam
+reproduction and handler unit test.
 
 Actual built acceptance pending the coordinated render lane. The bounded
 six-second default auto encoder is authorized; chosen encoder is recorded.

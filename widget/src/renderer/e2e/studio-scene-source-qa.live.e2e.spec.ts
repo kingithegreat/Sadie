@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
+import { createServer, type Server } from 'http';
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { buildScenePrompt, sceneCacheKey, seedForVideo } from '../../main/media-visuals';
 import { launchFocusedStudioApp } from './helpers/focusStudioWindow';
@@ -45,6 +46,8 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
   const env = { HOMEBOT_E2E: '1', NODE_ENV: 'test', HOMEBOT_FFMPEG: ffmpeg,
     HOME: profile, USERPROFILE: profile, ANCIENT_PATHWAYS_DIR: apFixture };
   let { app, page } = await launchFocusedStudioApp(env, profile);
+  let server: Server | undefined;
+  let generationRequests = 0;
   const open = async () => {
     await waitForAppReady(page);
     await dismissFirstRun(page);
@@ -89,7 +92,45 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     await expect(page.locator('.ms-working')).toHaveCount(0);
     expect(job().renderPath).toBe(movie);
     expect(hash(movie)).toBe(movieHash);
+    expect(job().latestExportAttempt.errorCode).toBe('SCENE_PICTURE_FAILURE');
+    const rejectedCacheHash = hash(cache);
     await page.getByRole('alert').filter({ hasText: 'Check the picture for scene 1' }).screenshot({ path: testInfo.outputPath('failed-source-guidance.png') });
+    expect(await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))).toBe(profile);
+    expect(fs.existsSync(path.join(profile, 'sd-cpp'))).toBe(false);
+    // Real generator transport, authored loopback fixture: never occupy an
+    // owner's existing service or invoke any model. EADDRINUSE fails this probe.
+    server = createServer((request, response) => {
+      if (request.method !== 'POST' || request.url !== '/sdapi/v1/txt2img') {
+        response.writeHead(404); response.end(); return;
+      }
+      request.resume();
+      request.on('end', () => {
+        generationRequests++;
+        const image = generationRequests === 1 ? failedPlate : good;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ images: [fs.readFileSync(image).toString('base64')] }));
+      });
+    });
+    await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(7860, '127.0.0.1', resolve); });
+    expect(generationRequests).toBe(0);
+    await page.getByRole('button', { name: 'Regenerate scene pictures', exact: true }).click();
+    await expect.poll(() => generationRequests).toBe(1);
+    await expect.poll(() => job().latestExportAttempt?.status, { timeout: 30_000 }).toBe('failed');
+    await expect(page.locator('.ms-working')).toHaveCount(0);
+    expect(job().latestExportAttempt.errorCode).toBe('SCENE_PICTURE_FAILURE');
+    expect(hash(movie)).toBe(movieHash);
+    expect(hash(cache)).toBe(rejectedCacheHash);
+    await page.getByRole('button', { name: 'Regenerate scene pictures', exact: true }).click();
+    await expect.poll(() => generationRequests).toBe(2);
+    await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('succeeded');
+    await expect(page.locator('.ms-working')).toHaveCount(0);
+    const recoveredMovie = job().renderPath;
+    expect(recoveredMovie).not.toBe(movie);
+    expect(hash(movie)).toBe(movieHash);
+    expect(hash(cache)).toBe(rejectedCacheHash);
+    const recoveredHash = hash(recoveredMovie);
+    const recoveredFacts = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', recoveredMovie], { windowsHide: true, timeout: 30_000 }).toString());
+    run(['-i', recoveredMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('recovered-scene-contact.png')]);
     await app.close();
     ({ app, page } = await launchFocusedStudioApp(env, profile));
     await waitForAppReady(page);
@@ -101,10 +142,17 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.2);
     await player.evaluate((video: HTMLVideoElement) => video.pause());
     expect(hash(movie)).toBe(movieHash);
+    expect(job().renderPath).toBe(recoveredMovie);
+    expect(hash(recoveredMovie)).toBe(recoveredHash);
     fs.writeFileSync(testInfo.outputPath('scene-source-evidence.json'), JSON.stringify({ profile, cache, failedPlate,
       injectedPlateSha256: hash(failedPlate), goodMovie: { path: movie, sha256: movieHash },
       encoded, encoderTag: encoded.streams.find((stream: any) => stream.codec_type === 'video')?.tags?.encoder ?? null,
-      rejectedAttempt: job().latestExportAttempt, previousMoviePreserved: true, restartedPlayerPlayed: true,
-      scope: 'Actual normal Make the video UI with isolated generated-image cache control and injected production failure-plate bytes. Fresh generator failure separately exercised by direct production seam and unit test. No provider/voice/model/AP calls.' }, null, 2));
-  } finally { await app.close(); }
+      recoveredMovie: { path: recoveredMovie, sha256: recoveredHash, facts: recoveredFacts },
+      generationRequests, cacheUnchanged: hash(cache) === rejectedCacheHash,
+      previousMoviePreserved: true, restartedPlayerPlayed: true,
+      scope: 'Actual normal Make the video UI/cache rejection and explicit recovery through real generator transport into an authored loopback fixture (flat then detailed). No real provider/voice/model/AP calls; not creative quality acceptance.' }, null, 2));
+  } finally {
+    await app.close();
+    if (server?.listening) await new Promise<void>(resolve => server!.close(() => resolve()));
+  }
 });

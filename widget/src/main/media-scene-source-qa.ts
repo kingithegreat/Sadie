@@ -1,5 +1,6 @@
 import { contentStdDev, FLAT_FRAME_STDDEV, grabFrame } from './media-qa';
 import type { SceneImage } from './media-visuals';
+import { SCENE_PICTURE_FAILURE } from '../shared/scene-picture-qa';
 
 /** Validate the actual frozen scene pictures, before captions can conceal missing art. */
 export async function preflightScenePictures(ffmpeg: string, images: SceneImage[]): Promise<void> {
@@ -15,7 +16,7 @@ export async function preflightScenePictures(ffmpeg: string, images: SceneImage[
         throw new Error('The scene picture is a plain color with no scene detail.');
       }
     } catch (error) {
-      throw new Error(`Check the picture for scene ${index + 1}: ${error instanceof Error ? error.message : String(error)} Replace or regenerate its scene art before making the video. Any previous export is unchanged.`);
+      throw Object.assign(new Error(`Check the picture for scene ${index + 1}: ${error instanceof Error ? error.message : String(error)} Replace or regenerate its scene art before making the video. Choose "Regenerate scene pictures" to request new pictures. Any previous export is unchanged.`), { code: SCENE_PICTURE_FAILURE });
     }
   }
 }

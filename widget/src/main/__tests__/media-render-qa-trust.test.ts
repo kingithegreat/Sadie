@@ -12,6 +12,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { MediaJob } from '../media-studio';
 
+jest.setTimeout(15_000); // Real handler/store snapshots perform file I/O.
+
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -447,6 +449,42 @@ describe('media_render output trust', () => {
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/scene 2.*missing/);
     expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+  });
+
+  it('explicit regeneration bypasses rejected reused inputs and scene cache without deleting originals', async () => {
+    const job = writeReadyJob('Explicit scene regeneration');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const first = readJobs()[0];
+    const priorMovie = fs.readFileSync(first.renderPath!);
+    const priorScene = fs.readFileSync(first.renderInputs!.scenePaths[0]!);
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    mockedGrabFrame.mockResolvedValueOnce(Buffer.alloc(64 * 64, 30));
+    expect((await call('media_render', { job: job.id })).success).toBe(false);
+    expect(readJobs()[0].latestExportAttempt?.errorCode).toBe('SCENE_PICTURE_FAILURE');
+    const generationCalls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const denied = Object.assign(new Error('Payment needs confirmation.'), { code: 'IMAGE_PAYMENT_CONFIRMATION_REQUIRED' });
+    (generateSceneImages as jest.Mock).mockRejectedValueOnce(denied);
+    const deniedResult = await call('media_render', { job: job.id, regenerateScenes: true });
+    expect(deniedResult.success).toBe(false);
+    expect(deniedResult.error).toContain('Payment needs confirmation');
+    expect(generateSceneImages).toHaveBeenCalledTimes(generationCalls + 1);
+    expect(generateSceneImages).toHaveBeenLastCalledWith(expect.objectContaining({ cacheDir: null }));
+    expect(fs.readFileSync(first.renderPath!)).toEqual(priorMovie);
+    expect(fs.readFileSync(first.renderInputs!.scenePaths[0]!)).toEqual(priorScene);
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    expect((await call('media_render', { job: job.id, regenerateScenes: true })).success).toBe(true);
+    expect(generateSceneImages).toHaveBeenLastCalledWith(expect.objectContaining({ cacheDir: null }));
+    expect(fs.readFileSync(first.renderPath!)).toEqual(priorMovie);
+  });
+
+  it('does not reinterpret explicit plain mode as scene regeneration', async () => {
+    const job = writeReadyJob('Plain regeneration refusal');
+    const calls = (generateSceneImages as jest.Mock).mock.calls.length;
+    expect((await call('media_render', { job: job.id, visuals: 'plain', regenerateScenes: true })).success).toBe(false);
+    expect(generateSceneImages).toHaveBeenCalledTimes(calls);
   });
 
   it('keeps the saved music choice on retry and snapshots its bytes', async () => {
