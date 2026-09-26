@@ -41,6 +41,8 @@ test('Storyboard source QA rejects blank shots and persists explicit picture int
   const openBoard = async () => {
     await waitForAppReady(page);
     await dismissFirstRun(page);
+    const apStatus = await page.evaluate(() => window.electron.mediaAncientPathwaysStatus!());
+    expect(apStatus.dir).toBe(apFixture);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await page.getByRole('combobox', { name: 'Select Storyboard Project' }).selectOption(projectId);
@@ -48,20 +50,33 @@ test('Storyboard source QA rejects blank shots and persists explicit picture int
     await page.getByRole('combobox', { name: 'Video encoder for this export' }).selectOption('cpu');
   };
   const render = () => page.getByRole('button', { name: /Render Movie/ }).click();
+  const settled = async () => {
+    await expect(page.getByRole('region', { name: 'Visual Storyboard Deck' }).getByRole('status')).toContainText('Successfully rendered', { timeout: 90_000 });
+    await expect(page.getByRole('button', { name: /Render Movie/ })).toBeEnabled();
+  };
+  const close = async (phase: string) => {
+    console.log(`[SOURCE-QA] close ${phase} start`);
+    await app.close();
+    console.log(`[SOURCE-QA] close ${phase} complete`);
+  };
   try {
     await openBoard();
     await page.evaluate(() => window.electron.saveSettings({ useCustomLLM: false, permissions: { media_render_storyboard: true } }));
     await render();
     await expect.poll(() => metadata().latestSuccessfulOutput?.filename, { timeout: 90_000 }).toBeTruthy();
+    console.log('[SOURCE-QA] detailed output saved');
+    await settled();
+    console.log('[SOURCE-QA] detailed UI settled');
     const first = metadata().latestSuccessfulOutput;
     const firstMovie = path.join(project, 'renders', first.filename);
     const firstHash = digest(firstMovie);
-    await app.close();
+    await close('detailed');
     for (const [id, color] of [['shot_002', 'gray'], ['shot_003', 'black']]) {
       run(['-f', 'lavfi', '-i', `color=c=${color}:s=640x360:r=30`, '-frames:v', '1', '-threads', '1', frame(id)]);
     }
     ({ app, page } = await launchFocusedStudioApp(env, profile));
     await openBoard();
+    console.log('[SOURCE-QA] replaced shots reopened');
     await render();
     const alert = () => page.getByRole('region', { name: 'Visual Storyboard Deck' }).getByRole('alert');
     await expect(alert()).toContainText('scene_01 / shot_002');
@@ -73,11 +88,20 @@ test('Storyboard source QA rejects blank shots and persists explicit picture int
     await page.getByRole('checkbox', { name: 'Use a plain background for shot_003' }).check();
     await render();
     await expect.poll(() => metadata().latestSuccessfulOutput?.filename, { timeout: 90_000 }).not.toBe(first.filename);
+    await settled();
+    console.log('[SOURCE-QA] explicit plain output saved and UI settled');
     const accepted = metadata().latestSuccessfulOutput;
     const acceptedMovie = path.join(project, 'renders', accepted.filename);
+    const acceptedHash = digest(acceptedMovie);
+    const ffprobe = path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+    const facts = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', acceptedMovie],
+      { windowsHide: true, timeout: 30_000 }).toString());
+    expect(facts.streams.find((stream: any) => stream.codec_type === 'video')).toMatchObject({ width: 1920, height: 1080 });
+    expect(facts.streams.some((stream: any) => stream.codec_type === 'audio')).toBe(true);
+    expect(Math.abs(Number(facts.format.duration) - 6)).toBeLessThan(0.15);
     run(['-i', acceptedMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('explicit-plain-contact.png')]);
     expect(digest(firstMovie)).toBe(firstHash);
-    await app.close();
+    await close('accepted');
     ({ app, page } = await launchFocusedStudioApp(env, profile));
     await openBoard();
     await expect(page.getByRole('checkbox', { name: 'Use a plain background for shot_002' })).toBeChecked();
@@ -87,9 +111,21 @@ test('Storyboard source QA rejects blank shots and persists explicit picture int
     await expect(video).toBeVisible();
     await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.readyState), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
     expect(await video.evaluate((element: HTMLVideoElement) => !!element.error)).toBe(false);
+    await video.evaluate((element: HTMLVideoElement) => element.play());
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.2);
+    await video.evaluate((element: HTMLVideoElement) => element.pause());
+    await close('reopened');
+    run(['-f', 'lavfi', '-i', 'color=c=white:s=640x360:r=30', '-frames:v', '1', '-threads', '1', frame('shot_002')]);
+    ({ app, page } = await launchFocusedStudioApp(env, profile));
+    await openBoard();
+    await expect(page.getByRole('checkbox', { name: 'Use a plain background for shot_002' })).not.toBeChecked();
+    await render();
+    await expect(alert()).toContainText('scene_01 / shot_002');
+    expect(digest(acceptedMovie)).toBe(acceptedHash);
     fs.writeFileSync(testInfo.outputPath('source-qa-evidence.json'), JSON.stringify({ profile, sourceProject: project,
-      original: { path: firstMovie, sha256: firstHash }, accepted: { path: acceptedMovie, sha256: digest(acceptedMovie) },
+      original: { path: firstMovie, sha256: firstHash }, accepted: { path: acceptedMovie, sha256: acceptedHash, facts },
       rejectedShotIds: ['shot_002', 'shot_003'], reopenedIntent: true, previousMoviePreserved: true,
+      replacedBytesClearedIntent: true, playerPlayed: true,
       scope: 'Authored diagnostic, CPU, silence/no provider requests; not creative or audio quality acceptance.' }, null, 2));
-  } finally { await app.close(); }
+  } finally { await close('cleanup'); }
 });

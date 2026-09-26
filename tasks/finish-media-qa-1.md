@@ -37,10 +37,37 @@ Compatibility across existing renderer/voice/frame-provider/shape/replacement
 paths: 65 passing tests. Widget typecheck passes. Lint has zero errors and seven
 existing unrelated warnings. Root: 232 tests pass; docs remain in sync.
 
-Full widget check and actual built Electron acceptance pending at this checkpoint.
-The opt-in `storyboard-source-qa.live.e2e.spec.ts` creates disposable authored
-pictures, uses CPU FFmpeg with no narration/providers, rejects two blank shots
-independently, retains the previous movie hash, checks explicit intent after
-restart and records output/contact-sheet evidence. It needs the separately owned
-sharp packaging correction for accepted render paths. No check is weakened and
-the original failed evidence is retained.
+Full widget sandbox run: 336 suites / 4600 tests passed; eleven suites failed
+with the same permission/subprocess/fixture failures independently reproduced on
+the base by root. Root owns their isolated rerun; this task does not claim that
+full suite green. Logs are retained in the diagnostic directory.
+
+Actual built Electron acceptance **1/1 passed, retries zero, 1.8 minutes**.
+`storyboard-source-qa.live.e2e.spec.ts` created disposable authored pictures,
+CPU FFmpeg with no narration/providers: detailed control exported; flat shots
+002 and 003 each rejected until explicitly acknowledged; original movie hash
+survived rejection and accepted replacement. On restart, both choices persisted
+and the saved movie decoded and played. Replacing shot 002 bytes at the same path
+cleared its choice and rejected export while retaining the accepted movie hash.
+FFprobe: six seconds, 1920x1080, H.264 30 fps, AAC 48 kHz stereo silence. The
+contact sheet was visually opened and contains the expected detailed/grey/black
+sequence. This is functional QA acceptance, not creative or voice quality proof.
+
+Evidence outside git:
+`.kilo/finish-20260927/media-diagnostics/source-qa-live-settled/`
+`storyboard-source-qa.live.-d3b1b-thout-losing-the-good-movie/`
+contains `source-qa-evidence.json`, `explicit-plain-contact.png` and reopened
+screenshot. Original SHA-256:
+`bfd764db4cb4a8569854bc1d8a57dba0719c9024297df425de130443030ebaf9`.
+Accepted SHA-256:
+`a783ae450ca546481fccb96abb0b4bd577cc389cb46e3c69bfde562e7f2f8a11`.
+Project retained under the isolated home
+`C:\Users\adenk\AppData\Local\Temp\homebot-source-qa-AjmCPE\projects\source-qa`.
+
+The first actual run timed out while closing immediately after the on-disk
+success appeared. Its evidence remains in `source-qa-live/`. The changed harness
+awaits visible successful-render status and an enabled Render button before
+closing, records close boundaries, and completed all four launches. No product
+check was weakened. Built accepted paths used the separately owned exact Sharp
+runtime-dependency overlay (`ad2a2d616e7e41113a19abf93e7877a0b7e1c48e`); it was
+removed from this branch's source after verification and must land independently.

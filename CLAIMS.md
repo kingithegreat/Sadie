@@ -277,4 +277,4 @@ only.
 ## 2026-09-27 - FINISH-MEDIA-QA-1 (Codex)
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| FINISH-MEDIA-QA-1 per-shot source picture QA | claude/finish-media-qa-1 | Building - Codex | Explicit hash-bound plain-background intent in reachable shot editor; source preflight before narration/overlays; preserve last-good. Isolated worktree finish-media-qa-1. No AP/provider changes. |
+| FINISH-MEDIA-QA-1 per-shot source picture QA | claude/finish-media-qa-1 | Verified locally - claim released; root integration pending | Explicit hash-bound plain-background intent in reachable shot editor; source preflight before narration/overlays; last-good preserved. Focused117 + compatibility65 + root232 pass; typecheck/lint/docs pass. Actual built Electron CPU FFmpeg acceptance1/1, retries0: per-shot rejection, explicit intent, restart/player, replacement reset and prior movie hashes. Depends on separately owned Sharp packaging correction. No AP/provider changes. |
