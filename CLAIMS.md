@@ -1,5 +1,7 @@
 # Work Claims
 
+FINISH-VOICE-CANCEL-1 (2026-09-27): Codex owns voice-conversation Stop/Close cancellation in isolated worktree `finish-voice-cancel-20260927`, branch `claude/finish-voice-cancel-20260927`. Ready for root integration review, not pushed or merged. Eight baseline cancellation failures reproduced; final focused voice/recording/SAPI/privacy/IPC run 45/45 passes. Whisper cancels its recorder/tracks; SAPI cancellation terminates only the originating renderer's direct child; stale responses and continuous-mode restart are suppressed. No real microphone, profile, provider, credentials or shared dependencies changed. Evidence and verification limits: `tasks/finish-voice-cancel-1.md`.
+
 **Current planning authority:** Aden's later "drive is now the new brain" instruction supersedes the Notion cadence recorded below. The [current Drive plan](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) owns priorities; this file owns repository work claims. Preserve earlier Notion links and dated notes as history, not as instructions to maintain a second live queue.
 
 Repo-native companion to the Notion [ðŸ”— Work Claims Ledger](https://app.notion.com/p/63dec393c18546ee9b924a472e9c59a3) and [ðŸ¤� Coordination Protocol](https://app.notion.com/p/390829ebf7be81e09866e1cd3a6bed6e). This file exists because Notion is easy to skip; this file is not â€” anyone building here sees it just by looking at the repo.

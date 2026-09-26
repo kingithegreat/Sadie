@@ -531,6 +531,7 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  stopSpeechRecognition?: () => Promise<{ success: boolean; error?: string }>;
   whisperTranscribe?: (args: { modelId: string; language?: string; audio: Float32Array }) => Promise<{ success: boolean; text?: string; error?: string }>;
   onWhisperProgress?: (cb: (p: { status: 'downloading'; percent: number }) => void) => () => void;
 

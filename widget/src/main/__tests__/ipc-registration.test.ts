@@ -66,6 +66,13 @@ describe('IPC registration', () => {
     expect(handles['homebot:get-env']).toBeDefined();
   });
 
+  it('registers reachable local dictation start and cancellation handlers', () => {
+    registerIpcHandlers();
+    expect(handles['homebot:start-speech-recognition']).toBeDefined();
+    expect(handles['homebot:stop-speech-recognition']).toBeDefined();
+    expect(handles['homebot:stop-speech-recognition']({ sender: { id: 99 } })).toEqual({ success: true });
+  });
+
   it('registers and reaches the connected-account media registry', async () => {
     const registry = { accounts: [], imageModels: [], videoModels: [], refreshedAt: '2026-09-20T00:00:00.000Z' };
     mockGetMediaCapabilityRegistry.mockResolvedValue(registry);
