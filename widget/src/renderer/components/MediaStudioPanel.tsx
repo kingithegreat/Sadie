@@ -4891,7 +4891,7 @@ ${shots.map((s, idx) => `
         <div className="ms-storyboard-topbar">
           <div className="ms-storyboard-titles">
             <h3>🎨 Visual Storyboard Deck</h3>
-            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; free AI keyframe generation.</p>
+            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; AI keyframe generation with your chosen provider.</p>
           </div>
 
           <div className="ms-storyboard-controls">
