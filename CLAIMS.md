@@ -273,3 +273,9 @@ Not done: no installer was produced and no fresh Windows profile was exercised, 
 REL-1 itself is still open. The live Drive priority queue could not be read or
 updated from this session (no Drive access), so this note is the repo-side record
 only.
+
+## 2026-09-27 Codex FINISH-RELEASE-LOGS-1 claim
+
+Codex owns claude/finish-release-logs-20260927, fresh main e4628326. Required release preflight rejects compiled DIAG/E2E-MOCK strings; implement explicit production release-build folding with normal CI/E2E runtime mode preserved, remove the reproduced unguarded duplicate request DIAG log, and production-guard the deterministic mock. No scanner relaxation, routing/privacy flag change, shared dependency mutation or public API change. Root owns publication/validation lane.
+
+Source work complete: ordinary compiled marker control and real isolated mock UI passed 1/1 without retries; explicit release build removes tags plus mock-body sentinels and unchanged production/artifact scanner passes. Details in tasks/finish-release-logs-verification.md. Claim released to root review/publication; private native package acceptance remains separate and unclaimed as complete.
