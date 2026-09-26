@@ -278,3 +278,9 @@ only.
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
 | FINISH-MEDIA-QA-1 per-shot source picture QA | claude/finish-media-qa-1 | Verified locally - claim released; root integration pending | Explicit hash-bound plain-background intent in reachable shot editor; source preflight before narration/overlays; last-good preserved. Focused117 + compatibility65 + root232 pass; typecheck/lint/docs pass. Actual built Electron CPU FFmpeg acceptance1/1, retries0: per-shot rejection, explicit intent, restart/player, replacement reset and prior movie hashes. Depends on separately owned Sharp packaging correction. No AP/provider changes. |
+
+## 2026-09-27 Codex FINISH-SHARP-1 claim
+
+Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.
+
+FINISH-SHARP-1 implementation complete; local commit pending root integration. Real rebuilt isolated Electron freshness proof passes 1/1 zero retries, MP4/hash/decoded-frame evidence retained at .kilo/finish-20260927/sharp-media and sharp-freshness-home. Packaging claim stays open for private dependency-copy proof; no installed release acceptance claimed.
