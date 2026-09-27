@@ -62,6 +62,20 @@ One intermediate test timeout was traced to a new Horde fixture retaining an HTT
 into the next test: clearAllMocks clears call counts but not implementation. The suite now resets
 HTTP/HTTPS implementations per test, and the complete final run passes normally.
 
+### Current-main refresh (2026-09-27)
+
+Merged `origin/main` `1f6fbc7bf4110c535a2d8cfdc56b793df8191136` in Codex-authored
+merge `ac8e8509f2ebbb1056808421416fb81a3fcb271f`. Both independent claim rows
+were retained. This refresh changes no production code versus the prior cost
+head `de8ef30e`; main contributes test isolation only.
+
+The same nine affected cost/authority suites plus the isolation regression pass
+**213/213 tests across ten suites**, no skips or retries, exit 0 (58.042 seconds).
+Widget typecheck and root docs check pass (247 preload methods, 182 R→M,
+33 M→R). Log: `.kilo/finish-20260927/image-cost-main-targeted.log` in the shared
+workspace. No build, Electron/provider call, model download or spending was used.
+Root owns publication and integration; ART #430 remains held until #424 lands.
+
 ## Limits and next steps
 
 No live provider request, key/account change, paid spending, microphone access, full suite,
