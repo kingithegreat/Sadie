@@ -281,3 +281,7 @@ only.
 Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.
 
 FINISH-SHARP-1 implementation complete; local commit pending root integration. Real rebuilt isolated Electron freshness proof passes 1/1 zero retries, MP4/hash/decoded-frame evidence retained at .kilo/finish-20260927/sharp-media and sharp-freshness-home. Packaging claim stays open for private dependency-copy proof; no installed release acceptance claimed.
+
+## 2026-09-27 Codex FINISH-FFMPEG-ERROR-1 claim
+
+Codex owns claude/finish-ffmpeg-error-20260927 from fresh main 055f355d. Actual packaged corrupt-frame export saved a 10,485,842-character encoder error in project/job state and full recovery timed out. Scope bound storyboard encoder diagnostic collection and returned/persisted error while retaining exit reason, actionable shot guidance and last-good output; add meaningful oversized-error/last-good tests and private harness stage instrumentation. No media.ts overlap with ART, no scanner bypass or shared dependency changes. Root owns Drive/publication/render lane.
