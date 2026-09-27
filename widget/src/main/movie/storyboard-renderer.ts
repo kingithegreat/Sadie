@@ -145,9 +145,21 @@ export function buildKenBurnsFilter(movement: string, durationSec: number, fps =
 
 function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    // Progress and repeated decoder failures must not become megabytes of project,
+    // job and renderer state. Stop at the first media error, with bounded evidence.
+    const commandArgs = ['-hide_banner', '-nostats', '-loglevel', 'error', '-xerror', ...args];
+    execFile(bin, commandArgs, { timeout: 300_000, maxBuffer: 64 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`FFmpeg exited with error (${err.message}): ${stderr}`));
+        const bounded = (text: string, limit: number) => text.length <= limit
+          ? text : `${text.slice(0, limit / 2)}\n[diagnostic truncated]\n${text.slice(-limit / 2)}`;
+        const inputIndex = args.indexOf('-i');
+        const input = inputIndex < 0 ? undefined : args[inputIndex + 1];
+        const reason = bounded(err.message, 256);
+        const code = err.code === undefined ? '' : ` code=${String(err.code).slice(0, 80)}`;
+        const signal = err.signal ? ` signal=${String(err.signal).slice(0, 40)}` : '';
+        reject(new Error(`FFmpeg exited with error (${reason};${code}${signal})${input ? ` Input: ${path.basename(input)}.` : ''} ` +
+          'Check or regenerate the source picture/audio for this scene, then retry. Previous successful exports are kept.\n' +
+          bounded(String(stderr || ''), 1536)));
       } else {
         resolve({ stdout, stderr });
       }

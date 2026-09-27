@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import { createHash } from 'crypto';
 import { findFfmpeg } from '../media-render';
 import { findManagedFfmpeg } from '../ffmpeg-setup';
 import { inspectRender, RenderFacts } from '../media-qa';
@@ -10,6 +11,8 @@ import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-rendere
 import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
 import { readJobs, writeJobs } from '../tools/media';
 import { createStudioOutputSpec } from '../../shared/media-output';
+
+jest.setTimeout(15_000); // Render orchestration performs real fixture file I/O.
 
 // Unit adapters must not implicitly depend on a downloaded Electron binary.
 // CI installs it later for the real renderer tests; the local install hid this.
@@ -342,6 +345,35 @@ describe('storyboard export output contract', () => {
     const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
     expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/FFmpeg was not found/) });
     expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test.each([[1, null], ['ERR_CHILD_PROCESS_STDIO_MAXBUFFER', 'SIGTERM']])('an oversized decoder error (%s) stays bounded through reopening and preserves last-good bytes', async (code, signal) => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const before = fs.readFileSync(first.moviePath!);
+    const beforeHash = createHash('sha256').update(before).digest('hex');
+    (execFile as unknown as jest.Mock).mockImplementation((_bin, args, options, callback) => {
+      expect(args).toEqual(expect.arrayContaining(['-nostats', '-loglevel', 'error', '-xerror']));
+      expect(options.maxBuffer).toBe(64 * 1024);
+      callback(Object.assign(new Error('decoder failed'), { code, signal }), '',
+        'Invalid PNG signature\n' + 'decoder repetition\n'.repeat(600_000) + 'Failed input decode');
+    });
+    const failed = await render();
+    expect(failed.ok).toBe(false);
+    expect(failed.error!.length).toBeLessThan(2300);
+    expect(failed.error).toContain(`code=${code}`);
+    if (signal) expect(failed.error).toContain(`signal=${signal}`);
+    expect(failed.error).toMatch(/Invalid PNG signature/);
+    expect(failed.error).toMatch(/Failed input decode/);
+    expect(failed.error).toMatch(/regenerate.*retry/);
+    expect(failed.error).toMatch(/diagnostic truncated/);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: failed.error });
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+    expect(fs.readFileSync(first.moviePath!)).toEqual(before);
+    expect(createHash('sha256').update(fs.readFileSync(first.moviePath!)).digest('hex')).toBe(beforeHash);
+    const metadata = fs.readFileSync(path.join(root, 'export-check', 'project.json'), 'utf8');
+    expect(metadata.length).toBeLessThan(12_000);
   });
 
   test('an explicit motion override has different provenance from the saved default', async () => {
