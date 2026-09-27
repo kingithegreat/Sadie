@@ -983,7 +983,7 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
     const wantScenes = visuals === 'scenes' && !image;
     if (args.regenerateScenes !== undefined && typeof args.regenerateScenes !== 'boolean') throw new Error('Scene regeneration must be an explicit choice.');
     const regenerateScenes = args.regenerateScenes === true;
-    if (regenerateScenes && !wantScenes) throw new Error('Scene regeneration applies only to scene pictures, not a plain background or supplied artwork.');
+    if (regenerateScenes && (!wantScenes || hasExternalMediaRenderer(job))) throw new Error('Scene regeneration applies only to HomeBot scene pictures, not a plain background, supplied artwork or external renderer.');
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
       const { generateSceneImages, fillMissingImages, seedForVideo, defaultImageCacheDir } = await import('../media-visuals');

@@ -48,10 +48,13 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
   let { app, page } = await launchFocusedStudioApp(env, profile);
   let server: Server | undefined;
   let generationRequests = 0;
+  let responseMode: 'flat' | 'detailed' = 'detailed';
   const open = async () => {
     await waitForAppReady(page);
     await dismissFirstRun(page);
     expect((await page.evaluate(() => window.electron.mediaAncientPathwaysStatus!())).dir).toBe(apFixture);
+    expect(await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))).toBe(profile);
+    expect(fs.existsSync(path.join(profile, 'sd-cpp'))).toBe(false);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     await expect(page.getByRole('button', { name: 'Make the video', exact: true })).toBeVisible();
   };
@@ -68,9 +71,26 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
   try {
     await open();
     await page.evaluate(() => window.electron.saveSettings({ useCustomLLM: false, mediaMusicEnabled: false, permissions: { media_render: true } }));
+    // Bind before any generation action. An unexpected cache miss can only
+    // reach this authored fixture; never an owner's service or a real model.
+    server = createServer((request, response) => {
+      if (request.method !== 'POST' || request.url !== '/sdapi/v1/txt2img') {
+        response.writeHead(404); response.end(); return;
+      }
+      request.resume();
+      request.on('end', () => {
+        generationRequests++;
+        const image = responseMode === 'flat' ? failedPlate : good;
+        response.writeHead(200, { 'Content-Type': 'application/json' });
+        response.end(JSON.stringify({ images: [fs.readFileSync(image).toString('base64')] }));
+      });
+    });
+    await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(7860, '127.0.0.1', resolve); });
     await make();
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('succeeded');
+    await expect(page.getByText('1 of 1 selected formats exported.', { exact: false })).toBeVisible();
     await expect(page.locator('.ms-working')).toHaveCount(0);
+    expect(generationRequests).toBe(0);
     const movie = job().renderPath;
     const movieHash = hash(movie);
     const ffprobe = path.join(path.dirname(ffmpeg), process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
@@ -95,24 +115,8 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     expect(job().latestExportAttempt.errorCode).toBe('SCENE_PICTURE_FAILURE');
     const rejectedCacheHash = hash(cache);
     await page.getByRole('alert').filter({ hasText: 'Check the picture for scene 1' }).screenshot({ path: testInfo.outputPath('failed-source-guidance.png') });
-    expect(await app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))).toBe(profile);
-    expect(fs.existsSync(path.join(profile, 'sd-cpp'))).toBe(false);
-    // Real generator transport, authored loopback fixture: never occupy an
-    // owner's existing service or invoke any model. EADDRINUSE fails this probe.
-    server = createServer((request, response) => {
-      if (request.method !== 'POST' || request.url !== '/sdapi/v1/txt2img') {
-        response.writeHead(404); response.end(); return;
-      }
-      request.resume();
-      request.on('end', () => {
-        generationRequests++;
-        const image = generationRequests === 1 ? failedPlate : good;
-        response.writeHead(200, { 'Content-Type': 'application/json' });
-        response.end(JSON.stringify({ images: [fs.readFileSync(image).toString('base64')] }));
-      });
-    });
-    await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(7860, '127.0.0.1', resolve); });
     expect(generationRequests).toBe(0);
+    responseMode = 'flat';
     await page.getByRole('button', { name: 'Regenerate scene pictures', exact: true }).click();
     await expect.poll(() => generationRequests).toBe(1);
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 30_000 }).toBe('failed');
@@ -120,9 +124,11 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     expect(job().latestExportAttempt.errorCode).toBe('SCENE_PICTURE_FAILURE');
     expect(hash(movie)).toBe(movieHash);
     expect(hash(cache)).toBe(rejectedCacheHash);
+    responseMode = 'detailed';
     await page.getByRole('button', { name: 'Regenerate scene pictures', exact: true }).click();
     await expect.poll(() => generationRequests).toBe(2);
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('succeeded');
+    await expect(page.getByText('1 of 1 selected formats exported.', { exact: false })).toBeVisible();
     await expect(page.locator('.ms-working')).toHaveCount(0);
     const recoveredMovie = job().renderPath;
     expect(recoveredMovie).not.toBe(movie);

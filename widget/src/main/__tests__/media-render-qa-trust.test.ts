@@ -487,6 +487,16 @@ describe('media_render output trust', () => {
     expect(generateSceneImages).toHaveBeenCalledTimes(calls);
   });
 
+  it('cannot regenerate an external renderer job through the ordinary scene action', async () => {
+    const job = writeReadyJob('External regeneration refusal');
+    writeJobs([{ ...job, externalRenderer: 'ancient-pathways' }]);
+    const calls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id, regenerateScenes: true });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('external renderer');
+    expect(generateSceneImages).toHaveBeenCalledTimes(calls);
+  });
+
   it('keeps the saved music choice on retry and snapshots its bytes', async () => {
     const job = writeReadyJob('Saved music');
     const music = path.join(testRoot, 'music.wav');

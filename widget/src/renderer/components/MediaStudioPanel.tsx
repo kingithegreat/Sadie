@@ -2623,9 +2623,9 @@ ${shots.map((s, idx) => `
             </button>
             {stageAction(j)!.action === 'render' && j.latestExportAttempt?.status === 'failed' &&
               j.latestExportAttempt.errorCode === SCENE_PICTURE_FAILURE && !j.renderInputs?.imagePath &&
-              j.renderInputs?.visuals !== 'plain' && (
+              j.renderInputs?.visuals !== 'plain' && !hasExternalMediaRenderer(j) && (
               <button type="button" className="ms-btn"
-                title="Make new scene pictures for this video. Your previous movie stays unchanged; current online and payment settings still apply."
+                title="Make new scene pictures for this video. Any previous movie stays unchanged; current online and payment settings still apply."
                 onClick={() => void run(j.id, () => api()?.mediaRun?.(j.id, 'render', { regenerateScenes: true }), 'Regenerating scene pictures')}>
                 Regenerate scene pictures
               </button>
