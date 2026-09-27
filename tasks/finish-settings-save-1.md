@@ -51,8 +51,28 @@ After resolution: 115/115 tests in six affected FirstRun/hardware/settings ackno
 
 Main 1f6fbc7b (#423) merged cleanly; the affected suites plus isolation guard passed 117/117 with per-file temporary roots, and typecheck/docs/diff passed.
 
-The opt-in `settings-save.live.e2e.spec.ts` (`HOMEBOT_SETTINGS_SAVE_LIVE=1`) is prepared but not yet run. It requires its own fresh compiled main to use a live fs object property for the atomic writer; inspection of the existing package-proof bundle confirmed `const fs = require("fs")` and property-based config writes, while the spec rejects a stale non-atomic build.
+The opt-in `settings-save.live.e2e.spec.ts` (`HOMEBOT_SETTINGS_SAVE_LIVE=1`) requires its own fresh compiled main to use a live fs object property for the atomic writer. Inspection of the package-proof bundle confirmed `const fs = require("fs")` and property-based config writes; the spec rejects a stale non-atomic build. Its own rebuilt output subsequently confirmed those imports and atomic temp-write/rename calls.
 
 It seeds only a disposable profile without keys/accounts, intercepts precisely that profile's settings sibling temporary write once, immediately restores fs.writeFileSync, writes a partial disposable temp and throws. Actual Simple Settings → App → preload → main IPC → config writer must retain the draft/error, preserve prior file hash and active theme/policy, retry, close, persist Online-off and light theme, and reopen with saved values. No bridge or private IPC handler is replaced.
 
-An isolated child bootstrap runs before main, blocks actual Node/renderer transports with five positive controls, and fixtures only startup local inventory so startup cannot contact or launch the owner's Ollama. HOME/profile/projects/AP-marker are isolated; evidence records hashes/counters without settings secrets. Playwright collection finds one test; source typecheck/lint pass. Execution awaits the root-controlled release/media lane; no built acceptance is claimed yet.
+An isolated child bootstrap runs before main, blocks actual Node/renderer transports with five positive controls, and fixtures only startup local inventory so startup cannot contact or launch the owner's Ollama. HOME/profile/projects/AP-marker are isolated; evidence records hashes/counters without settings secrets. Playwright collection finds one test; source typecheck/lint pass.
+
+## Actual built proof
+
+Root allocated the lane. The first build was blocked by sandbox directory access; the authorized build succeeded (widget/settings-live-build-authorized.log). No dependency install or rebuild occurred.
+
+Attempt 1 is retained at `.kilo/finish-20260927/settings-live-attempt-1.log` and its results/report/JUnit siblings. It failed before Save because Electron did not execute the NODE_OPTIONS require bootstrap: the network positive-control state was absent. This is a harness failure, not a Settings product failure. It had only a disposable no-key profile and loopback ports 1/2, but startup transport protection is not claimed for that failed run. Its owned Electron exited normally.
+
+The corrected launcher uses an exclusive own CJS shim adjacent to the real compiled main, preserving Electron's app directory. It explicitly requires the isolated bootstrap, then the unchanged actual main bundle. There is no private app API, replacement IPC handler or bridge. Only that exact own shim is removed after the owned process exits.
+
+Attempt 2 passed **1/1, zero retries**, test duration 6.733s (19.058s total), with all assertion and teardown stages complete. Five transport positive controls were observed; two startup axios calls were blocked and five inventory fixture responses supplied. No actual provider transport or key/account was used in this passing proof. The injected partial sibling temp write hit once and restored fs.writeFileSync immediately. The prior file hash stayed unchanged, the off/light draft and actionable error remained, App's active theme stayed dark, retry saved Online-off/light and closed, and reopen matched saved values via UI and actual preload GET_SETTINGS.
+
+The owned process exit request followed two renderer animation frames and completed in about 0.73s. Normal app.exit was sufficient; no forced or global process kill occurred.
+
+Evidence directory: `.kilo/finish-20260927/settings-live-attempt-2-results/settings-save.live.e2e-bui-0de7b-nd-retries-through-real-IPC/`. The failed-draft and reopened screenshots were visually inspected. The JSON includes actual entry path and hashes:
+
+- Compiled main: `c1f67161ca72be87adfaa9d72f51df237cd8c372e407281b79aff961e05f7044`
+- Previous settings: `400d0d10ae43be64bc635a45699299a455aacaf57d7bb813308074048836120e`
+- Persisted retry: `f9aa1279988fa08f7e204bd8741ac8757d6b8b6d3583ff89687d2a2cb95222bd`
+
+Post-proof environment type filtering (undefined values omitted) typechecks; lint has zero errors/seven existing warnings. Production sources were unchanged throughout acceptance. Full-suite/CI/release packaging remains root's separate integration gate.

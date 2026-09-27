@@ -1,9 +1,9 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, _electron as electron } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
-import { launchFocusedStudioApp } from './helpers/focusStudioWindow';
+import { focusStudioWindow } from './helpers/focusStudioWindow';
 
 test('built Simple Settings retains failed drafts, preserves policy, and retries through real IPC', async ({}, testInfo) => {
   test.skip(process.env.HOMEBOT_SETTINGS_SAVE_LIVE !== '1', 'Opt-in disposable-profile Settings write-failure proof; no providers.');
@@ -82,16 +82,36 @@ electron.app.whenReady().then(() => {
   );
 });
 `);
+  // Keep Electron's app directory identical to launching the real entry.
+  // This tiny own launch file loads the isolated guard before the unchanged
+  // compiled app; it is not a replacement main/preload/IPC implementation.
+  const shim = path.join(path.dirname(entry), `settings-proof-entry-${process.pid}.cjs`);
+  fs.writeFileSync(shim, `require(${JSON.stringify(bootstrap)});\nrequire(${JSON.stringify(entry)});\n`, { flag: 'wx' });
   const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
   const env = {
     HOMEBOT_E2E: '1', HOMEBOT_DIRECT_OLLAMA: '1', HOMEBOT_E2E_BYPASS_MOCK: '1',
-    NODE_ENV: 'test', NODE_OPTIONS: `--require="${bootstrap}"`,
+    NODE_ENV: 'test', HOMEBOT_E2E_USER_DATA_DIR: profile,
     HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'appdata'), LOCALAPPDATA: path.join(home, 'localappdata'),
     ANCIENT_PATHWAYS_DIR: ap, HOMEBOT_MOVIE_PROJECTS_DIR: path.join(home, 'projects'),
   };
-  const { app, page } = await launchFocusedStudioApp(env, profile);
+  const stage = (name: string) => {
+    console.log('[SETTINGS-STAGE]', name);
+    fs.appendFileSync(testInfo.outputPath('settings-stage.log'), `${new Date().toISOString()} ${name}\n`);
+  };
+  stage('launch');
+  // Explicit entry execution is required: Electron may ignore NODE_OPTIONS.
+  // The shim installs only transport guards, then requires the actual bundle.
+  const launchEnv: Record<string, string> = Object.fromEntries(
+    Object.entries({ ...process.env, ...env }).filter((item): item is [string, string] => typeof item[1] === 'string'),
+  );
+  delete launchEnv.ELECTRON_RUN_AS_NODE;
+  delete launchEnv.NODE_OPTIONS;
+  const app = await electron.launch({ executablePath: require('electron') as string, args: [shim], env: launchEnv });
+  const page = await app.firstWindow();
   try {
+    stage('ready');
     await expect(page.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+    await focusStudioWindow(app, page);
     expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
     expect(await app.evaluate(() => (globalThis as any).settingsAcceptanceNetwork.controls)).toBe(5);
     await expect(page.getByRole('button', { name: 'Settings', exact: true }).filter({ visible: true })).toHaveCount(1);
@@ -102,7 +122,6 @@ electron.app.whenReady().then(() => {
     const online = dialog.getByTestId('privacy-switch');
     await expect(online).toBeChecked();
     await online.uncheck();
-    await dialog.getByRole('button', { name: /General$/ }).click();
     await dialog.getByRole('button', { name: 'light theme' }).click();
     const previousHash = hash(config);
     expect(JSON.parse(fs.readFileSync(config, 'utf8')).useCustomLLM).toBe(true);
@@ -138,6 +157,7 @@ electron.app.whenReady().then(() => {
       return true;
     }, { profile, config });
     expect(armed).toBe(true);
+    stage('injected-save');
     await dialog.getByRole('button', { name: 'Save changes' }).click();
     await expect(dialog.getByRole('alert')).toContainText('Disposable settings write is read-only');
     await expect(dialog.getByRole('alert')).toContainText('previous settings are still active');
@@ -153,6 +173,7 @@ electron.app.whenReady().then(() => {
     })).toEqual({ hits: 1, restored: true, original: true });
     await dialog.screenshot({ path: testInfo.outputPath('settings-save-failed-draft.png'), animations: 'disabled' });
 
+    stage('retry-save');
     await dialog.getByRole('button', { name: 'Save changes' }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.getByTestId('homebot-app-root')).toHaveAttribute('data-theme', 'light');
@@ -160,9 +181,9 @@ electron.app.whenReady().then(() => {
     expect(hash(config)).not.toBe(previousHash);
     expect(JSON.parse(fs.readFileSync(config, 'utf8')).theme).toBe('light');
     await page.getByRole('button', { name: 'Settings', exact: true }).filter({ visible: true }).click();
+    stage('reopen');
     await expect(dialog).toBeVisible();
     await expect(online).not.toBeChecked();
-    await dialog.getByRole('button', { name: /General$/ }).click();
     await expect(dialog.getByRole('button', { name: 'light theme' })).toHaveClass(/active/);
     expect((await page.evaluate(() => window.electron.getSettings())).useCustomLLM).toBe(false);
     await dialog.screenshot({ path: testInfo.outputPath('settings-save-reopened.png'), animations: 'disabled' });
@@ -172,12 +193,29 @@ electron.app.whenReady().then(() => {
       actualMainPreloadUi: true, writeHits: 1, writeRestoredImmediately: true,
       network: await app.evaluate(() => (globalThis as any).settingsAcceptanceNetwork),
     }, null, 2));
+    stage('assertions-complete');
   } catch (error) {
     await page.screenshot({ path: testInfo.outputPath('settings-save-failure-surface.png'), timeout: 5000 }).catch(() => {});
     throw error;
   } finally {
+    stage('restore-writer');
     await app.evaluate(() => (globalThis as any).settingsAcceptanceWrite?.restore()).catch(() => {});
-    await app.close();
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))).catch(() => {});
+    stage('owned-exit-request');
+    const owned = app.process();
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
+    const exited = owned.exitCode !== null || owned.signalCode !== null ? Promise.resolve() : new Promise<void>((resolve, reject) => {
+      owned.once('exit', () => { if (exitTimer) clearTimeout(exitTimer); resolve(); });
+      exitTimer = setTimeout(() => {
+        // Only the process launched and returned by this test may be stopped.
+        owned.kill();
+        reject(new Error(`Settings proof owned Electron ${owned.pid} did not exit normally`));
+      }, 15_000);
+    });
+    await app.evaluate(({ app }) => app.exit(0)).catch(() => { /* Expected CDP disconnect during exit. */ });
+    await exited;
+    stage('owned-exit-complete');
+    fs.unlinkSync(shim); // Only this own launch file; real bundles are unchanged.
     // Preserve the exact disposable profile and artifacts for review.
   }
 });
