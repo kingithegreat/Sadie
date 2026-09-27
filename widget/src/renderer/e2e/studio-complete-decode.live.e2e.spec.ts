@@ -121,7 +121,7 @@ globalThis.decodeInstallCorruption=function(jobDir,corrupt) {
     }, { jobDir, corrupt });
     await make();
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('failed');
-    await expect(page.getByRole('alert').filter({ hasText: 'could not be decoded completely' })).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'The movie could not be checked completely.' })).toBeVisible();
     await expect(page.locator('.ms-working')).toHaveCount(0);
     const saved = job();
     expect(saved.renderPath).toBe(previousMovie); expect(hash(previousMovie)).toBe(previousHash);
@@ -134,7 +134,11 @@ globalThis.decodeInstallCorruption=function(jobDir,corrupt) {
     await player.evaluate((video: HTMLVideoElement) => video.play());
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.2);
     await player.evaluate((video: HTMLVideoElement) => video.pause());
-    await page.getByRole('alert').filter({ hasText: 'could not be decoded completely' }).screenshot({ path: testInfo.outputPath('decode-refusal.png') });
+    const refusal = page.getByRole('alert').filter({ hasText: 'The movie could not be checked completely.' });
+    await expect(refusal).toContainText('Retry the export. Any previous export is unchanged.');
+    await expect(refusal).not.toContainText('Invalid NAL');
+    await expect(refusal).not.toContainText('[h264');
+    await refusal.screenshot({ path: testInfo.outputPath('decode-refusal.png') });
     execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', previousMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('previous-movie-contact.png')], { windowsHide: true, timeout: 30_000 });
     fs.writeFileSync(testInfo.outputPath('decode-live-evidence.json'), JSON.stringify({ home, profile,
       sourceHead: process.env.HOMEBOT_DECODE_SOURCE_HEAD, buildSha256: hash(entry), corruptSha256: hash(corrupt),
