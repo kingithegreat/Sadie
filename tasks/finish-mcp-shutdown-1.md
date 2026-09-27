@@ -55,4 +55,6 @@ The exact executed live spec passed TypeScript and changed-file ESLint before la
 
 ## Remaining boundary
 
+Integration: fresh main c3d8c787 (#427 recovery fixture and #424 paid image routing) merged cleanly after the actual proof. The tested MCP production, entry quit wiring and all three MCP test files/live spec have zero diff from faf5e1c6. The three MCP suites plus changed IPC registration suite passed 44/44 with no skips/retries; widget typecheck and docs/diff checks pass. Logs: widget/mcp-main-integration-tests.log and widget/mcp-main-integration-type.log. No repeated build/live run was performed for unrelated incoming changes.
+
 Installed SDK 1.30.0 StdioClientTransport closes stdin, waits, and kills only its direct process. Defaults use cmd /c npx on Windows. Properly awaiting its close may be sufficient for ordinary servers, but the source alone does not prove descendant cleanup. If a controlled disposable child fixture demonstrates descendants surviving completed SDK cleanup, that needs separately owned Windows tree cleanup and identity controls. This task deliberately adds no name-based or global kill.
