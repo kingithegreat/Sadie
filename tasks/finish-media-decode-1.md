@@ -161,3 +161,31 @@ assertion. The corrected fixture uses the canonical object, checks public
 `mcpListServers()` before and after exports, and captures native MCP console
 messages from before the unchanged app entry. A positively controlled failure
 filter must find no MCP initialization failure. No product gate changed.
+
+Merged landed #433 main `fab82c8e624b823d2e4c71abdff7728766e86d32`
+cleanly at `34186495bd2b7b81848f4e03840c03a2458846b6`, preserving claims.
+The strict helper has zero diff from `816d164a`. Corrected spec lint and integrated
+widget typecheck pass; one fresh integrated build exits 0. Main bundle SHA256:
+`6b465ded62729ff119147ac9c4779ea392cadaf374c5dad5f36fb5e80691dab9`.
+
+Canonical-MCP normal-built UI proof passes **1/1, zero retries, 14.0s**, native
+exit 0. Public connector list is empty before and after exports. Native console
+records `[MCP] No enabled servers configured.` with no initialization failure;
+the positive failure filter is exercised. All healthy export, strict corrupt-file
+rejection, prior path/hash/player, one-match immediate restoration and staging
+cleanup assertions pass. The app closes and its own entry shim is removed.
+Five pre-entry transport controls pass; three startup requests are denied
+(`https.get` plus two Axios attempts), three local inventory responses are
+authored. No real provider/model/download/voice/default npx launch occurs.
+
+Evidence directory: `media-diagnostics/decode-live-canonical/`
+`studio-complete-decode.liv-e78cf-vie-and-preserves-last-good/`.
+JSON SHA256 `04b65c29a1c1994772945d6dc2d93983a7f1229e0ebea2b9473dc7227c25cb9c`;
+viewed refusal PNG SHA256
+`8c7365b53668ebeeaeebf752982204ff23eeca7d8ef46bfb2edeb7cfa7aaefdb`.
+Viewed the retained movie's contact sheet; its hash remains
+`06bf2a13c85ca36e77fcaa6537a234598d65b90ce53d09929b0a459c0bf2d40c`.
+Old malformed-fixture proofs remain preserved and qualified above. This fresh
+proof establishes clean empty MCP startup alongside strict decoding mechanics;
+it remains fixture acceptance, not creative, provider or installed-release proof.
+The exclusive build/encode lane is released to root.
