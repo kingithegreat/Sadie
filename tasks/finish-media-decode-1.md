@@ -107,3 +107,22 @@ boundary; one corrected run passed. No production handler replacement, test
 hook or unmerged ART source overlay was used. Actual timeout/buffer rejection
 is unit-tested; actual corruption is tested with FFmpeg and normal UI. This is
 fixture/technical acceptance, not creative art/voice or installed-release proof.
+
+### Plain refusal polish
+
+Root inspected the actual refusal and required a short owner-facing message.
+At `11c4fc50`, the unchanged strict gate now returns only: “The movie could not
+be checked completely. Retry the export. Any previous export is unchanged.”
+Bounded code/signal/stderr remain in `Error.cause` and one main-process warning;
+the output path is redacted and command-bearing exception messages are not logged.
+No IPC/schema/renderer behavior changes. Meaningful diagnostic and handler
+controls pass **42/42**, typecheck and changed-file ESLint pass.
+
+Fresh build exits 0; main SHA256:
+`80bc83900011551319de019159441d897563a8af5dfe0df9795ed19c128d0441`.
+Fresh normal UI corruption/last-good proof passes **1/1, zero retries, 12.8s**.
+Same isolation, strict failure, one-match/immediate restoration, staging cleanup,
+old movie hash and player assertions pass. Viewed the new refusal and contact;
+refusal contains no decoder addresses or codec diagnostics. Existing ordinary
+render result still includes local rejected/previous file paths. Evidence is in
+`media-diagnostics/decode-live-plain/`; the prior raw-diagnostic proof is retained.
