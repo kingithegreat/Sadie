@@ -5,7 +5,7 @@
  * Uses DuckDuckGo for search (no API key required).
  */
 
-import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { ToolDefinition, ToolHandler, ToolResult, ToolContext } from './types';
 import * as https from 'https';
 import * as http from 'http';
 import * as dns from 'dns';
@@ -16,7 +16,10 @@ import * as childProcess from 'child_process';
 import { app } from 'electron';
 import { isE2E } from '../env';
 import { getSettings } from '../config-manager';
-import { apiKeyForProvider } from '../../shared/cloud-llm';
+import { apiKeyForProvider, resolveCloudLLM } from '../../shared/cloud-llm';
+import { storyboardFrameProvider } from '../../shared/storyboard-frame-providers';
+import type { ImageGenerationRoute } from '../../shared/image-generation-route';
+import { assertProviderOnlineAccess } from '../utils/provider-network-policy';
 import { generateGeminiImage, GEMINI_IMAGE_COST_MICRO_USD } from '../movie/gemini-image-adapter';
 import { isPrivateIPv6 } from '../utils/url-boundary';
 
@@ -1437,6 +1440,7 @@ export const imageGenerateDef: ToolDefinition = {
     'Uses your own local engines first (stable-diffusion.cpp, AUTOMATIC1111, ComfyUI) when one is running, ' +
     'then Gemini (gemini-3.1-flash-image) when a Google/Gemini key is saved, then Stable Horde, ' +
     'and finally OpenAI images (gpt-image-2.5) if an OpenAI API key is configured. Pollinations is not used as an automatic fallback. ' +
+    'Online access must be enabled; every paid provider request needs interactive user confirmation. ' +
     'Returns a base64-encoded image.',
   category: 'utility',
   requiresConfirmation: false,
@@ -1524,6 +1528,7 @@ function httpPost(urlStr: string, payload: string, extraHeaders: Record<string, 
 // ── Backend 0b: Stable Horde (free community-powered distributed inference) ──
 async function tryStableHorde(prompt: string, width: number, height: number): Promise<string | null> {
   try {
+    assertProviderOnlineAccess('Stable Horde');
     // Stable Horde requires dimensions to be multiples of 64
     const w = Math.round(Math.min(width, 1024) / 64) * 64 || 512;
     const h = Math.round(Math.min(height, 1024) / 64) * 64 || 512;
@@ -1553,6 +1558,7 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
 
     // Helper: JSON GET for hardcoded Stable Horde URLs (no SSRF risk)
     const hordeGet = (path: string): Promise<any> => new Promise((resolve, reject) => {
+      assertProviderOnlineAccess('Stable Horde');
       const req = https.get(
         `https://stablehorde.net${path}`,
         { headers: { apikey: apiKey }, timeout: 10000 } as any,
@@ -1570,16 +1576,23 @@ async function tryStableHorde(prompt: string, width: number, height: number): Pr
     const started = Date.now();
     while (Date.now() - started < 120000) {
       await new Promise(r => setTimeout(r, 6000));
-      const check = await hordeGet(`/api/v2/generate/check/${jobId}`).catch(() => null);
+      const check = await hordeGet(`/api/v2/generate/check/${jobId}`).catch(err => {
+        if (err?.code === 'ONLINE_ACCESS_DISABLED') throw err;
+        return null;
+      });
       if (!check?.done) continue;
 
-      const status = await hordeGet(`/api/v2/generate/status/${jobId}`).catch(() => null);
+      const status = await hordeGet(`/api/v2/generate/status/${jobId}`).catch(err => {
+        if (err?.code === 'ONLINE_ACCESS_DISABLED') throw err;
+        return null;
+      });
       const img = status?.generations?.[0]?.img as string | undefined;
       if (img && img.length > 100) return img; // already base64 PNG
       return null;
     }
     return null; // timed out
-  } catch {
+  } catch (err: any) {
+    if (err?.code === 'ONLINE_ACCESS_DISABLED') throw err;
     return null;
   }
 }
@@ -1817,6 +1830,7 @@ async function tryGeminiImage(prompt: string, width: number, height: number): Pr
     const { base64 } = await generateGeminiImage(prompt, width, height);
     return base64 ? { b64: base64, costMicroUsd: GEMINI_IMAGE_COST_MICRO_USD } : null;
   } catch (err: any) {
+    if (err?.code === 'ONLINE_ACCESS_DISABLED') throw err;
     console.warn('[ImageGen] Gemini failed:', err?.message || err);
     return null;
   }
@@ -1906,6 +1920,7 @@ async function tryOpenAIImage(prompt: string, width: number, height: number): Pr
   const key = _openaiApiKey;
   if (!key) return null;
   try {
+    assertProviderOnlineAccess('OpenAI images');
     const payload = JSON.stringify({
       model: OPENAI_IMAGE_MODEL,
       prompt,
@@ -1915,12 +1930,53 @@ async function tryOpenAIImage(prompt: string, width: number, height: number): Pr
     const res = await httpPost('https://api.openai.com/v1/images/generations', payload, { Authorization: `Bearer ${key}` }, 120000);
     const b64 = res?.data?.[0]?.b64_json as string | undefined;
     return b64 ? { b64, costMicroUsd: openAIImageCostMicroUsd(res?.usage) } : null;
-  } catch {
+  } catch (err: any) {
+    if (err?.code === 'ONLINE_ACCESS_DISABLED') throw err;
     return null;
   }
 }
 
-export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResult> => {
+function googleImageKey(): string {
+  const settings = getSettings();
+  return apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
+}
+
+const OPENAI_IMAGE_DISCLOSURE = {
+  label: 'OpenAI images · paid',
+  cost: 'Paid image generation charged by OpenAI to your API account. The charge depends on image and prompt token usage.',
+};
+
+/** No provider calls or secrets: describe exactly the chain the handler can take. */
+export function describeImageGenerationRoute(backend: string): ImageGenerationRoute {
+  const localOnly = backend === 'local';
+  const gemini = storyboardFrameProvider('gemini');
+  return {
+    localFirst: backend !== 'cloud',
+    onlineAllowed: resolveCloudLLM(getSettings()).intended,
+    onlineProvider: localOnly ? null : googleImageKey()
+      ? { label: gemini.label, cost: gemini.cost, paid: gemini.paid, watermark: gemini.watermark }
+      : { label: 'Stable Horde · free community service', cost: 'No charge. Your prompt is sent to a community service; availability and waiting time vary.', paid: false, watermark: null },
+    paidFallback: !localOnly && _openaiApiKey ? OPENAI_IMAGE_DISCLOSURE : null,
+  };
+}
+
+/** Consent comes only from main's interactive callback, never tool arguments. */
+async function confirmPaidImage(context: ToolContext, label: string, cost: string): Promise<ToolResult | null> {
+  assertProviderOnlineAccess(label);
+  if (!context.requestConfirmation) return { success: false, code: 'PAID_CONFIRMATION_REQUIRED',
+    error: 'Paid image generation needs interactive confirmation. Use Image mode to review the provider and approve one image, or choose a provider on this PC. No paid request was sent.' };
+  if (!await context.requestConfirmation(
+    `Generate one paid image with ${label}?\n${cost}\nYour prompt is sent to this provider. Each new image is a separate paid request.`
+  )) return { success: false, code: 'PAID_CONFIRMATION_REQUIRED', error: 'Paid image generation was not approved. No paid request was sent.' };
+  assertProviderOnlineAccess(label);
+  return null;
+}
+
+function changedPaidImageAccount(): ToolResult {
+  return { success: false, code: 'PAID_PROVIDER_CHANGED', error: 'The connected image account changed during approval. Generate again to review the current provider.' };
+}
+
+export const imageGenerateHandler: ToolHandler = async (args, context): Promise<ToolResult> => {
   try {
     const prompt = String(args.prompt || '').trim();
     if (!prompt) return { success: false, error: 'prompt is required' };
@@ -1969,8 +2025,15 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
       // Gemini is the default cloud engine when a Google/Gemini key is saved.
-      // Failures surface; Pollinations is not used as a silent fallback.
-      const gemini = await tryGeminiImage(prompt, width, height);
+      assertProviderOnlineAccess('Online image generation');
+      const key = googleImageKey();
+      if (key) {
+        const option = storyboardFrameProvider('gemini');
+        const denied = await confirmPaidImage(context, option.label, `${option.cost} ${option.watermark}`);
+        if (denied) return denied;
+        if (googleImageKey() !== key) return changedPaidImageAccount();
+      }
+      const gemini = key ? await tryGeminiImage(prompt, width, height) : null;
       if (gemini) {
         image_base64 = gemini.b64;
         source = 'gemini-3.1-flash-image';
@@ -1986,10 +2049,13 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
 
 
     if (!image_base64 && backend !== 'local' && backend !== 'imagen' && backend !== 'imagen-3') {
-      // The paid option, and deliberately the last resort: every free engine above
-      // has already been tried, so configuring an OpenAI key never bills a user for
-      // an image a free service could have drawn. This is the slot the DALL·E
-      // fallback used to occupy.
+      // A different paid provider always needs its own explicit confirmation.
+      if (_openaiApiKey) {
+        const key = _openaiApiKey;
+        const denied = await confirmPaidImage(context, OPENAI_IMAGE_DISCLOSURE.label, OPENAI_IMAGE_DISCLOSURE.cost);
+        if (denied) return denied;
+        if (_openaiApiKey !== key) return changedPaidImageAccount();
+      }
       const openai = await tryOpenAIImage(prompt, width, height);
       if (openai) {
         image_base64 = openai.b64;
@@ -2005,7 +2071,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
           `1. stable-diffusion.cpp (lightweight): Place sd.exe in "${sdCppDir}" and a .gguf model in "${sdCppDir}\\models"\n` +
           `2. AUTOMATIC1111: Run Stable Diffusion WebUI on port 7860\n` +
           `3. ComfyUI: Run ComfyUI on port 8188\n` +
-          `Or switch to "Hybrid" to use free cloud generation.`
+          `Or choose "Best available" to review online options; paid providers require confirmation.`
         : 'All image backends failed. ' +
           'Gemini (when a key is saved) and Stable Horde were tried — check your internet connection. ' +
           'For local generation, run Stable Diffusion (port 7860) or ComfyUI (port 8188). ' +
@@ -2028,7 +2094,7 @@ export const imageGenerateHandler: ToolHandler = async (args): Promise<ToolResul
       }
     };
   } catch (err: any) {
-    return { success: false, error: `image_generate failed: ${err.message}` };
+    return { success: false, code: err.code, error: `image_generate failed: ${err.message}` };
   }
 };
 

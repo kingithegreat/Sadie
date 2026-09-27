@@ -860,14 +860,14 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       variants: results.map((result, i) => ({ variantId: selected[i]!.id, ...result })),
       message: `${results.filter(result => result.success).length} of ${results.length} selected formats exported. Review each saved movie separately; nothing is approved or published automatically.`,
     } };
-  } catch (e) {
+  } catch (e: any) {
     const message = `Could not render the video: ${errText(e)}`;
     try {
       const sourceCode = isScenePictureFailure(e) ? SCENE_PICTURE_FAILURE : undefined;
       for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message, sourceCode); }
       record('failed', message, sourceCode);
     } catch { /* Preparing record recovers as interrupted after restart. */ }
-    return err(message);
+    return { ...err(message), ...(typeof e?.code === 'string' ? { code: e.code } : {}) };
   } finally { renderingJobs.delete(job.id); }
 };
 

@@ -497,6 +497,28 @@ describe('media_render output trust', () => {
     expect(generateSceneImages).toHaveBeenCalledTimes(calls);
   });
 
+  it.each([
+    ['PAID_CONFIRMATION_REQUIRED', 'Paid image generation needs interactive confirmation. Use Image mode to review the provider and approve one image, or choose a provider on this PC. No paid request was sent.'],
+    ['PAID_PROVIDER_CHANGED', 'The connected image account changed during approval. Generate again to review the current provider.'],
+    ['ONLINE_ACCESS_DISABLED', 'Online image generation needs Online access. Turn on Online in Settings, or use a provider on this PC.'],
+  ])('persists actionable background denial %s and keeps the last successful movie', async (code, message) => {
+    const job = writeReadyJob('Paid scene consent');
+    const previousMovie = path.join(testRoot, 'previous-approved.mp4');
+    fs.writeFileSync(previousMovie, 'previous movie bytes');
+    writeJobs([{ ...job, renderPath: previousMovie }]);
+    (generateSceneImages as jest.Mock).mockRejectedValueOnce(Object.assign(new Error(message), { code }));
+    const previousEncodeCount = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id, visuals: 'scenes' });
+    expect(result.success).toBe(false);
+    expect(result.code).toBe(code);
+    expect(result.error).toContain(message);
+    expect(renderVideo).toHaveBeenCalledTimes(previousEncodeCount);
+    const saved = readJobs()[0];
+    expect(saved.latestExportAttempt).toMatchObject({ status: 'failed', error: expect.stringContaining(message) });
+    expect(saved.renderPath).toBe(previousMovie);
+    expect(fs.readFileSync(previousMovie, 'utf8')).toBe('previous movie bytes');
+  });
+
   it('keeps the saved music choice on retry and snapshots its bytes', async () => {
     const job = writeReadyJob('Saved music');
     const music = path.join(testRoot, 'music.wav');
