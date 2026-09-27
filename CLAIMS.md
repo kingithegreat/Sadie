@@ -279,6 +279,11 @@ REL-1 itself is still open. The live Drive priority queue could not be read or
 updated from this session (no Drive access), so this note is the repo-side record
 only.
 
+## 2026-09-27 - FINISH-MEDIA-ART-1 (Codex)
+| Feature | Branch | Status | Notes |
+|---|---|---|---|
+| FINISH-MEDIA-ART-1 ordinary scene picture QA | claude/finish-media-art-1 | Complete locally - claim released | Default-scenes frozen sources including cached/reused bytes checked before captions. Reachable explicit regeneration bypasses reuse/cache once; plain/supplied/external renderer boundaries preserved. Built normal UI proof1/1 zero retries: cached-flat rejection, flat/detailed loopback recovery, last-good/cache hashes and restart playback. Evidence in tasks/finish-media-art-1.md. Root owns integration. No real provider/model/voice/AP calls. |
+
 ## 2026-09-27 - FINISH-MEDIA-QA-1 (Codex)
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
