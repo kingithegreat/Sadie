@@ -23,6 +23,7 @@ import { findFfmpeg, escapeFilterPath, buildStudioFrameFilters, subtitleStyleFor
 import { isCustomCaptionStyle } from '../../shared/caption-style';
 import { inspectRender, SILENCE_FLOOR_DB, FLAT_FRAME_STDDEV } from '../media-qa';
 import { assembleStoryboardScenes, type AssembledScene, type AssembledShot } from './storyboard-assembly';
+import { preflightStoryboardPictures } from './storyboard-source-qa';
 import { planTimeline, type Timeline } from '../../shared/transitions';
 import { buildTransitionAudioGraph, buildTransitionVideoGraph, shotWindows } from './transition-graph';
 import { buildTextCardAss, entriesFromShots } from './text-cards';
@@ -357,6 +358,7 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
       }
     }
     shots = snapshotScenes.flatMap(scene => scene.shots);
+    const pictureChecks = await preflightStoryboardPictures(ffmpeg, snapshotScenes);
     // The voice chosen for THIS export wins over the saved setting: with Online
     // off, the online voice throws and the only way out used to be Settings.
     const engine = opts.narrationEngine ?? storyboardNarrationEngine();
@@ -480,7 +482,7 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     }
 
     return { ffmpeg, projectDir, projectMeta, outputSpec, burnSubtitles, sceneId, shots, snapshotScenes,
-      engine, totalDuration, motion, hasNarration, combinedAudioPath: finalAudioPath, audioSegments, timeline, srtPath,
+      engine, totalDuration, motion, hasNarration, pictureChecks, combinedAudioPath: finalAudioPath, audioSegments, timeline, srtPath,
       musicTrackPath: music.path, musicVolume: music.volume, musicWarning: music.warning, videoEncoder,
       inputDir: tempDir, rendersDir };
   } catch (error) {
@@ -701,10 +703,12 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
     // placeholder — every frame the same flat color with narration playing
     // over it. This is the same gate the job pipeline (evaluateRenderQa) and
     // the movie runner apply; fail only when EVERY sampled frame is flat, so
-    // one legitimately simple frame does not trip it.
+    // one legitimately simple frame does not trip it. An all-plain source
+    // board is permitted only when every original picture was inspected and
+    // explicitly acknowledged for its exact bytes before overlays or speech.
     if (facts.frameSamples && facts.frameSamples.length > 0) {
       const maxStdDev = Math.max(...facts.frameSamples.map(s => s.stdDev));
-      if (maxStdDev < FLAT_FRAME_STDDEV) {
+      if (maxStdDev < FLAT_FRAME_STDDEV && !prepared.pictureChecks.allPicturesPlain) {
         throw new Error('The exported video is a flat color with no picture content — the frames look like placeholders, not real scene art. The previous export has been kept.');
       }
     }
