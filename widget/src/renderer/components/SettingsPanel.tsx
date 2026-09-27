@@ -33,7 +33,7 @@ import MediaCapabilitiesSection from './settings/MediaCapabilitiesSection';
 
 interface SettingsPanelProps {
   settings: SharedSettings;
-  onSave: (settings: SharedSettings) => void;
+  onSave: (settings: SharedSettings) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -59,6 +59,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
     handleSave,
     handleCancel,
     hasUnsavedChanges,
+    saving,
+    saveError,
     upgradePrompt,
     setUpgradePrompt,
   } = state;
@@ -143,13 +145,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         )}
       </div>{/* end settings-body */}
 
+      {saveError && <p role="alert" className="setting-hint">{saveError}</p>}
       <div className="settings-footer">
         <button className="button button-cancel" onClick={handleCancel}>
           Cancel
         </button>
         <span className="settings-footer-hint">Ctrl+S</span>
-        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave}>
-          {hasUnsavedChanges ? 'Save changes' : 'Save'}
+        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Save'}
         </button>
       </div>
       </div>

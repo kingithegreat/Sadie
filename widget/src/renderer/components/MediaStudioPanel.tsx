@@ -2009,7 +2009,7 @@ ${shots.map((s, idx) => `
   const changeNarrateEngine = (engine: '' | 'edge' | 'kokoro') => {
     setNarrateEngine(engine);
     setNarrateVoice(''); // an Edge voice name is meaningless under Kokoro
-    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' }); } catch { /* preference stays session-local */ }
+    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' })?.catch(() => { /* preference stays session-local */ }); } catch { /* preference stays session-local */ }
   };
 
   /** Render a short sample of a voice to a temp file and play it inline.

@@ -597,13 +597,18 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         try { logTelemetryEvent('model_switch', { from: prev.chatModel, to: merged.chatModel }); } catch (_e) {}
       }
 
-      // Refresh search API keys in memory
-      setSearxngUrl((merged as any).searxngUrl || null);
-      setTavilyApiKey(merged.tavilyApiKey || null);
-      setSerperApiKey(merged.serperApiKey || null);
-      setStableHordeApiKey(merged.stableHordeApiKey || null);
-
-      return { success: true, data: merged };
+      // The write has committed. A refresh failure must not report an unsaved
+      // draft when the persisted settings already changed.
+      const saved = getSettings();
+      try {
+        setSearxngUrl((saved as any).searxngUrl || null);
+        setTavilyApiKey(saved.tavilyApiKey || null);
+        setSerperApiKey(saved.serperApiKey || null);
+        setStableHordeApiKey(saved.stableHordeApiKey || null);
+      } catch (error) {
+        console.error('Settings saved, but search settings refresh failed:', error);
+      }
+      return { success: true, data: saved };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);
       return { success: false, error: err.message };

@@ -99,10 +99,29 @@ export default function FirstRunModal({
 }: {
   open: boolean;
   settings: Settings;
-  onSave: (s: Settings) => void;
+  onSave: (s: Settings) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveInFlight = useRef(false);
+
+  const persistSetup = async (payload: Settings) => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(payload);
+      onClose();
+    } catch (error: any) {
+      setSaveError(`Could not save setup: ${error?.message || 'Please try again.'} Your choices are kept here; try again.`);
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
+  };
   const [step, setStep] = useState<Step>('welcome');
   const [telemetryConsent, setTelemetryConsent] = useState(false);
   const [setupPath, setSetupPath] = useState<SetupPath>(null);
@@ -392,16 +411,12 @@ export default function FirstRunModal({
       else if (cloudProvider === 'google-ai-studio' || cloudProvider === 'google-gemini') payload.geminiApiKey = cloudApiKey.trim();
     }
 
-    try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun save failed:', e); }
-    onSave(payload);
-    onClose();
+    await persistSetup(payload);
   };
 
   const handleSkip = async () => {
     const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
-    try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun skip save failed:', e); }
-    onSave(payload);
-    onClose();
+    await persistSetup(payload);
   };
 
   if (!open) return null;
@@ -420,6 +435,7 @@ export default function FirstRunModal({
         </div>
 
         <div className="first-run-content">
+          {saveError && <p role="alert" className="wizard-error-detail">{saveError}</p>}
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>
@@ -734,7 +750,7 @@ export default function FirstRunModal({
         </div>
 
         <div className="first-run-footer">
-          <button type="button" onClick={handleSkip} className="first-run-btn first-run-btn-secondary">Skip setup</button>
+          <button type="button" onClick={handleSkip} disabled={saving} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
               <button type="button" onClick={() => { setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
@@ -750,7 +766,7 @@ export default function FirstRunModal({
               </button>
             )}
             {step === 'done' && (
-              <button type="button" onClick={handleFinish} className="first-run-btn first-run-btn-primary">Get Started</button>
+              <button type="button" onClick={handleFinish} disabled={saving} className="first-run-btn first-run-btn-primary">{saving ? 'Saving…' : 'Get Started'}</button>
             )}
           </div>
         </div>
