@@ -49,6 +49,19 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
   let server: Server | undefined;
   let generationRequests = 0;
   let responseMode: 'flat' | 'detailed' = 'detailed';
+  const close = async () => {
+    const process = app.process();
+    console.log(`[SCENE-QA] Closing own Electron PID ${process.pid}; attempt=${job().latestExportAttempt?.status}`);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([app.close(), new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          process.kill();
+          reject(new Error(`Own Electron PID ${process.pid} did not close in 10 seconds.`));
+        }, 10_000);
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+  };
   const open = async () => {
     await waitForAppReady(page);
     await dismissFirstRun(page);
@@ -88,7 +101,7 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(7860, '127.0.0.1', resolve); });
     await make();
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('succeeded');
-    await expect(page.getByText('1 of 1 selected formats exported.', { exact: false })).toBeVisible();
+    await expect(page.getByText(`Rendered "${title}"`, { exact: false })).toBeVisible();
     await expect(page.locator('.ms-working')).toHaveCount(0);
     expect(generationRequests).toBe(0);
     const movie = job().renderPath;
@@ -98,7 +111,7 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     expect(encoded.streams.find((stream: any) => stream.codec_type === 'video')).toMatchObject({ width: 1280, height: 720, r_frame_rate: '30/1' });
     expect(Math.abs(Number(encoded.format.duration) - 6)).toBeLessThan(0.15);
     run(['-i', movie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('good-scene-contact.png')]);
-    await app.close();
+    await close();
     // Inject the actual production failure plate retained by the no-provider
     // diagnostic. Normal Make the video must inspect these cached bytes too.
     fs.copyFileSync(failedPlate, cache);
@@ -128,7 +141,7 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     await page.getByRole('button', { name: 'Regenerate scene pictures', exact: true }).click();
     await expect.poll(() => generationRequests).toBe(2);
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('succeeded');
-    await expect(page.getByText('1 of 1 selected formats exported.', { exact: false })).toBeVisible();
+    await expect(page.getByText(`Rendered "${title}"`, { exact: false })).toBeVisible();
     await expect(page.locator('.ms-working')).toHaveCount(0);
     const recoveredMovie = job().renderPath;
     expect(recoveredMovie).not.toBe(movie);
@@ -137,7 +150,7 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
     const recoveredHash = hash(recoveredMovie);
     const recoveredFacts = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_format', '-show_streams', '-of', 'json', recoveredMovie], { windowsHide: true, timeout: 30_000 }).toString());
     run(['-i', recoveredMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('recovered-scene-contact.png')]);
-    await app.close();
+    await close();
     ({ app, page } = await launchFocusedStudioApp(env, profile));
     await waitForAppReady(page);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
@@ -158,7 +171,10 @@ test('ordinary Make the video rejects cached failed scene art and preserves the 
       previousMoviePreserved: true, restartedPlayerPlayed: true,
       scope: 'Actual normal Make the video UI/cache rejection and explicit recovery through real generator transport into an authored loopback fixture (flat then detailed). No real provider/voice/model/AP calls; not creative quality acceptance.' }, null, 2));
   } finally {
-    await app.close();
-    if (server?.listening) await new Promise<void>(resolve => server!.close(() => resolve()));
+    await close();
+    if (server?.listening) {
+      server.closeAllConnections();
+      await new Promise<void>(resolve => server!.close(() => resolve()));
+    }
   }
 });

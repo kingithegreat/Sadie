@@ -77,5 +77,34 @@ an owner's service. No test-only product hook or real provider/model call is
 introduced. Fresh generator failure is covered separately by the direct seam
 reproduction and handler unit test.
 
-Actual built acceptance pending the coordinated render lane. The bounded
-six-second default auto encoder is authorized; chosen encoder is recorded.
+Actual built normal UI acceptance passes **1/1, zero retries, 49.8 seconds**.
+Own branch includes main `055f355d` and runtime Sharp declaration; no verification
+overlay was used. The supported automatic encoder selected `h264_nvenc`.
+Both exports decode as 1280 x 720, 30 fps, 180 frames, exactly six seconds;
+their AAC audio also covers six seconds. The cache control made zero generation
+POSTs. Cached production failure-plate bytes were refused with scene 1 guidance
+and `SCENE_PICTURE_FAILURE`. Explicit regeneration made two loopback POSTs:
+flat response refused, detailed response accepted into a separate export path.
+The old movie and cache bytes remained unchanged. After restarting the actual
+app, the recovered player loaded and advanced beyond 0.2 seconds.
+
+Evidence: `.kilo/finish-20260927/media-diagnostics/art-live-settled/`
+`studio-scene-source-qa.liv-8eadb-d-preserves-the-good-export/`.
+Both contact sheets were viewed across start/middle/end: authored diagnostic
+artwork with burned captions, no empty background. Failure guidance was viewed.
+Movie SHA256 (both intentionally identical authored controls):
+`06bf2a13c85ca36e77fcaa6537a234598d65b90ce53d09929b0a459c0bf2d40c`.
+Evidence JSON SHA256:
+`0faa4324344c18cf13a4f70356119aee7daa9fc4621e730fffd46b6e09b715a6`.
+Contact sheet SHA256:
+`6d5d923dd78d9e8d25b8d39801d3a6626f7357280cab87c6719c7a3f7dc48fd8`.
+Failure guidance SHA256:
+`b6dec140d44b3cb217f3a3b831c20a94e4efbbbe02198e5f72f00c2627720b72`.
+
+First run retained in `art-live/` and `art-live.log`: the detailed export
+succeeded, but the harness awaited multi-format wording for the single-format
+path and timed out. Corrected selector waits the real `Rendered` result and no
+working indicator before closing. Closure instrumentation targets only the
+test's own Electron process, with a ten-second bound; all three corrected-run
+closures completed without that timeout. This is fixture/content acceptance,
+not a claim that a real provider, model, voice or creative production was tested.

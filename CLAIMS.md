@@ -279,7 +279,7 @@ only.
 ## 2026-09-27 - FINISH-MEDIA-ART-1 (Codex)
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
-| FINISH-MEDIA-ART-1 ordinary scene picture QA | claude/finish-media-art-1 | Building - Codex | Inspect default-scenes source snapshots including cached/reused bytes before captions; refuse failed/flat scene art, preserve explicit plain/supplied artwork and last-good. Fresh isolated worktree; media.ts overlap coordinated with image-cost worker. No AP/provider changes. |
+| FINISH-MEDIA-ART-1 ordinary scene picture QA | claude/finish-media-art-1 | Complete locally - claim released | Default-scenes frozen sources including cached/reused bytes checked before captions. Reachable explicit regeneration bypasses reuse/cache once; plain/supplied/external renderer boundaries preserved. Built normal UI proof1/1 zero retries: cached-flat rejection, flat/detailed loopback recovery, last-good/cache hashes and restart playback. Evidence in tasks/finish-media-art-1.md. Root owns integration. No real provider/model/voice/AP calls. |
 ## 2026-09-27 Codex FINISH-SHARP-1 claim
 
 Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.
