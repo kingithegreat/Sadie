@@ -108,6 +108,7 @@ function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: 
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
       transition: shot.transition ?? 'cut', transitionSec: shot.transitionSec ?? null,
       textCard: shot.textCard ?? null,
+      plainBackgroundSha256: shot.plainBackgroundSha256 ?? null,
     })) })) });
 }
 
@@ -436,6 +437,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         narration: string;
         status: string;
         frameImagePath: string | null;
+        frameImageSha256?: string | null;
+        plainBackgroundSha256?: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
         /** How this shot moves into the next one (MS-2). */
@@ -1514,6 +1517,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         const frameImagePath = res.result.frameImagePath;
         handleUpdateShot(shotId, {
           frameImagePath,
+          frameImageSha256: res.result.frameImageSha256 ?? null,
+          plainBackgroundSha256: null,
           status: 'COMPLETED',
           // The new frame was made from the current prompt.
           frameStale: false,
@@ -1621,7 +1626,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       });
       if (res?.ok) {
         const destPath = (res.result as any)?.frameImagePath || filePath;
-        handleUpdateShot(shotId, { frameImagePath: destPath, status: 'IMAGE_GENERATED' });
+        handleUpdateShot(shotId, { frameImagePath: destPath, frameImageSha256: (res.result as any)?.frameImageSha256 ?? null,
+          plainBackgroundSha256: null, status: 'IMAGE_GENERATED' });
         setFrameVersions(prev => ({ ...prev, [destPath]: Date.now() }));
         setStoryboardMessage(`Image for ${shotId} imported successfully.`);
       } else {
@@ -5687,6 +5693,17 @@ ${shots.map((s, idx) => `
                     {/* Shot Controls & Inputs */}
                     <div className="ms-shot-card-body">
                       {/* Framing Pills */}
+                      <label className="ms-shot-pill-label" style={{ display: 'flex', gap: 8, padding: '8px 0', alignItems: 'center' }}>
+                        <input type="checkbox"
+                          aria-label={`Use a plain background for ${shot.shotId}`}
+                          disabled={!shot.frameImageSha256}
+                          checked={!!shot.frameImageSha256 && shot.plainBackgroundSha256 === shot.frameImageSha256}
+                          onChange={e => handleUpdateShot(shot.shotId, {
+                            plainBackgroundSha256: e.target.checked ? shot.frameImageSha256 : null,
+                          })} />
+                        Use a plain background for this shot
+                      </label>
+                      <p className="ms-shot-pill-label">Choose this for an intentional solid-color picture. Replacing the picture clears this choice.</p>
                       <div className="ms-shot-pills-row">
                         <span className="ms-shot-pill-label">Camera Shot Size</span>
                         <div className="ms-shot-pills">
