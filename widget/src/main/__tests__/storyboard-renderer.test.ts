@@ -126,7 +126,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
         durationSec: 5,
         narration: 'The dawn breaks over Giza.',
         status: 'COMPLETED',
-        frameImagePath: '/fake/shot1.png',
+        frameImagePath: '/fake/shot1.png', videoClipPath: null,
         frameStale: false,
       },
       {
@@ -139,7 +139,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
         durationSec: 4,
         narration: '',
         status: 'PLANNED',
-        frameImagePath: null,
+        frameImagePath: null, videoClipPath: null,
         frameStale: false,
       },
     ];
@@ -209,7 +209,7 @@ describe('One-Click 1080p Storyboard Renderer', () => {
 
     const res = await renderStoryboardMovie({ projectId: 'empty-frames-proj' });
     expect(res.ok).toBe(false);
-    expect(res.error).toContain('No rendered keyframes found');
+    expect(res.error).toContain('No rendered keyframes or video clips found');
   });
 
   test('a new storyboard left on its defaults exports its camera moves (crop), while a saved fit project stays still', async () => {

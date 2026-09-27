@@ -329,9 +329,12 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
   if (shots.some(s => typeof s.prompt !== 'string' || (s.narration !== undefined && typeof s.narration !== 'string'))) {
     throw new Error('A shot has invalid text. Open and save the storyboard before exporting.');
   }
-  const missingFrames = shots.filter(s => !readableFile(s.frameImagePath));
+  // A shot is exportable with a rendered keyframe OR a generated video clip
+  // (PROV-4): a Veo shot has no keyframe, and requiring one would make every
+  // video shot unrenderable.
+  const missingFrames = shots.filter(s => !readableFile(s.frameImagePath) && !readableFile(s.videoClipPath));
   if (missingFrames.length === shots.length) {
-    throw new Error('No rendered keyframes found for this storyboard. Please generate frames first before rendering.');
+    throw new Error('No rendered keyframes or video clips found for this storyboard. Generate frames or clips first before rendering.');
   }
   if (missingFrames.length > 0) {
     throw new Error(`${missingFrames.length} shot image(s) are missing or empty. Generate or replace those frames before exporting.`);
@@ -351,12 +354,30 @@ async function prepareStoryboardInputs(opts: StoryboardRenderOptions) {
     let imageIndex = 0;
     for (const scene of snapshotScenes) {
       for (const shot of scene.shots) {
-        const copy = path.join(tempDir, `source-${imageIndex++}${path.extname(shot.frameImagePath!)}`);
-        fs.copyFileSync(shot.frameImagePath!, copy, fs.constants.COPYFILE_EXCL);
-        shot.frameImagePath = copy;
+        if (readableFile(shot.videoClipPath)) {
+          const copy = path.join(tempDir, `source-${imageIndex++}.mp4`);
+          fs.copyFileSync(shot.videoClipPath!, copy, fs.constants.COPYFILE_EXCL);
+          shot.videoClipPath = copy;
+        } else {
+          const copy = path.join(tempDir, `source-${imageIndex++}${path.extname(shot.frameImagePath!)}`);
+          fs.copyFileSync(shot.frameImagePath!, copy, fs.constants.COPYFILE_EXCL);
+          shot.frameImagePath = copy;
+        }
       }
     }
     shots = snapshotScenes.flatMap(scene => scene.shots);
+    // A video clip shorter than its shot cannot fill the timeline slot without
+    // dragging every later shot early; refuse with the numbers instead.
+    for (const shot of shots) {
+      if (!readableFile(shot.videoClipPath)) continue;
+      const clipFacts = await inspectRender(ffmpeg, shot.videoClipPath);
+      if (!clipFacts.hasVideo || !clipFacts.durationSeconds) {
+        throw new Error(`The generated clip for shot ${shot.shotId} cannot be decoded. Generate the clip again before exporting.`);
+      }
+      if (clipFacts.durationSeconds < shot.durationSec - 0.15) {
+        throw new Error(`The clip for shot ${shot.shotId} runs ${clipFacts.durationSeconds.toFixed(1)}s but the shot needs ${shot.durationSec}s. Shorten the shot or generate a new clip.`);
+      }
+    }
     // The voice chosen for THIS export wins over the saved setting: with Online
     // off, the online voice throws and the only way out used to be Settings.
     const engine = opts.narrationEngine ?? storyboardNarrationEngine();
@@ -540,11 +561,18 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
       for (let i = 0; i < shots.length; i++) {
         const shot = shots[i];
         const clipPath = path.join(tempDir, `t_clip_${String(i).padStart(3, '0')}.mp4`);
-        const frameFilter = motion
-          ? buildKenBurnsFilter(shot.movement || 'static', shot.durationSec, fps, outputVariant)
-          : (outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080');
+        const stillFilter = outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080';
+        // A video shot (PROV-4) is trimmed to the shot duration from its own
+        // moving frames — no Ken Burns over a moving clip — and its built-in
+        // audio is dropped, because the narration track owns the sound.
+        const isVideoShot = readableFile(shot.videoClipPath);
+        const frameFilter = isVideoShot ? stillFilter
+          : motion ? buildKenBurnsFilter(shot.movement || 'static', shot.durationSec, fps, outputVariant) : stillFilter;
         const vf = [frameFilter, buildColorGradeFilter(opts.colorGrade), 'format=yuv420p'].filter(Boolean).join(',');
-        await runCommand(ffmpeg, ['-y', '-loop', '1', '-i', shot.frameImagePath!, '-vf', vf,
+        const inputArgs = isVideoShot
+          ? ['-i', shot.videoClipPath!, '-an']
+          : ['-loop', '1', '-i', shot.frameImagePath!];
+        await runCommand(ffmpeg, ['-y', ...inputArgs, '-vf', vf,
           '-c:v', videoEncoder.encoder, '-preset', videoEncoder.preset, '-t', String(shot.durationSec), '-r', String(fps), clipPath]);
         clips.push(clipPath);
       }
@@ -575,8 +603,9 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         '-t', String(totalDuration), '-movflags', '+faststart',
         stagedMoviePath,
       ]);
-    } else if (motion) {
-      // Per-shot Ken Burns motion clips
+    } else if (motion || shots.some(shot => readableFile(shot.videoClipPath))) {
+      // Per-shot Ken Burns motion clips; also the only concat-safe path when a
+      // video shot is present (an MP4 cannot join an image ffconcat list).
       const videoClips: string[] = [];
       for (let i = 0; i < shots.length; i++) {
         const shot = shots[i];
@@ -584,14 +613,18 @@ async function renderStoryboardAttempt(opts: StoryboardRenderOptions, attempt: S
         const imgPath = shot.frameImagePath!;
 
         const shotClipPath = path.join(tempDir, `clip_${String(i).padStart(3, '0')}.mp4`);
-        const kbFilter = buildKenBurnsFilter(shot.movement || 'static', dur, fps, outputVariant);
+        const isVideoShot = readableFile(shot.videoClipPath);
+        const stillFilter = outputVariant ? buildStudioFrameFilters(outputVariant).join(',') : 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080';
+        const kbFilter = isVideoShot ? stillFilter : buildKenBurnsFilter(shot.movement || 'static', dur, fps, outputVariant);
         const lutFilter = buildColorGradeFilter(opts.colorGrade);
         const vf = [kbFilter, lutFilter, 'format=yuv420p'].filter(Boolean).join(',');
 
+        const videoInputArgs = isVideoShot
+          ? ['-i', shot.videoClipPath!, '-an']
+          : ['-loop', '1', '-i', imgPath];
         await runCommand(ffmpeg, [
           '-y',
-          '-loop', '1',
-          '-i', imgPath,
+          ...videoInputArgs,
           '-vf', vf,
           '-c:v', videoEncoder.encoder,
           '-preset', videoEncoder.preset,
