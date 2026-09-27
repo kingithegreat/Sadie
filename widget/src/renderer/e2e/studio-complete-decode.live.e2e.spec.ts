@@ -24,7 +24,7 @@ test('ordinary Make the video refuses an actually corrupt staged movie and prese
   fs.mkdirSync(config, { recursive: true });
   fs.mkdirSync(ap);
   fs.writeFileSync(path.join(ap, 'run_pipeline.py'), '# disposable marker, never executed');
-  fs.writeFileSync(path.join(config, 'mcp-servers.json'), '[]');
+  fs.writeFileSync(path.join(config, 'mcp-servers.json'), JSON.stringify({ servers: [] }));
   fs.writeFileSync(path.join(config, 'user-settings.json'), JSON.stringify({ firstRun: false, useCustomLLM: false,
     mediaMusicEnabled: false, permissions: { media_render: true }, alwaysOnTop: false,
     chatModel: 'fixture-local:latest', ollamaUrl: 'http://127.0.0.1:1', n8nUrl: 'http://127.0.0.1:2', telemetryEnabled: false }));
@@ -47,6 +47,12 @@ test('ordinary Make the video refuses an actually corrupt staged movie and prese
   const guard = path.join(home, 'offline-bootstrap.cjs');
   fs.writeFileSync(guard, `
 const state = globalThis.decodeAcceptanceNetwork = { controls: 0, blocked: [], inventoryFixtures: 0 };
+globalThis.decodeNativeMcpConsole = [];
+for(const level of ['log','warn','error']) { const original=console[level]; console[level]=function(...args) {
+  const message=args.map(value=>value instanceof Error ? value.message : String(value)).join(' ');
+  if(/MCP/i.test(message)) globalThis.decodeNativeMcpConsole.push({level,message});
+  return original.apply(this,args);
+}; }
 let control = true;
 function deny(channel) { if(control) state.controls++; else state.blocked.push(channel); throw new Error('Decode proof blocks network: '+channel); }
 globalThis.fetch = () => deny('fetch');
@@ -95,6 +101,7 @@ globalThis.decodeInstallCorruption=function(jobDir,corrupt) {
     await focusStudioWindow(app, page);
     expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
     expect(await app.evaluate(() => (globalThis as any).decodeAcceptanceNetwork.controls)).toBe(5);
+    expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
     expect((await page.evaluate(() => window.electron.mediaAncientPathwaysStatus!())).dir).toBe(ap);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     await make();
@@ -140,12 +147,19 @@ globalThis.decodeInstallCorruption=function(jobDir,corrupt) {
     await expect(refusal).not.toContainText('[h264');
     await refusal.screenshot({ path: testInfo.outputPath('decode-refusal.png') });
     execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', previousMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('previous-movie-contact.png')], { windowsHide: true, timeout: 30_000 });
+    const mcpServers = await page.evaluate(() => window.electron.mcpListServers!());
+    expect(mcpServers).toEqual([]);
+    const nativeMcpConsole: Array<{ level: string; message: string }> = await app.evaluate(() => (globalThis as any).decodeNativeMcpConsole);
+    const mcpInitializationFailure = /MCP.*(?:initialization|initialize).*fail/i;
+    expect('[MCP] Server initialization failed: positive control').toMatch(mcpInitializationFailure);
+    expect(nativeMcpConsole.filter(item => mcpInitializationFailure.test(item.message))).toEqual([]);
     fs.writeFileSync(testInfo.outputPath('decode-live-evidence.json'), JSON.stringify({ home, profile,
       sourceHead: process.env.HOMEBOT_DECODE_SOURCE_HEAD, buildSha256: hash(entry), corruptSha256: hash(corrupt),
       detailedImageSha256: hash(detailed), narrationSha256: hash(audio), captionsSha256: hash(captions),
       previousMovie, previousHash, encoded, rejectedPath: saved.rejectedRenderPath, failedAttempt: saved.latestExportAttempt,
       interception, previousPlayerPlayed: true, network: await app.evaluate(() => (globalThis as any).decodeAcceptanceNetwork),
       emptyMcpConfiguration: fs.readFileSync(path.join(config, 'mcp-servers.json'), 'utf8'),
+      mcpServers, nativeMcpConsole, mcpInitializationFailureAbsent: true,
       scope: 'Actual normal UI + unchanged real IPC/handler/FFmpeg; precisely scoped one-shot filesystem fixture corrupts only this job staged output after encoding. No product hook/provider/model/voice/AP call.' }, null, 2));
   } finally {
     await app.evaluate(() => (globalThis as any).decodeCorruption?.restore()).catch(() => {});

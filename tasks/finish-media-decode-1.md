@@ -149,3 +149,15 @@ capture verifies the subprocess result. Evidence logs remain in ignored
 `media-diagnostics/decode-art-integration*.log`.
 No duplicate live encode: the output gate and actual decode semantics are
 unchanged; final integrated packaged acceptance belongs to the root release lane.
+
+### Connector fixture correction
+
+Root's package audit identified that earlier live proofs seeded `mcp-servers.json`
+as `[]`, while the canonical interface requires `{ "servers": [] }`. Those
+retained proofs establish the strict decode and last-good behavior, but do not
+establish clean MCP initialization: their malformed connector fixture could throw
+during startup. Do not treat their empty configuration string as a clean startup
+assertion. The corrected fixture uses the canonical object, checks public
+`mcpListServers()` before and after exports, and captures native MCP console
+messages from before the unchanged app entry. A positively controlled failure
+filter must find no MCP initialization failure. No product gate changed.
