@@ -126,3 +126,26 @@ old movie hash and player assertions pass. Viewed the new refusal and contact;
 refusal contains no decoder addresses or codec diagnostics. Existing ordinary
 render result still includes local rejected/previous file paths. Evidence is in
 `media-diagnostics/decode-live-plain/`; the prior raw-diagnostic proof is retained.
+
+Plain proof JSON SHA256:
+`96fb220b6e2d5eb4c85b61088e195ad71ba7466c26b9eb5938dcf46eed6e3212`.
+Plain refusal PNG SHA256:
+`8e402a81632cfa75732fd1ed54f72a0a1eb73777661c536b10255fe3c014b368`.
+
+### Integrated scene-art safeguards
+
+Merged main `2338f18294458881ae81c23d10ba5777dd25825c` (ART #430)
+at `409099092f615e343172ff8f813b3836a74e44e1`. The shared ordinary handler
+retains source preflight before captions and strict complete decode before final
+QA/promotion; the strict helper is unchanged from the actual polished UI proof.
+Resolved the shared trust-test fixture by retaining both the detailed source-frame
+mock and the strict decoder mock. No rendering/provider/packaging overlay.
+
+Affected strict-decode, source-art, recovery IPC/UI, background authority and
+image consent suites pass **132/132 across nine suites**; widget typecheck exits
+0. Initial PowerShell redirection reported a wrapper error for Jest's existing
+stderr deprecation warning despite all tests passing; an explicit native-exit
+capture verifies the subprocess result. Evidence logs remain in ignored
+`media-diagnostics/decode-art-integration*.log`.
+No duplicate live encode: the output gate and actual decode semantics are
+unchanged; final integrated packaged acceptance belongs to the root release lane.
