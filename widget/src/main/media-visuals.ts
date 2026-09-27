@@ -251,6 +251,8 @@ export async function generateSceneImages(opts: {
       }
     } catch (e: any) {
       if (timer) clearTimeout(timer);
+      // Authority denials require an owner action, never a placeholder or retry.
+      if (['PAID_CONFIRMATION_REQUIRED', 'PAID_PROVIDER_CHANGED', 'ONLINE_ACCESS_DISABLED'].includes(e?.code)) throw e;
       if (opts.fallbackPlates) {
         try {
           await generateFallbackPlate(file, opts.width, opts.height, i);
@@ -437,7 +439,7 @@ async function defaultGenerator(prompt: string, width: number, height: number, s
     { prompt, width, height, seed, steps: 8, ...(backend ? { backend } : {}) },
     { executionId: 'media-visuals' } as any
   );
-  if (!res?.success) throw new Error(res?.error || 'image_generate failed');
+  if (!res?.success) throw Object.assign(new Error(res?.error || 'image_generate failed'), { code: res?.code });
   const base64 = res.result?.image_base64;
   if (!base64) return null;
   return { base64, source: res.result?.source };
