@@ -4,7 +4,7 @@
  * Tests for src/renderer/components/FirstRunModal.tsx (3-step wizard: welcome → setup → done)
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import FirstRunModal from '../components/FirstRunModal';
 import type { Settings } from '../../shared/types';
 
@@ -78,6 +78,126 @@ describe('FirstRunModal — open/closed', () => {
 });
 
 describe('FirstRunModal — local path', () => {
+  test('saves the installed hardware-recommended chat model instead of the absent default', async () => {
+    const electron = makeMockElectron();
+    electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
+    electron.listOllamaModels
+      .mockResolvedValueOnce({ success: true, models: [] })
+      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text' }] });
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={jest.fn()} />);
+    await waitFor(() => expect(electron.detectGpuVram).toHaveBeenCalled());
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await waitFor(() => expect(screen.getByText('Ollama is ready!')).toBeInTheDocument());
+    expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b', firstRun: false }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b' }));
+  });
+
+  test.each(['pull failure', 'empty inventory', 'inventory failure'])('does not claim ready after %s', async failure => {
+    const electron = makeMockElectron();
+    if (failure === 'inventory failure') {
+      electron.listOllamaModels.mockResolvedValue({ success: false, error: 'Connection lost', models: [] } as any);
+    } else {
+      electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+      if (failure === 'pull failure') electron.pullModelStream.mockResolvedValue({ success: false, error: 'Download failed' } as any);
+    }
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.queryByText('Ollama is ready!')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('Continue anyway')); });
+    expect(screen.queryByText("You're all set!")).toBeNull();
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument();
+  });
+
+  test('preserves an installed chat choice and never offers an embedding model for chat', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'llama3.2:3b' }, { name: 'nomic-embed-text' }] });
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'llama3.2:3b' }} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.queryByRole('option', { name: 'nomic-embed-text' })).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'llama3.2:3b' }));
+  });
+
+  test('downloads the exact recommended tag and accepts an installed latest embedding alias', async () => {
+    const electron = makeMockElectron();
+    electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
+    electron.listOllamaModels
+      .mockResolvedValueOnce({ success: true, models: [{ name: 'qwen2.5:0.5b' }, { name: 'nomic-embed-text:latest' }] })
+      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text:latest' }] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+    expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+  });
+
+  test('embedding-only inventory cannot make local chat ready', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'nomic-embed-text' }] });
+    electron.pullModelStream.mockResolvedValue({ success: false, error: 'Offline' } as any);
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.queryByText('Ollama is ready!')).toBeNull();
+    expect(screen.getByText(/No chat model is installed yet/)).toBeInTheDocument();
+  });
+
+  test('retry verifies an installed model and saves it after a failed download', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    electron.pullModelStream.mockResolvedValue({ success: false, error: 'Offline' } as any);
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'nomic-embed-text' }] });
+    await act(async () => { fireEvent.click(screen.getByText('Retry')); });
+    expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:7b' }));
+  });
+
+  test('waits for hardware detection before choosing the download', async () => {
+    const electron = makeMockElectron();
+    let resolveHardware!: (value: any) => void;
+    const hardware = new Promise<any>(resolve => { resolveHardware = resolve; });
+    electron.detectGpuVram.mockReturnValue(hardware);
+    electron.listOllamaModels
+      .mockResolvedValueOnce({ success: true, models: [] })
+      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text' }] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    await act(async () => { resolveHardware({ success: true, vramGB: 4, gpuName: 'Test GPU' }); });
+    expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
+  });
+
+  test('the chat picker choice is the model sent to settings persistence', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'llama3.2:3b' }, { name: 'nomic-embed-text' }] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Select chat model' }), { target: { value: 'llama3.2:3b' } });
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'llama3.2:3b' }));
+  });
+
   test('clicking Local shows connection check', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
