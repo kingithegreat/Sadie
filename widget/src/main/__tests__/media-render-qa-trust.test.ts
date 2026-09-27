@@ -12,6 +12,8 @@ import * as os from 'os';
 import * as path from 'path';
 import type { MediaJob } from '../media-studio';
 
+jest.setTimeout(15_000); // Real handler/store snapshots perform file I/O.
+
 jest.mock('electron', () => ({
   app: {
     isPackaged: false,
@@ -50,10 +52,10 @@ jest.mock('../media-visuals', () => ({
 
 jest.mock('../media-qa', () => {
   const actual = jest.requireActual('../media-qa');
-  return { ...actual, inspectRender: jest.fn() };
+  return { ...actual, inspectRender: jest.fn(), grabFrame: jest.fn() };
 });
 
-import { inspectRender } from '../media-qa';
+import { inspectRender, grabFrame } from '../media-qa';
 import { renderVideo } from '../media-render';
 import { generateSceneImages } from '../media-visuals';
 import { createJob } from '../media-studio';
@@ -68,6 +70,7 @@ import {
 } from '../tools/media';
 
 const mockedInspectRender = inspectRender as jest.MockedFunction<typeof inspectRender>;
+const mockedGrabFrame = grabFrame as jest.MockedFunction<typeof grabFrame>;
 const call = (name: string, args: Record<string, unknown>) =>
   mediaToolHandlers[name](args, { executionId: 'qa-trust-test' } as any);
 
@@ -106,6 +109,8 @@ beforeEach(() => {
   testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-qa-trust-'));
   process.env.HOMEBOT_QA_TEST_USER_DATA = testRoot;
   mockedInspectRender.mockReset();
+  mockedGrabFrame.mockReset();
+  mockedGrabFrame.mockResolvedValue(Buffer.from(Array.from({ length: 64 * 64 }, (_, index) => index % 2 ? 220 : 20)));
   __resetMediaJobsForTests();
 });
 
@@ -396,6 +401,122 @@ describe('media_render output trust', () => {
     expect(readJobs()[0].scenePaths![0]).not.toBe(first.scenePaths![0]);
     expect(fs.readFileSync(readJobs()[0].scenePaths![0]!)).toEqual(fs.readFileSync(first.scenePaths![0]!));
     expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(2);
+  });
+
+  it('refuses a failed generated fallback before encoding even when captions are enabled', async () => {
+    const job = writeReadyJob('Failed scene with captions');
+    job.burnSubtitles = true;
+    writeJobs([job]);
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath, source: 'fallback-plate', error: 'provider failed' }]);
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 1.*Replace or regenerate/);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+    expect(readJobs()[0].latestExportAttempt?.status).toBe('failed');
+    expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(0);
+  });
+
+  it('checks reused scene bytes again and preserves the prior successful movie on failure', async () => {
+    const job = writeReadyJob('Reused scene quality');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const first = readJobs()[0];
+    const previousMovie = fs.readFileSync(first.renderPath!);
+    const generationCalls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    mockedGrabFrame.mockResolvedValueOnce(Buffer.alloc(64 * 64, 30));
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 1.*plain color/);
+    expect(generateSceneImages).toHaveBeenCalledTimes(generationCalls);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+    expect(readJobs()[0].renderPath).toBe(first.renderPath);
+    expect(fs.readFileSync(first.renderPath!)).toEqual(previousMovie);
+    expect((await getMediaJobExportState(job.id)).outputs).toHaveLength(1);
+  });
+
+  it('names a missing scene file and refuses neighbour substitution before encoding', async () => {
+    const job = writeReadyJob('Missing second picture');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([
+      { index: 0, path: scenePath }, { index: 1, path: path.join(testRoot, 'missing.png') },
+    ]);
+    const encodeCalls = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/scene 2.*missing/);
+    expect((renderVideo as jest.Mock).mock.calls).toHaveLength(encodeCalls);
+  });
+
+  it('explicit regeneration bypasses rejected reused inputs and scene cache without deleting originals', async () => {
+    const job = writeReadyJob('Explicit scene regeneration');
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    mockedInspectRender.mockResolvedValue(goodFacts);
+    expect((await call('media_render', { job: job.id })).success).toBe(true);
+    const first = readJobs()[0];
+    const priorMovie = fs.readFileSync(first.renderPath!);
+    const priorScene = fs.readFileSync(first.renderInputs!.scenePaths[0]!);
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    mockedGrabFrame.mockResolvedValueOnce(Buffer.alloc(64 * 64, 30));
+    expect((await call('media_render', { job: job.id })).success).toBe(false);
+    expect(readJobs()[0].latestExportAttempt?.errorCode).toBe('SCENE_PICTURE_FAILURE');
+    const generationCalls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const denied = Object.assign(new Error('Payment needs confirmation.'), { code: 'IMAGE_PAYMENT_CONFIRMATION_REQUIRED' });
+    (generateSceneImages as jest.Mock).mockRejectedValueOnce(denied);
+    const deniedResult = await call('media_render', { job: job.id, regenerateScenes: true });
+    expect(deniedResult.success).toBe(false);
+    expect(deniedResult.error).toContain('Payment needs confirmation');
+    expect(generateSceneImages).toHaveBeenCalledTimes(generationCalls + 1);
+    expect(generateSceneImages).toHaveBeenLastCalledWith(expect.objectContaining({ cacheDir: null }));
+    expect(fs.readFileSync(first.renderPath!)).toEqual(priorMovie);
+    expect(fs.readFileSync(first.renderInputs!.scenePaths[0]!)).toEqual(priorScene);
+    (generateSceneImages as jest.Mock).mockResolvedValueOnce([{ index: 0, path: scenePath }]);
+    expect((await call('media_render', { job: job.id, regenerateScenes: true })).success).toBe(true);
+    expect(generateSceneImages).toHaveBeenLastCalledWith(expect.objectContaining({ cacheDir: null }));
+    expect(fs.readFileSync(first.renderPath!)).toEqual(priorMovie);
+  });
+
+  it('does not reinterpret explicit plain mode as scene regeneration', async () => {
+    const job = writeReadyJob('Plain regeneration refusal');
+    const calls = (generateSceneImages as jest.Mock).mock.calls.length;
+    expect((await call('media_render', { job: job.id, visuals: 'plain', regenerateScenes: true })).success).toBe(false);
+    expect(generateSceneImages).toHaveBeenCalledTimes(calls);
+  });
+
+  it('cannot regenerate an external renderer job through the ordinary scene action', async () => {
+    const job = writeReadyJob('External regeneration refusal');
+    writeJobs([{ ...job, externalRenderer: 'ancient-pathways' }]);
+    const calls = (generateSceneImages as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id, regenerateScenes: true });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('external renderer');
+    expect(generateSceneImages).toHaveBeenCalledTimes(calls);
+  });
+
+  it.each([
+    ['PAID_CONFIRMATION_REQUIRED', 'Paid image generation needs interactive confirmation. Use Image mode to review the provider and approve one image, or choose a provider on this PC. No paid request was sent.'],
+    ['PAID_PROVIDER_CHANGED', 'The connected image account changed during approval. Generate again to review the current provider.'],
+    ['ONLINE_ACCESS_DISABLED', 'Online image generation needs Online access. Turn on Online in Settings, or use a provider on this PC.'],
+  ])('persists actionable background denial %s and keeps the last successful movie', async (code, message) => {
+    const job = writeReadyJob('Paid scene consent');
+    const previousMovie = path.join(testRoot, 'previous-approved.mp4');
+    fs.writeFileSync(previousMovie, 'previous movie bytes');
+    writeJobs([{ ...job, renderPath: previousMovie }]);
+    (generateSceneImages as jest.Mock).mockRejectedValueOnce(Object.assign(new Error(message), { code }));
+    const previousEncodeCount = (renderVideo as jest.Mock).mock.calls.length;
+    const result = await call('media_render', { job: job.id, visuals: 'scenes' });
+    expect(result.success).toBe(false);
+    expect(result.code).toBe(code);
+    expect(result.error).toContain(message);
+    expect(renderVideo).toHaveBeenCalledTimes(previousEncodeCount);
+    const saved = readJobs()[0];
+    expect(saved.latestExportAttempt).toMatchObject({ status: 'failed', error: expect.stringContaining(message) });
+    expect(saved.renderPath).toBe(previousMovie);
+    expect(fs.readFileSync(previousMovie, 'utf8')).toBe('previous movie bytes');
   });
 
   it('keeps the saved music choice on retry and snapshots its bytes', async () => {

@@ -33,6 +33,7 @@ import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, r
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
+import { SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 import StoryboardVideoModelPicker from './StoryboardVideoModelPicker';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
@@ -2626,6 +2627,15 @@ ${shots.map((s, idx) => `
             >
               {stageAction(j)!.label}
             </button>
+            {stageAction(j)!.action === 'render' && j.latestExportAttempt?.status === 'failed' &&
+              j.latestExportAttempt.errorCode === SCENE_PICTURE_FAILURE && !j.renderInputs?.imagePath &&
+              j.renderInputs?.visuals !== 'plain' && !hasExternalMediaRenderer(j) && (
+              <button type="button" className="ms-btn"
+                title="Make new scene pictures for this video. Any previous movie stays unchanged; current online and payment settings still apply."
+                onClick={() => void run(j.id, () => api()?.mediaRun?.(j.id, 'render', { regenerateScenes: true }), 'Regenerating scene pictures')}>
+                Regenerate scene pictures
+              </button>
+            )}
             {sdCppPromptFor === j.id && (
               <div className="ms-sdcpp-prompt" role="dialog" aria-label="Choose where images are made">
                 <div className="ms-sdcpp-prompt-text">
@@ -4897,7 +4907,7 @@ ${shots.map((s, idx) => `
         <div className="ms-storyboard-topbar">
           <div className="ms-storyboard-titles">
             <h3>🎨 Visual Storyboard Deck</h3>
-            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; free AI keyframe generation.</p>
+            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; AI keyframe generation with your chosen provider.</p>
           </div>
 
           <div className="ms-storyboard-controls">
