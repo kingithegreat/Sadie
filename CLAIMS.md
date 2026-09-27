@@ -277,6 +277,11 @@ REL-1 itself is still open. The live Drive priority queue could not be read or
 updated from this session (no Drive access), so this note is the repo-side record
 only.
 
+## 2026-09-27 - FINISH-MEDIA-QA-1 (Codex)
+| Feature | Branch | Status | Notes |
+|---|---|---|---|
+| FINISH-MEDIA-QA-1 per-shot source picture QA | claude/finish-media-qa-1 | Verified locally - claim released; root integration pending | Explicit hash-bound plain-background intent in reachable shot editor; source preflight before narration/overlays; last-good preserved. Focused117 + compatibility65 + root232 pass; typecheck/lint/docs pass. Actual built Electron CPU FFmpeg acceptance1/1, retries0: per-shot rejection, explicit intent, restart/player, replacement reset and prior movie hashes. Depends on separately owned Sharp packaging correction. No AP/provider changes. |
+
 ## 2026-09-27 Codex FINISH-SHARP-1 claim
 
 Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.

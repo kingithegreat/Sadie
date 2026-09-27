@@ -4,7 +4,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { findFfmpeg } from '../media-render';
 import { findManagedFfmpeg } from '../ffmpeg-setup';
-import { inspectRender, RenderFacts } from '../media-qa';
+import { inspectRender, grabFrame, RenderFacts } from '../media-qa';
 import { renderNarrationToFile } from '../tools/voice';
 import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-renderer';
 import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
@@ -24,6 +24,7 @@ jest.mock('../media-render', () => ({
 jest.mock('../ffmpeg-setup', () => ({ findManagedFfmpeg: jest.fn() }));
 jest.mock('../media-qa', () => ({
   ...jest.requireActual('../media-qa'), inspectRender: jest.fn(),
+  grabFrame: jest.fn(async () => Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256))),
 }));
 jest.mock('../tools/voice', () => ({ renderNarrationToFile: jest.fn() }));
 jest.mock('../tools/media', () => ({ readJobs: jest.fn(), writeJobs: jest.fn() }));
@@ -54,6 +55,7 @@ describe('storyboard export output contract', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (grabFrame as jest.Mock).mockResolvedValue(Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256)));
     (readJobs as jest.Mock).mockReturnValue([]);
     (writeJobs as jest.Mock).mockReset();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-export-contract-'));
@@ -103,6 +105,41 @@ describe('storyboard export output contract', () => {
     if (priorRoot === undefined) delete process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
     else process.env.HOMEBOT_MOVIE_PROJECTS_DIR = priorRoot;
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('blank replacement is rejected before speech and retains the previous export bytes and pointer', async () => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const previous = fs.readFileSync(first.moviePath!);
+    (renderNarrationToFile as jest.Mock).mockClear();
+    (grabFrame as jest.Mock).mockResolvedValueOnce(Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256)))
+      .mockResolvedValueOnce(Buffer.alloc(4096));
+    const replacement = await render();
+    expect(replacement).toMatchObject({ ok: false });
+    expect(replacement.error).toContain('scene_01 / shot_002');
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+    expect(fs.readFileSync(first.moviePath!)).toEqual(previous);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((reopened.result as any).renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('plain-background intent round-trips save/reopen, rejects stale hashes, and permits intentional flat movies', async () => {
+    const opened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    const board = opened.result as any;
+    const marked = board.scenes[0].shots.map((shot: any) => ({ ...shot, plainBackgroundSha256: shot.frameImageSha256 }));
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: marked }, {} as any)).success).toBe(true);
+    const read = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((read.result as any).scenes[0].shots[0].plainBackgroundSha256).toBe(marked[0].frameImageSha256);
+    (grabFrame as jest.Mock).mockResolvedValue(Buffer.alloc(4096));
+    movieFacts.frameSamples = [{ atSeconds: 3, stdDev: 0 }];
+    expect((await render()).ok).toBe(true);
+    fs.writeFileSync(shots[0].frameImagePath!, 'replacement picture bytes');
+    const replaced = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((replaced.result as any).scenes[0].shots[0].plainBackgroundSha256).toBeNull();
+    await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: marked }, {} as any);
+    const saved = JSON.parse(fs.readFileSync(path.join(scene, 'shot_001', 'prompt.json'), 'utf8'));
+    expect(saved.plainBackgroundSha256).toBeUndefined();
+    expect((await render()).error).toContain('scene_01 / shot_001');
   });
 
   test('uses the managed video engine and the distinct speech files actually returned', async () => {
