@@ -59,6 +59,18 @@ const cp=require('child_process');
 for(const name of ['spawn','exec']) { const original=cp[name]; cp[name]=function(command,...args) { if(/ollama|npx/i.test(String(command))) throw new Error('Decode proof refuses model/MCP launch'); return original.call(this,command,...args); }; }
 const electron=require('electron');
 electron.app.whenReady().then(()=>electron.session.defaultSession.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_details,callback)=>{state.blocked.push('renderer');callback({cancel:true});}));
+globalThis.decodeInstallCorruption=function(jobDir,corrupt) {
+  const ownFs=require('fs'); const ownPath=require('path'); const original=ownFs.statSync;
+  const state=globalThis.decodeCorruption={matched:0,restored:false,stagedPath:null,restore:()=>{ownFs.statSync=original;state.restored=true;}};
+  ownFs.statSync=function(target,...args) {
+    if(typeof target==='string' && ownPath.dirname(target)===jobDir && /^video\\.rendering-[a-f0-9-]+\\.mp4$/.test(ownPath.basename(target))) {
+      const result=original.call(this,target,...args);
+      if(result.size>10000) { state.restore();state.matched++;state.stagedPath=target;ownFs.copyFileSync(corrupt,target);return original.call(this,target,...args); }
+      return result;
+    }
+    return original.call(this,target,...args);
+  };
+};
 `);
   const shim = path.join(path.dirname(entry), `decode-proof-entry-${process.pid}.cjs`);
   fs.writeFileSync(shim, `require(${JSON.stringify(guard)});\nrequire(${JSON.stringify(entry)});\n`, { flag: 'wx' });
@@ -91,6 +103,8 @@ electron.app.whenReady().then(()=>electron.session.defaultSession.webRequest.onB
     await expect(page.locator('.ms-working')).toHaveCount(0);
     const previousMovie = job().renderPath;
     const previousHash = hash(previousMovie);
+    expect(job().renderInputs.scenePaths).toHaveLength(1);
+    expect(hash(job().renderInputs.scenePaths[0])).toBe(hash(detailed));
     const probe = path.join(path.dirname(ffmpeg), 'ffprobe.exe');
     const encoded = JSON.parse(execFileSync(probe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', previousMovie], { windowsHide: true, timeout: 30_000 }).toString());
     const revisions = await page.evaluate(async jobId => {
@@ -103,22 +117,7 @@ electron.app.whenReady().then(()=>electron.session.defaultSession.webRequest.onB
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     const jobDir = path.dirname(previousMovie);
     await app.evaluate((_electron, { jobDir, corrupt }) => {
-      const ownFs = require('fs');
-      const ownPath = require('path');
-      const original = ownFs.statSync;
-      const state = (globalThis as any).decodeCorruption = { matched: 0, restored: false, stagedPath: null as string | null, restore: () => { ownFs.statSync = original; state.restored = true; } };
-      ownFs.statSync = function(target: unknown, ...args: unknown[]) {
-        if (typeof target === 'string' && ownPath.dirname(target) === jobDir && /^video\.rendering-[a-f0-9-]+\.mp4$/.test(ownPath.basename(target))) {
-          const result = original.call(this, target, ...args);
-          if (result.size > 10000) {
-            state.restore(); state.matched++; state.stagedPath = target;
-            ownFs.copyFileSync(corrupt, target);
-            return original.call(this, target, ...args);
-          }
-          return result;
-        }
-        return original.call(this, target, ...args);
-      };
+      (globalThis as any).decodeInstallCorruption(jobDir, corrupt);
     }, { jobDir, corrupt });
     await make();
     await expect.poll(() => job().latestExportAttempt?.status, { timeout: 90_000 }).toBe('failed');
@@ -139,6 +138,7 @@ electron.app.whenReady().then(()=>electron.session.defaultSession.webRequest.onB
     execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-i', previousMovie, '-vf', 'fps=1/2,scale=320:180,tile=3x1', '-frames:v', '1', testInfo.outputPath('previous-movie-contact.png')], { windowsHide: true, timeout: 30_000 });
     fs.writeFileSync(testInfo.outputPath('decode-live-evidence.json'), JSON.stringify({ home, profile,
       sourceHead: process.env.HOMEBOT_DECODE_SOURCE_HEAD, buildSha256: hash(entry), corruptSha256: hash(corrupt),
+      detailedImageSha256: hash(detailed), narrationSha256: hash(audio), captionsSha256: hash(captions),
       previousMovie, previousHash, encoded, rejectedPath: saved.rejectedRenderPath, failedAttempt: saved.latestExportAttempt,
       interception, previousPlayerPlayed: true, network: await app.evaluate(() => (globalThis as any).decodeAcceptanceNetwork),
       emptyMcpConfiguration: fs.readFileSync(path.join(config, 'mcp-servers.json'), 'utf8'),
