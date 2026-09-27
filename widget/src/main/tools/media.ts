@@ -1114,6 +1114,8 @@ async function renderMediaJobAttempt(
     let qa: { ok: boolean; failures: string[]; warnings: string[] };
     let measuredDuration: number | null = null;
     try {
+      const { validateCompleteMediaDecode } = await import('../media-complete-decode');
+      await validateCompleteMediaDecode(ffmpeg, rendered.path);
       const facts = await inspectRender(ffmpeg, rendered.path);
       measuredDuration = facts.durationSeconds;
       qa = evaluateRenderQa(facts, {

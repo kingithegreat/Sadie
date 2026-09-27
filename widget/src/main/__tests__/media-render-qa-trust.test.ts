@@ -10,7 +10,12 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import { execFile } from 'child_process';
 import type { MediaJob } from '../media-studio';
+
+jest.setTimeout(15_000);
+jest.mock('child_process', () => ({ ...jest.requireActual('child_process'), execFile: jest.fn() }));
 
 jest.mock('electron', () => ({
   app: {
@@ -106,6 +111,7 @@ beforeEach(() => {
   testRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-qa-trust-'));
   process.env.HOMEBOT_QA_TEST_USER_DATA = testRoot;
   mockedInspectRender.mockReset();
+  (execFile as unknown as jest.Mock).mockReset().mockImplementation((_bin, _args, _options, callback) => callback(null, '', ''));
   __resetMediaJobsForTests();
 });
 
@@ -118,6 +124,44 @@ afterEach(() => {
 describe('media_render output trust', () => {
   const goodFacts = { hasVideo: true, hasAudio: true, width: 1080, height: 1920,
     durationSeconds: 3, meanVolumeDb: -21, maxVolumeDb: -3, frameSamples: null };
+
+  it.each([
+    ['decoder failure', { code: 1 }],
+    ['decoder timeout', { killed: true, signal: 'SIGTERM' }],
+  ])('refuses %s despite readable metadata and good sampled frames, preserving the old movie', async (_name, failure) => {
+    const job = writeReadyJob('Full decode trust');
+    mockedInspectRender.mockResolvedValue({ ...goodFacts, frameSamples: [{ atSeconds: 1.5, stdDev: 20 }] });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    const previous = readJobs()[0];
+    const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    const oldHash = hash(previous.renderPath!);
+    await call('media_advance_job', { job: job.id, to: 'needs_revision' });
+    await call('media_advance_job', { job: job.id, to: 'media_production' });
+    (execFile as unknown as jest.Mock).mockImplementationOnce((_bin, _args, _options, callback) =>
+      callback(Object.assign(new Error('decoder stopped'), failure), '', 'readable metadata; broken video packet'));
+    const result = await call('media_render', { job: job.id, visuals: 'plain' });
+    expect(result.success).toBe(false);
+    const saved = readJobs()[0];
+    expect(saved.renderPath).toBe(previous.renderPath);
+    expect(hash(saved.renderPath!)).toBe(oldHash);
+    expect(saved.latestExportAttempt?.status).toBe('failed');
+    expect(saved.rejectedRenderPath).toBeTruthy();
+    expect(fs.existsSync(saved.rejectedRenderPath!)).toBe(true);
+    expect(fs.readdirSync(path.dirname(saved.rejectedRenderPath!)).filter(name => name.includes('.rendering-'))).toEqual([]);
+  });
+
+  it('promotes a healthy ordinary export only after strict complete video and audio decode', async () => {
+    const job = writeReadyJob('Healthy complete decode');
+    mockedInspectRender.mockResolvedValue({ ...goodFacts, frameSamples: [{ atSeconds: 1.5, stdDev: 20 }] });
+    expect((await call('media_render', { job: job.id, visuals: 'plain' })).success).toBe(true);
+    const saved = readJobs()[0];
+    const decoder = (execFile as unknown as jest.Mock).mock.calls[0];
+    expect(decoder[1]).toEqual(expect.arrayContaining(['-xerror', '-map', '0:v:0', '0:a:0', '-f', 'null']));
+    expect(decoder[1][decoder[1].indexOf('-i') + 1]).toContain('video.rendering-');
+    expect(fs.existsSync(saved.renderPath!)).toBe(true);
+    expect(saved.latestExportAttempt?.status).toBe('succeeded');
+    expect(saved.rejectedRenderPath).toBeUndefined();
+  });
 
   it('encodes both variants from one frozen input set and preserves two successful files', async () => {
     const job = writeReadyJob('Two frozen outputs');
