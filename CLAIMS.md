@@ -40,6 +40,12 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
+FINISH-MEDIA-DECODE-1 — Codex owns `claude/finish-media-decode-1` in its fresh
+isolated worktree at main `4d5f4b39`: strict complete video/audio decode before
+ordinary output promotion, bounded decoder failures, last-good preservation.
+No audio-only inspection, provider, renderer, AP or packaging changes. Root
+owns ART overlap/integration and the build/live lane.
+
 DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates and nine E2E shards passed, and the landed tree matches tested head `3f96f3f`. The live Drive priority, owner boundaries and all original acceptance criteria remain; no runtime or owner-only gate was closed by the documentation change.
 
 | Feature | Branch | Status | Notes |
