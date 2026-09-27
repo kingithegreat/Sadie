@@ -53,6 +53,18 @@ cache/source/movie files and cannot reinterpret explicit plain/supplied artwork.
 Current privacy and payment rules still apply, with no inferred paid consent.
 Public API behavior is documented in `docs/api-reference.md`.
 
+Merge dependency: land this new regeneration route **after #424**, whose
+authoritative background image-generation denials preserve privacy and paid
+provider consent. This branch remains based on fresh main, with no unmerged
+image-cost stack; the nearby `media.ts` structured-error catch will be reconciled
+at integration. Current main `1f6fbc7b` (test isolation only) is merged for the
+final targeted verification.
+
+After that merge, the five targeted source-art, real-handler recovery, typed IPC,
+reachable UI and per-file isolation suites pass **66/66 tests**, and widget
+typecheck passes. Log: `media-diagnostics/art-main-targeted.log`. No product code
+changed after the actual built proof; main added test isolation only.
+
 ## Verification checkpoint
 
 Before edits: ordinary render trust suite 31/31 passed. After correction:
