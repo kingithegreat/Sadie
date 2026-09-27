@@ -287,3 +287,8 @@ only.
 Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.
 
 FINISH-SHARP-1 implementation complete; local commit pending root integration. Real rebuilt isolated Electron freshness proof passes 1/1 zero retries, MP4/hash/decoded-frame evidence retained at .kilo/finish-20260927/sharp-media and sharp-freshness-home. Packaging claim stays open for private dependency-copy proof; no installed release acceptance claimed.
+## 2026-09-27 Codex FINISH-MCP-SHUTDOWN-1 claim
+
+Codex owns claude/finish-mcp-shutdown-20260927 from fresh main 3b425f86. Scope: track pending MCP connections before asynchronous startup, prevent retries/spawns/tool registration after shutdown begins, and await bounded connector cleanup before native quit while retaining other service cleanup. Deferred SDK controls only; no default npx, providers, owner profile, downloads, global process kills, or live/build lane. Windows descendant cleanup remains separate pending controlled evidence. Root owns Drive, release lane and integration.
+
+Implementation complete; claim released for root independent review. Six baseline regressions reproduced with a passing normal-connection control; final affected/connector/privacy suites 82/82 pass, widget typecheck/lint and docs/diff pass. Source-only verification, no Electron/build or Windows descendant cleanup claimed. Evidence and retained red logs: tasks/finish-mcp-shutdown-1.md.

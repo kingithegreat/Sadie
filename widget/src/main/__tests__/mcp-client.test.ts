@@ -9,6 +9,13 @@ import os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// External-config discovery belongs inside this test's disposable home too.
+// Never inspect or create the owner's Cursor/Claude configuration.
+jest.mock('os', () => ({
+  ...jest.requireActual('os'),
+  homedir: () => process.env.TEST_USERDATA || jest.requireActual('os').tmpdir(),
+}));
+
 // Mock electron so app.getPath('userData') returns our tmpDir
 jest.mock('electron', () => ({
   app: { isPackaged: true, getPath: jest.fn(() => process.env.TEST_USERDATA || os.tmpdir()) },
@@ -30,7 +37,9 @@ jest.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: jest.fn(),
 }));
 
-import {
+// Shutdown is a final process boundary. Each fixture gets a fresh module
+// lifecycle instead of using shutdown as a reset and reconnecting afterward.
+let {
   loadMcpConfig,
   saveMcpConfig,
   seedMcpDefaults,
@@ -38,11 +47,14 @@ import {
   discoverExternalMcpServers,
   shutdownMcpServers,
   connectSingleServer,
-} from '../mcp-client';
+} = require('../mcp-client') as typeof import('../mcp-client');
 
 let tmpDir: string;
 
 beforeEach(() => {
+  jest.resetModules();
+  ({ loadMcpConfig, saveMcpConfig, seedMcpDefaults, getMcpStatus,
+    discoverExternalMcpServers, shutdownMcpServers, connectSingleServer } = require('../mcp-client'));
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mcp-test-'));
   process.env.TEST_USERDATA = tmpDir;
   jest.clearAllMocks();
@@ -278,7 +290,6 @@ describe('connectSingleServer — Connect means connected', () => {
 
   beforeEach(async () => {
     registerTool.mockClear();
-    await shutdownMcpServers();
   });
 
   test('starts the server now and returns its live tool count', async () => {
