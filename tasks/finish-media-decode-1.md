@@ -45,3 +45,9 @@ nonzero, timeout and output-buffer failures with bounded diagnostics.
 No build, real FFmpeg, Electron, provider/model/voice call, download or AP action
 was performed. Actual encoded corruption acceptance remains pending root's
 coordinated lane. Root owns publication/integration and nearby ART #430 changes.
+
+Landed image-cost main `c3d8c787` was merged without conflict after this first
+verification. The helper/real ordinary handler/background-authority integration
+subset passes and widget typecheck passes again. Only this task's two-line
+output validation call differs in `media.ts`; authoritative paid/privacy denial
+propagation remains intact. Log: `decode-cost-integration.log`.
