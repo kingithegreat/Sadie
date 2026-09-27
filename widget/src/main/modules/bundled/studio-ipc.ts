@@ -200,7 +200,7 @@ export function registerStudioIpc(
   // These take 30-60s on a local model. Without a way to start them from the
   // UI the panel could only shuffle states, so the user pressed a button, saw
   // a state change, and had no idea whether any work had happened.
-  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
+  ipcMain.handle('homebot:media:run', async (_e, id: string, action: string, opts?: { voice?: string; image?: string; visuals?: string; regenerateScenes?: boolean; burnSubtitles?: boolean; outputSpec?: unknown; variantId?: unknown }) => {
     const { readJobs } = await import('../../tools/media');
     const job = readJobs().find(j => j.id === id);
     if (!job) return { ok: false, error: 'That video is no longer in the list.' };
@@ -222,6 +222,7 @@ export function registerStudioIpc(
       // network image-generation call.
       if (action === 'render' && opts?.image) args.image = opts.image;
       if (action === 'render' && opts?.visuals) args.visuals = opts.visuals;
+      if (action === 'render' && opts?.regenerateScenes !== undefined) args.regenerateScenes = opts.regenerateScenes;
       if (action === 'render' && opts?.variantId !== undefined) args.variantId = opts.variantId;
       if (action === 'output') {
         args.burnSubtitles = opts?.burnSubtitles;

@@ -39,9 +39,9 @@ import { assertProviderOnlineAccess } from './utils/provider-network-policy';
 import { resolveDiscoveryPayload } from './discovery-payload';
 import { getMediaCapabilityRegistry } from './provider-capability-registry';
 import { fetchPageContentHandler } from './tools/browser';
-import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, describeImageGenerationRoute, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore, requestConfirmationFrom } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools, registerTool } from './tools/index';
 import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
@@ -330,7 +330,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:automation:image:generate', gatedAutomationHandler(
     'homebot:automation:image:generate',
     getCurrentTier,
-    async (_event, { payload }) => {
+    async (event, { action, payload }) => {
+    if (action === 'status') return { status: 'ready', route: describeImageGenerationRoute(payload?.backend || 'hybrid') };
     const rawPrompt = String(payload?.prompt || '').trim();
     // Parse resolution string (e.g. '512x512') into width/height
     let width = 512, height = 512;
@@ -362,7 +363,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     try {
       const toolResult = await webToolHandlers['image_generate'](
         { prompt, width, height, steps, backend },
-        { executionId: `img-panel-${Date.now()}` } as any
+        { executionId: `img-panel-${Date.now()}`, requestConfirmation: (message: string) => requestConfirmationFrom(event.sender, message) }
       );
 
       if (toolResult.success && toolResult.result?.image_base64) {
@@ -379,7 +380,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           image: toolResult.result.image_base64,
           filename,
           savedPath: filename ? path.join(imgDir, filename) : null,
-          metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
+          metadata: { ...toolResult.result.metadata, prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
           validation: { validated: true },
           error: { message: '', code: '' }
         };
@@ -395,7 +396,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         validation: { validated: false },
         error: {
           message: toolResult.error || 'Image generation failed',
-          code: 'GENERATION_FAILED'
+          code: toolResult.code || 'GENERATION_FAILED'
         }
       };
     } catch (err: any) {

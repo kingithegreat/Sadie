@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import { isScenePictureFailure, SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../../shared/media-output';
 import { resolveCaptionStyle } from '../../shared/caption-style';
 import { createStudioExportReview } from '../movie/studio-export-review';
@@ -791,6 +792,7 @@ const renderMediaJobDef: ToolDefinition = {
         enum: ['scenes', 'plain'],
         description: "'scenes' (default) generates a picture per scene from the script; 'plain' uses one backdrop",
       },
+      regenerateScenes: { type: 'boolean', description: 'Explicitly regenerate this job\'s scene pictures, bypassing reused inputs and image cache for this render. Existing privacy and payment rules still apply.' },
       style: { type: 'string', description: 'Optional art direction for generated scenes' },
       zoom: { type: 'boolean', description: 'Slow zoom, single-image renders only. Default true.' },
       music: {
@@ -820,9 +822,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
   const batchId = randomUUID();
   let attempt: StudioExportAttempt = { id: batchId, status: 'preparing', sourceRevision: null, startedAt: new Date().toISOString() };
   let attempts: StudioExportAttempt[] = [];
-  const record = (status: StudioExportAttempt['status'], error?: string) => {
+  const record = (status: StudioExportAttempt['status'], error?: string, errorCode?: StudioExportAttempt['errorCode']) => {
     attempt.status = status;
     if (error) attempt.error = error;
+    if (errorCode) attempt.errorCode = errorCode;
     if (status === 'succeeded' || status === 'failed') attempt.finishedAt = new Date().toISOString();
     const current = readJobs().find(item => item.id === job.id);
     if (current) upsert({ ...current, latestExportAttempt: { ...attempt },
@@ -857,13 +860,14 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       variants: results.map((result, i) => ({ variantId: selected[i]!.id, ...result })),
       message: `${results.filter(result => result.success).length} of ${results.length} selected formats exported. Review each saved movie separately; nothing is approved or published automatically.`,
     } };
-  } catch (e) {
+  } catch (e: any) {
     const message = `Could not render the video: ${errText(e)}`;
     try {
-      for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message); }
-      record('failed', message);
+      const sourceCode = isScenePictureFailure(e) ? SCENE_PICTURE_FAILURE : undefined;
+      for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message, sourceCode); }
+      record('failed', message, sourceCode);
     } catch { /* Preparing record recovers as interrupted after restart. */ }
-    return err(message);
+    return { ...err(message), ...(typeof e?.code === 'string' ? { code: e.code } : {}) };
   } finally { renderingJobs.delete(job.id); }
 };
 
@@ -977,6 +981,9 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
     const zoom = args.zoom === undefined ? job.renderInputs?.zoom ?? true : Boolean(args.zoom);
     const style = args.style ? String(args.style) : job.renderInputs?.style;
     const wantScenes = visuals === 'scenes' && !image;
+    if (args.regenerateScenes !== undefined && typeof args.regenerateScenes !== 'boolean') throw new Error('Scene regeneration must be an explicit choice.');
+    const regenerateScenes = args.regenerateScenes === true;
+    if (regenerateScenes && (!wantScenes || hasExternalMediaRenderer(job))) throw new Error('Scene regeneration applies only to HomeBot scene pictures, not a plain background, supplied artwork or external renderer.');
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
       const { generateSceneImages, fillMissingImages, seedForVideo, defaultImageCacheDir } = await import('../media-visuals');
@@ -987,7 +994,7 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
       if (scenes.length) {
         const { w, h } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : dimensionsFor(shape);
         const imageScale = Math.min(1, 1024 / Math.max(w, h));
-        const reusable = job.renderInputs?.scenePaths.length === scenes.length &&
+        const reusable = !regenerateScenes && job.renderInputs?.scenePaths.length === scenes.length &&
           args.visuals === undefined && args.style === undefined && args.image === undefined &&
           (job.renderInputs?.inputRevision ? job.renderInputs.inputRevision === await mediaJobInputRevision(job)
             : !!job.latestExportAttempt?.sourceRevision && job.latestExportAttempt.sourceRevision === await mediaJobSourceRevision(job));
@@ -1005,11 +1012,15 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
           // A re-render after tweaking timing/text regenerates every scene
           // from scratch without this — most prompts didn't change, and each
           // one is a call to a free, unSLA'd, queue-based provider.
-          cacheDir: defaultImageCacheDir(),
+          cacheDir: regenerateScenes ? null : defaultImageCacheDir(),
           fallbackPlates: true,
         });
         const frozenImages = images.map((entry, index) => ({ ...entry,
-          path: entry.path ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+          path: entry.path && fs.existsSync(entry.path) ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+        // Inspect every frozen source, including cached/reused bytes whose original
+        // generation provenance may be absent. Captions cannot supply scene art.
+        const { preflightScenePictures } = await import('../media-scene-source-qa');
+        await preflightScenePictures(ffmpeg, frozenImages);
         const filled = fillMissingImages(frozenImages);
         const made = filled.filter(Boolean).length;
         // Record the slides whether or not the concat file gets built: if every
