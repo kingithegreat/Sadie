@@ -46,3 +46,13 @@ Root initiated the merge of main 055f355d (#420). The only conflicts were this c
 The first integration run found three onboarding fixture failures: inert onSave mocks could no longer cause the removed direct duplicate write. Those three fixtures now route their callbacks through mock persistence as App does, retain all selected-model assertions, and additionally require exactly one write. A combined real-component test verifies that a 4GB-recommended downloaded qwen2.5:3b choice survives save failure and is persisted unchanged on retry.
 
 After resolution: 115/115 tests in six affected FirstRun/hardware/settings acknowledgement/main IPC/config suites, no skips/retries; widget typecheck and lint pass (zero errors/seven existing warnings). No build or live-profile lane was used.
+
+## Built acceptance source prepared
+
+Main 1f6fbc7b (#423) merged cleanly; the affected suites plus isolation guard passed 117/117 with per-file temporary roots, and typecheck/docs/diff passed.
+
+The opt-in `settings-save.live.e2e.spec.ts` (`HOMEBOT_SETTINGS_SAVE_LIVE=1`) is prepared but not yet run. It requires its own fresh compiled main to use a live fs object property for the atomic writer; inspection of the existing package-proof bundle confirmed `const fs = require("fs")` and property-based config writes, while the spec rejects a stale non-atomic build.
+
+It seeds only a disposable profile without keys/accounts, intercepts precisely that profile's settings sibling temporary write once, immediately restores fs.writeFileSync, writes a partial disposable temp and throws. Actual Simple Settings → App → preload → main IPC → config writer must retain the draft/error, preserve prior file hash and active theme/policy, retry, close, persist Online-off and light theme, and reopen with saved values. No bridge or private IPC handler is replaced.
+
+An isolated child bootstrap runs before main, blocks actual Node/renderer transports with five positive controls, and fixtures only startup local inventory so startup cannot contact or launch the owner's Ollama. HOME/profile/projects/AP-marker are isolated; evidence records hashes/counters without settings secrets. Playwright collection finds one test; source typecheck/lint pass. Execution awaits the root-controlled release/media lane; no built acceptance is claimed yet.
