@@ -51,6 +51,16 @@ interface ConnectedServer {
 }
 
 const connectedServers: ConnectedServer[] = [];
+interface OwnedServer {
+  config: McpServerConfig;
+  client: Client;
+  closing?: Promise<void>;
+}
+// Ownership begins before connect(): its transport can spawn before the
+// handshake or tool discovery finishes. The UI list intentionally stays separate.
+const ownedServers = new Set<OwnedServer>();
+const shutdownSignal = new AbortController();
+let shutdownPromise: Promise<void> | undefined;
 
 const MCP_CONNECT_TIMEOUT = 15_000;
 const MCP_MAX_RETRIES = 2;
@@ -58,18 +68,54 @@ const MCP_RETRY_DELAY = 3_000;
 const MCP_TOOL_DISCOVERY_TIMEOUT = 10_000;
 const MCP_TOOL_DISCOVERY_RETRIES = 2;
 const MCP_TOOL_DISCOVERY_RETRY_DELAY = 800;
+const MCP_CLOSE_TIMEOUT = 5_000;
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function assertRunning(): void {
+  if (shutdownSignal.signal.aborted) throw new Error('MCP is shutting down');
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs)
-    ),
-  ]);
+function sleep(ms: number): Promise<void> {
+  assertRunning();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(new Error('MCP is shutting down')); };
+    const timer = setTimeout(() => {
+      shutdownSignal.signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    shutdownSignal.signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string, cancelOnShutdown = true): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const cleanup = () => {
+      clearTimeout(timer);
+      shutdownSignal.signal.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => { cleanup(); reject(new Error('MCP is shutting down')); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error(timeoutMessage)); }, timeoutMs);
+    // Observe the underlying operation even after cancellation/timeout; late
+    // completions cannot register tools, and late rejections are still handled.
+    promise.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+    if (cancelOnShutdown) {
+      shutdownSignal.signal.addEventListener('abort', onAbort, { once: true });
+      if (shutdownSignal.signal.aborted) onAbort();
+    }
+  });
+}
+
+function closeOwnedServer(server: OwnedServer): Promise<void> {
+  if (!server.closing) {
+    server.closing = withTimeout(
+      Promise.resolve().then(() => server.client.close()),
+      MCP_CLOSE_TIMEOUT,
+      `Cleanup timed out for MCP server "${server.config.name}"`,
+      false,
+    ).catch(() => {
+      console.warn(`[MCP] Cleanup did not complete for "${server.config.name}" (failed or exceeded ${MCP_CLOSE_TIMEOUT}ms).`);
+    }).finally(() => { ownedServers.delete(server); });
+  }
+  return server.closing;
 }
 
 async function listToolsWithRetry(client: Client, config: McpServerConfig): Promise<any[]> {
@@ -77,6 +123,7 @@ async function listToolsWithRetry(client: Client, config: McpServerConfig): Prom
 
   for (let attempt = 0; attempt <= MCP_TOOL_DISCOVERY_RETRIES; attempt++) {
     try {
+      assertRunning();
       if (attempt > 0) {
         console.log(`[MCP] Retrying tool discovery for "${config.name}" (attempt ${attempt + 1}/${MCP_TOOL_DISCOVERY_RETRIES + 1})...`);
         await sleep(MCP_TOOL_DISCOVERY_RETRY_DELAY);
@@ -87,6 +134,7 @@ async function listToolsWithRetry(client: Client, config: McpServerConfig): Prom
         MCP_TOOL_DISCOVERY_TIMEOUT,
         `Tool discovery timed out after ${MCP_TOOL_DISCOVERY_TIMEOUT}ms`
       );
+      assertRunning();
 
       if (Array.isArray(tools) && tools.length === 0 && attempt < MCP_TOOL_DISCOVERY_RETRIES) {
         // Some MCP servers briefly report no tools right after connect; retry once or twice.
@@ -96,6 +144,7 @@ async function listToolsWithRetry(client: Client, config: McpServerConfig): Prom
 
       return Array.isArray(tools) ? tools : [];
     } catch (err) {
+      if (shutdownSignal.signal.aborted) throw err;
       lastErr = err;
       if (attempt >= MCP_TOOL_DISCOVERY_RETRIES) break;
       const msg = err instanceof Error ? err.message : String(err);
@@ -164,7 +213,7 @@ export async function initializeMcpServers(
   // JEST_WORKER_ID is set only by Jest, so this cannot affect the real app or
   // the Playwright E2E runs (which drive a genuinely launched Electron app and
   // *should* connect their servers).
-  if (process.env.JEST_WORKER_ID !== undefined) {
+  if (process.env.JEST_WORKER_ID !== undefined || shutdownSignal.signal.aborted) {
     return;
   }
 
@@ -180,13 +229,15 @@ export async function initializeMcpServers(
     let connected = false;
     for (let attempt = 0; attempt <= MCP_MAX_RETRIES && !connected; attempt++) {
       try {
+        assertRunning();
         if (attempt > 0) {
           console.log(`[MCP] Retrying "${config.name}" (attempt ${attempt + 1}/${MCP_MAX_RETRIES + 1})...`);
-          await new Promise(r => setTimeout(r, MCP_RETRY_DELAY));
+          await sleep(MCP_RETRY_DELAY);
         }
         await connectServer(config, registerTool);
         connected = true;
       } catch (err: any) {
+        if (shutdownSignal.signal.aborted) return;
         const msg = err?.message || String(err);
         if (attempt === MCP_MAX_RETRIES) {
           console.error(`[MCP] Failed to connect to "${config.name}" after ${MCP_MAX_RETRIES + 1} attempts: ${msg}`);
@@ -202,6 +253,7 @@ async function connectServer(
   config: McpServerConfig,
   registerTool: (name: string, definition: any, handler: any) => void
 ): Promise<void> {
+  assertRunning();
   const client = new Client(
     { name: 'homebot', version: '1.0.0' },
     { capabilities: {} }
@@ -220,19 +272,24 @@ async function connectServer(
     transport = new SSEClientTransport(new URL(config.url));
   }
 
+  const owned: OwnedServer = { config, client };
+  ownedServers.add(owned);
   try {
     await withTimeout(
       client.connect(transport),
       MCP_CONNECT_TIMEOUT,
       `Connection timed out after ${MCP_CONNECT_TIMEOUT}ms`
     );
+    assertRunning();
     console.log(`[MCP] Connected to "${config.name}"`);
 
     // Fetch the tool list with retry: some servers are briefly "connected" before tools are discoverable.
     const tools = await listToolsWithRetry(client, config);
+    assertRunning();
     const toolNames: string[] = [];
 
     for (const mcpTool of tools) {
+      assertRunning();
       const prefixedName = `mcp_${config.name}_${mcpTool.name}`;
       toolNames.push(prefixedName);
 
@@ -284,15 +341,12 @@ async function connectServer(
       console.log(`[MCP]   Registered tool: ${prefixedName}`);
     }
 
+    assertRunning();
     connectedServers.push({ config, client, toolNames });
     console.log(`[MCP] "${config.name}" registered ${toolNames.length} tool(s).`);
   } catch (err) {
     // Ensure failed attempts don't leave half-open clients/transports behind.
-    try {
-      await client.close();
-    } catch {
-      // Ignore cleanup errors; the original connect/discovery error is the one we care about.
-    }
+    await closeOwnedServer(owned);
     throw err;
   }
 }
@@ -468,18 +522,18 @@ export function discoverExternalMcpServers(): void {
 }
 
 /**
- * Disconnect all connected MCP servers (call on app quit).
+ * Final process shutdown: cancel startup and close every owned MCP client,
+ * including unfinished connections. New connections stay disabled afterward.
  */
-export async function shutdownMcpServers(): Promise<void> {
-  for (const { client, config } of connectedServers) {
-    try {
-      await client.close();
-      console.log(`[MCP] Disconnected from "${config.name}"`);
-    } catch (err) {
-      // Ignore errors during shutdown
-    }
+export function shutdownMcpServers(): Promise<void> {
+  if (!shutdownPromise) {
+    shutdownSignal.abort();
+    connectedServers.length = 0;
+    // Start all closes concurrently. Each is bounded, so one unresponsive
+    // connector cannot prevent other owned clients closing or trap app quit.
+    shutdownPromise = Promise.all(Array.from(ownedServers, closeOwnedServer)).then(() => {});
   }
-  connectedServers.length = 0;
+  return shutdownPromise;
 }
 
 /**
@@ -508,12 +562,9 @@ export async function disconnectMcpServer(name: string): Promise<void> {
   const idx = connectedServers.findIndex(s => s.config.name === name);
   if (idx < 0) return;
   const [{ client, config }] = connectedServers.splice(idx, 1);
-  try {
-    await client.close();
-    console.log(`[MCP] Disconnected from "${config.name}"`);
-  } catch {
-    // Ignore close errors — the goal is dropping the reference either way.
-  }
+  const owned = Array.from(ownedServers).find(server => server.client === client);
+  if (owned) await closeOwnedServer(owned);
+  console.log(`[MCP] Disconnected from "${config.name}"`);
 }
 
 /**
@@ -527,6 +578,9 @@ export async function connectSingleServer(
   config: McpServerConfig,
   registerTool: (name: string, definition: any, handler: any) => void
 ): Promise<{ connected: boolean; toolCount: number; error?: string }> {
+  if (shutdownSignal.signal.aborted) {
+    return { connected: false, toolCount: 0, error: 'MCP is shutting down' };
+  }
   // A re-add of an existing name replaces the config; drop the old live
   // connection first so tools are never bridged twice under one name.
   await disconnectMcpServer(config.name);
