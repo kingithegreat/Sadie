@@ -38,3 +38,11 @@ Final adjacent run: 169/169 tests, eleven suites, normal exit, no skips/retries 
 Widget typecheck passes. Lint passes with zero errors and seven existing warnings. Docs write/check is in sync (247 preload methods, 182 renderer→main, 33 main→renderer); no API additions. Diff check passes. React review checked async acknowledgement/state changes and retry reachability; no unrelated redesign or new UI flow was added.
 
 No full suite, build, Electron launch, provider/account/model/microphone operation, live owner settings or dependency rebuild/install was run. The renderer tests exercise React/JSDOM with the real preload bridge and mocked IPC responses; real built UI acceptance remains root's coordinated follow-up when the release lane is available.
+
+## Integration with merged onboarding
+
+Root initiated the merge of main 055f355d (#420). The only conflicts were this claim and the adjacent FirstRun state declarations. Resolution retains both records and the onboarding draftRef, exact downloaded tag, hardware selection, inventory/error/retry logic alongside the single awaited save and retained choices.
+
+The first integration run found three onboarding fixture failures: inert onSave mocks could no longer cause the removed direct duplicate write. Those three fixtures now route their callbacks through mock persistence as App does, retain all selected-model assertions, and additionally require exactly one write. A combined real-component test verifies that a 4GB-recommended downloaded qwen2.5:3b choice survives save failure and is persisted unchanged on retry.
+
+After resolution: 115/115 tests in six affected FirstRun/hardware/settings acknowledgement/main IPC/config suites, no skips/retries; widget typecheck and lint pass (zero errors/seven existing warnings). No build or live-profile lane was used.

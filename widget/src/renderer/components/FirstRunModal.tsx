@@ -74,7 +74,23 @@ type LocalSetupPhase =
   | 'starting-ollama'
   | 'checking-models'
   | 'pulling-models'
+  | 'models-missing'
   | 'ready';
+
+// /api/tags includes embedding models, which cannot answer a chat request.
+function chatModelNames(models: any[]): string[] {
+  return models.filter(m => {
+    const name = String(m.name || m);
+    const families = m.details?.families || [m.details?.family];
+    return !/embed|all-minilm|bge-|e5-/i.test(name)
+      && !families.some((family: string | undefined) => /bert/i.test(family || ''));
+  }).map(m => m.name || m);
+}
+
+function sameModel(installed: string, requested: string): boolean {
+  const withTag = (name: string) => name.includes(':') ? name : `${name}:latest`;
+  return withTag(installed) === withTag(requested);
+}
 
 interface ModelPullProgress {
   model: string;
@@ -103,6 +119,8 @@ export default function FirstRunModal({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const saveInFlight = useRef(false);
@@ -214,22 +232,37 @@ export default function FirstRunModal({
 
   const checkModelsAndPull = useCallback(async () => {
     setLocalPhase('checking-models');
+    setModelsPulled([]);
+    setOllamaError(null);
     try {
       const modelList = await (window as any).electron.listOllamaModels?.();
+      if (!modelList?.success) throw new Error(modelList?.error || 'Could not check the installed AI models.');
       const installed: string[] = (modelList?.models || []).map((m: any) => m.name || m);
-      setModels(installed);
+      const installedChat = chatModelNames(modelList.models || []);
+      setModels(installedChat);
 
       // Pick a chat model that fits the detected GPU instead of a fixed default.
       // Falls back to the balanced default (qwen2.5:7b) when VRAM is unknown.
       const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
+      const chosen = installedChat.find(name => sameModel(name, draftRef.current.chatModel || ''));
       const essentialModels = [
-        { name: rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
+        { name: chosen || rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
         ...ESSENTIAL_MODELS.filter(m => m.name !== 'qwen2.5:7b'),
       ];
 
-      const missing = essentialModels.filter(m => !installed.some(i => i.startsWith(m.name.split(':')[0])));
-      if (missing.length === 0) {
+      const selectInstalledChat = (inventory: any[]) => {
+        const chat = chatModelNames(inventory);
+        setModels(chat);
+        const selected = chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
+          || chat.find(name => sameModel(name, rec.chat.id))
+          || chat[0];
+        if (!selected) throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
+        setDraft(d => ({ ...d, chatModel: selected }));
         setLocalPhase('ready');
+      };
+      const missing = essentialModels.filter(m => !installed.some(i => sameModel(i, m.name)));
+      if (missing.length === 0) {
+        selectInstalledChat(modelList.models);
         return;
       }
 
@@ -243,32 +276,38 @@ export default function FirstRunModal({
       setLocalPhase('pulling-models');
       pullCancelledRef.current = false;
       const pulled: string[] = [];
+      const pullErrors: string[] = [];
       for (let i = 0; i < missing.length; i++) {
         if (pullCancelledRef.current) break;
         // Skip any model that definitively won't fit instead of starting a doomed
         // download. unknown/tight/ok all proceed (the guard fails open).
         const fit = assessModelDownloadFit({ sizeGB: missing[i].sizeGB, freeGB });
         if (!fit.fits) {
-          console.warn('Skipping model pull \u2014 insufficient disk:', missing[i].name, fit.message);
+          pullErrors.push(fit.message || 'There is not enough free disk space for the chat model.');
           continue;
         }
         setModelPullIndex(i);
         setModelPullProgress({ model: missing[i].name, status: 'starting pull...', percent: 0, completedMB: null, totalMB: null });
         try {
-          await (window as any).electron.pullModelStream?.(missing[i].name);
+          const result = await (window as any).electron.pullModelStream?.(missing[i].name);
+          if (!result?.success) throw new Error(result?.error || 'The model download did not complete.');
           pulled.push(missing[i].name);
           setModelsPulled([...pulled]);
         } catch (e: any) {
-          console.warn('Model pull failed:', missing[i].name, e);
+          pullErrors.push(e?.message || 'The model download did not complete.');
         }
       }
       setModelPullProgress(null);
 
       const updatedList = await (window as any).electron.listOllamaModels?.();
-      setModels((updatedList?.models || []).map((m: any) => m.name || m));
-      setLocalPhase('ready');
-    } catch {
-      setLocalPhase('ready');
+      if (!updatedList?.success) throw new Error(updatedList?.error || 'Could not verify the installed AI models.');
+      if (pullCancelledRef.current) return;
+      selectInstalledChat(updatedList.models || []);
+      if (pullErrors.length) setOllamaError(`Chat is available, but some setup downloads failed: ${pullErrors.join(' ')}`);
+    } catch (e: any) {
+      setModelPullProgress(null);
+      setOllamaError(e?.message || 'Local AI setup did not finish. Please retry.');
+      setLocalPhase('models-missing');
     }
   }, []);
 
@@ -278,8 +317,6 @@ export default function FirstRunModal({
     setDiskWarning(null);
     setDiskOk(true);
     setModelDiskFit(null);
-    detectHardware();
-
     // E2E: skip the real Ollama detection. With no Ollama present,
     // checkConnection / checkOllamaInstalled / startOllama each run their full
     // network/spawn timeouts, which left the footer button stuck on "Setting
@@ -294,6 +331,10 @@ export default function FirstRunModal({
         return;
       }
     } catch { /* fall through to real detection */ }
+
+    // Keep the welcome screen immediate, but resolve the hardware reading
+    // before choosing a multi-GB model to download.
+    await detectHardware();
 
     // Check disk space before potentially pulling large models
     try {
@@ -606,15 +647,22 @@ export default function FirstRunModal({
               )}
 
               {/* Phase: Ready */}
+              {localPhase === 'models-missing' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status error">{ollamaError}</div>
+                  <button type="button" className="first-run-btn first-run-btn-primary" onClick={runLocalSetup}>Retry</button>
+                </div>
+              )}
               {localPhase === 'ready' && (
                 <div className="wizard-setup-section">
                   <div className="wizard-status success">Ollama is ready!</div>
+                  {ollamaError && <div className="wizard-status warning">{ollamaError}</div>}
                   {models.length > 0 && (
                     <div className="wizard-model-compact">
                       <p className="wizard-step-desc">
-                        {models.length} model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
+                        {models.length} chat model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
                       </p>
-                      {models.length > 1 && (
+                      {models.length > 0 && (
                         <select
                           className="first-run-input"
                           aria-label="Select chat model"
