@@ -1,5 +1,7 @@
 # Work Claims
 
+FINISH-ONBOARD-1 (2026-09-27): Codex owns local first-run model selection and honest readiness in isolated worktree `finish-onboarding-20260927`, branch `claude/finish-onboarding-20260927`. Ready for root integration review; not pushed or merged. Five baseline regressions reproduced; final wizard/hardware focused run 68/68 passes, widget typecheck and changed-file ESLint pass. No media, voice, credential, provider or shared dependency changes. Evidence and runtime limits: `tasks/finish-onboard-1.md`.
+
 **Current planning authority:** Aden's later "drive is now the new brain" instruction supersedes the Notion cadence recorded below. The [current Drive plan](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) owns priorities; this file owns repository work claims. Preserve earlier Notion links and dated notes as history, not as instructions to maintain a second live queue.
 
 Repo-native companion to the Notion [ðŸ”— Work Claims Ledger](https://app.notion.com/p/63dec393c18546ee9b924a472e9c59a3) and [ðŸ¤� Coordination Protocol](https://app.notion.com/p/390829ebf7be81e09866e1cd3a6bed6e). This file exists because Notion is easy to skip; this file is not â€” anyone building here sees it just by looking at the repo.
@@ -274,3 +276,9 @@ Not done: no installer was produced and no fresh Windows profile was exercised, 
 REL-1 itself is still open. The live Drive priority queue could not be read or
 updated from this session (no Drive access), so this note is the repo-side record
 only.
+
+## 2026-09-27 Codex FINISH-SHARP-1 claim
+
+Codex owns claude/finish-sharp-20260927 for reproduced built Studio export failure: sharp is imported directly by text-cards.ts but absent from widget runtime dependency declarations, so Electron Vite bundles its native dynamic requires. Scope declare/externalize/package existing native runtime dependency and prove rebuilt export. No installs/shared native rebuild/paid providers/owner profile access. Root owns merge queue.
+
+FINISH-SHARP-1 implementation complete; local commit pending root integration. Real rebuilt isolated Electron freshness proof passes 1/1 zero retries, MP4/hash/decoded-frame evidence retained at .kilo/finish-20260927/sharp-media and sharp-freshness-home. Packaging claim stays open for private dependency-copy proof; no installed release acceptance claimed.
