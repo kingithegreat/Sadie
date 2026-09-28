@@ -96,6 +96,8 @@ test.describe('First-run onboarding and config persistence', () => {
       await modal.getByRole('button', { name: 'Next' }).click();
       await modal.getByRole('button', { name: 'Get Started' }).click();
       await expect(modal).toHaveCount(0);
+      await expect(page.locator('.uncensored-toggle')).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.locator('.model-lock-hint')).toHaveCount(0);
 
       const config = JSON.parse(fs.readFileSync(path.join(tmp, 'config', 'user-settings.json'), 'utf8'));
       expect(config.firstRun).toBe(false);
