@@ -719,7 +719,26 @@ export async function ensureWebFetchWorkflow(): Promise<void> {
     console.warn('[n8n-api] Could not read the workflow list; skipping Web Fetch deploy rather than risking a duplicate');
     return;
   }
-  if (existing.some(w => w.name.includes('Web Fetch'))) {
+  // A name alone does not prove the deployed workflow has the Auth Guard.
+  // Inspect every matching copy while REST access is available. There can be
+  // several old copies from a previous startup race; leaving even one of them
+  // active keeps the unauthenticated webhook reachable.
+  let remaining = existing.filter(w => w.name === 'HomeBot: Web Fetch');
+  const staleIds: string[] = [];
+  while (remaining.length > 0) {
+    const staleId = await findStaleGuardedWorkflow(remaining, 'Web Fetch');
+    if (!staleId) break;
+    staleIds.push(staleId);
+    remaining = remaining.filter(w => w.id !== staleId);
+  }
+  for (const id of staleIds) {
+    console.warn('[n8n-api] Web Fetch workflow has no Auth Guard; replacing it:', id);
+    await deleteWorkflow(id);
+  }
+  if (remaining.length > 0) {
+    // An existing copy may be guarded, or unreadable. In either case importing
+    // another copy would create a duplicate; unreadable copies are never
+    // deleted on a guess.
     console.log('[n8n-api] Web Fetch workflow already exists, skipping deploy');
     return;
   }
