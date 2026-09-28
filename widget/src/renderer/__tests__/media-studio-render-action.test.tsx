@@ -10,6 +10,7 @@
 
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
+import { SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 
 const JOB = {
   id: 'j1',
@@ -29,6 +30,26 @@ const JOB = {
 };
 
 afterEach(() => { delete (window as any).electron; });
+
+test('rejected scene art offers reachable regeneration with no inferred payment consent', async () => {
+  const mediaRun = jest.fn().mockResolvedValue({ ok: false, error: 'Online generation is off.' });
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB,
+      latestExportAttempt: { id: 'failed', status: 'failed', errorCode: SCENE_PICTURE_FAILURE },
+      renderInputs: { imagePath: null, visuals: 'scenes' } }]), mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Regenerate scene pictures' })); });
+  expect(mediaRun).toHaveBeenCalledWith('j1', 'render', { regenerateScenes: true });
+  expect(screen.getByText('Online generation is off.')).toBeTruthy();
+});
+
+test('unrelated provider errors cannot offer scene-art regeneration by matching their text', async () => {
+  (window as any).electron = { mediaList: jest.fn().mockResolvedValue([{ ...JOB,
+    latestExportAttempt: { id: 'failed', status: 'failed', error: 'Check the picture for scene 1: provider text.' } }]) };
+  await act(async () => { render(<MediaStudioPanel />); });
+  expect(screen.queryByRole('button', { name: 'Regenerate scene pictures' })).toBeNull();
+});
 
 test('a video in media_production offers "Make the video", wired to the render action', async () => {
   const mediaRun = jest.fn().mockResolvedValue({ ok: true, message: 'Rendered.' });
