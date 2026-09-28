@@ -347,6 +347,18 @@ describe('AutomationCenter — status indicators', () => {
 });
 
 describe('AutomationCenter — edit functionality', () => {
+  test.each([
+    ['owned workflow', { ...AUTO_A, n8nWorkflowId: 'wf-1', n8nWebhookUrl: 'http://localhost:5678/webhook/a1' }, true, 'HomeBot manages this n8n workflow. Delete the automation to remove that workflow before creating a revised version.'],
+    ['manual webhook', { ...AUTO_A, n8nWebhookUrl: 'http://localhost:5678/webhook/a1' }, false, 'Clearing this manually linked webhook detaches it from HomeBot. Manage the external workflow separately.'],
+  ])('edit hint reflects %s ownership', async (_name, automation, owned, hint) => {
+    setupElectron({ loadAutomations: jest.fn().mockResolvedValue({ automations: [automation] }) });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Edit')); });
+
+    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.getByTestId('edit-n8n-url')).toHaveProperty('disabled', owned);
+  });
+
   test('edit button opens edit form for automation', async () => {
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),

@@ -1299,6 +1299,7 @@ export interface SavedAutomation {
   /** For trigger="file": optional filename filter like "*.csv". */
   watchPattern?: string;
   n8nWebhookUrl?: string;
+  n8nWorkflowId?: string;
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;
