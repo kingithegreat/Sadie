@@ -16,6 +16,7 @@
  */
 
 import { homebotWebhookHeaders } from '../webhook-auth';
+import { guardJsCode } from '../n8n-auth-guard';
 
 describe('the header the guards validate', () => {
   test('homebotWebhookHeaders sets the auth header', () => {
@@ -34,6 +35,35 @@ describe('the header the guards validate', () => {
   test('extras cannot silently drop the auth header', () => {
     const headers = homebotWebhookHeaders({ 'X-Other': '1' });
     expect(Object.keys(headers).map(k => k.toLowerCase())).toContain('x-homebot-auth');
+  });
+
+  test('an unset container env does not report open webhooks or weaken the deployed guard', () => {
+    const previous = process.env.HOMEBOT_WEBHOOK_SECRET;
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      delete process.env.HOMEBOT_WEBHOOK_SECRET;
+      let headers: Record<string, string> = {};
+      jest.isolateModules(() => {
+        headers = require('../webhook-auth').homebotWebhookHeaders();
+      });
+      const secret = headers['X-HOMEBOT-Auth'];
+      const runGuard = (incoming: Record<string, string>) => {
+        const input = {
+          first: () => ({ json: { headers: incoming } }),
+          all: () => [{ json: { accepted: true } }],
+        };
+        return new Function('$input', 'process', guardJsCode(secret))(input, { env: {} });
+      };
+
+      expect(secret).toBeTruthy();
+      expect(runGuard({ 'x-homebot-auth': secret })).toEqual([{ json: { accepted: true } }]);
+      expect(() => runGuard({})).toThrow(/Unauthorized/);
+      expect(warning).not.toHaveBeenCalledWith(expect.stringContaining('SKIP validation'));
+    } finally {
+      warning.mockRestore();
+      if (previous === undefined) delete process.env.HOMEBOT_WEBHOOK_SECRET;
+      else process.env.HOMEBOT_WEBHOOK_SECRET = previous;
+    }
   });
 });
 
