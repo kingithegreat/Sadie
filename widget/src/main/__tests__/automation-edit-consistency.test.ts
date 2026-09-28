@@ -24,6 +24,10 @@ jest.mock('../n8n-api', () => ({
   registerN8nConnectionProvider: jest.fn(),
   verifyN8nConnection: jest.fn(),
 }));
+jest.mock('../licensing', () => ({
+  ...jest.requireActual('../licensing'),
+  getCurrentTier: () => 'pro',
+}));
 
 import { registerIpcHandlers } from '../ipc-handlers';
 import { updateAutomationHandler, registerAutomationTierProvider } from '../tools/automation';
