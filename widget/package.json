@@ -19,9 +19,10 @@
     "test:smoke": "jest --config=jest.config.ts --runInBand --testPathPattern=permissions-smoke.test.ts",
     "test:file": "jest --config=jest.config.ts --runInBand --testPathPattern",
     "build": "electron-vite build",
+    "build:release": "cross-env HOMEBOT_RELEASE_BUILD=1 NODE_ENV=production electron-vite build",
     "dev": "node scripts/electron-dev.js",
     "predist": "powershell -NoProfile -ExecutionPolicy Bypass -File \"..\\scripts\\generate-icon.ps1\"",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build:release && electron-builder",
     "postinstall": "electron-builder install-app-deps",
     "e2e:install": "playwright install --with-deps",
     "e2e": "cross-env NODE_ENV=test HOMEBOT_E2E=1 playwright test",
@@ -30,7 +31,7 @@
     "capture-logs": "node ./scripts/capture-diagnostics.js",
     "stream-metrics": "node ./scripts/stream-metrics.js",
     "clean-tests": "rmdir /s /q test-results playwright-report trace-output 2>nul || echo No test artifacts to clean",
-    "release": "node ../scripts/preflight-env-check.js --require-production && npm run build && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
+    "release": "node ../scripts/preflight-env-check.js --require-production && npm run build:release && node ../scripts/preflight-env-check.js --scan-artifacts && npm run dist && node ../scripts/scan-package-integrity.js"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

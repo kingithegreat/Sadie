@@ -2,8 +2,15 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { resolve } from 'path'
 
+// Distribution builds fold development/test branches; CI's normal builds keep
+// runtime NODE_ENV so their opt-in Electron fixtures still exercise the app.
+const releaseDefines = process.env.HOMEBOT_RELEASE_BUILD === '1'
+  ? { 'process.env.NODE_ENV': JSON.stringify('production') }
+  : undefined
+
 export default defineConfig({
   main: {
+    define: releaseDefines,
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
@@ -14,6 +21,7 @@ export default defineConfig({
     }
   },
   preload: {
+    define: releaseDefines,
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {

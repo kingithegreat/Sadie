@@ -146,9 +146,25 @@ export function buildKenBurnsFilter(movement: string, durationSec: number, fps =
 
 function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    execFile(bin, args, { timeout: 300_000, maxBuffer: 10 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+    // Progress and repeated decoder failures must not become megabytes of project,
+    // job and renderer state. Stop at the first media error, with bounded evidence.
+    const commandArgs = ['-hide_banner', '-nostats', '-loglevel', 'error', '-xerror', ...args];
+    execFile(bin, commandArgs, { timeout: 300_000, maxBuffer: 64 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       if (err) {
-        reject(new Error(`FFmpeg exited with error (${err.message}): ${stderr}`));
+        const bounded = (text: string, limit: number) => text.length <= limit
+          ? text : `${text.slice(0, limit / 2)}\n[diagnostic truncated]\n${text.slice(-limit / 2)}`;
+        // Child Error.message may embed the entire executable path and command.
+        // Keep technical evidence local; only repair guidance belongs in saved UI state.
+        const diagnostic = {
+          reason: err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'Encoder diagnostics exceeded the collection limit.'
+            : err.killed ? 'Encoder was stopped or exceeded its time limit.' : 'Encoder exited unsuccessfully.',
+          code: err.code === undefined ? null : String(err.code).slice(0, 80),
+          signal: err.signal ? String(err.signal).slice(0, 40) : null,
+          killed: !!err.killed,
+          stderr: bounded(String(stderr || ''), 1536),
+        };
+        console.warn('[Storyboard encoder] Export failed.', diagnostic);
+        reject(Object.assign(new Error('Could not export this scene. Check or regenerate its picture or audio, then retry. Your previous successful export has been kept.'), { cause: diagnostic }));
       } else {
         resolve({ stdout, stderr });
       }

@@ -420,8 +420,7 @@ const electronAPI: ElectronAPI = {
     if (result && result.success && result.data) {
       return result.data as Settings;
     }
-    // If something went wrong, fallback to current Settings
-    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
+    throw new Error(result?.error || 'Settings could not be saved. Please try again.');
   },
 
   listCustomLLMModels: async (config: { apiUrl: string; apiKey?: string; provider?: string }) => {

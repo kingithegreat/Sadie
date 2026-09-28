@@ -78,6 +78,32 @@ describe('FirstRunModal — open/closed', () => {
 });
 
 describe('FirstRunModal — local path', () => {
+  test('retains the downloaded hardware choice after save failure and persists that same draft on retry', async () => {
+    const electron = makeMockElectron();
+    electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
+    electron.listOllamaModels
+      .mockResolvedValueOnce({ success: true, models: [] })
+      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text' }] });
+    electron.saveSettings.mockRejectedValueOnce(new Error('disk read-only'));
+    window.electron = electron as any;
+    const onSave = jest.fn(async payload => { await electron.saveSettings(payload); });
+    const onClose = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={onClose} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(screen.getByRole('alert')).toHaveTextContent('disk read-only');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(electron.saveSettings).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(electron.saveSettings).toHaveBeenCalledTimes(2);
+    for (const [payload] of electron.saveSettings.mock.calls) {
+      expect(payload).toMatchObject({ chatModel: 'qwen2.5:3b', firstRun: false });
+    }
+  });
+
   test('saves the installed hardware-recommended chat model instead of the absent default', async () => {
     const electron = makeMockElectron();
     electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
@@ -85,7 +111,7 @@ describe('FirstRunModal — local path', () => {
       .mockResolvedValueOnce({ success: true, models: [] })
       .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text' }] });
     window.electron = electron as any;
-    const onSave = jest.fn();
+    const onSave = jest.fn(async payload => { await electron.saveSettings(payload); });
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={jest.fn()} />);
     await waitFor(() => expect(electron.detectGpuVram).toHaveBeenCalled());
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
@@ -95,6 +121,7 @@ describe('FirstRunModal — local path', () => {
     await act(async () => { fireEvent.click(screen.getByText('Next')); });
     await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
     expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b', firstRun: false }));
+    expect(electron.saveSettings).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b' }));
   });
 
@@ -159,7 +186,7 @@ describe('FirstRunModal — local path', () => {
     electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
     electron.pullModelStream.mockResolvedValue({ success: false, error: 'Offline' } as any);
     window.electron = electron as any;
-    const onSave = jest.fn();
+    const onSave = jest.fn(async payload => { await electron.saveSettings(payload); });
     render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
     electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'nomic-embed-text' }] });
@@ -168,6 +195,7 @@ describe('FirstRunModal — local path', () => {
     await act(async () => { fireEvent.click(screen.getByText('Next')); });
     await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
     expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:7b' }));
+    expect(electron.saveSettings).toHaveBeenCalledTimes(1);
   });
 
   test('waits for hardware detection before choosing the download', async () => {
@@ -190,12 +218,14 @@ describe('FirstRunModal — local path', () => {
     const electron = makeMockElectron();
     electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'llama3.2:3b' }, { name: 'nomic-embed-text' }] });
     window.electron = electron as any;
-    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
+    const onSave = jest.fn(async payload => { await electron.saveSettings(payload); });
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
     fireEvent.change(screen.getByRole('combobox', { name: 'Select chat model' }), { target: { value: 'llama3.2:3b' } });
     await act(async () => { fireEvent.click(screen.getByText('Next')); });
     await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
     expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'llama3.2:3b' }));
+    expect(electron.saveSettings).toHaveBeenCalledTimes(1);
   });
 
   test('clicking Local shows connection check', async () => {
