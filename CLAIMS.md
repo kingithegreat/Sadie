@@ -1,5 +1,9 @@
 # Work Claims
 
+## 2026-09-29 Codex n8n import ownership claim
+
+Codex owns `claude/automation-import-cleanup-20260929` from fresh `origin/main` (`9ad706fe`). Scope: the chat `import_n8n_workflow` failure stages: reject an un-linkable workflow before import, and handle newly imported workflow ownership when activation or local link persistence fails. Preserve local-first automations, existing #438 linked ID/delete behavior, and unrelated user workflows. No live n8n, credentials, owner profile, or shared dependency mutation. This is distinct from draft #440's update consistency path; hold this PR draft for serial integration after #440.
+
 ## 2026-09-29 Codex automation chat lifecycle claim
 
 Codex owns `claude/automation-chat-lifecycle-20260929`, rebased onto merged #437 (`9ad4b4b1`). Scope: chat `create_automation` and linked `import_n8n_workflow` persist the optional n8n workflow ID; chat `delete_automation` tears down a known deployed workflow before deleting the local record. A failed or unidentifiable remote teardown keeps the record with a clear error; local-only automations remain usable without n8n. Existing linked workflows cannot be overwritten by another chat import. #437 owns the Pro gate and failed UI edit response; separate draft #436 owns Web Fetch guards. Six regression assertions failed before the fix and pass after. Current-head focused Windows Jest: 4 suites/76 tests; widget TypeScript passes, lint has 0 errors/7 existing warnings. Real n8n deletion and packaged UI acceptance remain unverified. This branch stays draft for independent integration. No live n8n, credentials, owner profile, or paid provider use.
