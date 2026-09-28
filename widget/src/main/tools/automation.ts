@@ -25,6 +25,7 @@ import {
   extractWebhookUrl,
 } from '../n8n-api';
 import { isWithinHomeDir } from '../utils/home-boundary';
+import { automationEditConflict } from '../automation-edit-consistency';
 
 // ---- Persistence (mirrors the Automation Center store in ipc-handlers.ts) ----
 
@@ -550,6 +551,12 @@ export const updateAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     const automations = readAutomations();
     const { auto, error } = findAutomation(automations, String(args.automation || ''));
     if (!auto) return { success: false, error };
+
+    const editConflict = automationEditConflict(auto, {
+      name: args.new_name !== undefined && String(args.new_name).trim() ? String(args.new_name).trim() : undefined,
+      instructions: args.instructions !== undefined && String(args.instructions).trim() ? String(args.instructions).trim() : undefined,
+    });
+    if (editConflict) return { success: false, error: editConflict };
 
     if (args.enabled !== undefined) auto.enabled = !!args.enabled;
     if (args.new_name !== undefined && String(args.new_name).trim()) auto.name = String(args.new_name).trim();

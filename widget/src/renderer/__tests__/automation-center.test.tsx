@@ -399,6 +399,7 @@ describe('AutomationCenter — edit functionality', () => {
   test.each([
     ['upgrade', { status: 'upgrade_required', upgrade: { capability: 'automation', title: 'Upgrade to Pro', message: 'Automation needs Pro', upgradeUrl: 'homebot://upgrade' } }],
     ['failed write', { success: false, error: 'Could not save automation' }],
+    ['linked n8n workflow', { success: false, error: 'This automation has a deployed n8n workflow. Start n8n, delete the automation and its workflow, then create the revised version.' }],
     ['missing response', undefined],
   ])('save edit keeps the draft and stored row on %s', async (_case, response) => {
     const updateAutomation = jest.fn().mockResolvedValue(response);
@@ -413,7 +414,11 @@ describe('AutomationCenter — edit functionality', () => {
 
     expect(screen.getByDisplayValue('Weekly Backup')).toBeInTheDocument();
     if (_case === 'upgrade') expect(screen.getByText('Automation needs Pro')).toBeInTheDocument();
-    else expect(screen.getByText(_case === 'failed write' ? 'Could not save automation' : 'Failed to save changes')).toBeInTheDocument();
+    else expect(screen.getByText(
+      _case === 'failed write' ? 'Could not save automation'
+        : _case === 'linked n8n workflow' ? 'This automation has a deployed n8n workflow. Start n8n, delete the automation and its workflow, then create the revised version.'
+          : 'Failed to save changes',
+    )).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Cancel$/ })); });
     expect(screen.getByText('Daily Backup')).toBeInTheDocument();
     expect(screen.queryByText('Weekly Backup')).toBeNull();
