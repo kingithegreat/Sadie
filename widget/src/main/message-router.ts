@@ -3288,7 +3288,6 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
     // Streaming responses via HTTP chunked response (POST -> stream)
     ipcMain.on('homebot:stream-message', async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
       const streamStartMs = Date.now();
-      console.log('[DIAG] Received homebot:stream-message', { request, env: { HOMEBOT_DIRECT_OLLAMA: process.env.HOMEBOT_DIRECT_OLLAMA, isE2E, NODE_ENV: process.env.NODE_ENV } });
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received homebot:stream-message', { request });
       try { pushRouter(`Received homebot:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
       const streamId = request?.streamId || `stream-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
@@ -3397,7 +3396,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // E2E MOCK MODE: Replace all real streaming with deterministic chunks
         // Allow opt-out of the deterministic mock via `HOMEBOT_E2E_BYPASS_MOCK=1` when we want
         // to exercise the real streaming/fallback paths in tests.
-        if (E2E && process.env.HOMEBOT_E2E_BYPASS_MOCK !== '1') {
+        if (process.env.NODE_ENV !== 'production' && E2E && process.env.HOMEBOT_E2E_BYPASS_MOCK !== '1') {
           if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Starting deterministic streaming mock for streamId:', streamId);
           try { pushRouter(`E2E-MOCK starting streamId=${streamId}`); } catch (e) { safeCatch(e); }
           
