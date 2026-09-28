@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import { createHash } from 'crypto';
 import { findFfmpeg } from '../media-render';
 import { findManagedFfmpeg } from '../ffmpeg-setup';
 import { inspectRender, grabFrame, RenderFacts } from '../media-qa';
@@ -10,6 +11,8 @@ import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-rendere
 import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
 import { readJobs, writeJobs } from '../tools/media';
 import { createStudioOutputSpec } from '../../shared/media-output';
+
+jest.setTimeout(15_000); // Render orchestration performs real fixture file I/O.
 
 // Unit adapters must not implicitly depend on a downloaded Electron binary.
 // CI installs it later for the real renderer tests; the local install hid this.
@@ -379,6 +382,52 @@ describe('storyboard export output contract', () => {
     const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
     expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/FFmpeg was not found/) });
     expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test.each([
+    { name: 'decoder', code: 1, signal: null, killed: false, oversized: true },
+    { name: 'max buffer', code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', signal: 'SIGTERM', killed: true, oversized: true },
+    { name: 'empty diagnostic', code: 1, signal: null, killed: false, oversized: false },
+    { name: 'timeout', code: 'ETIMEDOUT', signal: 'SIGTERM', killed: true, oversized: false },
+  ])('$name failure retains bounded local diagnostics and plain saved repair guidance', async ({ code, signal, killed, oversized }) => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const before = fs.readFileSync(first.moviePath!);
+    const beforeHash = createHash('sha256').update(before).digest('hex');
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (execFile as unknown as jest.Mock).mockImplementation((_bin, args, options, callback) => {
+      expect(args).toEqual(expect.arrayContaining(['-nostats', '-loglevel', 'error', '-xerror']));
+      expect(options.maxBuffer).toBe(64 * 1024);
+      callback(Object.assign(new Error('Command failed: C:\\private\\ffmpeg.exe -i owner-file.png --private-command'), { code, signal, killed }), '',
+        oversized ? 'Invalid PNG signature\n' + 'decoder repetition\n'.repeat(600_000) + 'Failed input decode' : '');
+    });
+    const failed = await render();
+    expect(failed.ok).toBe(false);
+    expect(failed.error!.length).toBeLessThan(200);
+    expect(failed.error).toMatch(/regenerate.*retry/);
+    expect(failed.error).toContain('previous successful export has been kept');
+    expect(failed.error).not.toMatch(/Command failed|private|code=|SIGTERM|ETIMEDOUT|Invalid PNG|diagnostic truncated/);
+    expect(warning).toHaveBeenCalledTimes(1);
+    const diagnostic = warning.mock.calls[0][1] as any;
+    expect(warning.mock.calls[0][0]).toBe('[Storyboard encoder] Export failed.');
+    expect(diagnostic).toMatchObject({ code: String(code), signal, killed });
+    expect(JSON.stringify(diagnostic).length).toBeLessThan(2000);
+    expect(JSON.stringify(diagnostic)).not.toMatch(/Command failed|private|owner-file/);
+    if (oversized) {
+      expect(diagnostic.stderr).toMatch(/Invalid PNG signature/);
+      expect(diagnostic.stderr).toMatch(/Failed input decode/);
+      expect(diagnostic.stderr).toMatch(/diagnostic truncated/);
+    } else expect(diagnostic.stderr).toBe('');
+    if (killed && code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') expect(diagnostic.reason).toMatch(/time limit/);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: failed.error });
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+    expect(fs.readFileSync(first.moviePath!)).toEqual(before);
+    expect(createHash('sha256').update(fs.readFileSync(first.moviePath!)).digest('hex')).toBe(beforeHash);
+    const metadata = fs.readFileSync(path.join(root, 'export-check', 'project.json'), 'utf8');
+    expect(metadata.length).toBeLessThan(12_000);
+    expect(metadata).not.toMatch(/Command failed|private|code=|SIGTERM|ETIMEDOUT|Invalid PNG|diagnostic truncated/);
+    warning.mockRestore();
   });
 
   test('an explicit motion override has different provenance from the saved default', async () => {
