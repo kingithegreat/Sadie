@@ -15,6 +15,8 @@ import { isShotTransition, type ShotTransition } from '../../shared/transitions'
 import { sanitizeTextCard, type TextCard } from '../../shared/text-card';
 import * as fs from 'fs';
 import * as path from 'path';
+import { createHash } from 'crypto';
+import { plainBackgroundAccepted } from '../../shared/shot-picture-intent';
 import { ShotStatus } from './types';
 
 export interface AssembledShot {
@@ -28,6 +30,8 @@ export interface AssembledShot {
   narration: string;
   status: string;
   frameImagePath: string | null;
+  frameImageSha256?: string | null;
+  plainBackgroundSha256?: string | null;
   /** True when a frame exists but was generated from a prompt that has since changed. */
   frameStale: boolean;
   /** How this shot moves into the next one (MS-2). */
@@ -104,6 +108,10 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       }
     }
 
+    let frameImageSha256: string | null = null;
+    if (frameImagePath) {
+      try { frameImageSha256 = createHash('sha256').update(fs.readFileSync(frameImagePath)).digest('hex'); } catch { /* Export gives the actionable read error. */ }
+    }
     // Stale only when a frame exists AND we know what prompt made it AND it no
     // longer matches — a shot generated before this field existed is never
     // flagged, so existing projects don't suddenly show false warnings.
@@ -124,6 +132,9 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       narration,
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,
+      frameImageSha256,
+      plainBackgroundSha256: plainBackgroundAccepted(promptData.plainBackgroundSha256, frameImageSha256)
+        ? frameImageSha256 : null,
       frameStale,
       ...(isShotTransition(promptData.transition) && promptData.transition !== 'cut'
         ? { transition: promptData.transition, transitionSec: typeof promptData.transitionSec === 'number' ? promptData.transitionSec : undefined }
