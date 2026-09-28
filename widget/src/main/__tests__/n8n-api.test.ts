@@ -15,12 +15,14 @@ jest.mock('electron', () => ({
   },
 }));
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
+jest.mock('http', () => ({ get: jest.fn() }));
 jest.mock('axios', () => ({
   __esModule: true,
   default: { request: jest.fn(), get: jest.fn(), post: jest.fn() },
 }));
 
 import { execFile } from 'child_process';
+import * as http from 'http';
 import axios from 'axios';
 import {
   registerN8nConnectionProvider,
@@ -32,9 +34,11 @@ import {
   extractWebhookUrl,
   verifyN8nConnection,
   buildWorkflowJson,
+  restartN8n,
 } from '../n8n-api';
 
 const mockExecFile = execFile as unknown as jest.Mock;
+const mockHttpGet = http.get as unknown as jest.Mock;
 const mockAxios = axios as jest.Mocked<typeof axios>;
 
 const VALID_WORKFLOW = {
@@ -182,6 +186,29 @@ describe('CLI fallback (no API key)', () => {
     expect(cmd).toBe('docker');
     expect(args).toEqual(['exec', 'homebot-n8n', 'n8n', 'update:workflow', '--id=wf-3', '--active=true']);
     expect(mockAxios.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('restart health URL', () => {
+  beforeEach(() => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: object, cb: (error: Error | null, stdout: string, stderr: string) => void) => cb(null, 'ok', ''));
+    mockHttpGet.mockImplementation((_url: string, _opts: object, cb: (response: any) => void) => {
+      cb({ statusCode: 200, resume: jest.fn() });
+      return { on: jest.fn().mockReturnThis(), destroy: jest.fn() };
+    });
+  });
+
+  test('polls the configured n8n URL after Docker restart', async () => {
+    useApiKey(undefined, 'http://127.0.0.1:5680/');
+    await restartN8n();
+    expect(mockExecFile).toHaveBeenCalledWith('docker', ['restart', 'homebot-n8n'], expect.any(Object), expect.any(Function));
+    expect(mockHttpGet.mock.calls.map(([url]) => url)).toEqual(['http://127.0.0.1:5680']);
+  });
+
+  test('uses localhost:5678 when no URL is configured', async () => {
+    useApiKey(undefined, '');
+    await restartN8n();
+    expect(mockHttpGet.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5678']);
   });
 });
 
