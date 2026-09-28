@@ -97,6 +97,28 @@ test('pending success keeps the dialog open and blocks duplicate saves until ack
   expect(persisted.useCustomLLM).toBe(false);
 });
 
+test('a pending save blocks Cancel, Close, Escape and backdrop until its write resolves', async () => {
+  failSave = false;
+  delaySave = true;
+  await openSimpleSettings();
+  fireEvent.click(screen.getByTestId('privacy-switch'));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save changes' })); });
+  const dialog = screen.getByRole('dialog', { name: 'Settings' });
+  const cancel = screen.getByRole('button', { name: 'Cancel' });
+  const close = screen.getByRole('button', { name: 'Close settings' });
+  expect(cancel).toBeDisabled();
+  expect(close).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); });
+  expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
+  fireEvent.click(dialog.closest('.settings-overlay')!);
+  expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument();
+  await act(async () => { finishSave!(); });
+  expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull();
+  expect(persisted.useCustomLLM).toBe(false);
+});
+
 test('setup skip awaits the same actual save bridge, retains first-run on failure, and retries once', async () => {
   persisted.firstRun = true;
   await act(async () => { render(<App />); });
