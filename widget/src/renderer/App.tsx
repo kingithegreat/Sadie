@@ -1788,7 +1788,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           <FirstRunModal
             open={firstRunOpen}
             settings={settings as any}
-            onSave={(s) => saveSettings(s as any)}
+            onSave={async (s) => {
+              await saveSettings(s as any);
+              window.dispatchEvent(new CustomEvent('homebot:uncensored-mode-changed', { detail: s.uncensoredMode }));
+            }}
             onClose={() => setFirstRunOpen(false)}
           />
         </Suspense>

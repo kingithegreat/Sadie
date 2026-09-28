@@ -415,6 +415,10 @@ export interface ColabQueueMutationArgs {
   expectedAttempts?: number;
 }
 
+export interface SubscriptionCliStatus {
+  status: 'ready' | 'missing' | 'signed-out' | 'api-key' | 'unknown';
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -901,6 +905,7 @@ export interface ElectronAPI {
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
+  checkSubscriptionCli?: (provider: 'codex' | 'claude-code') => Promise<SubscriptionCliStatus>;
   listMediaCapabilities?: (options?: { refresh?: boolean }) => Promise<{ success: boolean; registry?: MediaCapabilityRegistry; error?: string }>;
 
   // Image generation helper

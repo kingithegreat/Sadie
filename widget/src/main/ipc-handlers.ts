@@ -38,6 +38,7 @@ import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModel
 import { assertProviderOnlineAccess } from './utils/provider-network-policy';
 import { resolveDiscoveryPayload } from './discovery-payload';
 import { getMediaCapabilityRegistry } from './provider-capability-registry';
+import { checkSubscriptionCliStatus } from './subscription-cli-status';
 import { fetchPageContentHandler } from './tools/browser';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, describeImageGenerationRoute, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
@@ -497,6 +498,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       console.error('Error loading settings:', err.message);
       return getDefaultSettings();
     }
+  });
+
+  ipcMain.handle('homebot:check-subscription-cli', async (_event, provider) => {
+    if (provider !== 'codex' && provider !== 'claude-code') return { status: 'unknown' };
+    return checkSubscriptionCliStatus(provider);
   });
 
   ipcMain.handle('homebot:list-custom-llm-models', async (_event, payload) => {
