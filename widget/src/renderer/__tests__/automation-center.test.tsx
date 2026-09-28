@@ -230,6 +230,25 @@ describe('AutomationCenter — automation controls', () => {
     expect(screen.queryByText('Daily Backup')).toBeNull();
   });
 
+  test('Free delete shows the upgrade prompt and keeps the saved row', async () => {
+    const deleteAutomation = jest.fn().mockResolvedValue({
+      status: 'upgrade_required',
+      upgrade: { capability: 'automation', title: 'Upgrade to Pro', message: 'Automation needs Pro', upgradeUrl: 'homebot://upgrade' },
+    });
+    setupElectron({
+      loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      deleteAutomation,
+    });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Delete')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Delete$/ })); });
+
+    expect(deleteAutomation).toHaveBeenCalledWith({ id: 'a1', force: false });
+    expect(screen.getByText('Automation needs Pro')).toBeInTheDocument();
+    expect(screen.getByText('Daily Backup')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Delete anyway/i })).toBeNull();
+  });
+
   test('cancelling the prompt leaves the automation alone', async () => {
     const deleteAutomation = jest.fn().mockResolvedValue({ success: true });
     setupElectron({
@@ -356,7 +375,7 @@ describe('AutomationCenter — edit functionality', () => {
   });
 
   test('save edit calls updateAutomation with new values', async () => {
-    const updateAutomation = jest.fn().mockResolvedValue({});
+    const updateAutomation = jest.fn().mockResolvedValue({ success: true });
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
       updateAutomation,
@@ -374,6 +393,30 @@ describe('AutomationCenter — edit functionality', () => {
       id: 'a1',
       name: 'Weekly Backup',
     }));
+    expect(screen.getByText('Weekly Backup')).toBeInTheDocument();
+  });
+
+  test.each([
+    ['upgrade', { status: 'upgrade_required', upgrade: { capability: 'automation', title: 'Upgrade to Pro', message: 'Automation needs Pro', upgradeUrl: 'homebot://upgrade' } }],
+    ['failed write', { success: false, error: 'Could not save automation' }],
+    ['missing response', undefined],
+  ])('save edit keeps the draft and stored row on %s', async (_case, response) => {
+    const updateAutomation = jest.fn().mockResolvedValue(response);
+    setupElectron({
+      loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
+      updateAutomation,
+    });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Edit')); });
+    fireEvent.change(screen.getByDisplayValue('Daily Backup'), { target: { value: 'Weekly Backup' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Save$/ })); });
+
+    expect(screen.getByDisplayValue('Weekly Backup')).toBeInTheDocument();
+    if (_case === 'upgrade') expect(screen.getByText('Automation needs Pro')).toBeInTheDocument();
+    else expect(screen.getByText(_case === 'failed write' ? 'Could not save automation' : 'Failed to save changes')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Cancel$/ })); });
+    expect(screen.getByText('Daily Backup')).toBeInTheDocument();
+    expect(screen.queryByText('Weekly Backup')).toBeNull();
   });
 });
 
