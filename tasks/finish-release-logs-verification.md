@@ -20,3 +20,9 @@ Evidence root: `C:\Users\adenk\Desktop\homebot\.kilo\finish-20260927`.
 ## Limits
 
 No installer installation, signing, owner account/profile access, paid provider, or model download. Native packaged Sharp/CRM and export proof is a separate private preparation using tested Sharp commit `ad2a2d61` plus this release overlay, not yet an integrated release claim. The earlier failed package preflight remains `package-preflight.log`.
+
+## Current-main integration — 28 September 2026
+
+Merged current `origin/main` (`acc7ff82`, including #434 and #431) into the existing branch without changing the five-file release fix. The worktree remained clean after the merge and `git diff --check origin/main...HEAD` passed. On Windows, widget and root TypeScript checks, widget lint (zero errors, seven existing warnings), root docs check (247 preload methods), and the three focused router/environment suites (55/55) passed.
+
+The normal built output contained 10 `[DIAG]` and five `[E2E-MOCK]` markers plus one each of the mock starting-stream and interval sentinels; the unchanged artifact scanner rejected it. The explicit `build:release` output contained zero of all four markers, and `preflight-env-check.js --require-production --scan-artifacts` passed. The first sandboxed explicit build could not read the Vite config through the shared dependency junction; the same command succeeded outside that restriction, so that access error is not a product-build failure. Full current-head CI, packaged restart and fresh-profile installer acceptance remain separate gates.
