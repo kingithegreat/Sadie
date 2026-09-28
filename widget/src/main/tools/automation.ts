@@ -665,6 +665,8 @@ export const importN8nWorkflowHandler: ToolHandler = async (args): Promise<ToolR
 };
 
 export const deleteAutomationHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  const blocked = proGate();
+  if (blocked) return blocked;
   try {
     const automations = readAutomations();
     const { auto, error } = findAutomation(automations, String(args.automation || ''));

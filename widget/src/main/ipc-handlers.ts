@@ -2277,7 +2277,7 @@ ${buildImproveUserPrompt(draft)}`,
    * keeps a job whose files it could not remove. Better a delete the user has to
    * repeat than an orphan they cannot see.
    */
-  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string; force?: boolean }) => {
+  ipcMain.handle('homebot:delete-automation', gatedAutomationHandler('homebot:delete-automation', getCurrentTier, async (_event, data: { id: string; force?: boolean }) => {
     const automations = readAutomations();
     const auto = automations.find((a: any) => a.id === data.id);
     if (!auto) return { success: false, error: 'Automation not found' };
@@ -2307,7 +2307,7 @@ ${buildImproveUserPrompt(draft)}`,
 
     writeAutomations(automations.filter((a: any) => a.id !== data.id));
     return { success: true, warning: workflowWarning };
-  });
+  }));
 
   const MAX_TOOL_ROUNDS = 6;
   const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
