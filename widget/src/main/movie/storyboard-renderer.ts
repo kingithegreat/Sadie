@@ -153,14 +153,18 @@ function runCommand(bin: string, args: string[]): Promise<{ stdout: string; stde
       if (err) {
         const bounded = (text: string, limit: number) => text.length <= limit
           ? text : `${text.slice(0, limit / 2)}\n[diagnostic truncated]\n${text.slice(-limit / 2)}`;
-        const inputIndex = args.indexOf('-i');
-        const input = inputIndex < 0 ? undefined : args[inputIndex + 1];
-        const reason = bounded(err.message, 256);
-        const code = err.code === undefined ? '' : ` code=${String(err.code).slice(0, 80)}`;
-        const signal = err.signal ? ` signal=${String(err.signal).slice(0, 40)}` : '';
-        reject(new Error(`FFmpeg exited with error (${reason};${code}${signal})${input ? ` Input: ${path.basename(input)}.` : ''} ` +
-          'Check or regenerate the source picture/audio for this scene, then retry. Previous successful exports are kept.\n' +
-          bounded(String(stderr || ''), 1536)));
+        // Child Error.message may embed the entire executable path and command.
+        // Keep technical evidence local; only repair guidance belongs in saved UI state.
+        const diagnostic = {
+          reason: err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'Encoder diagnostics exceeded the collection limit.'
+            : err.killed ? 'Encoder was stopped or exceeded its time limit.' : 'Encoder exited unsuccessfully.',
+          code: err.code === undefined ? null : String(err.code).slice(0, 80),
+          signal: err.signal ? String(err.signal).slice(0, 40) : null,
+          killed: !!err.killed,
+          stderr: bounded(String(stderr || ''), 1536),
+        };
+        console.warn('[Storyboard encoder] Export failed.', diagnostic);
+        reject(Object.assign(new Error('Could not export this scene. Check or regenerate its picture or audio, then retry. Your previous successful export has been kept.'), { cause: diagnostic }));
       } else {
         resolve({ stdout, stderr });
       }
