@@ -526,6 +526,36 @@ export function buildWebFetchWorkflowJson(): object {
         webhookId: `homebot-web-fetch`,
       },
       {
+        // importWorkflow places Auth Guard between Webhook and this router.
+        // The probe must never bypass the guard or reach outbound HTTP.
+        parameters: {
+          conditions: {
+            options: { caseSensitive: true, leftValue: '', typeValidation: 'strict', version: 2 },
+            conditions: [{
+              id: randomUUID(),
+              leftValue: '={{ $json.body.action }}',
+              rightValue: 'ping',
+              operator: { type: 'string', operation: 'equals', name: 'filter.operator.equals' },
+            }],
+            combinator: 'and',
+          },
+          options: {},
+        },
+        id: randomUUID(),
+        name: 'Route Ping',
+        type: 'n8n-nodes-base.if',
+        typeVersion: 2.2,
+        position: [420, 300],
+      },
+      {
+        parameters: { jsCode: 'return { json: { success: true, ping: true } };' },
+        id: randomUUID(),
+        name: 'Ping Response',
+        type: 'n8n-nodes-base.code',
+        typeVersion: 2,
+        position: [650, 150],
+      },
+      {
         parameters: {
           // SSRF guard: reject non-http(s) schemes and requests aimed at
           // loopback / private / link-local hosts (incl. the cloud-metadata
@@ -554,7 +584,7 @@ return { json: $json };`,
         name: 'Validate URL',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [420, 300],
+        position: [650, 400],
       },
       {
         parameters: {
@@ -569,7 +599,7 @@ return { json: $json };`,
         name: 'Fetch Page',
         type: 'n8n-nodes-base.httpRequest',
         typeVersion: 4.2,
-        position: [620, 300],
+        position: [870, 400],
       },
       {
         parameters: {
@@ -600,7 +630,7 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
         name: 'Extract Text',
         type: 'n8n-nodes-base.code',
         typeVersion: 2,
-        position: [700, 300],
+        position: [1080, 400],
       },
       {
         parameters: {
@@ -612,11 +642,16 @@ return { json: { success: true, url, content: text, truncated, length: text.leng
         name: 'Respond',
         type: 'n8n-nodes-base.respondToWebhook',
         typeVersion: 1.1,
-        position: [920, 300],
+        position: [1300, 300],
       },
     ],
     connections: {
-      Webhook: { main: [[{ node: 'Validate URL', type: 'main', index: 0 }]] },
+      Webhook: { main: [[{ node: 'Route Ping', type: 'main', index: 0 }]] },
+      'Route Ping': { main: [
+        [{ node: 'Ping Response', type: 'main', index: 0 }],
+        [{ node: 'Validate URL', type: 'main', index: 0 }],
+      ] },
+      'Ping Response': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
       'Validate URL': { main: [[{ node: 'Fetch Page', type: 'main', index: 0 }]] },
       'Fetch Page': { main: [[{ node: 'Extract Text', type: 'main', index: 0 }]] },
       'Extract Text': { main: [[{ node: 'Respond', type: 'main', index: 0 }]] },
@@ -748,6 +783,15 @@ export async function ensureWebFetchWorkflow(): Promise<void> {
   const id = await importWorkflow(json);
   await activateWorkflow(id);
   if (!hasApiKey()) await restartN8n(); // REST activation registers webhooks live
+  // Activation returning successfully does not prove the production webhook
+  // was registered. This authenticated ping takes the no-fetch branch above.
+  const { homebotWebhookHeaders } = await import('./webhook-auth');
+  const probe = await axios.post(`${getConnection().baseUrl}/webhook/homebot/web-fetch`,
+    { action: 'ping' },
+    { headers: homebotWebhookHeaders(), timeout: 4000, validateStatus: () => true });
+  if (probe.status !== 200 || probe.data?.success !== true || probe.data?.ping !== true) {
+    throw new Error(`Web Fetch webhook did not answer its authenticated ping after activation (HTTP ${probe.status}).`);
+  }
   console.log('[n8n-api] Web Fetch workflow deployed, id:', id);
 }
 
