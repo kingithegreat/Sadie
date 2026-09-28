@@ -401,6 +401,18 @@ describe('update_automation', () => {
 });
 
 describe('delete_automation', () => {
+  test('Free cannot delete an existing local automation through chat', async () => {
+    await createAutomationHandler({ name: 'Keep', instructions: 'x' }, ctx);
+    const before = fs.readFileSync(AUTOMATIONS_FILE, 'utf8');
+    registerAutomationTierProvider(() => 'free');
+
+    const res = await deleteAutomationHandler({ automation: 'Keep' }, ctx);
+
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Pro/i);
+    expect(fs.readFileSync(AUTOMATIONS_FILE, 'utf8')).toBe(before);
+  });
+
   test('deletes by name and leaves others intact', async () => {
     await createAutomationHandler({ name: 'Keep', instructions: 'x' }, ctx);
     await createAutomationHandler({ name: 'Remove', instructions: 'y' }, ctx);
