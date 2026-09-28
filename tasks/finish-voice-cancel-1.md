@@ -54,3 +54,5 @@ microphone, Windows speech profile, provider, model download or paid request was
 used. Full suite, packaged Electron and real microphone acceptance remain with
 the coordinating root agent. Active CPU transcription can finish after Stop,
 but the microphone is already released and its result is ignored.
+
+Current-main integration — 28 September 2026: original PR head `3cfe08b6` was merged with main `f649175f` after the Settings save and FFmpeg fixes, without conflicts. The voice implementation remains the PR delta; IPC and preload changes were inspected after automatic merging. Seven focused Windows suites pass 60/60 tests with a clean process exit, widget typecheck and normal production build pass, lint has zero errors (seven existing warnings), root `docs:check` reports 248 preload methods in sync, and `git diff --check` passes. The tests use mocked microphone and SAPI processes; real microphone and packaged voice acceptance remain open. Current-head CI is required before merge.
