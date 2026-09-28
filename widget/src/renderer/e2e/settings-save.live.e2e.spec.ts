@@ -34,6 +34,8 @@ test('built Simple Settings retains failed drafts, preserves policy, and retries
     hardwareProfile: '4gb', morningBriefing: false, telemetryEnabled: false,
     ollamaUrl: 'http://127.0.0.1:1', n8nUrl: 'http://127.0.0.1:2',
   }));
+  // Keep this Settings proof independent of optional default npx connectors.
+  fs.writeFileSync(path.join(profile, 'config', 'mcp-servers.json'), JSON.stringify({ servers: [] }));
   const bootstrap = path.join(home, 'offline-bootstrap.cjs');
   // Loaded before the actual main entry. Prevent startup from contacting or
   // launching the owner's Ollama. Only the startup inventory has a fixture;

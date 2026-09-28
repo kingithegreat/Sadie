@@ -75,7 +75,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
 
   return (
     <SettingsProvider value={state}>
-    <div className="settings-overlay" role="presentation" onClick={onClose}>
+    <div className="settings-overlay" role="presentation" onClick={handleCancel}>
       {confirmDialog}
       <div
         ref={panelRef}
@@ -85,7 +85,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         aria-label="Settings"
         onClick={e => e.stopPropagation()}
         onKeyDown={e => {
-          if (e.key === 'Escape') { onClose(); return; }
+          if (e.key === 'Escape') { handleCancel(); return; }
           // Ctrl/Cmd+S saves. The Save bar lives at the bottom of the panel, so
           // anything that pushes it out of view (a window taller than the
           // desktop, an unusual display scale) made settings unsaveable with no
@@ -99,7 +99,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
       >
       <div className="settings-header">
         <h2>Settings</h2>
-        <button className="close-button" onClick={onClose} aria-label="Close settings">
+        <button className="close-button" onClick={handleCancel} disabled={saving} aria-label="Close settings">
           ✕
         </button>
       </div>
@@ -147,7 +147,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
 
       {saveError && <p role="alert" className="setting-hint">{saveError}</p>}
       <div className="settings-footer">
-        <button className="button button-cancel" onClick={handleCancel}>
+        <button className="button button-cancel" onClick={handleCancel} disabled={saving}>
           Cancel
         </button>
         <span className="settings-footer-hint">Ctrl+S</span>

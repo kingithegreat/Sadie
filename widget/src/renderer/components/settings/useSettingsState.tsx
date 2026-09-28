@@ -744,7 +744,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        if (!saveInFlight.current) onClose();
       }
     };
 
@@ -902,6 +902,9 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   };
 
   const handleCancel = () => {
+    // A committed write cannot be cancelled. Keep the dialog visible until its
+    // acknowledgement so Cancel never appears to discard a save still in flight.
+    if (saveInFlight.current) return;
     setLocalSettings(buildLocalSettings(settings)); // Reset to original
     setAvailableModels([]);
     setModelFetchError(null);

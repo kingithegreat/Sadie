@@ -76,3 +76,13 @@ Evidence directory: `.kilo/finish-20260927/settings-live-attempt-2-results/setti
 - Persisted retry: `f9aa1279988fa08f7e204bd8741ac8757d6b8b6d3583ff89687d2a2cb95222bd`
 
 Post-proof environment type filtering (undefined values omitted) typechecks; lint has zero errors/seven existing warnings. Production sources were unchanged throughout acceptance. Full-suite/CI/release packaging remains root's separate integration gate.
+
+## 2026-09-28 independent review correction: pending Save dismissal
+
+At PR head `14497ea9`, a mounted-App test held the Settings IPC write pending, clicked Cancel, and found the dialog closed before the write acknowledged. The same path existed for header Close, backdrop, and Escape (including a separate window-level listener). The write could still commit after the user thought Cancel had discarded it. The negative-control test failed before the correction.
+
+Root delegated this bounded correction on the existing #428 branch. The original owner worktree was clean and its claim had been released; the remote head matched `14497ea9` before edits. Settings now blocks Cancel, Close, backdrop, and both Escape handlers while `saveInFlight` is true. The buttons are visibly disabled during Save. On success the dialog closes; on failure it retains the draft and permits retry or dismissal. The mounted-App/preload regression covers all four routes and passes after the correction.
+
+On the corrected source, four focused Windows suites execute **57/57** tests with normal exit; widget TypeScript passes; changed-file ESLint reports zero errors and three existing hook warnings; `git diff --check` passes. The Electron-Vite production build succeeds. The existing isolated built Simple Settings test passes **1/1, zero retries** outside the command sandbox, through actual UI, preload, IPC and disposable filesystem. It proves failed partial-write preservation, retained draft, successful retry, reopening and five pre-entry network controls. The failed-draft screenshot was inspected. Its canonical empty MCP fixture now prevents optional default npx connectors from becoming part of this Settings proof.
+
+Two sandboxed GUI attempts are retained as environment limits, not product passes: one timed out at hydration after 120 seconds; the second Electron launch exited after repeated GPU-process `-1073741515` failures. The same rebuilt source and test passed with authorized GUI access. The built test does not exercise the new pending-dismissal race; that case is covered at the mounted-App/preload level. Full current-head CI and merged-content verification remain for root's integration queue.
