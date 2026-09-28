@@ -780,6 +780,9 @@ const electronAPI: ElectronAPI = {
   startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
     return await ipcRenderer.invoke('homebot:start-speech-recognition');
   },
+  stopSpeechRecognition: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('homebot:stop-speech-recognition');
+  },
   // Whisper voice input (main/speech/whisper-ipc.ts): 16 kHz mono samples in, text out.
   whisperTranscribe: async (args: { modelId: string; language?: string; audio: Float32Array }): Promise<{ success: boolean; text?: string; error?: string }> =>
     ipcRenderer.invoke('homebot:voice:whisper-transcribe', args),

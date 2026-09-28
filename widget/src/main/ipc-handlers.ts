@@ -3,6 +3,7 @@ import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager
 import { registerBundledStudioIpc } from './modules/bundled/studio-gateway';
 import { registerModuleControlIpc } from './modules/module-ipc';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
+import { registerSapiRecognitionIpc } from './speech/sapi-ipc';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -22,7 +23,6 @@ import { saveGeneratedImage } from './generated-images';
 const HEALTH_CHECK_TIMEOUT = 2000;
 const OLLAMA_OP_TIMEOUT = 30_000;
 const OLLAMA_PULL_TIMEOUT = 600_000;
-const SPEECH_RECOGNITION_TIMEOUT = 20_000;
 const OLLAMA_READY_POLL_TIMEOUT = 1500;
 
 import {
@@ -1455,63 +1455,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  /**
-   * Start Windows speech recognition (offline capable)
-   * Uses Windows SAPI through PowerShell
-   */
-  ipcMain.handle('homebot:start-speech-recognition', async () => {
-
-    return new Promise((resolve) => {
-      // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
-      const psScript = `
-Add-Type -AssemblyName System.Speech
-$recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-$recognizer.SetInputToDefaultAudioDevice()
-
-$dictation = New-Object System.Speech.Recognition.DictationGrammar
-$recognizer.LoadGrammar($dictation)
-
-$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(6)
-$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(4)
-$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1.5)
-
-try {
-    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(15))
-    if ($result -and $result.Text) {
-        Write-Output $result.Text
-    } else {
-        Write-Output ""
-    }
-} catch {
-    Write-Output ""
-} finally {
-    $recognizer.Dispose()
-}
-`;
-      // Write to a unique temp file so concurrent calls don't race
-      const tmpFile = path.join(os.tmpdir(), `homebot-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
-      try {
-        fs.writeFileSync(tmpFile, psScript, 'utf8');
-      } catch (writeErr: any) {
-        resolve({ success: false, error: 'Could not write temp script: ' + writeErr.message, text: '' });
-        return;
-      }
-
-      execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmpFile],
-        { timeout: SPEECH_RECOGNITION_TIMEOUT },
-        (error: any, stdout: string, stderr: string) => {
-          try { fs.unlinkSync(tmpFile); } catch (_) {}
-          if (error) {
-            console.error('[Voice] SAPI error:', error.message, stderr);
-            resolve({ success: false, error: 'Speech recognition failed: ' + (error.message || ''), text: '' });
-          } else {
-            const text = stdout.trim();
-            resolve({ success: true, text });
-          }
-        }
-      );
-    });
-  });
+  registerSapiRecognitionIpc();
 
   // ── Scheduler (Pro-gated: 'automation') ──────────────────────────────────────
   ipcMain.handle('homebot:scheduler-list', gatedAutomationHandler(
