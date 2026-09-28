@@ -51,6 +51,13 @@ test.describe('First-run onboarding and config persistence', () => {
     test.skip(process.platform !== 'win32', 'The installed Windows CLI path is the acceptance target.');
     test.setTimeout(120_000);
     const tmp = makeTempProfile();
+    const isolatedHome = path.join(tmp, 'home');
+    const ancientPathways = path.join(isolatedHome, 'Ancient Pathways');
+    fs.mkdirSync(ancientPathways, { recursive: true });
+    fs.writeFileSync(path.join(ancientPathways, 'run_pipeline.py'), '# isolated acceptance fixture\n');
+    const configDir = path.join(tmp, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'mcp-servers.json'), JSON.stringify({ servers: [] }));
     const cliDir = path.join(tmp, 'cli');
     fs.mkdirSync(cliDir);
     fs.writeFileSync(path.join(cliDir, 'codex.cmd'), [
@@ -70,9 +77,16 @@ test.describe('First-run onboarding and config persistence', () => {
       HOMEBOT_E2E_BYPASS_MOCK: '1',
       HOMEBOT_DIRECT_OLLAMA: '1',
       NODE_ENV: 'test',
+      USERPROFILE: isolatedHome,
+      HOME: isolatedHome,
+      ANCIENT_PATHWAYS_DIR: ancientPathways,
+      HOMEBOT_MOVIE_PROJECTS_DIR: path.join(isolatedHome, 'movie-projects'),
       PATH: `${cliDir}${path.delimiter}${process.env.PATH || ''}`,
     }, tmp);
+    const ownedProcess = app.process();
+    expect(ownedProcess.pid).toBeGreaterThan(0);
     try {
+      expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
       const modal = page.locator('.first-run-modal');
       await expect(modal.getByText('Welcome to HomeBot')).toBeVisible();
       await modal.getByRole('button', { name: 'Online' }).click();
@@ -95,8 +109,12 @@ test.describe('First-run onboarding and config persistence', () => {
       const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
       await expect(assistant).toContainText('subscription fixture answered', { timeout: 20000 });
       await expect(assistant).toHaveAttribute('data-state', 'finished');
+      expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
     } finally {
+      console.log(`[REL-1 E2E] closing owned Electron PID ${ownedProcess.pid}`);
       await app.close();
+      expect(ownedProcess.exitCode !== null || ownedProcess.signalCode !== null).toBe(true);
+      console.log(`[REL-1 E2E] owned Electron PID ${ownedProcess.pid} exited`);
     }
   });
 
