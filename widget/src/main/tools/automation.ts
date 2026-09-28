@@ -18,6 +18,7 @@ import * as path from 'path';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import {
   createAndActivateWorkflow,
+  deleteWorkflow,
   importWorkflow,
   activateWorkflow,
   validateWorkflowJson,
@@ -43,6 +44,7 @@ interface StoredAutomation {
    */
   watchPattern?: string;
   n8nWebhookUrl?: string;
+  n8nWorkflowId?: string;
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;
@@ -407,7 +409,7 @@ export const importN8nWorkflowDef: ToolDefinition = {
 
 export const deleteAutomationDef: ToolDefinition = {
   name: 'delete_automation',
-  description: 'Permanently delete a saved automation by id or name.',
+  description: 'Permanently delete a saved automation by id or name, including its linked n8n workflow when one exists.',
   category: 'utility',
   requiresConfirmation: true,
   parameters: {
@@ -484,6 +486,7 @@ export const createAutomationHandler: ToolHandler = async (args): Promise<ToolRe
       try {
         const wf = await createAndActivateWorkflow({ automationName: name, instructions });
         automation.n8nWebhookUrl = wf.webhookUrl;
+        automation.n8nWorkflowId = wf.id;
       } catch (err: any) {
         n8nWarning = `n8n deploy failed: ${err?.message || err}. Automation created without n8n — runs will use local tools.`;
       }
@@ -619,6 +622,12 @@ export const importN8nWorkflowHandler: ToolHandler = async (args): Promise<ToolR
     if (args.link_to_automation !== undefined && String(args.link_to_automation).trim()) {
       const { auto, error } = findAutomation(readAutomations(), String(args.link_to_automation));
       if (!auto) return { success: false, error };
+      if (auto.n8nWebhookUrl || auto.n8nWorkflowId) {
+        return {
+          success: false,
+          error: `"${auto.name}" is already linked to an n8n workflow. Remove that workflow before linking another one, so the old workflow is not left running.`,
+        };
+      }
       linked = auto;
     }
 
@@ -640,6 +649,7 @@ export const importN8nWorkflowHandler: ToolHandler = async (args): Promise<ToolR
       const stored = automations.find(a => a.id === linked!.id);
       if (stored) {
         stored.n8nWebhookUrl = webhookUrl;
+        stored.n8nWorkflowId = workflowId;
         writeAutomations(automations);
       }
     }
@@ -671,6 +681,26 @@ export const deleteAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     const automations = readAutomations();
     const { auto, error } = findAutomation(automations, String(args.automation || ''));
     if (!auto) return { success: false, error };
+
+    // Older chat-created records saved only the webhook URL. We cannot infer
+    // the workflow's ID from that URL, and deleting the record would hide a
+    // workflow that may keep running in n8n.
+    if (auto.n8nWebhookUrl && !auto.n8nWorkflowId) {
+      return {
+        success: false,
+        error: `"${auto.name}" has an n8n webhook but no saved workflow ID. The automation was kept because HomeBot cannot safely remove that workflow. Find and remove it in n8n first, then remove the HomeBot record from the Automation Center.`,
+      };
+    }
+    if (auto.n8nWorkflowId) {
+      try {
+        await deleteWorkflow(auto.n8nWorkflowId);
+      } catch (err: any) {
+        return {
+          success: false,
+          error: `"${auto.name}" still has an n8n workflow (${auto.n8nWorkflowId}) that could not be removed: ${err?.message || err}. The automation was kept so the workflow is not left running without a HomeBot record. Start n8n and try again.`,
+        };
+      }
+    }
     writeAutomations(automations.filter(a => a.id !== auto.id));
     return { success: true, result: { deleted: { id: auto.id, name: auto.name } } };
   } catch (err: any) {
