@@ -7,6 +7,7 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import FirstRunModal from '../components/FirstRunModal';
 import type { Settings } from '../../shared/types';
+import { resolveCloudLLM } from '../../shared/cloud-llm';
 
 const baseSettings: Settings = {
   alwaysOnTop: false,
@@ -31,6 +32,7 @@ function makeMockElectron(saveSettings = jest.fn().mockResolvedValue(undefined))
     checkOllamaInstalled: jest.fn().mockResolvedValue({ installed: true, path: '/usr/bin/ollama' }),
     detectGpuVram: jest.fn().mockResolvedValue({ success: true, vramGB: 6, gpuName: 'Test GPU' }),
     listCustomLLMModels: jest.fn().mockResolvedValue({ success: true, models: [{ id: 'test-model' }] }),
+    checkSubscriptionCli: jest.fn().mockResolvedValue({ status: 'ready' }),
     pullModelStream: jest.fn().mockResolvedValue({ success: true }),
     onPullModelProgress: jest.fn().mockReturnValue(() => {}),
     onOllamaDownloadProgress: jest.fn().mockReturnValue(() => {}),
@@ -104,6 +106,26 @@ describe('FirstRunModal — local path', () => {
     }
   });
 
+  test.each(['codex', 'claude-code'] as const)('On this PC keeps %s cloud routing explicitly off', async provider => {
+    const electron = makeMockElectron();
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{
+      ...baseSettings,
+      useCustomLLM: false,
+      uncensoredMode: true,
+      customLLM: { name: 'Previous subscription', provider, model: provider === 'codex' ? 'default' : 'haiku', apiUrl: '', apiKey: '', enabled: true },
+    }} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await waitFor(() => expect(screen.getByText('Ollama is ready!')).toBeInTheDocument());
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.useCustomLLM).toBe(false);
+    expect(resolveCloudLLM(saved).active).toBe(false);
+    expect(electron.checkSubscriptionCli).not.toHaveBeenCalled();
+  });
+
   test('saves the installed hardware-recommended chat model instead of the absent default', async () => {
     const electron = makeMockElectron();
     electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
@@ -123,6 +145,7 @@ describe('FirstRunModal — local path', () => {
     expect(electron.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b', firstRun: false }));
     expect(electron.saveSettings).toHaveBeenCalledTimes(1);
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b' }));
+    expect(resolveCloudLLM(onSave.mock.calls[0][0]).intended).toBe(false);
   });
 
   test.each(['pull failure', 'empty inventory', 'inventory failure'])('does not claim ready after %s', async failure => {
@@ -314,6 +337,72 @@ describe('FirstRunModal — local path', () => {
 });
 
 describe('FirstRunModal — cloud path', () => {
+  test.each([
+    ['ChatGPT subscription', 'codex', 'default'],
+    ['Claude subscription', 'claude-code', 'haiku'],
+  ])('%s is reachable without an API key and saves an active chat provider', async (label, provider, model) => {
+    const electron = makeMockElectron();
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, uncensoredMode: true }} onSave={onSave} onClose={jest.fn()} />);
+
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    await act(async () => { fireEvent.click(screen.getByText(label)); });
+    expect(screen.queryByPlaceholderText('Paste the key from your account page')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check sign-in' })); });
+    expect(electron.checkSubscriptionCli).toHaveBeenCalledWith(provider);
+    expect(electron.listCustomLLMModels).not.toHaveBeenCalled();
+    expect(screen.getByText('Subscription sign-in found. Ready to try a chat.')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.customLLM).toMatchObject({ provider, model, apiKey: '', enabled: true });
+    expect(saved.useCustomLLM).toBe(true);
+    expect(saved.uncensoredMode).toBe(false);
+    expect(resolveCloudLLM(saved).active).toBe(true);
+  });
+
+  test('subscription choice survives a failed settings save and retries once', async () => {
+    const electron = makeMockElectron();
+    window.electron = electron as any;
+    const onSave = jest.fn().mockRejectedValueOnce(new Error('disk read-only')).mockResolvedValue(undefined);
+    const onClose = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, uncensoredMode: true }} onSave={onSave} onClose={onClose} />);
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    await act(async () => { fireEvent.click(screen.getByText('ChatGPT subscription')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check sign-in' })); });
+    await act(async () => { fireEvent.click(screen.getByText('Next')); });
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(screen.getByRole('alert')).toHaveTextContent('disk read-only');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledTimes(2);
+    for (const [payload] of onSave.mock.calls) {
+      expect(payload).toMatchObject({ firstRun: false, useCustomLLM: true, uncensoredMode: false,
+        customLLM: { provider: 'codex', model: 'default', apiKey: '', enabled: true } });
+    }
+  });
+
+  test('signed-out CLI is explained and never marked ready or activated', async () => {
+    const electron = makeMockElectron();
+    electron.checkSubscriptionCli.mockResolvedValue({ status: 'signed-out' });
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
+
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    await act(async () => { fireEvent.click(screen.getByText('ChatGPT subscription')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check sign-in' })); });
+    expect(screen.getByText(/has no active sign-in/)).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('Continue anyway')); });
+    expect(screen.getByText('Ready when you are')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(resolveCloudLLM(onSave.mock.calls[0][0]).intended).toBe(false);
+  });
+
   test('clicking Cloud shows provider selection', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />

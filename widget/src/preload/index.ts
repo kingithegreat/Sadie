@@ -57,6 +57,7 @@ const ALLOWED_CHANNELS = {
   RESET_PERMISSIONS: 'homebot:reset-permissions',
   EXPORT_CONSENT: 'homebot:export-consent',
   LIST_CUSTOM_MODELS: 'homebot:list-custom-llm-models',
+  CHECK_SUBSCRIPTION_CLI: 'homebot:check-subscription-cli',
   LIST_MEDIA_CAPABILITIES: 'homebot:list-media-capabilities',
   READ_CONSENT_LOG: 'homebot:read-consent-log',
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
@@ -425,6 +426,10 @@ const electronAPI: ElectronAPI = {
 
   listCustomLLMModels: async (config: { apiUrl: string; apiKey?: string; provider?: string }) => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.LIST_CUSTOM_MODELS, config);
+  },
+
+  checkSubscriptionCli: async (provider: 'codex' | 'claude-code') => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.CHECK_SUBSCRIPTION_CLI, provider);
   },
 
   listMediaCapabilities: async (options?: { refresh?: boolean }) => {
