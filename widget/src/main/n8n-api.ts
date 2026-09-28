@@ -352,7 +352,7 @@ export async function activateWorkflow(workflowId: string): Promise<void> {
           'cannot serve workflows imported with `n8n import:workflow` (missing active-version ' +
           'bookkeeping). Configure an n8n API key in Settings → n8n so deployments use the ' +
           'REST API, or activate the workflow manually in the n8n editor at ' +
-          `${N8N_BASE}. Raw output: ${raw}`
+          `${getConnection().baseUrl}. Raw output: ${raw}`
       );
     }
     throw err;
@@ -361,6 +361,7 @@ export async function activateWorkflow(workflowId: string): Promise<void> {
 
 
 export async function restartN8n(): Promise<void> {
+  const baseUrl = getConnection().baseUrl;
   console.log('[n8n-api] Restarting n8n container...');
   await dockerRun('restart', CONTAINER);
 
@@ -369,7 +370,7 @@ export async function restartN8n(): Promise<void> {
   const http = await import('http');
   while (Date.now() < deadline) {
     const up = await new Promise<boolean>((resolve) => {
-      const req = http.get(N8N_BASE, { timeout: 2000 }, (res) => {
+      const req = http.get(baseUrl, { timeout: 2000 }, (res) => {
         resolve(res.statusCode !== undefined && res.statusCode < 500);
         res.resume();
       });
