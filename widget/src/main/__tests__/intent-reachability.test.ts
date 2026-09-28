@@ -58,6 +58,8 @@ const CASES: Array<{ prompt: string; needsOneOf: string[] }> = [
     needsOneOf: ['create_automation'] },
   { prompt: 'automate my morning routine',
     needsOneOf: ['create_automation'] },
+  { prompt: 'delete the Morning News automation',
+    needsOneOf: ['delete_automation'] },
 
   // CRM — was unreachable until the cap was fixed.
   { prompt: 'add Acme Roofing as a company in my CRM',

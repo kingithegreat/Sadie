@@ -22,6 +22,7 @@ jest.mock('electron', () => ({
 // these tests never touch Docker or a live n8n instance.
 jest.mock('../n8n-api', () => ({
   createAndActivateWorkflow: jest.fn(),
+  deleteWorkflow: jest.fn(),
   importWorkflow: jest.fn(),
   activateWorkflow: jest.fn(),
   validateWorkflowJson: jest.requireActual('../n8n-api').validateWorkflowJson,
@@ -52,6 +53,7 @@ function readFileState(): any[] {
 
 beforeEach(() => {
   if (fs.existsSync(AUTOMATIONS_FILE)) fs.unlinkSync(AUTOMATIONS_FILE);
+  mockedN8n.deleteWorkflow.mockReset();
   // Default: no tier gate (Pro) so the functional tests below run unblocked.
   registerAutomationTierProvider(() => 'pro');
 });
@@ -150,7 +152,7 @@ describe('create_automation', () => {
 });
 
 describe('create_automation deploy_to_n8n', () => {
-  test('wires the deployed webhook URL into the stored automation', async () => {
+  test('wires the deployed webhook URL and workflow ID into the stored automation', async () => {
     mockedN8n.createAndActivateWorkflow.mockResolvedValue({
       id: 'wf-1',
       name: 'HomeBot Auto: Deployed',
@@ -164,6 +166,7 @@ describe('create_automation deploy_to_n8n', () => {
     expect(res.success).toBe(true);
     expect(mockedN8n.createAndActivateWorkflow).toHaveBeenCalledWith({ automationName: 'Deployed', instructions: 'do it via n8n' });
     expect(readFileState()[0].n8nWebhookUrl).toBe('http://localhost:5678/webhook/homebot/auto/deployed-x');
+    expect(readFileState()[0].n8nWorkflowId).toBe('wf-1');
     expect(res.result.created.uses_n8n).toBe(true);
   });
 
@@ -254,6 +257,23 @@ describe('import_n8n_workflow', () => {
     expect(res.success).toBe(true);
     expect(res.result.linked_automation.name).toBe('Linked');
     expect(readFileState()[0].n8nWebhookUrl).toBe('http://localhost:5678/webhook/custom/flow');
+    expect(readFileState()[0].n8nWorkflowId).toBe('wf-42');
+  });
+
+  test('does not replace an existing linked workflow without removing it', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    const [stored] = readFileState();
+    stored.n8nWorkflowId = 'wf-existing';
+    stored.n8nWebhookUrl = 'http://localhost:5678/webhook/existing';
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify([stored]), 'utf8');
+
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' }, ctx
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/already linked/i);
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+    expect(readFileState()[0].n8nWorkflowId).toBe('wf-existing');
   });
 
   test('a bad automation reference fails BEFORE importing (no orphan workflow)', async () => {
@@ -302,6 +322,21 @@ describe('Pro gate', () => {
     registerAutomationTierProvider(() => 'pro');
     const res = await createAutomationHandler({ name: 'Pro OK', instructions: 'do it' }, ctx);
     expect(res.success).toBe(true);
+  });
+
+  test('a Free tier cannot delete a deployed workflow through chat', async () => {
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify([{
+      id: 'auto-pro', name: 'Pro workflow', instructions: 'x', trigger: 'manual',
+      enabled: true, createdAt: new Date().toISOString(), n8nWorkflowId: 'wf-pro',
+      n8nWebhookUrl: 'http://localhost:5678/webhook/pro',
+    }]), 'utf8');
+    registerAutomationTierProvider(() => 'free');
+
+    const res = await deleteAutomationHandler({ automation: 'Pro workflow' }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Pro/i);
+    expect(mockedN8n.deleteWorkflow).not.toHaveBeenCalled();
+    expect(readFileState()).toHaveLength(1);
   });
 });
 
@@ -422,6 +457,53 @@ describe('delete_automation', () => {
     const stored = readFileState();
     expect(stored).toHaveLength(1);
     expect(stored[0].name).toBe('Keep');
+    expect(mockedN8n.deleteWorkflow).not.toHaveBeenCalled();
+  });
+
+  test('deletes the deployed n8n workflow before its local record', async () => {
+    mockedN8n.createAndActivateWorkflow.mockResolvedValue({
+      id: 'wf-deployed', name: 'Auto', webhookPath: 'homebot/auto',
+      webhookUrl: 'http://localhost:5678/webhook/homebot/auto',
+    });
+    await createAutomationHandler({ name: 'Deployed', instructions: 'x', deploy_to_n8n: true }, ctx);
+    mockedN8n.deleteWorkflow.mockImplementation(async () => {
+      expect(readFileState()).toHaveLength(1);
+    });
+
+    const res = await deleteAutomationHandler({ automation: 'Deployed' }, ctx);
+    expect(res.success).toBe(true);
+    expect(mockedN8n.deleteWorkflow).toHaveBeenCalledWith('wf-deployed');
+    expect(readFileState()).toHaveLength(0);
+  });
+
+  test('keeps the record when n8n workflow deletion fails', async () => {
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify([{
+      id: 'auto-deployed', name: 'Deployed', instructions: 'x', trigger: 'manual',
+      enabled: true, createdAt: new Date().toISOString(), n8nWorkflowId: 'wf-fail',
+      n8nWebhookUrl: 'http://localhost:5678/webhook/homebot/auto',
+    }]), 'utf8');
+    mockedN8n.deleteWorkflow.mockRejectedValue(new Error('n8n offline'));
+
+    const res = await deleteAutomationHandler({ automation: 'Deployed' }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/kept/i);
+    expect(res.error).toContain('n8n offline');
+    expect(readFileState()).toHaveLength(1);
+  });
+
+  test('keeps a legacy webhook record whose n8n workflow ID is unknown', async () => {
+    fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify([{
+      id: 'auto-legacy', name: 'Legacy', instructions: 'x', trigger: 'manual',
+      enabled: true, createdAt: new Date().toISOString(),
+      n8nWebhookUrl: 'http://localhost:5678/webhook/legacy',
+    }]), 'utf8');
+
+    const res = await deleteAutomationHandler({ automation: 'Legacy' }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/workflow ID/i);
+    expect(res.error).toMatch(/kept/i);
+    expect(mockedN8n.deleteWorkflow).not.toHaveBeenCalled();
+    expect(readFileState()).toHaveLength(1);
   });
 
   test('errors on unknown automation', async () => {
