@@ -44,6 +44,15 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
+FINISH-MEDIA-DECODE-1 — Source implementation complete; claim released to root
+integration. `claude/finish-media-decode-1` requires strict complete video/audio
+decode before ordinary promotion; bounded failures preserve last-good and use
+existing rejected/staging cleanup. Fresh base `4d5f4b39`, cost main `c3d8c787`
+merged. 185 targeted tests/type/lint pass; focused cost integration/type pass.
+No audio-only/provider/AP changes. Actual built ordinary corruption proof passes
+1/1 zero retries: strict failure, old path/hash/playback, rejected-file cleanup.
+Evidence `tasks/finish-media-decode-1.md`; root owns publication/integration.
+
 DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates and nine E2E shards passed, and the landed tree matches tested head `3f96f3f`. The live Drive priority, owner boundaries and all original acceptance criteria remain; no runtime or owner-only gate was closed by the documentation change.
 
 | Feature | Branch | Status | Notes |
