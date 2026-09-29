@@ -262,6 +262,11 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     disk: { freeGB: number | null; ok: boolean; warning: string | null };
     ollama: { reachable: boolean; latencyMs: number | null };
     n8n: { reachable: boolean; latencyMs: number | null };
+    n8nWebhooks?: Array<{
+      path: string;
+      powers: string;
+      status: 'available' | 'not_deployed' | 'n8n_unreachable' | 'error';
+    }>;
     qdrant: { reachable: boolean; latencyMs: number | null };
     permissions: { canWrite: boolean };
     hardware: { vramGB: number | null; gpuName: string | null; profile: string | null };
