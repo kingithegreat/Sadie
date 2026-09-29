@@ -75,7 +75,7 @@ export function startSupervisorService(opts: {
       // ensureN8nRunning already health-checks first, starts the container if
       // needed, and polls up to 45s — so the 60s recovery timeout covers it.
       recover: async () => {
-        await ensureN8nRunning();
+        await ensureN8nRunning(opts.n8nUrl);
       },
     },
     {
