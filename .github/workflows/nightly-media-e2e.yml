@@ -20,7 +20,8 @@ jobs:
     name: Media Studio E2E (Windows)
     runs-on: windows-latest
     # Bumped from 25: HOMEBOT_LIVE now runs media-render.live.test.ts too, which
-    # makes real TTS/render/image-generation calls, not just argument-builder checks.
+    # makes real TTS/render calls and renders local scene pictures through FFmpeg,
+    # not just argument-builder checks. Image-provider behavior has separate tests.
     timeout-minutes: 35
 
     steps:
@@ -83,9 +84,9 @@ jobs:
           HOMEBOT_E2E: '1'
           HOMEBOT_E2E_FFMPEG: '1'
           # Runs media-render.live.test.ts for real: real TTS narration, real
-          # ffmpeg render, real ffprobe inspection, real frame-sampling QA — the
-          # one suite that actually proves the "one reliable faceless video"
-          # chain end to end, on a schedule instead of only ad hoc.
+          # ffmpeg render, real ffprobe inspection, and real frame-sampling QA.
+          # Scene pictures use local fixtures so provider outages cannot hide
+          # renderer regressions or keep this scheduled gate red.
           HOMEBOT_LIVE: '1'
         run: |
           npx jest src/main/__tests__/media-render.test.ts src/main/__tests__/studio-real-ipc.test.ts src/main/__tests__/media-render.live.test.ts --runInBand --no-coverage --forceExit
