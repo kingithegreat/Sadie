@@ -295,7 +295,16 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
   }
 
   // ── CLI fallback (no API key configured) ──
-  const jsonStr = JSON.stringify(workflowJson);
+  // The CLI import output does not identify the created row. Snapshot IDs
+  // before importing; a same-name workflow may already exist and must never
+  // become this call's cleanup target.
+  const before = await tryListWorkflows();
+  if (!before) throw new Error('Could not list n8n workflows before import; no workflow was imported');
+  // An exported workflow may carry its source ID. The CLI import must create
+  // a fresh workflow rather than overwriting that existing row.
+  const cliWorkflow = { ...(workflowJson as Record<string, unknown>) };
+  delete cliWorkflow.id;
+  const jsonStr = JSON.stringify(cliWorkflow);
 
   // Write JSON into container via stdin to avoid Windows path encoding issues
   await dockerExecStdin(jsonStr, 'sh', '-c', 'cat > /tmp/homebot-import.json');
@@ -304,15 +313,18 @@ export async function importWorkflow(workflowJson: object): Promise<string> {
   const importOut = await dockerExec('n8n', 'import:workflow', '--input=/tmp/homebot-import.json');
   console.log('[n8n-api] import output:', importOut);
 
-  // List workflows to find the new one by name
-  const listOut = await dockerExec('n8n', 'list:workflow');
-  const lines = listOut.split('\n').filter((l) => l.includes('|'));
-  const name = (workflowJson as any).name;
+  const after = await tryListWorkflows();
+  const name = (workflowJson as any).name as string;
+  const knownIds = new Set(before.map(w => w.id));
+  const created = after?.filter(w => w.name === name && !knownIds.has(w.id)) || [];
+  if (created.length !== 1) {
+    throw new Error(
+      `Workflow "${name}" may have been imported, but its new ID could not be uniquely confirmed. ` +
+      'Inspect n8n manually; no existing same-name workflow was selected for linking or deletion.'
+    );
+  }
 
-  const match = lines.find((l) => l.includes(name));
-  if (!match) throw new Error(`Workflow "${name}" not found after import. Output: ${listOut}`);
-
-  const id = match.split('|')[0].trim();
+  const id = created[0].id;
   console.log('[n8n-api] Imported workflow ID:', id);
   return id;
 }
@@ -407,7 +419,10 @@ db.serialize(() => {
 });
 db.close();
 `;
-  await dockerExecStdin(script, 'node', '-');
+  const output = await dockerExecStdin(script, 'node', '-');
+  if (!/^deleted:1\s*$/m.test(output)) {
+    throw new Error(`n8n CLI did not confirm deletion of workflow ${workflowId}: ${output || 'no result'}`);
+  }
   console.log('[n8n-api] Deleted workflow', workflowId);
 }
 

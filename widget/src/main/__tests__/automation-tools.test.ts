@@ -196,6 +196,7 @@ describe('import_n8n_workflow', () => {
   beforeEach(() => {
     mockedN8n.importWorkflow.mockReset().mockResolvedValue('wf-42');
     mockedN8n.activateWorkflow.mockReset().mockResolvedValue(undefined);
+    mockedN8n.deleteWorkflow.mockResolvedValue(undefined);
     (mockedN8n.extractWebhookUrl as jest.Mock).mockReset().mockReturnValue('http://localhost:5678/webhook/custom/flow');
   });
 
@@ -284,6 +285,93 @@ describe('import_n8n_workflow', () => {
     expect(res.success).toBe(false);
     expect(res.error).toContain('not found');
     expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+  });
+
+  test('a linked workflow without a Webhook is rejected before import', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    (mockedN8n.extractWebhookUrl as jest.Mock).mockReturnValue(null);
+
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' }, ctx
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/Webhook node/i);
+    expect(mockedN8n.importWorkflow).not.toHaveBeenCalled();
+    expect(mockedN8n.deleteWorkflow).not.toHaveBeenCalled();
+    expect(readFileState()[0].n8nWorkflowId).toBeUndefined();
+  });
+
+  test('activation failure deletes only the workflow imported by this call', async () => {
+    mockedN8n.activateWorkflow.mockRejectedValue(new Error('activation failed'));
+
+    const res = await importN8nWorkflowHandler({ workflow_json: JSON.stringify(VALID_WORKFLOW) }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('activation failed');
+    expect(mockedN8n.deleteWorkflow).toHaveBeenCalledTimes(1);
+    expect(mockedN8n.deleteWorkflow).toHaveBeenCalledWith('wf-42');
+  });
+
+  test('failed rollback names the imported ID for manual recovery', async () => {
+    mockedN8n.activateWorkflow.mockRejectedValue(new Error('activation failed'));
+    mockedN8n.deleteWorkflow.mockRejectedValue(new Error('n8n went offline'));
+
+    const res = await importN8nWorkflowHandler({ workflow_json: JSON.stringify(VALID_WORKFLOW) }, ctx);
+    expect(res.success).toBe(false);
+    expect(res.error).toContain('wf-42');
+    expect(res.error).toMatch(/may still exist/i);
+    expect(res.error).toContain('n8n went offline');
+  });
+
+  test('a removed link target after import rolls back the newly imported workflow', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    mockedN8n.activateWorkflow.mockImplementation(async () => {
+      fs.writeFileSync(AUTOMATIONS_FILE, '[]', 'utf8');
+    });
+
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' }, ctx
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/no longer exists/i);
+    expect(mockedN8n.deleteWorkflow).toHaveBeenCalledWith('wf-42');
+    expect(readFileState()).toEqual([]);
+  });
+
+  test('a changed link target is preserved and the new workflow is rolled back', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    mockedN8n.activateWorkflow.mockImplementation(async () => {
+      const [stored] = readFileState();
+      stored.n8nWorkflowId = 'wf-existing';
+      stored.n8nWebhookUrl = 'http://localhost:5678/webhook/existing';
+      fs.writeFileSync(AUTOMATIONS_FILE, JSON.stringify([stored]), 'utf8');
+    });
+
+    const res = await importN8nWorkflowHandler(
+      { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' }, ctx
+    );
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/already linked/i);
+    expect(mockedN8n.deleteWorkflow).toHaveBeenCalledWith('wf-42');
+    expect(mockedN8n.deleteWorkflow).not.toHaveBeenCalledWith('wf-existing');
+    expect(readFileState()[0].n8nWorkflowId).toBe('wf-existing');
+  });
+
+  test('local link persistence failure rolls back the newly imported workflow', async () => {
+    await createAutomationHandler({ name: 'Linked', instructions: 'x' }, ctx);
+    const rename = jest.spyOn(require('fs'), 'renameSync').mockImplementation(() => {
+      throw new Error('disk write refused');
+    });
+    try {
+      const res = await importN8nWorkflowHandler(
+        { workflow_json: JSON.stringify(VALID_WORKFLOW), link_to_automation: 'Linked' }, ctx
+      );
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('disk write refused');
+      expect(mockedN8n.deleteWorkflow).toHaveBeenCalledWith('wf-42');
+      expect(readFileState()[0].n8nWorkflowId).toBeUndefined();
+    } finally {
+      rename.mockRestore();
+    }
   });
 
   test('is Pro-gated', async () => {
