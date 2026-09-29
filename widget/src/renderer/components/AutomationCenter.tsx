@@ -761,13 +761,17 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
                     id="edit-n8n-url"
                     className="setting-input"
                     data-testid="edit-n8n-url"
-                    placeholder="Leave blank to run this automation inside HomeBot"
+                    placeholder={auto.n8nWorkflowId ? 'Managed by HomeBot' : 'Leave blank to run this automation inside HomeBot'}
                     value={editN8nUrl}
                     onChange={(e) => setEditN8nUrl(e.target.value)}
+                    disabled={!!auto.n8nWorkflowId}
                   />
                   <small className="setting-hint">
-                    Clearing this detaches the workflow — the automation keeps running, just inside
-                    HomeBot rather than through your workflow server.
+                    {auto.n8nWorkflowId
+                      ? 'HomeBot manages this n8n workflow. Delete the automation to remove that workflow before creating a revised version.'
+                      : auto.n8nWebhookUrl
+                        ? 'Clearing this manually linked webhook detaches it from HomeBot. Manage the external workflow separately.'
+                        : 'Add a webhook URL to run this automation through n8n.'}
                   </small>
                   <div className="form-actions automation-edit-actions">
                     <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim() || (editTrigger === 'file' && !editWatchPath.trim())}>Save</button>

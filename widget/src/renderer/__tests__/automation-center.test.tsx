@@ -347,6 +347,18 @@ describe('AutomationCenter — status indicators', () => {
 });
 
 describe('AutomationCenter — edit functionality', () => {
+  test.each([
+    ['owned workflow', { ...AUTO_A, n8nWorkflowId: 'wf-1', n8nWebhookUrl: 'http://localhost:5678/webhook/a1' }, true, 'HomeBot manages this n8n workflow. Delete the automation to remove that workflow before creating a revised version.'],
+    ['manual webhook', { ...AUTO_A, n8nWebhookUrl: 'http://localhost:5678/webhook/a1' }, false, 'Clearing this manually linked webhook detaches it from HomeBot. Manage the external workflow separately.'],
+  ])('edit hint reflects %s ownership', async (_name, automation, owned, hint) => {
+    setupElectron({ loadAutomations: jest.fn().mockResolvedValue({ automations: [automation] }) });
+    await act(async () => { render(<AutomationCenter />); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Edit')); });
+
+    expect(screen.getByText(hint)).toBeInTheDocument();
+    expect(screen.getByTestId('edit-n8n-url')).toHaveProperty('disabled', owned);
+  });
+
   test('edit button opens edit form for automation', async () => {
     setupElectron({
       loadAutomations: jest.fn().mockResolvedValue({ automations: [AUTO_A] }),
@@ -399,6 +411,7 @@ describe('AutomationCenter — edit functionality', () => {
   test.each([
     ['upgrade', { status: 'upgrade_required', upgrade: { capability: 'automation', title: 'Upgrade to Pro', message: 'Automation needs Pro', upgradeUrl: 'homebot://upgrade' } }],
     ['failed write', { success: false, error: 'Could not save automation' }],
+    ['linked n8n workflow', { success: false, error: 'This automation has a deployed n8n workflow. Start n8n, delete the automation and its workflow, then create the revised version.' }],
     ['missing response', undefined],
   ])('save edit keeps the draft and stored row on %s', async (_case, response) => {
     const updateAutomation = jest.fn().mockResolvedValue(response);
@@ -413,7 +426,11 @@ describe('AutomationCenter — edit functionality', () => {
 
     expect(screen.getByDisplayValue('Weekly Backup')).toBeInTheDocument();
     if (_case === 'upgrade') expect(screen.getByText('Automation needs Pro')).toBeInTheDocument();
-    else expect(screen.getByText(_case === 'failed write' ? 'Could not save automation' : 'Failed to save changes')).toBeInTheDocument();
+    else expect(screen.getByText(
+      _case === 'failed write' ? 'Could not save automation'
+        : _case === 'linked n8n workflow' ? 'This automation has a deployed n8n workflow. Start n8n, delete the automation and its workflow, then create the revised version.'
+          : 'Failed to save changes',
+    )).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Cancel$/ })); });
     expect(screen.getByText('Daily Backup')).toBeInTheDocument();
     expect(screen.queryByText('Weekly Backup')).toBeNull();

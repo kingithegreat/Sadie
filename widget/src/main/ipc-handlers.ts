@@ -71,6 +71,7 @@ import { sanitizeImportedSettings, analyzeImportedEndpoints, stripImportedSettin
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
+import { automationEditConflict } from './automation-edit-consistency';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
 import { buildAvoidClause, fillQuiz } from '../../../src/quiz/generate';
 import {
@@ -2249,6 +2250,12 @@ ${buildImproveUserPrompt(draft)}`,
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
     const auto = automations[idx];
+    const editConflict = automationEditConflict(auto, {
+      name: data.name,
+      instructions: data.instructions,
+      n8nWebhookUrl: data.n8nWebhookUrl,
+    });
+    if (editConflict) return { success: false, error: editConflict };
     if (data.enabled !== undefined) auto.enabled = data.enabled;
     if (data.name !== undefined) auto.name = data.name;
     if (data.description !== undefined) auto.description = data.description;

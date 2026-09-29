@@ -25,6 +25,7 @@ import {
   extractWebhookUrl,
 } from '../n8n-api';
 import { isWithinHomeDir } from '../utils/home-boundary';
+import { automationEditConflict } from '../automation-edit-consistency';
 
 // ---- Persistence (mirrors the Automation Center store in ipc-handlers.ts) ----
 
@@ -551,6 +552,12 @@ export const updateAutomationHandler: ToolHandler = async (args): Promise<ToolRe
     const { auto, error } = findAutomation(automations, String(args.automation || ''));
     if (!auto) return { success: false, error };
 
+    const editConflict = automationEditConflict(auto, {
+      name: args.new_name !== undefined && String(args.new_name).trim() ? String(args.new_name).trim() : undefined,
+      instructions: args.instructions !== undefined && String(args.instructions).trim() ? String(args.instructions).trim() : undefined,
+    });
+    if (editConflict) return { success: false, error: editConflict };
+
     if (args.enabled !== undefined) auto.enabled = !!args.enabled;
     if (args.new_name !== undefined && String(args.new_name).trim()) auto.name = String(args.new_name).trim();
     if (args.description !== undefined) auto.description = String(args.description);
@@ -631,26 +638,43 @@ export const importN8nWorkflowHandler: ToolHandler = async (args): Promise<ToolR
       linked = auto;
     }
 
-    const workflowId = await importWorkflow(workflow);
-
-    const activate = args.activate !== false;
-    if (activate) await activateWorkflow(workflowId);
-
+    // A linked automation can only call a Webhook. Check this before creating
+    // anything remotely, so an invalid link cannot strand an n8n workflow.
     const webhookUrl = extractWebhookUrl(workflow);
+    if (linked && !webhookUrl) {
+      return {
+        success: false,
+        error: `Workflow has no Webhook node, so it cannot be linked to automation "${linked.name}". Add an n8n-nodes-base.webhook trigger node.`,
+      };
+    }
 
-    if (linked) {
-      if (!webhookUrl) {
-        return {
-          success: false,
-          error: `Workflow imported (id ${workflowId}) but has no Webhook node, so it cannot be linked to automation "${linked.name}". Add an n8n-nodes-base.webhook trigger node.`,
-        };
-      }
-      const automations = readAutomations();
-      const stored = automations.find(a => a.id === linked!.id);
-      if (stored) {
-        stored.n8nWebhookUrl = webhookUrl;
+    const workflowId = await importWorkflow(workflow);
+    const activate = args.activate !== false;
+    try {
+      if (activate) await activateWorkflow(workflowId);
+
+      if (linked) {
+        const automations = readAutomations();
+        const stored = automations.find(a => a.id === linked.id);
+        if (!stored) throw new Error(`Automation "${linked.name}" no longer exists; import link was not saved`);
+        if (stored.n8nWebhookUrl || stored.n8nWorkflowId) {
+          throw new Error(`Automation "${linked.name}" is already linked to an n8n workflow; import link was not saved`);
+        }
+        stored.n8nWebhookUrl = webhookUrl!;
         stored.n8nWorkflowId = workflowId;
         writeAutomations(automations);
+      }
+    } catch (err: any) {
+      const reason = err?.message || String(err);
+      try {
+        // Only the ID returned from this import is eligible for rollback.
+        await deleteWorkflow(workflowId);
+        return { success: false, error: `import_n8n_workflow failed: ${reason}. Newly imported workflow ${workflowId} was removed.` };
+      } catch (cleanupErr: any) {
+        return {
+          success: false,
+          error: `import_n8n_workflow failed: ${reason}. Newly imported workflow ${workflowId} may still exist in n8n; inspect or remove that ID manually. Cleanup failed: ${cleanupErr?.message || cleanupErr}`,
+        };
       }
     }
 

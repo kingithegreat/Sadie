@@ -178,6 +178,59 @@ describe('REST path (API key configured)', () => {
 });
 
 describe('CLI fallback (no API key)', () => {
+  test('import returns the new ID rather than a pre-existing exact same-name workflow', async () => {
+    let lists = 0;
+    const stdinWrites: string[] = [];
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) {
+        cb(null, lists++ === 0 ? 'old-1|Test Flow\n' : 'old-1|Test Flow\nnew-2|Test Flow\n', '');
+      } else {
+        cb(null, 'imported', '');
+      }
+      return { stdin: { write: (value: string) => stdinWrites.push(value), end: jest.fn() } };
+    });
+
+    expect(await importWorkflow({ ...VALID_WORKFLOW, id: 'old-1' })).toBe('new-2');
+    expect(lists).toBe(2);
+    expect(JSON.parse(stdinWrites[0]).id).toBeUndefined();
+    expect(mockAxios.request).not.toHaveBeenCalled();
+  });
+
+  test('ambiguous new CLI IDs fail closed without deleting an older same-name workflow', async () => {
+    let lists = 0;
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) {
+        cb(null, lists++ === 0 ? 'old-1|Test Flow\n' : 'old-1|Test Flow\nnew-2|Test Flow\nnew-3|Test Flow\n', '');
+      } else {
+        cb(null, 'imported', '');
+      }
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(importWorkflow(VALID_WORKFLOW)).rejects.toThrow(/could not be uniquely confirmed/i);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('update:workflow'))).toBe(false);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('DELETE'))).toBe(false);
+  });
+
+  test('failed pre-import CLI listing prevents any remote import', async () => {
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) cb(new Error('n8n offline'), '', 'n8n offline');
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(importWorkflow(VALID_WORKFLOW)).rejects.toThrow(/before import/i);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('import:workflow'))).toBe(false);
+  });
+
+  test('CLI deletion requires a confirmed deleted row', async () => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => {
+      cb(null, 'deleted:0', '');
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(deleteWorkflow('old-1')).rejects.toThrow(/did not confirm deletion/i);
+  });
+
   test('activateWorkflow uses `n8n update:workflow --active=true` (no SQLite)', async () => {
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => cb(null, 'ok', ''));
     await activateWorkflow('wf-3');
