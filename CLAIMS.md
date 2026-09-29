@@ -2,7 +2,7 @@
 
 ## 2026-09-29 Codex n8n import ownership claim
 
-Codex owns `claude/automation-import-cleanup-20260929` from fresh `origin/main` (`9ad706fe`). Scope: the chat `import_n8n_workflow` failure stages: reject an un-linkable workflow before import, and handle newly imported workflow ownership when activation or local link persistence fails. Preserve local-first automations, existing #438 linked ID/delete behavior, and unrelated user workflows. No live n8n, credentials, owner profile, or shared dependency mutation. This is distinct from draft #440's update consistency path; hold this PR draft for serial integration after #440.
+Codex owns `claude/automation-import-cleanup-20260929`, rebased onto merged #440 main (`77cef5e7`). Scope: the chat `import_n8n_workflow` failure stages: reject an un-linkable workflow before import, and handle newly imported workflow ownership when activation or local link persistence fails. The CLI path identifies a newly imported ID against a pre-import snapshot before it can be linked or cleaned up; it never selects an older same-name workflow. Preserve local-first automations, #438 linked ID/delete behavior, and unrelated user workflows. Ready for serial integration as a held draft PR. Current-head Windows checks: 96/96 focused lifecycle tests, 362 widget suites/4,829 tests (31 skipped), 18 root suites/232 tests, widget TypeScript, lint (0 errors/7 existing warnings), production build, docs:check, and diff check passed. No live n8n, credentials, owner profile, or shared dependency mutation. Live activation/deletion and packaged behavior remain unverified.
 
 ## 2026-09-29 Codex automation chat lifecycle claim
 
