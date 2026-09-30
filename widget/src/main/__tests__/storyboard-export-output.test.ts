@@ -2,14 +2,17 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import { createHash } from 'crypto';
 import { findFfmpeg } from '../media-render';
 import { findManagedFfmpeg } from '../ffmpeg-setup';
-import { inspectRender, RenderFacts } from '../media-qa';
+import { inspectRender, grabFrame, RenderFacts } from '../media-qa';
 import { renderNarrationToFile } from '../tools/voice';
 import { renderStoryboardMovie, ShotManifest } from '../movie/storyboard-renderer';
 import { mediaGetStoryboardHandler, mediaListStoryboardsHandler, mediaSaveStoryboardHandler, mediaRenderStoryboardHandler } from '../tools/media-storyboard';
 import { readJobs, writeJobs } from '../tools/media';
 import { createStudioOutputSpec } from '../../shared/media-output';
+
+jest.setTimeout(15_000); // Render orchestration performs real fixture file I/O.
 
 // Unit adapters must not implicitly depend on a downloaded Electron binary.
 // CI installs it later for the real renderer tests; the local install hid this.
@@ -24,6 +27,7 @@ jest.mock('../media-render', () => ({
 jest.mock('../ffmpeg-setup', () => ({ findManagedFfmpeg: jest.fn() }));
 jest.mock('../media-qa', () => ({
   ...jest.requireActual('../media-qa'), inspectRender: jest.fn(),
+  grabFrame: jest.fn(async () => Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256))),
 }));
 jest.mock('../tools/voice', () => ({ renderNarrationToFile: jest.fn() }));
 jest.mock('../tools/media', () => ({ readJobs: jest.fn(), writeJobs: jest.fn() }));
@@ -54,6 +58,7 @@ describe('storyboard export output contract', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (grabFrame as jest.Mock).mockResolvedValue(Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256)));
     (readJobs as jest.Mock).mockReturnValue([]);
     (writeJobs as jest.Mock).mockReset();
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-export-contract-'));
@@ -103,6 +108,41 @@ describe('storyboard export output contract', () => {
     if (priorRoot === undefined) delete process.env.HOMEBOT_MOVIE_PROJECTS_DIR;
     else process.env.HOMEBOT_MOVIE_PROJECTS_DIR = priorRoot;
     fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('blank replacement is rejected before speech and retains the previous export bytes and pointer', async () => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const previous = fs.readFileSync(first.moviePath!);
+    (renderNarrationToFile as jest.Mock).mockClear();
+    (grabFrame as jest.Mock).mockResolvedValueOnce(Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256)))
+      .mockResolvedValueOnce(Buffer.alloc(4096));
+    const replacement = await render();
+    expect(replacement).toMatchObject({ ok: false });
+    expect(replacement.error).toContain('scene_01 / shot_002');
+    expect(renderNarrationToFile).not.toHaveBeenCalled();
+    expect(fs.readFileSync(first.moviePath!)).toEqual(previous);
+    const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((reopened.result as any).renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test('plain-background intent round-trips save/reopen, rejects stale hashes, and permits intentional flat movies', async () => {
+    const opened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    const board = opened.result as any;
+    const marked = board.scenes[0].shots.map((shot: any) => ({ ...shot, plainBackgroundSha256: shot.frameImageSha256 }));
+    expect((await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: marked }, {} as any)).success).toBe(true);
+    const read = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((read.result as any).scenes[0].shots[0].plainBackgroundSha256).toBe(marked[0].frameImageSha256);
+    (grabFrame as jest.Mock).mockResolvedValue(Buffer.alloc(4096));
+    movieFacts.frameSamples = [{ atSeconds: 3, stdDev: 0 }];
+    expect((await render()).ok).toBe(true);
+    fs.writeFileSync(shots[0].frameImagePath!, 'replacement picture bytes');
+    const replaced = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
+    expect((replaced.result as any).scenes[0].shots[0].plainBackgroundSha256).toBeNull();
+    await mediaSaveStoryboardHandler({ projectId: 'export-check', shots: marked }, {} as any);
+    const saved = JSON.parse(fs.readFileSync(path.join(scene, 'shot_001', 'prompt.json'), 'utf8'));
+    expect(saved.plainBackgroundSha256).toBeUndefined();
+    expect((await render()).error).toContain('scene_01 / shot_001');
   });
 
   test('uses the managed video engine and the distinct speech files actually returned', async () => {
@@ -342,6 +382,52 @@ describe('storyboard export output contract', () => {
     const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
     expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/FFmpeg was not found/) });
     expect(reopened.renderedMoviePath).toBe(first.moviePath);
+  });
+
+  test.each([
+    { name: 'decoder', code: 1, signal: null, killed: false, oversized: true },
+    { name: 'max buffer', code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', signal: 'SIGTERM', killed: true, oversized: true },
+    { name: 'empty diagnostic', code: 1, signal: null, killed: false, oversized: false },
+    { name: 'timeout', code: 'ETIMEDOUT', signal: 'SIGTERM', killed: true, oversized: false },
+  ])('$name failure retains bounded local diagnostics and plain saved repair guidance', async ({ code, signal, killed, oversized }) => {
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const before = fs.readFileSync(first.moviePath!);
+    const beforeHash = createHash('sha256').update(before).digest('hex');
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    (execFile as unknown as jest.Mock).mockImplementation((_bin, args, options, callback) => {
+      expect(args).toEqual(expect.arrayContaining(['-nostats', '-loglevel', 'error', '-xerror']));
+      expect(options.maxBuffer).toBe(64 * 1024);
+      callback(Object.assign(new Error('Command failed: C:\\private\\ffmpeg.exe -i owner-file.png --private-command'), { code, signal, killed }), '',
+        oversized ? 'Invalid PNG signature\n' + 'decoder repetition\n'.repeat(600_000) + 'Failed input decode' : '');
+    });
+    const failed = await render();
+    expect(failed.ok).toBe(false);
+    expect(failed.error!.length).toBeLessThan(200);
+    expect(failed.error).toMatch(/regenerate.*retry/);
+    expect(failed.error).toContain('previous successful export has been kept');
+    expect(failed.error).not.toMatch(/Command failed|private|code=|SIGTERM|ETIMEDOUT|Invalid PNG|diagnostic truncated/);
+    expect(warning).toHaveBeenCalledTimes(1);
+    const diagnostic = warning.mock.calls[0][1] as any;
+    expect(warning.mock.calls[0][0]).toBe('[Storyboard encoder] Export failed.');
+    expect(diagnostic).toMatchObject({ code: String(code), signal, killed });
+    expect(JSON.stringify(diagnostic).length).toBeLessThan(2000);
+    expect(JSON.stringify(diagnostic)).not.toMatch(/Command failed|private|owner-file/);
+    if (oversized) {
+      expect(diagnostic.stderr).toMatch(/Invalid PNG signature/);
+      expect(diagnostic.stderr).toMatch(/Failed input decode/);
+      expect(diagnostic.stderr).toMatch(/diagnostic truncated/);
+    } else expect(diagnostic.stderr).toBe('');
+    if (killed && code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') expect(diagnostic.reason).toMatch(/time limit/);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: failed.error });
+    expect(reopened.renderedMoviePath).toBe(first.moviePath);
+    expect(fs.readFileSync(first.moviePath!)).toEqual(before);
+    expect(createHash('sha256').update(fs.readFileSync(first.moviePath!)).digest('hex')).toBe(beforeHash);
+    const metadata = fs.readFileSync(path.join(root, 'export-check', 'project.json'), 'utf8');
+    expect(metadata.length).toBeLessThan(12_000);
+    expect(metadata).not.toMatch(/Command failed|private|code=|SIGTERM|ETIMEDOUT|Invalid PNG|diagnostic truncated/);
+    warning.mockRestore();
   });
 
   test('an explicit motion override has different provenance from the saved default', async () => {

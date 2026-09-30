@@ -415,6 +415,10 @@ export interface ColabQueueMutationArgs {
   expectedAttempts?: number;
 }
 
+export interface SubscriptionCliStatus {
+  status: 'ready' | 'missing' | 'signed-out' | 'api-key' | 'unknown';
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -531,6 +535,7 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  stopSpeechRecognition?: () => Promise<{ success: boolean; error?: string }>;
   whisperTranscribe?: (args: { modelId: string; language?: string; audio: Float32Array }) => Promise<{ success: boolean; text?: string; error?: string }>;
   onWhisperProgress?: (cb: (p: { status: 'downloading'; percent: number }) => void) => () => void;
 
@@ -574,7 +579,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; regenerateScenes?: boolean; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -900,6 +905,7 @@ export interface ElectronAPI {
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
+  checkSubscriptionCli?: (provider: 'codex' | 'claude-code') => Promise<SubscriptionCliStatus>;
   listMediaCapabilities?: (options?: { refresh?: boolean }) => Promise<{ success: boolean; registry?: MediaCapabilityRegistry; error?: string }>;
 
   // Image generation helper
@@ -1200,7 +1206,7 @@ export interface ElectronAPI {
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
   createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
-  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean; error?: string }>;
   /**
    * Removes the automation and the n8n workflow it deployed. Without `force`
    * this refuses when the workflow cannot be deleted, keeping the automation so
@@ -1293,6 +1299,7 @@ export interface SavedAutomation {
   /** For trigger="file": optional filename filter like "*.csv". */
   watchPattern?: string;
   n8nWebhookUrl?: string;
+  n8nWorkflowId?: string;
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;

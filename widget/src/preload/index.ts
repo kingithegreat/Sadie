@@ -57,6 +57,7 @@ const ALLOWED_CHANNELS = {
   RESET_PERMISSIONS: 'homebot:reset-permissions',
   EXPORT_CONSENT: 'homebot:export-consent',
   LIST_CUSTOM_MODELS: 'homebot:list-custom-llm-models',
+  CHECK_SUBSCRIPTION_CLI: 'homebot:check-subscription-cli',
   LIST_MEDIA_CAPABILITIES: 'homebot:list-media-capabilities',
   READ_CONSENT_LOG: 'homebot:read-consent-log',
   READ_TELEMETRY_EVENTS: 'homebot:read-telemetry-events',
@@ -420,12 +421,15 @@ const electronAPI: ElectronAPI = {
     if (result && result.success && result.data) {
       return result.data as Settings;
     }
-    // If something went wrong, fallback to current Settings
-    return await ipcRenderer.invoke(ALLOWED_CHANNELS.GET_SETTINGS) as Settings;
+    throw new Error(result?.error || 'Settings could not be saved. Please try again.');
   },
 
   listCustomLLMModels: async (config: { apiUrl: string; apiKey?: string; provider?: string }) => {
     return await ipcRenderer.invoke(ALLOWED_CHANNELS.LIST_CUSTOM_MODELS, config);
+  },
+
+  checkSubscriptionCli: async (provider: 'codex' | 'claude-code') => {
+    return await ipcRenderer.invoke(ALLOWED_CHANNELS.CHECK_SUBSCRIPTION_CLI, provider);
   },
 
   listMediaCapabilities: async (options?: { refresh?: boolean }) => {
@@ -776,6 +780,9 @@ const electronAPI: ElectronAPI = {
   startSpeechRecognition: async (): Promise<{ success: boolean; text: string; error?: string }> => {
     return await ipcRenderer.invoke('homebot:start-speech-recognition');
   },
+  stopSpeechRecognition: async (): Promise<{ success: boolean; error?: string }> => {
+    return await ipcRenderer.invoke('homebot:stop-speech-recognition');
+  },
   // Whisper voice input (main/speech/whisper-ipc.ts): 16 kHz mono samples in, text out.
   whisperTranscribe: async (args: { modelId: string; language?: string; audio: Float32Array }): Promise<{ success: boolean; text?: string; error?: string }> =>
     ipcRenderer.invoke('homebot:voice:whisper-transcribe', args),
@@ -828,7 +835,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:create', input),
   mediaAdvance: async (id: string, to: string, note?: string) =>
     ipcRenderer.invoke('homebot:media:advance', id, to, note),
-  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun: async (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; image?: string; visuals?: string; regenerateScenes?: boolean; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     ipcRenderer.invoke('homebot:media:run', id, action, opts),
   mediaApprove: async (id: string, note?: string, expectedRenderPath?: string) =>
     ipcRenderer.invoke('homebot:media:approve', id, note, expectedRenderPath),

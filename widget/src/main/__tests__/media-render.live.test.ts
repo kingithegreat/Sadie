@@ -23,6 +23,13 @@ jest.mock('../mcp-client', () => ({
   discoverExternalMcpServers: jest.fn(),
   initializeMcpServers: jest.fn().mockResolvedValue(undefined),
 }));
+// The scene-render cases exercise real preflight, FFmpeg and output QA with
+// local pictures. Image-provider behavior is covered by media-visuals tests;
+// a scheduled render cannot depend on a third-party queue answering.
+jest.mock('../media-visuals', () => ({
+  ...jest.requireActual('../media-visuals'),
+  generateSceneImages: jest.fn(),
+}));
 // This suite narrates with real online speech (Edge TTS), so its settings say
 // Online is on. Since #314 (2026-09-12) narration correctly refuses online
 // speech while Online is off, and every narrated case here failed on that
@@ -52,6 +59,8 @@ import * as path from 'path';
 import { initializeTools } from '../tools';
 import { mediaToolHandlers, readJobs, __resetMediaJobsForTests } from '../tools/media';
 import { findFfmpeg } from '../media-render';
+import { generateSceneImages } from '../media-visuals';
+import { toSrt } from '../media-captions';
 import { createStudioOutputSpec } from '../../shared/media-output';
 
 // New jobs default to captions off (#318) and landscape fit whatever their
@@ -72,6 +81,40 @@ function ffprobe(bin: string, file: string): Promise<any> {
       { maxBuffer: 1024 * 1024 * 8 },
       (err, stdout) => (err ? reject(err) : resolve(JSON.parse(stdout))));
   });
+}
+
+function runFfmpeg(bin: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    execFile(bin, ['-hide_banner', '-loglevel', 'error', '-y', ...args],
+      { maxBuffer: 1024 * 1024 }, err => (err ? reject(err) : resolve()));
+  });
+}
+
+async function readySceneJob(title: string, ffmpeg: string, fixtureDir: string): Promise<void> {
+  await call('media_create_job', { title, format: 'short', ...PORTRAIT_WITH_CAPTIONS });
+  const audio = path.join(fixtureDir, 'narration.mp3');
+  await runFfmpeg(ffmpeg, ['-f', 'lavfi', '-i', 'sine=frequency=440:duration=8',
+    '-c:a', 'libmp3lame', '-b:a', '96k', audio]);
+  const captions = path.join(fixtureDir, 'captions.srt');
+  fs.writeFileSync(captions, toSrt([
+    { index: 1, startMs: 0, endMs: 2700, text: 'A storm rose over the open sea.' },
+    { index: 2, startMs: 2700, endMs: 5400, text: 'The sailors watched the dark waves.' },
+    { index: 3, startMs: 5400, endMs: 8000, text: 'At dawn, the ship reached the shore.' },
+  ]), 'utf8');
+  const jobs = readJobs();
+  const job = jobs.find(j => j.title === title)!;
+  job.script = 'A storm rose over the open sea. The sailors watched the dark waves. At dawn, the ship reached the shore.';
+  job.narrationPath = audio;
+  job.captionsPath = captions;
+  job.durationSeconds = 8;
+  job.state = 'media_production';
+  require('../tools/media').writeJobs(jobs);
+}
+
+async function sceneFixture(ffmpeg: string, file: string, hue: number): Promise<void> {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  await runFfmpeg(ffmpeg, ['-f', 'lavfi', '-i', 'testsrc2=size=576x1024:rate=1',
+    '-vf', `hue=h=${hue}`, '-frames:v', '1', file]);
 }
 
 maybe('rendering a real video', () => {
@@ -211,42 +254,69 @@ maybe('rendering a real video', () => {
     expect(failed.state).toBe('needs_revision');
   });
 
-  it('renders scene images into a multi-cut video', async () => {
-    // The upgrade the timeline existed for. Image generation is real here —
-    // it is the part most likely to fail in the wild, so it is the part worth
-    // running for real. The video must come out either way.
+  it('renders local scene pictures into a multi-cut video', async () => {
+    // Keep the real scene preflight, concat, encode and output checks. The
+    // generated pictures are local fixtures so an unavailable image provider
+    // cannot decide whether this scheduled renderer gate passes.
     const ffmpeg = await findFfmpeg();
     if (!ffmpeg) throw new Error('No ffmpeg found.');
+    const fixtureDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'homebot-scene-fixture-'));
+    try {
+      await readySceneJob('Scene check', ffmpeg, fixtureDir);
+      (generateSceneImages as jest.Mock).mockImplementationOnce(async ({ scenes, outDir }: any) => {
+        expect(scenes).toHaveLength(3);
+        return Promise.all(scenes.map(async (_: unknown, index: number) => {
+          const file = path.join(outDir, `scene-${index}.png`);
+          await sceneFixture(ffmpeg, file, index * 100);
+          return { index, path: file, source: 'local-test-fixture' };
+        }));
+      });
 
-    await call('media_create_job', { title: 'Scene check', format: 'short', ...PORTRAIT_WITH_CAPTIONS });
-    const jobs = readJobs();
-    const j = jobs.find(x => x.title === 'Scene check')!;
-    j.script = 'A storm rose over the open sea at night. '
-      + 'The sailors threw the cargo overboard to lighten the ship. '
-      + 'Below deck, one man slept through all of it.';
-    j.state = 'script_draft';
-    require('../tools/media').writeJobs(jobs);
+      const rendered: any = await call('media_render', { job: 'Scene check', visuals: 'scenes' });
+      expect(rendered.success).toBe(true);
+      expect(String(rendered.result)).toMatch(/checks passed/i);
+      expect(generateSceneImages).toHaveBeenCalledTimes(1);
 
-    expect((await call('media_narrate', { job: 'Scene check' }) as any).success).toBe(true);
+      const done = readJobs().find(x => x.title === 'Scene check')!;
+      expect(done.state).toBe('render_qa');
+      expect(done.renderInputs?.scenePaths).toHaveLength(3);
+      expect(done.renderInputs!.scenePaths.every(file => !!file && fs.existsSync(file))).toBe(true);
+      expect(fs.readFileSync(done.renderInputs!.scenePaths[0]!)).not.toEqual(fs.readFileSync(done.renderInputs!.scenePaths[1]!));
+      const info = await ffprobe(ffmpeg, done.renderPath!);
+      const video = info.streams.find((s: any) => s.codec_type === 'video');
+      const audio = info.streams.find((s: any) => s.codec_type === 'audio');
+      expect(video.width).toBe(1080);
+      expect(video.height).toBe(1920);
+      expect(audio).toBeTruthy();
+      expect(Number(info.format.duration)).toBeGreaterThan(7.5);
+    } finally {
+      (generateSceneImages as jest.Mock).mockClear();
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
+  });
 
-    const rendered: any = await call('media_render', { job: 'Scene check', visuals: 'scenes' });
-    // eslint-disable-next-line no-console
-    console.log('--- media_render (scenes) ---\n', rendered.success ? rendered.result : rendered.error);
-    expect(rendered.success).toBe(true);
+  it('refuses a generated fallback plate before encoding', async () => {
+    const ffmpeg = await findFfmpeg();
+    if (!ffmpeg) throw new Error('No ffmpeg found.');
+    const fixtureDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'homebot-rejected-scene-'));
+    try {
+      await readySceneJob('Rejected scene check', ffmpeg, fixtureDir);
+      const fallback = path.join(fixtureDir, 'fallback.png');
+      await sceneFixture(ffmpeg, fallback, 0);
+      (generateSceneImages as jest.Mock).mockImplementationOnce(async ({ scenes }: any) =>
+        scenes.map((_: unknown, index: number) => ({ index, path: fallback, source: 'fallback-plate' })));
 
-    const done = readJobs().find(x => x.title === 'Scene check')!;
-    const info = await ffprobe(ffmpeg, done.renderPath!);
-    const video = info.streams.find((s: any) => s.codec_type === 'video');
-    expect(video.width).toBe(1080);
-    expect(video.height).toBe(1920);
-    expect(Number(info.format.duration)).toBeGreaterThan(5);
-
-    // Whatever the generator managed, the scenes directory records it, so a
-    // person can look at what was produced and swap one by hand.
-    const sceneDir = path.join(path.dirname(done.renderPath!), 'scenes');
-    if (fs.existsSync(sceneDir)) {
-      // eslint-disable-next-line no-console
-      console.log('scene images:', fs.readdirSync(sceneDir).join(', ') || '(none)');
+      const rendered: any = await call('media_render', { job: 'Rejected scene check', visuals: 'scenes' });
+      expect(rendered.success).toBe(false);
+      expect(rendered.code).toBe('SCENE_PICTURE_FAILURE');
+      expect(String(rendered.error)).toMatch(/scene 1.*generation failed.*Replace or regenerate/i);
+      const failed = readJobs().find(x => x.title === 'Rejected scene check')!;
+      expect(failed.latestExportAttempt).toMatchObject({ status: 'failed', errorCode: 'SCENE_PICTURE_FAILURE' });
+      expect(failed.renderPath).toBeUndefined();
+      expect(failed.rejectedRenderPath).toBeUndefined();
+    } finally {
+      (generateSceneImages as jest.Mock).mockClear();
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 

@@ -15,12 +15,14 @@ jest.mock('electron', () => ({
   },
 }));
 jest.mock('child_process', () => ({ execFile: jest.fn() }));
+jest.mock('http', () => ({ get: jest.fn() }));
 jest.mock('axios', () => ({
   __esModule: true,
   default: { request: jest.fn(), get: jest.fn(), post: jest.fn() },
 }));
 
 import { execFile } from 'child_process';
+import * as http from 'http';
 import axios from 'axios';
 import {
   registerN8nConnectionProvider,
@@ -32,9 +34,11 @@ import {
   extractWebhookUrl,
   verifyN8nConnection,
   buildWorkflowJson,
+  restartN8n,
 } from '../n8n-api';
 
 const mockExecFile = execFile as unknown as jest.Mock;
+const mockHttpGet = http.get as unknown as jest.Mock;
 const mockAxios = axios as jest.Mocked<typeof axios>;
 
 const VALID_WORKFLOW = {
@@ -174,6 +178,59 @@ describe('REST path (API key configured)', () => {
 });
 
 describe('CLI fallback (no API key)', () => {
+  test('import returns the new ID rather than a pre-existing exact same-name workflow', async () => {
+    let lists = 0;
+    const stdinWrites: string[] = [];
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) {
+        cb(null, lists++ === 0 ? 'old-1|Test Flow\n' : 'old-1|Test Flow\nnew-2|Test Flow\n', '');
+      } else {
+        cb(null, 'imported', '');
+      }
+      return { stdin: { write: (value: string) => stdinWrites.push(value), end: jest.fn() } };
+    });
+
+    expect(await importWorkflow({ ...VALID_WORKFLOW, id: 'old-1' })).toBe('new-2');
+    expect(lists).toBe(2);
+    expect(JSON.parse(stdinWrites[0]).id).toBeUndefined();
+    expect(mockAxios.request).not.toHaveBeenCalled();
+  });
+
+  test('ambiguous new CLI IDs fail closed without deleting an older same-name workflow', async () => {
+    let lists = 0;
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) {
+        cb(null, lists++ === 0 ? 'old-1|Test Flow\n' : 'old-1|Test Flow\nnew-2|Test Flow\nnew-3|Test Flow\n', '');
+      } else {
+        cb(null, 'imported', '');
+      }
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(importWorkflow(VALID_WORKFLOW)).rejects.toThrow(/could not be uniquely confirmed/i);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('update:workflow'))).toBe(false);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('DELETE'))).toBe(false);
+  });
+
+  test('failed pre-import CLI listing prevents any remote import', async () => {
+    mockExecFile.mockImplementation((_cmd: string, args: string[], _opts: any, cb: any) => {
+      if (args.includes('list:workflow')) cb(new Error('n8n offline'), '', 'n8n offline');
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(importWorkflow(VALID_WORKFLOW)).rejects.toThrow(/before import/i);
+    expect(mockExecFile.mock.calls.some(([, args]: any) => args.includes('import:workflow'))).toBe(false);
+  });
+
+  test('CLI deletion requires a confirmed deleted row', async () => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => {
+      cb(null, 'deleted:0', '');
+      return { stdin: { write: jest.fn(), end: jest.fn() } };
+    });
+
+    await expect(deleteWorkflow('old-1')).rejects.toThrow(/did not confirm deletion/i);
+  });
+
   test('activateWorkflow uses `n8n update:workflow --active=true` (no SQLite)', async () => {
     mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: any) => cb(null, 'ok', ''));
     await activateWorkflow('wf-3');
@@ -182,6 +239,29 @@ describe('CLI fallback (no API key)', () => {
     expect(cmd).toBe('docker');
     expect(args).toEqual(['exec', 'homebot-n8n', 'n8n', 'update:workflow', '--id=wf-3', '--active=true']);
     expect(mockAxios.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('restart health URL', () => {
+  beforeEach(() => {
+    mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: object, cb: (error: Error | null, stdout: string, stderr: string) => void) => cb(null, 'ok', ''));
+    mockHttpGet.mockImplementation((_url: string, _opts: object, cb: (response: any) => void) => {
+      cb({ statusCode: 200, resume: jest.fn() });
+      return { on: jest.fn().mockReturnThis(), destroy: jest.fn() };
+    });
+  });
+
+  test('polls the configured n8n URL after Docker restart', async () => {
+    useApiKey(undefined, 'http://127.0.0.1:5680/');
+    await restartN8n();
+    expect(mockExecFile).toHaveBeenCalledWith('docker', ['restart', 'homebot-n8n'], expect.any(Object), expect.any(Function));
+    expect(mockHttpGet.mock.calls.map(([url]) => url)).toEqual(['http://127.0.0.1:5680']);
+  });
+
+  test('uses localhost:5678 when no URL is configured', async () => {
+    useApiKey(undefined, '');
+    await restartN8n();
+    expect(mockHttpGet.mock.calls.map(([url]) => url)).toEqual(['http://localhost:5678']);
   });
 });
 
@@ -399,6 +479,185 @@ describe('a stale unguarded workflow is replaced, not skipped', () => {
       mockExecFile.mockImplementation((_c: string, _a: string[], _o: any, cb: any) =>
         cb(Object.assign(new Error('no docker'), { code: 1 }), '', 'err'));
     }
+  });
+});
+
+describe('Web Fetch guard repair on the reachable startup path', () => {
+  const { ensureWebFetchWorkflow, buildWebFetchWorkflowJson } = require('../n8n-api');
+  const guardedNodes = [{
+    type: 'n8n-nodes-base.code',
+    parameters: { jsCode: "const hdrs = $input.first()?.json?.headers || {}; hdrs['x-homebot-auth'];" },
+  }];
+  const unguardedNodes = [{ type: 'n8n-nodes-base.webhook', parameters: { path: 'homebot/web-fetch' } }];
+
+  beforeEach(() => {
+    (mockAxios.post as jest.Mock).mockResolvedValue({ status: 200, data: { success: true, ping: true } });
+  });
+
+  test('removes every proven unguarded copy and imports one guarded replacement', async () => {
+    useApiKey('key');
+    const calls: string[] = [];
+    mockAxios.request.mockImplementation(async ({ method, url, data }: any) => {
+      const path = String(url);
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [
+        { id: 'old-1', name: 'HomeBot: Web Fetch' },
+        { id: 'old-2', name: 'HomeBot: Web Fetch' },
+      ] } };
+      if (method === 'GET' && /\/workflows\/old-[12]$/.test(path)) return { data: { nodes: unguardedNodes } };
+      if (method === 'DELETE') return { data: {} };
+      if (method === 'POST' && path.endsWith('/workflows')) {
+        expect(data.nodes).toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'Auth Guard' }),
+        ]));
+        return { data: { id: 'new-1' } };
+      }
+      if (method === 'POST' && path.endsWith('/activate')) return { data: {} };
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+
+    await ensureWebFetchWorkflow();
+    expect(calls.filter(c => c.includes('DELETE'))).toEqual([
+      'DELETE http://myhost:5678/api/v1/workflows/old-1',
+      'DELETE http://myhost:5678/api/v1/workflows/old-2',
+    ]);
+    expect(calls.filter(c => c === 'POST http://myhost:5678/api/v1/workflows')).toHaveLength(1);
+    expect(calls).toContain('POST http://myhost:5678/api/v1/workflows/new-1/activate');
+    expect(mockAxios.post).toHaveBeenCalledWith(
+      'http://myhost:5678/webhook/homebot/web-fetch',
+      { action: 'ping' },
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'X-HOMEBOT-Auth': expect.any(String) }),
+      }),
+    );
+  });
+
+  test('deletes only the stale copy when a guarded copy already exists', async () => {
+    useApiKey('key');
+    const calls: string[] = [];
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      const path = String(url);
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [
+        { id: 'old', name: 'HomeBot: Web Fetch' },
+        { id: 'safe', name: 'HomeBot: Web Fetch' },
+      ] } };
+      if (method === 'GET' && path.endsWith('/workflows/old')) return { data: { nodes: unguardedNodes } };
+      if (method === 'GET' && path.endsWith('/workflows/safe')) return { data: { nodes: guardedNodes } };
+      if (method === 'DELETE' && path.endsWith('/workflows/old')) return { data: {} };
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+
+    await ensureWebFetchWorkflow();
+    expect(calls.filter(c => c.startsWith('DELETE'))).toEqual(['DELETE http://myhost:5678/api/v1/workflows/old']);
+    expect(calls.filter(c => c.startsWith('POST'))).toHaveLength(0);
+  });
+
+  test('leaves an unreadable existing copy alone instead of deleting or importing on a guess', async () => {
+    useApiKey('key');
+    const calls: string[] = [];
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      const path = String(url);
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [
+        { id: 'unknown', name: 'HomeBot: Web Fetch' },
+      ] } };
+      if (method === 'GET' && path.endsWith('/workflows/unknown')) throw new Error('read denied');
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+
+    await ensureWebFetchWorkflow();
+    expect(calls.filter(c => c.startsWith('DELETE') || c.startsWith('POST'))).toHaveLength(0);
+  });
+
+  test('without REST access, a listed copy is not deleted or duplicated', async () => {
+    useApiKey(undefined);
+    mockExecFile.mockImplementation((_command: string, args: string[], _options: any, cb: any) => {
+      if (args.includes('list:workflow')) cb(null, 'old-1|HomeBot: Web Fetch\n', '');
+      else cb(new Error(`Unexpected Docker command: ${args.join(' ')}`), '', '');
+    });
+
+    await ensureWebFetchWorkflow();
+    expect(mockExecFile).toHaveBeenCalledTimes(1);
+    expect(mockAxios.request).not.toHaveBeenCalled();
+  });
+
+  test('does not remove a different workflow whose name merely contains Web Fetch', async () => {
+    useApiKey('key');
+    const calls: string[] = [];
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      const path = String(url);
+      calls.push(`${method} ${path}`);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [
+        { id: 'personal', name: 'My Web Fetch workflow' },
+      ] } };
+      if (method === 'POST' && path.endsWith('/workflows')) return { data: { id: 'new-1' } };
+      if (method === 'POST' && path.endsWith('/activate')) return { data: {} };
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+
+    await ensureWebFetchWorkflow();
+    expect(calls).not.toContain('GET http://myhost:5678/api/v1/workflows/personal');
+    expect(calls.filter(c => c.startsWith('DELETE'))).toHaveLength(0);
+    expect(calls).toContain('POST http://myhost:5678/api/v1/workflows');
+  });
+
+  test('a successful activation is not reported as deployed when the webhook answers 404', async () => {
+    useApiKey('key');
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      const path = String(url);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [] } };
+      if (method === 'POST' && path.endsWith('/workflows')) return { data: { id: 'new-1' } };
+      if (method === 'POST' && path.endsWith('/activate')) return { data: {} };
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+    (mockAxios.post as jest.Mock).mockResolvedValue({ status: 404, data: {} });
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(ensureWebFetchWorkflow()).rejects.toThrow(/webhook|registered/i);
+      expect(log.mock.calls.some(([message]) => String(message).includes('Web Fetch workflow deployed'))).toBe(false);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('a 500 response or a wrong ping response cannot pass deployment verification', async () => {
+    useApiKey('key');
+    mockAxios.request.mockImplementation(async ({ method, url }: any) => {
+      const path = String(url);
+      if (method === 'GET' && path.includes('/workflows?')) return { data: { data: [] } };
+      if (method === 'POST' && path.endsWith('/workflows')) return { data: { id: 'new-1' } };
+      if (method === 'POST' && path.endsWith('/activate')) return { data: {} };
+      throw new Error(`Unexpected ${method} ${path}`);
+    });
+    (mockAxios.post as jest.Mock).mockResolvedValueOnce({ status: 500, data: {} });
+    await expect(ensureWebFetchWorkflow()).rejects.toThrow(/HTTP 500/);
+    (mockAxios.post as jest.Mock).mockResolvedValueOnce({ status: 200, data: { success: true } });
+    await expect(ensureWebFetchWorkflow()).rejects.toThrow(/authenticated ping/);
+  });
+
+  test('ping branches only after the imported Auth Guard and never reaches Fetch Page', async () => {
+    useApiKey('key');
+    mockAxios.request.mockResolvedValue({ data: { id: 'new-1' } });
+    await importWorkflow(buildWebFetchWorkflowJson());
+    const deployed = (mockAxios.request.mock.calls[0][0] as any).data;
+    expect(deployed.connections.Webhook.main[0][0].node).toBe('Auth Guard');
+    expect(deployed.connections['Auth Guard'].main[0][0].node).toBe('Route Ping');
+    expect(deployed.connections['Route Ping'].main[0][0].node).toBe('Ping Response');
+    expect(deployed.connections['Ping Response'].main[0][0].node).toBe('Respond');
+    expect(deployed.connections['Route Ping'].main[1][0].node).toBe('Validate URL');
+    const pingResponse = deployed.nodes.find((n: any) => n.name === 'Ping Response');
+    expect(pingResponse.parameters.jsCode).not.toMatch(/Fetch Page|httpRequest/);
+    const guard = deployed.nodes.find((n: any) => n.name === 'Auth Guard');
+    const runGuard = new Function('$input', 'process', guard.parameters.jsCode);
+    const input = (headers: Record<string, string>) => ({
+      first: () => ({ json: { headers, body: { action: 'ping' } } }),
+      all: () => [{ json: { headers, body: { action: 'ping' } } }],
+    });
+    expect(() => runGuard(input({}), process)).toThrow(/Unauthorized/);
+    expect(() => runGuard(input({ 'x-homebot-auth': 'incorrect' }), process)).toThrow(/Unauthorized/);
+    const secret = require('../webhook-auth').getWebhookSecret();
+    expect(runGuard(input({ 'x-homebot-auth': secret }), process)).toHaveLength(1);
   });
 });
 

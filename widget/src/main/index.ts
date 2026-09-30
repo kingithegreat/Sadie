@@ -313,8 +313,13 @@ app.whenReady().then(async () => {
     });
   });
 
+  // Use the same resolved URL for startup health, recovery and message routing.
+  // Prefer the E2E/environment override, then saved Settings, then localhost.
+  const settings = getSettings();
+  const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
+
   // Ensure n8n backend is running (auto-starts Docker container if needed)
-  ensureN8nRunning((status) => {
+  ensureN8nRunning(resolvedN8nUrl, (status) => {
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('homebot:n8n-status', { status });
@@ -322,13 +327,7 @@ app.whenReady().then(async () => {
     } catch (e) { safeCatch(e); }
   }).catch((e) => console.error('[MAIN] n8n lifecycle error:', e));
 
-  // Register message router with proper parameters
-  const settings = getSettings();
-  // Allow E2E or env-based override for the n8n URL so tests can route to a
-  // mock upstream without changing user settings on disk. Prefer explicit
-  // process.env.N8N_URL when present (test runner sets this), then saved
-  // settings, then fallback to localhost default.
-  const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
+  // Register message router with proper parameters.
   if (process.env.NODE_ENV !== 'production') console.log('[MAIN] Resolved n8nUrl =', resolvedN8nUrl);
 
   // Phase 0 reliability: continuous service supervision (probe + auto-recover).
@@ -633,13 +632,24 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
+let mcpQuitPending = false;
+let mcpQuitReady = false;
+app.on('before-quit', event => {
+  if (mcpQuitReady) return;
+  event.preventDefault();
+  if (mcpQuitPending) return;
+  mcpQuitPending = true;
   try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
   try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
-  globalShortcut.unregisterAll();
-  closeAllServiceWindows();
-  if (supervisorHandle) supervisorHandle.stop();
-  shutdownMcpServers().catch(safeCatch);
+  try { globalShortcut.unregisterAll(); } catch (e) { safeCatch(e); }
+  try { closeAllServiceWindows(); } catch (e) { safeCatch(e); }
+  try { if (supervisorHandle) supervisorHandle.stop(); } catch (e) { safeCatch(e); }
+  // shutdown owns in-flight transports too and bounds each close. Allow the
+  // native quit only once cleanup settles; repeated quit requests share it.
+  shutdownMcpServers().catch(safeCatch).finally(() => {
+    mcpQuitReady = true;
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => {

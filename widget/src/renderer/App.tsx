@@ -620,13 +620,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Save user settings to main process
    */
   const saveSettings = useCallback(async (newSettings: SharedSettings) => {
-    try {
-      const updated = await window.electron.saveSettings(newSettings);
-      setSettings(prev => ({ ...prev, ...updated }));
-    } catch (err) {
-      console.error('Failed to save settings:', err);
-    }
+    const updated = await window.electron.saveSettings(newSettings);
+    setSettings(prev => ({ ...prev, ...updated }));
   }, []);
+
+  const saveModelSettings = useCallback(async (newSettings: SharedSettings) => {
+    try {
+      await saveSettings(newSettings);
+      return true;
+    } catch (error: any) {
+      setMessages(prev => [...prev, {
+        id: newId(), role: 'system', createdAt: Date.now(), error: null,
+        content: `Could not save the model change: ${error?.message || 'Please try again.'} Your previous settings are still active.`,
+      }]);
+      return false;
+    }
+  }, [saveSettings, newId]);
 
   /**
    * Update per-conversation system prompt and persist it
@@ -1111,11 +1120,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const handleConfirmModelSuggestion = useCallback(async () => {
     if (!pendingModelSuggestion) return;
     const pending = pendingModelSuggestion;
-    setPendingModelSuggestion(null);
     const newModel = pending.recommendation.recommendedModel;
     const newSettings = { ...settings, chatModel: newModel, useCustomLLM: false };
-    setSettings(newSettings);
-    saveSettings(newSettings);
+    if (!await saveModelSettings(newSettings)) return;
+    setPendingModelSuggestion(null);
     await dispatchMessage(
       pending.text,
       pending.messageText,
@@ -1123,7 +1131,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       pending.documents,
       newModel,
     );
-  }, [dispatchMessage, pendingModelSuggestion, settings, saveSettings]);
+  }, [dispatchMessage, pendingModelSuggestion, settings, saveModelSettings]);
 
   const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
@@ -1322,8 +1330,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                       : { ...settings.customLLM, enabled: false }
                   } : {}),
                 };
-                setSettings(newSettings);
-                await saveSettings(newSettings);
+                if (!await saveModelSettings(newSettings)) return;
                 setMessages(prev => [...prev, {
                   id: newId(), role: 'system',
                   content: `Switched to ${useCustom ? `☁️ ${model}` : `🦙 ${model}`}`,
@@ -1494,8 +1501,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                 : { ...settings.customLLM, enabled: false }
             } : {}),
           };
-          setSettings(newSettings);
-          await saveSettings(newSettings);
+          if (!await saveModelSettings(newSettings)) return;
           setMessages(prev => [...prev, {
             id: newId(),
             role: 'system',
@@ -1782,7 +1788,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           <FirstRunModal
             open={firstRunOpen}
             settings={settings as any}
-            onSave={(s) => saveSettings(s as any)}
+            onSave={async (s) => {
+              await saveSettings(s as any);
+              window.dispatchEvent(new CustomEvent('homebot:uncensored-mode-changed', { detail: s.uncensoredMode }));
+            }}
             onClose={() => setFirstRunOpen(false)}
           />
         </Suspense>

@@ -47,6 +47,79 @@ async function completeFirstRunWizard(page: any, opts: { optInTelemetry?: boolea
 }
 
 test.describe('First-run onboarding and config persistence', () => {
+  test('fresh Windows profile selects ChatGPT subscription and sends its first chat through Codex', async () => {
+    test.skip(process.platform !== 'win32', 'The installed Windows CLI path is the acceptance target.');
+    test.setTimeout(120_000);
+    const tmp = makeTempProfile();
+    const isolatedHome = path.join(tmp, 'home');
+    const ancientPathways = path.join(isolatedHome, 'Ancient Pathways');
+    fs.mkdirSync(ancientPathways, { recursive: true });
+    fs.writeFileSync(path.join(ancientPathways, 'run_pipeline.py'), '# isolated acceptance fixture\n');
+    const configDir = path.join(tmp, 'config');
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, 'mcp-servers.json'), JSON.stringify({ servers: [] }));
+    const cliDir = path.join(tmp, 'cli');
+    fs.mkdirSync(cliDir);
+    fs.writeFileSync(path.join(cliDir, 'codex.cmd'), [
+      '@echo off',
+      'if "%1"=="login" (',
+      '  echo Logged in using ChatGPT',
+      '  exit /b 0',
+      ')',
+      'if "%1"=="exec" (',
+      '  echo {"type":"item.completed","item":{"type":"agent_message","text":"subscription fixture answered"}}',
+      '  exit /b 0',
+      ')',
+      'exit /b 2',
+    ].join('\r\n'));
+    const { app, page } = await launchElectronApp({
+      HOMEBOT_E2E: '1',
+      HOMEBOT_E2E_BYPASS_MOCK: '1',
+      HOMEBOT_DIRECT_OLLAMA: '1',
+      NODE_ENV: 'test',
+      USERPROFILE: isolatedHome,
+      HOME: isolatedHome,
+      ANCIENT_PATHWAYS_DIR: ancientPathways,
+      HOMEBOT_MOVIE_PROJECTS_DIR: path.join(isolatedHome, 'movie-projects'),
+      PATH: `${cliDir}${path.delimiter}${process.env.PATH || ''}`,
+    }, tmp);
+    const ownedProcess = app.process();
+    expect(ownedProcess.pid).toBeGreaterThan(0);
+    try {
+      expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
+      const modal = page.locator('.first-run-modal');
+      await expect(modal.getByText('Welcome to HomeBot')).toBeVisible();
+      await modal.getByRole('button', { name: 'Online' }).click();
+      await modal.getByRole('button', { name: 'ChatGPT subscription' }).click();
+      await modal.getByRole('button', { name: 'Check sign-in' }).click();
+      await expect(modal.getByText('Subscription sign-in found. Ready to try a chat.')).toBeVisible();
+      await modal.getByRole('button', { name: 'Next' }).click();
+      await modal.getByRole('button', { name: 'Get Started' }).click();
+      await expect(modal).toHaveCount(0);
+      await expect(page.locator('.uncensored-toggle')).toHaveAttribute('aria-pressed', 'false');
+      await expect(page.locator('.model-lock-hint')).toHaveCount(0);
+
+      const config = JSON.parse(fs.readFileSync(path.join(tmp, 'config', 'user-settings.json'), 'utf8'));
+      expect(config.firstRun).toBe(false);
+      expect(config.useCustomLLM).toBe(true);
+      expect(config.uncensoredMode).toBe(false);
+      expect(config.customLLM).toMatchObject({ provider: 'codex', model: 'default', apiKey: '', enabled: true });
+
+      const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+      await page.getByLabel('Message HomeBot').fill('Hello from a fresh profile');
+      await page.locator('button.send-button').click();
+      const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
+      await expect(assistant).toContainText('subscription fixture answered', { timeout: 20000 });
+      await expect(assistant).toHaveAttribute('data-state', 'finished');
+      expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
+    } finally {
+      console.log(`[REL-1 E2E] closing owned Electron PID ${ownedProcess.pid}`);
+      await app.close();
+      expect(ownedProcess.exitCode !== null || ownedProcess.signalCode !== null).toBe(true);
+      console.log(`[REL-1 E2E] owned Electron PID ${ownedProcess.pid} exited`);
+    }
+  });
+
   test('fresh profile shows first-run modal and persists after finish', async () => {
     const tmp = makeTempProfile();
     const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);

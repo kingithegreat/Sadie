@@ -8,13 +8,14 @@ import { characterSpriteToolDefs, characterSpriteToolHandlers } from '../../tool
 import { movieToolDefs, movieToolHandlers } from '../../tools/media-movie';
 import { videoToolDefs, videoToolHandlers } from '../../tools/media-video';
 import { storyboardToolDefs, storyboardToolHandlers } from '../../tools/media-storyboard';
+import { rigPartToolDefs, rigPartToolHandlers } from '../../tools/media-rig-parts';
 
 export const STUDIO_MODULE_ID = 'homebot.production-studio';
 
 const groups: Array<[ToolDefinition[], Record<string, ToolHandler>]> = [
   [mediaToolDefs, mediaToolHandlers], [narrateClipToolDefs, narrateClipToolHandlers],
   [characterSpriteToolDefs, characterSpriteToolHandlers], [movieToolDefs, movieToolHandlers],
-  [videoToolDefs, videoToolHandlers], [storyboardToolDefs, storyboardToolHandlers],
+  [videoToolDefs, videoToolHandlers], [storyboardToolDefs, storyboardToolHandlers], [rigPartToolDefs, rigPartToolHandlers],
 ];
 const tools = groups.flatMap(([definitions, handlers]) => definitions.map(definition => ({ definition, handler: handlers[definition.name] })));
 

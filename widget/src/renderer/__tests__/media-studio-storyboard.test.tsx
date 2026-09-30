@@ -186,6 +186,30 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('plain-background choice is reachable, hash-bound, saved and cleared by regeneration', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result as any;
+    board.scenes[0].shots[0].frameImageSha256 = 'a'.repeat(64);
+    mocks.mediaStoryboardGenerateFrame.mockResolvedValue({ ok: true, result: {
+      projectId: 'pyramid-builders', shotId: 'shot_001', provider: 'this-pc',
+      frameImagePath: 'C:/fake/replaced.png', frameImageSha256: 'b'.repeat(64),
+    } } as any);
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const choice = await screen.findByRole('checkbox', { name: 'Use a plain background for shot_001' });
+    expect(choice).not.toBeChecked();
+    fireEvent.click(choice);
+    expect(choice).toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    expect(mocks.mediaStoryboardSave).toHaveBeenCalledWith(expect.objectContaining({
+      shots: expect.arrayContaining([expect.objectContaining({ shotId: 'shot_001', plainBackgroundSha256: 'a'.repeat(64) })]),
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Regenerate Frame/ })); });
+    expect(screen.getByRole('checkbox', { name: 'Use a plain background for shot_001' })).not.toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    expect(mocks.mediaStoryboardSave).toHaveBeenLastCalledWith(expect.objectContaining({
+      shots: expect.arrayContaining([expect.objectContaining({ shotId: 'shot_001', plainBackgroundSha256: null })]),
+    }));
+  });
   test('visible portrait retry renders only portrait and the successful landscape remains selectable for review', async () => {
     const mocks = setup();
     const board: any = (await mocks.mediaStoryboardGet()).result;

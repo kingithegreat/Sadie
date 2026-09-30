@@ -112,4 +112,29 @@ describe('SettingsPanel — System check', () => {
 
     await waitFor(() => expect(container.textContent).toContain('System check is unavailable'));
   });
+
+  test('shows optional workflow status and keeps local chat usable in the guidance', async () => {
+    const runDiagnostics = jest.fn().mockResolvedValue({
+      ...sampleReport,
+      n8n: { reachable: true, url: 'http://localhost:5678', statusCode: 200, latencyMs: 5 },
+      n8nWebhooks: [
+        { path: 'homebot/calendar', powers: 'Google Calendar events in chat and the morning briefing', status: 'not_deployed' },
+        { path: 'homebot/chat', powers: 'routing chat through an n8n workflow', status: 'not_deployed' },
+        { path: 'homebot/media-research', powers: 'real sources for Media Studio scripts', status: 'available' },
+      ],
+    });
+    (window as any).electron = baseElectron(runDiagnostics);
+    const { container } = render(<SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />);
+    expandSection(container, 'Diagnostics');
+    fireEvent.click(findInSysCheckGroup(container, 'Run system check')!);
+
+    await waitFor(() => expect(container.querySelector('[data-testid="syscheck-workflows"]')).toBeTruthy());
+    const workflows = container.querySelector('[data-testid="syscheck-workflows"]')!;
+    expect(workflows.textContent).toContain('Google Calendar');
+    expect(workflows.textContent).toContain('Not set up');
+    expect(workflows.textContent).toContain('Chat via n8n');
+    expect(workflows.textContent).toContain('ordinary chat works without n8n');
+    expect(workflows.textContent).toContain('Media research');
+    expect(workflows.textContent).toContain('Detected');
+  });
 });
