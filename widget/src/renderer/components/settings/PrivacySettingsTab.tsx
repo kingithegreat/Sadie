@@ -601,7 +601,8 @@ export default function PrivacySettingsTab() {
       <div className="settings-section sp-backup-section">
         <h3 className="section-title">Backup & Restore</h3>
         <p className="sp-backup-desc">
-          Export all settings, conversations, and preferences as a single backup file, or restore from one.
+          Export settings, conversations, and preferences as a single backup file, or restore from one.
+          API keys and private integration credentials are excluded. On another PC, add your keys again in Settings.
         </p>
         <div className="sp-backup-btns">
           <button
