@@ -22,6 +22,7 @@ import {
   launchAppDef,
 } from '../tools/system';
 import { rememberDef, recallDef, forgetDef } from '../tools/memory';
+import { storyboardToolDefs } from '../tools/media-storyboard';
 import type { ToolDefinition } from '../tools/types';
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,7 @@ const ALL_DEFS: ToolDefinition[] = [
   rememberDef,
   recallDef,
   forgetDef,
+  ...storyboardToolDefs,
 ];
 
 describe('tool definition shapes', () => {
@@ -117,6 +119,19 @@ describe('required parameter contracts', () => {
 // Category grouping
 // ---------------------------------------------------------------------------
 describe('tool categories', () => {
+  test('storyboard tools are discoverable in the media category', () => {
+    expect(storyboardToolDefs.map(({ name, category }) => ({ name, category }))).toEqual([
+      { name: 'media_create_storyboard', category: 'media' },
+      { name: 'media_list_storyboards', category: 'media' },
+      { name: 'media_get_storyboard', category: 'media' },
+      { name: 'media_generate_storyboard_frame', category: 'media' },
+      { name: 'media_save_storyboard', category: 'media' },
+      { name: 'media_render_storyboard', category: 'media' },
+      { name: 'media_breakdown_script', category: 'media' },
+      { name: 'media_set_storyboard_image', category: 'media' },
+    ]);
+  });
+
   test('web tools have category "web"', () => {
     expect(webSearchDef.category).toBe('web');
     expect(fetchUrlDef.category).toBe('web');

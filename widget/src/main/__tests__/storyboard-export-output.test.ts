@@ -654,7 +654,8 @@ describe('storyboard export output contract', () => {
   });
 
   test('a shot removed by Save Board stays removed after reopening and export while its assets remain', async () => {
-    const saved = await mediaSaveStoryboardHandler({ projectId: 'export-check', sceneId: 'scene_01', shots: [shots[1]] }, {} as any);
+    // Save Board's IPC channel marks its save as the complete scene (studio-ipc.ts).
+    const saved = await mediaSaveStoryboardHandler({ projectId: 'export-check', sceneId: 'scene_01', shots: [shots[1]], replaceShotList: true }, {} as any);
     expect(saved.success).toBe(true);
     const reopened = await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any);
     expect(reopened.result.scenes[0].shots.map((shot: any) => shot.shotId)).toEqual(['shot_002']);

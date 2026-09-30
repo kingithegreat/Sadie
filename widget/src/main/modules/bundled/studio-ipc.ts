@@ -841,7 +841,8 @@ export function registerStudioIpc(
   });
 
   ipcMain.handle('homebot:media:storyboard:save', async (_ev, args: { projectId: string; sceneId?: string; shots: any[]; burnSubtitles?: boolean; captionStyle?: unknown; outputSpec?: unknown; musicEnabled?: boolean; musicVolume?: number }) => {
-    const res = await invokeTool(_ev, 'media_save_storyboard', args || {});
+    // The Storyboard Deck always sends the whole scene; a shot it omits was deleted.
+    const res = await invokeTool(_ev, 'media_save_storyboard', { ...(args || {}), replaceShotList: true });
     return res.success
       ? { ok: true, message: String((res.result as any)?.message ?? 'Storyboard updated successfully.') }
       : { ok: false, error: res.error };
