@@ -9,6 +9,21 @@ const SECRET_KEYS: (keyof Settings)[] = [
   'tavilyApiKey', 'serperApiKey', 'anthropicApiKey', 'openaiApiKey', 'geminiApiKey', 'moonshotApiKey', 'codeApiKey', 'stableHordeApiKey', 'calendarIcsUrl', 'n8nApiKey'
 ];
 
+/** Backups are portable JSON; never copy runtime credentials into them. */
+export function settingsWithoutCredentials(settings: Settings): Settings {
+  const exported = { ...settings } as Settings & { _integrationSecrets?: unknown };
+  // Use the same list as encryption at rest so newly protected fields also
+  // stay out of backups. Omit keys rather than exporting empty values.
+  for (const key of SECRET_KEYS) delete exported[key];
+  delete exported.providerApiKeys;
+  delete exported._integrationSecrets;
+  if (settings.customLLM) {
+    exported.customLLM = { ...settings.customLLM };
+    delete exported.customLLM.apiKey;
+  }
+  return exported;
+}
+
 /**
  * Ciphertext marker. Encryption MUST be idempotent: without a marker there is
  * no way to tell "already encrypted" from "plaintext that looks like base64",
