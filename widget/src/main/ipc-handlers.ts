@@ -3,6 +3,7 @@ import { getMainWindow, toggleWidgetMode, getWidgetMode } from './window-manager
 import { registerBundledStudioIpc } from './modules/bundled/studio-gateway';
 import { registerModuleControlIpc } from './modules/module-ipc';
 import { readPerfAggregates, readPerfHistory } from './utils/perf-logger';
+import { registerSapiRecognitionIpc } from './speech/sapi-ipc';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -22,7 +23,6 @@ import { saveGeneratedImage } from './generated-images';
 const HEALTH_CHECK_TIMEOUT = 2000;
 const OLLAMA_OP_TIMEOUT = 30_000;
 const OLLAMA_PULL_TIMEOUT = 600_000;
-const SPEECH_RECOGNITION_TIMEOUT = 20_000;
 const OLLAMA_READY_POLL_TIMEOUT = 1500;
 
 import {
@@ -32,16 +32,18 @@ import {
   getSettingsPath, 
   resetPermissions, 
   exportTelemetryConsent,
+  settingsWithoutCredentials,
   getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
 import { assertProviderOnlineAccess } from './utils/provider-network-policy';
 import { resolveDiscoveryPayload } from './discovery-payload';
 import { getMediaCapabilityRegistry } from './provider-capability-registry';
+import { checkSubscriptionCliStatus } from './subscription-cli-status';
 import { fetchPageContentHandler } from './tools/browser';
-import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
+import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setStableHordeApiKey, webToolHandlers, describeImageGenerationRoute, getSDCppDir, findSDCppBinary, findSDCppModel } from './tools/web';
 import { ragToolHandlers } from './tools/rag';
-import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore } from './message-router';
+import { setUncensoredMode, getUncensoredMode as routerGetUncensoredMode, ensureHydrated, clearHistory, resyncHistoryFromStore, requestConfirmationFrom } from './message-router';
 import { getAllToolDefinitions, executeTool, getFocusedOllamaTools, registerTool } from './tools/index';
 import { registerAutomationRunner, registerAutomationTierProvider } from './tools/automation';
 import type { ToolContext } from './tools/index';
@@ -70,6 +72,7 @@ import { sanitizeImportedSettings, analyzeImportedEndpoints, stripImportedSettin
 import { homebotWebhookHeaders } from './webhook-auth';
 import { logTelemetryEvent, readToolCallAggregates } from './utils/logger';
 import { createAndActivateWorkflow, deleteWorkflow, ensureWebFetchWorkflow, registerN8nConnectionProvider, verifyN8nConnection } from './n8n-api';
+import { automationEditConflict } from './automation-edit-consistency';
 import { gatedAutomationHandler } from '../../../src/handlers/automationCenter';
 import { buildAvoidClause, fillQuiz } from '../../../src/quiz/generate';
 import {
@@ -330,7 +333,8 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:automation:image:generate', gatedAutomationHandler(
     'homebot:automation:image:generate',
     getCurrentTier,
-    async (_event, { payload }) => {
+    async (event, { action, payload }) => {
+    if (action === 'status') return { status: 'ready', route: describeImageGenerationRoute(payload?.backend || 'hybrid') };
     const rawPrompt = String(payload?.prompt || '').trim();
     // Parse resolution string (e.g. '512x512') into width/height
     let width = 512, height = 512;
@@ -362,7 +366,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     try {
       const toolResult = await webToolHandlers['image_generate'](
         { prompt, width, height, steps, backend },
-        { executionId: `img-panel-${Date.now()}` } as any
+        { executionId: `img-panel-${Date.now()}`, requestConfirmation: (message: string) => requestConfirmationFrom(event.sender, message) }
       );
 
       if (toolResult.success && toolResult.result?.image_base64) {
@@ -379,7 +383,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
           image: toolResult.result.image_base64,
           filename,
           savedPath: filename ? path.join(imgDir, filename) : null,
-          metadata: { prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
+          metadata: { ...toolResult.result.metadata, prompt, width, height, steps, seed: '', model: toolResult.result.source || '' },
           validation: { validated: true },
           error: { message: '', code: '' }
         };
@@ -395,7 +399,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         validation: { validated: false },
         error: {
           message: toolResult.error || 'Image generation failed',
-          code: 'GENERATION_FAILED'
+          code: toolResult.code || 'GENERATION_FAILED'
         }
       };
     } catch (err: any) {
@@ -498,6 +502,11 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle('homebot:check-subscription-cli', async (_event, provider) => {
+    if (provider !== 'codex' && provider !== 'claude-code') return { status: 'unknown' };
+    return checkSubscriptionCliStatus(provider);
+  });
+
   ipcMain.handle('homebot:list-custom-llm-models', async (_event, payload) => {
     try {
       console.log('[IPC] Fetching custom LLM models with config:', {
@@ -597,13 +606,18 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
         try { logTelemetryEvent('model_switch', { from: prev.chatModel, to: merged.chatModel }); } catch (_e) {}
       }
 
-      // Refresh search API keys in memory
-      setSearxngUrl((merged as any).searxngUrl || null);
-      setTavilyApiKey(merged.tavilyApiKey || null);
-      setSerperApiKey(merged.serperApiKey || null);
-      setStableHordeApiKey(merged.stableHordeApiKey || null);
-
-      return { success: true, data: merged };
+      // The write has committed. A refresh failure must not report an unsaved
+      // draft when the persisted settings already changed.
+      const saved = getSettings();
+      try {
+        setSearxngUrl((saved as any).searxngUrl || null);
+        setTavilyApiKey(saved.tavilyApiKey || null);
+        setSerperApiKey(saved.serperApiKey || null);
+        setStableHordeApiKey(saved.stableHordeApiKey || null);
+      } catch (error) {
+        console.error('Settings saved, but search settings refresh failed:', error);
+      }
+      return { success: true, data: saved };
     } catch (err: any) {
       console.error('Error saving settings:', err.message);
       return { success: false, error: err.message };
@@ -697,8 +711,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // ── RAG: index a local file or web content ──
-  ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
+  ipcMain.handle('homebot:rag-index', async (event, filePath: string, content?: string) => {
     try {
+      // Selecting a file in the main UI is consent to index it. Other windows
+      // and child frames cannot borrow that authority through the IPC bridge.
+      const trustedWindow = mainWindow ?? getMainWindow();
+      if (!trustedWindow || trustedWindow.isDestroyed()
+        || event.sender !== trustedWindow.webContents
+        || event.senderFrame !== trustedWindow.webContents.mainFrame) {
+        return { success: false, error: 'Document indexing request came from an untrusted window' };
+      }
       if (!filePath || typeof filePath !== 'string') {
         return { success: false, error: 'filePath is required' };
       }
@@ -1443,63 +1465,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
     }
   });
 
-  /**
-   * Start Windows speech recognition (offline capable)
-   * Uses Windows SAPI through PowerShell
-   */
-  ipcMain.handle('homebot:start-speech-recognition', async () => {
-
-    return new Promise((resolve) => {
-      // PowerShell script to use Windows Speech Recognition (SAPI — fully offline)
-      const psScript = `
-Add-Type -AssemblyName System.Speech
-$recognizer = New-Object System.Speech.Recognition.SpeechRecognitionEngine
-$recognizer.SetInputToDefaultAudioDevice()
-
-$dictation = New-Object System.Speech.Recognition.DictationGrammar
-$recognizer.LoadGrammar($dictation)
-
-$recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(6)
-$recognizer.BabbleTimeout         = [TimeSpan]::FromSeconds(4)
-$recognizer.EndSilenceTimeout     = [TimeSpan]::FromSeconds(1.5)
-
-try {
-    $result = $recognizer.Recognize([TimeSpan]::FromSeconds(15))
-    if ($result -and $result.Text) {
-        Write-Output $result.Text
-    } else {
-        Write-Output ""
-    }
-} catch {
-    Write-Output ""
-} finally {
-    $recognizer.Dispose()
-}
-`;
-      // Write to a unique temp file so concurrent calls don't race
-      const tmpFile = path.join(os.tmpdir(), `homebot-voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.ps1`);
-      try {
-        fs.writeFileSync(tmpFile, psScript, 'utf8');
-      } catch (writeErr: any) {
-        resolve({ success: false, error: 'Could not write temp script: ' + writeErr.message, text: '' });
-        return;
-      }
-
-      execFile('powershell', ['-ExecutionPolicy', 'Bypass', '-NonInteractive', '-File', tmpFile],
-        { timeout: SPEECH_RECOGNITION_TIMEOUT },
-        (error: any, stdout: string, stderr: string) => {
-          try { fs.unlinkSync(tmpFile); } catch (_) {}
-          if (error) {
-            console.error('[Voice] SAPI error:', error.message, stderr);
-            resolve({ success: false, error: 'Speech recognition failed: ' + (error.message || ''), text: '' });
-          } else {
-            const text = stdout.trim();
-            resolve({ success: true, text });
-          }
-        }
-      );
-    });
-  });
+  registerSapiRecognitionIpc();
 
   // ── Scheduler (Pro-gated: 'automation') ──────────────────────────────────────
   ipcMain.handle('homebot:scheduler-list', gatedAutomationHandler(
@@ -1697,7 +1663,7 @@ try {
 
   ipcMain.handle('homebot:export-settings', async () => {
     try {
-      const settings = getSettings();
+      const settings = settingsWithoutCredentials(getSettings());
       const convStore = MemoryManager.loadConversationStore();
       const prefs = MemoryManager.loadPreferences();
       const toolStats = MemoryManager.loadToolStats();
@@ -2293,6 +2259,12 @@ ${buildImproveUserPrompt(draft)}`,
     const idx = automations.findIndex((a: any) => a.id === data.id);
     if (idx === -1) return { success: false, error: 'Automation not found' };
     const auto = automations[idx];
+    const editConflict = automationEditConflict(auto, {
+      name: data.name,
+      instructions: data.instructions,
+      n8nWebhookUrl: data.n8nWebhookUrl,
+    });
+    if (editConflict) return { success: false, error: editConflict };
     if (data.enabled !== undefined) auto.enabled = data.enabled;
     if (data.name !== undefined) auto.name = data.name;
     if (data.description !== undefined) auto.description = data.description;
@@ -2321,7 +2293,7 @@ ${buildImproveUserPrompt(draft)}`,
    * keeps a job whose files it could not remove. Better a delete the user has to
    * repeat than an orphan they cannot see.
    */
-  ipcMain.handle('homebot:delete-automation', async (_event, data: { id: string; force?: boolean }) => {
+  ipcMain.handle('homebot:delete-automation', gatedAutomationHandler('homebot:delete-automation', getCurrentTier, async (_event, data: { id: string; force?: boolean }) => {
     const automations = readAutomations();
     const auto = automations.find((a: any) => a.id === data.id);
     if (!auto) return { success: false, error: 'Automation not found' };
@@ -2351,7 +2323,7 @@ ${buildImproveUserPrompt(draft)}`,
 
     writeAutomations(automations.filter((a: any) => a.id !== data.id));
     return { success: true, warning: workflowWarning };
-  });
+  }));
 
   const MAX_TOOL_ROUNDS = 6;
   const TOOL_ALIASES: Record<string, string> = { nba_scores: 'nba_query' };
@@ -2799,8 +2771,16 @@ EXAMPLE (follow this format exactly):
   });
 
   // ── Screen Capture ──────────────────────────────────────────────────────────
-  ipcMain.handle('homebot:capture-screen', async () => {
+  ipcMain.handle('homebot:capture-screen', async (event) => {
     try {
+      // The main UI's Capture screen button authorizes this action, separately
+      // from the screenshot tool permission used by model requests.
+      const trustedWindow = mainWindow ?? getMainWindow();
+      if (!trustedWindow || trustedWindow.isDestroyed()
+        || event.sender !== trustedWindow.webContents
+        || event.senderFrame !== trustedWindow.webContents.mainFrame) {
+        return { success: false, error: 'Screen capture request came from an untrusted window' };
+      }
       const { desktopCapturer } = require('electron');
       const sources = await desktopCapturer.getSources({
         types: ['screen'],

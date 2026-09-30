@@ -35,6 +35,7 @@ jest.mock('../ffmpeg-setup', () => ({ findManagedFfmpeg: jest.fn() }));
 let mockMovieDuration = 0;
 jest.mock('../media-qa', () => ({
   ...jest.requireActual('../media-qa'),
+  grabFrame: jest.fn(async () => Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256))),
   inspectRender: jest.fn(async (_bin: string, file: string) => ({
     hasVideo: file.endsWith('.mp4'), hasAudio: true,
     width: file.endsWith('.mp4') ? 1920 : null,

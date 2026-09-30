@@ -71,6 +71,24 @@ describe('SettingsPanel — System check', () => {
       .find(b => b.textContent?.includes(label)) as HTMLButtonElement | undefined;
   }
 
+  test('advanced setup labels render readable symbols and punctuation', () => {
+    const { container } = render(
+      <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
+    );
+    const advancedButton = Array.from(container.querySelectorAll('.sp-view-btn'))
+      .find(button => button.textContent?.trim() === 'Advanced') as HTMLElement;
+    fireEvent.click(advancedButton);
+    const diagnosticsButton = Array.from(container.querySelectorAll('.sp-section-toggle'))
+      .find(button => button.textContent?.includes('Diagnostics')) as HTMLElement;
+    fireEvent.click(diagnosticsButton);
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('🚀 First-time setup');
+    expect(text).toContain("Choose again where HomeBot's thinking happens — on this PC or online — or");
+    expect(text).toContain('🩺 System check');
+    expect(text).not.toMatch(/\\u(?:[0-9a-fA-F]{4}|\{[0-9a-fA-F]+\})/);
+  });
+
   test('runs diagnostics on click and renders each check', async () => {
     const runDiagnostics = jest.fn().mockResolvedValue(sampleReport);
     (window as any).electron = baseElectron(runDiagnostics);
@@ -111,5 +129,30 @@ describe('SettingsPanel — System check', () => {
     fireEvent.click(findInSysCheckGroup(container, 'Run system check')!);
 
     await waitFor(() => expect(container.textContent).toContain('System check is unavailable'));
+  });
+
+  test('shows optional workflow status and keeps local chat usable in the guidance', async () => {
+    const runDiagnostics = jest.fn().mockResolvedValue({
+      ...sampleReport,
+      n8n: { reachable: true, url: 'http://localhost:5678', statusCode: 200, latencyMs: 5 },
+      n8nWebhooks: [
+        { path: 'homebot/calendar', powers: 'Google Calendar events in chat and the morning briefing', status: 'not_deployed' },
+        { path: 'homebot/chat', powers: 'routing chat through an n8n workflow', status: 'not_deployed' },
+        { path: 'homebot/media-research', powers: 'real sources for Media Studio scripts', status: 'available' },
+      ],
+    });
+    (window as any).electron = baseElectron(runDiagnostics);
+    const { container } = render(<SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />);
+    expandSection(container, 'Diagnostics');
+    fireEvent.click(findInSysCheckGroup(container, 'Run system check')!);
+
+    await waitFor(() => expect(container.querySelector('[data-testid="syscheck-workflows"]')).toBeTruthy());
+    const workflows = container.querySelector('[data-testid="syscheck-workflows"]')!;
+    expect(workflows.textContent).toContain('Google Calendar');
+    expect(workflows.textContent).toContain('Not set up');
+    expect(workflows.textContent).toContain('Chat via n8n');
+    expect(workflows.textContent).toContain('ordinary chat works without n8n');
+    expect(workflows.textContent).toContain('Media research');
+    expect(workflows.textContent).toContain('Detected');
   });
 });

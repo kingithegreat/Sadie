@@ -28,6 +28,10 @@ const EXACT_EXCEPTIONS = new Map([
     'widget/src/main/tools/web.ts\0widget/src/main/movie/comfyui-adapter.ts',
     'Existing generic image tool reuses the local ComfyUI implementation; migrate behind a Core provider contract.',
   ],
+  [
+    'widget/src/main/tools/web.ts\0widget/src/main/movie/gemini-image-adapter.ts',
+    'Existing generic image tool reuses the Gemini image implementation; migrate behind a Core provider contract.',
+  ],
 ]);
 
 function slash(value) {

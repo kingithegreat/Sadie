@@ -1,3 +1,10 @@
+jest.mock('../../shared/cloud-llm', () => ({ ...jest.requireActual('../../shared/cloud-llm'), apiKeyForProvider: jest.fn(() => '') }));
+jest.mock('../config-manager', () => ({ getSettings: jest.fn(() => ({})) }));
+jest.mock('electron', () => ({ app: { getPath: () => '/tmp', getAppPath: () => '/tmp' } }));
+jest.mock('../movie/gemini-image-adapter', () => ({
+  generateGeminiImage: jest.fn(async () => { throw new Error('Gemini not configured in this test'); }),
+  GEMINI_IMAGE_COST_MICRO_USD: 67000,
+}));
 /**
  * Image Generate Tool Tests
  *
@@ -42,7 +49,7 @@ jest.mock('../tools/imagen', () => {
 });
 const { generateImagen3: realGenerateImagen3, IMAGEN3_RETIRED_MESSAGE } = jest.requireActual('../tools/imagen');
 
-import { imageGenerateDef, imageGenerateHandler, setOpenaiApiKey } from '../tools/web';
+import { imageGenerateDef, imageGenerateHandler, setOpenaiApiKey, describeImageGenerationRoute } from '../tools/web';
 import * as http from 'http';
 import * as https from 'https';
 
@@ -125,6 +132,8 @@ function onlyOpenAICanAnswer(openAiReply: object) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockHttpRequest.mockReset();
+  mockHttpsRequest.mockReset();
   mockGenerateImagen3.mockReset().mockImplementation(realGenerateImagen3);
 });
 
@@ -160,6 +169,136 @@ describe('imageGenerateDef', () => {
 });
 
 describe('imageGenerateHandler', () => {
+
+  test.each(['absent', 'declined'])('does not dispatch keyed Gemini with %s paid consent', async mode => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    (apiKeyForProvider as jest.Mock).mockReturnValue('test-google-key');
+    const requestConfirmation = jest.fn(async () => false);
+    const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' },
+      mode === 'absent' ? {} as any : { requestConfirmation } as any);
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('PAID_CONFIRMATION_REQUIRED');
+    expect(generateGeminiImage).not.toHaveBeenCalled();
+    expect((require('https').request as jest.Mock)).not.toHaveBeenCalled();
+    if (mode === 'declined') expect(requestConfirmation).toHaveBeenCalledWith(expect.stringMatching(/Google.*paid|paid.*Google/i));
+  });
+
+  test('does not grant consent to a key changed while approval was pending', async () => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    (apiKeyForProvider as jest.Mock).mockReturnValue('old-test-key');
+    const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' }, {
+      requestConfirmation: async () => {
+        (apiKeyForProvider as jest.Mock).mockReturnValue('replacement-test-key');
+        return true;
+      },
+    } as any);
+    expect(result.success).toBe(false);
+    expect(result.code).toBe('PAID_PROVIDER_CHANGED');
+    expect(generateGeminiImage).not.toHaveBeenCalled();
+  });
+
+  test('does not request a paid OpenAI fallback when consent is declined', async () => {
+    setOpenaiApiKey('test-openai-key');
+    try {
+      const posts = recordHttpsPosts({ 'api.openai.com': { data: [{ b64_json: 'AAAA' }] } });
+      const requestConfirmation = jest.fn(async () => false);
+      const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' }, { requestConfirmation } as any);
+      expect(result.success).toBe(false);
+      expect(result.code).toBe('PAID_CONFIRMATION_REQUIRED');
+      expect(requestConfirmation).toHaveBeenCalledWith(expect.stringMatching(/OpenAI.*paid|paid.*OpenAI/i));
+      expect(posts.filter(post => post.hostname === 'api.openai.com')).toHaveLength(0);
+    } finally { setOpenaiApiKey(null); }
+  });
+
+  test('a different paid fallback needs separate consent after an approved Gemini failure', async () => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    (apiKeyForProvider as jest.Mock).mockReturnValue('test-google-key');
+    setOpenaiApiKey('test-openai-key');
+    try {
+      const posts = recordHttpsPosts({ 'api.openai.com': { data: [{ b64_json: 'AAAA' }] } });
+      const requestConfirmation = jest.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' }, { requestConfirmation } as any);
+      expect(require('../movie/gemini-image-adapter').generateGeminiImage).toHaveBeenCalledTimes(1);
+      expect(requestConfirmation).toHaveBeenCalledTimes(2);
+      expect(requestConfirmation.mock.calls[0][0]).toContain('Google AI Studio');
+      expect(requestConfirmation.mock.calls[1][0]).toContain('OpenAI');
+      expect(result.code).toBe('PAID_CONFIRMATION_REQUIRED');
+      expect(posts.filter(post => post.hostname === 'api.openai.com')).toHaveLength(0);
+    } finally { setOpenaiApiKey(null); }
+  });
+
+  test.each(['before dispatch', 'during approval'])('Online off %s prevents every cloud request', async when => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    const { getSettings } = require('../config-manager');
+    (apiKeyForProvider as jest.Mock).mockReturnValue('test-google-key');
+    if (when === 'before dispatch') (getSettings as jest.Mock).mockReturnValue({ useCustomLLM: false });
+    const requestConfirmation = jest.fn(async () => {
+      (getSettings as jest.Mock).mockReturnValue({ useCustomLLM: false });
+      return true;
+    });
+    const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud', paidApproved: true }, { requestConfirmation } as any);
+    expect(result.code).toBe('ONLINE_ACCESS_DISABLED');
+    expect(require('../movie/gemini-image-adapter').generateGeminiImage).not.toHaveBeenCalled();
+    expect(mockHttpsRequest).not.toHaveBeenCalled();
+    expect(requestConfirmation).toHaveBeenCalledTimes(when === 'before dispatch' ? 0 : 1);
+  });
+
+  test('changed OpenAI account does not inherit paid consent', async () => {
+    setOpenaiApiKey('old-openai-test-key');
+    try {
+      const posts = recordHttpsPosts({});
+      const result = await imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' }, {
+        requestConfirmation: async () => { setOpenaiApiKey('new-openai-test-key'); return true; },
+      } as any);
+      expect(result.code).toBe('PAID_PROVIDER_CHANGED');
+      expect(posts.filter(post => post.hostname === 'api.openai.com')).toHaveLength(0);
+    } finally { setOpenaiApiKey(null); }
+  });
+
+  test('turning Online off during a free Horde wait stops polling and prevents fallback', async () => {
+    jest.useFakeTimers();
+    try {
+      const posts = recordHttpsPosts({ 'stablehorde.net': { id: 'fixture-horde-job' } });
+      const requestConfirmation = jest.fn(async () => true);
+      const pending = imageGenerateHandler({ prompt: 'a cat', backend: 'cloud' }, { requestConfirmation } as any);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(posts.filter(post => post.hostname === 'stablehorde.net')).toHaveLength(1);
+      (require('../config-manager').getSettings as jest.Mock).mockReturnValue({ useCustomLLM: false });
+      await jest.advanceTimersByTimeAsync(6000);
+      expect((await pending).code).toBe('ONLINE_ACCESS_DISABLED');
+      expect(mockHttpsRequest).toHaveBeenCalledTimes(1);
+      expect(requestConfirmation).not.toHaveBeenCalled();
+    } finally { jest.useRealTimers(); }
+  });
+
+  test('status discloses keyed Gemini and paid OpenAI even when local engines are tried first, without calling providers', () => {
+    (require('../../shared/cloud-llm').apiKeyForProvider as jest.Mock).mockReturnValue('private-test-key');
+    setOpenaiApiKey('private-openai-test-key');
+    try {
+      const route = describeImageGenerationRoute('hybrid');
+      expect(route).toMatchObject({ localFirst: true, onlineAllowed: true, onlineProvider: { paid: true }, paidFallback: { label: expect.stringContaining('OpenAI') } });
+      expect(route.onlineProvider?.cost).toContain('no free image tier');
+      expect(JSON.stringify(route)).not.toMatch(/private-test-key|private-openai-test-key/);
+      expect(mockHttpRequest).not.toHaveBeenCalled();
+      expect(mockHttpsRequest).not.toHaveBeenCalled();
+      expect(require('../movie/gemini-image-adapter').generateGeminiImage).not.toHaveBeenCalled();
+      expect(describeImageGenerationRoute('local')).toMatchObject({ onlineProvider: null, paidFallback: null });
+    } finally { setOpenaiApiKey(null); }
+  });
+
+  beforeEach(() => {
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    const { getSettings } = require('../config-manager');
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    (apiKeyForProvider as jest.Mock).mockReset().mockReturnValue('');
+    (getSettings as jest.Mock).mockReset().mockReturnValue({ useCustomLLM: true });
+    (generateGeminiImage as jest.Mock).mockReset().mockImplementation(async () => {
+      throw new Error('Gemini not configured in this test');
+    });
+  });
+
   test('rejects empty prompt', async () => {
     const res = await imageGenerateHandler({ prompt: '' }, {} as any);
     expect(res.success).toBe(false);
@@ -193,6 +332,23 @@ describe('imageGenerateHandler', () => {
     expect(res.result?.source).not.toBe('imagen-3');
   });
 
+  
+  test('hybrid mode prefers Gemini over Pollinations when a Google key is saved', async () => {
+    const { generateGeminiImage } = require('../movie/gemini-image-adapter');
+    const { apiKeyForProvider } = require('../../shared/cloud-llm');
+    (apiKeyForProvider as jest.Mock).mockImplementation((_s: any, p: string) => p === 'google-ai-studio' ? 'test-gemini-key' : '');
+    (generateGeminiImage as jest.Mock).mockResolvedValue({ base64: 'Z2VtaW5pLWltYWdl', mimeType: 'image/png' });
+    mockN8nResponse({ images: [] });
+    const requestConfirmation = jest.fn(async () => true);
+    const res = await imageGenerateHandler({ prompt: 'a harbour at dusk', backend: 'hybrid' }, { requestConfirmation } as any);
+    expect(res.success).toBe(true);
+    expect(res.result.source).toBe('gemini-3.1-flash-image');
+    expect(generateGeminiImage).toHaveBeenCalled();
+    expect(requestConfirmation).toHaveBeenCalledTimes(1);
+    expect(requestConfirmation).toHaveBeenCalledWith(expect.stringContaining('Google AI Studio'));
+    expect(JSON.stringify(res)).not.toMatch(/pollinations/i);
+  });
+
   test('a recorded OpenAI request uses the current GPT Image model, not a retired one', async () => {
     const OPENAI_B64 = 'ZmFrZS1ncHQtaW1hZ2U=';
     setOpenaiApiKey('sk-test-openai');
@@ -200,7 +356,9 @@ describe('imageGenerateHandler', () => {
       const posts = recordHttpsPosts({ 'api.openai.com': { data: [{ b64_json: OPENAI_B64 }] } });
       mockN8nResponse({ images: [] }); // no local engine has anything to draw with
 
-      const res = await imageGenerateHandler({ prompt: 'a lighthouse at dusk' }, {} as any);
+      const requestConfirmation = jest.fn(async () => true);
+      const res = await imageGenerateHandler({ prompt: 'a lighthouse at dusk' }, { requestConfirmation } as any);
+      expect(requestConfirmation).toHaveBeenCalledWith(expect.stringContaining('OpenAI'));
 
       expect(res.success).toBe(true);
       expect(res.result.source).toBe('gpt-image');
@@ -243,7 +401,7 @@ describe('imageGenerateHandler', () => {
         output_tokens_details: { image_tokens: 439, text_tokens: 0 }
       } });
 
-      const res = await imageGenerateHandler({ prompt: 'a lighthouse at dusk', width: 1024, height: 1024 }, {} as any);
+      const res = await imageGenerateHandler({ prompt: 'a lighthouse at dusk', width: 1024, height: 1024 }, { requestConfirmation: async () => true } as any);
       expect(res.result.metadata.costMicroUsd).toBe(20 * 5 + 439 * 30);
     } finally {
       setOpenaiApiKey(null);
@@ -258,7 +416,7 @@ describe('imageGenerateHandler', () => {
         output_tokens_details: { image_tokens: 100 }
       } });
 
-      const res = await imageGenerateHandler({ prompt: 'a map of the coast' }, {} as any);
+      const res = await imageGenerateHandler({ prompt: 'a map of the coast' }, { requestConfirmation: async () => true } as any);
       // 10x$5 text + 1000x$8 image input + 100x$30 image output
       expect(res.result.metadata.costMicroUsd).toBe(50 + 8000 + 3000);
     } finally {
@@ -275,7 +433,7 @@ describe('imageGenerateHandler', () => {
     try {
       const posts = recordHttpsPosts({ 'api.openai.com': { data: [{ b64_json: 'AAAA' }] } });
       mockN8nResponse({ images: [] });
-      await imageGenerateHandler({ prompt: 'a map of the coast', width, height }, {} as any);
+      await imageGenerateHandler({ prompt: 'a map of the coast', width, height }, { requestConfirmation: async () => true } as any);
       const paid = posts.filter(p => p.hostname === 'api.openai.com');
       expect(paid).toHaveLength(1);
       expect(paid[0].body.size).toBe(size);

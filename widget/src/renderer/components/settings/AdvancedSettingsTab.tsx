@@ -624,9 +624,9 @@ export default function AdvancedSettingsTab() {
           </div>
 
           <div className="setting-group">
-            <label className="setting-label">\ud83d\ude80 First-time setup</label>
+            <label className="setting-label">🚀 First-time setup</label>
             <small className="setting-hint">
-              Choose again where HomeBot's thinking happens \u2014 on this PC or online \u2014 or
+              Choose again where HomeBot's thinking happens — on this PC or online — or
               finish a setup you skipped. Nothing you have already configured is lost.
             </small>
             {/* "Skip setup" on the welcome screen used to be a one-way door:
@@ -644,7 +644,7 @@ export default function AdvancedSettingsTab() {
             </button>
           </div>
           <div className="setting-group">
-            <label className="setting-label">\ud83e\ude7a System check</label>
+            <label className="setting-label">🩺 System check</label>
             <small className="setting-hint">Re-run the first-run environment checks on demand: disk space, Ollama / n8n / Qdrant reachability, write permissions, and detected GPU.</small>
             {sysCheckError && <div className="perf-empty">{sysCheckError}</div>}
             {sysCheck && (() => {
@@ -653,7 +653,7 @@ export default function AdvancedSettingsTab() {
                 <div className="syscheck-row" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '2px 0' }}>
                   <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 auto', background: dotColor(ok), display: 'inline-block' }} />
                   <span style={{ fontWeight: 600 }}>{label}</span>
-                  {detail && <span style={{ opacity: 0.8 }}>\u2014 {detail}</span>}
+                  {detail && <span style={{ opacity: 0.8 }}>— {detail}</span>}
                 </div>
               );
               const svc = (s: { reachable: boolean; latencyMs: number | null }) =>
@@ -663,6 +663,41 @@ export default function AdvancedSettingsTab() {
                   <Item label="Disk space" ok={sysCheck.disk.ok} detail={sysCheck.disk.freeGB != null ? `${sysCheck.disk.freeGB.toFixed(1)} GB free${sysCheck.disk.warning ? ` \u2014 ${sysCheck.disk.warning}` : ''}` : 'unknown'} />
                   <Item label="Ollama" ok={sysCheck.ollama.reachable} detail={svc(sysCheck.ollama)} />
                   <Item label="n8n" ok={sysCheck.n8n.reachable} detail={svc(sysCheck.n8n)} />
+                  {sysCheck.n8nWebhooks && sysCheck.n8nWebhooks.length > 0 && (
+                    <div data-testid="syscheck-workflows" style={{ margin: '8px 0 8px 17px' }}>
+                      <strong>Optional n8n workflows</strong>
+                      <small className="setting-hint" style={{ display: 'block' }}>
+                        These are optional; ordinary chat works without n8n, and calendar events can be saved on this PC.
+                      </small>
+                      {!sysCheck.n8n.reachable ? (
+                        <small className="setting-hint">Workflow status is unknown while n8n is offline.</small>
+                      ) : sysCheck.n8nWebhooks.map(workflow => {
+                        const label = workflow.path === 'homebot/calendar' ? 'Google Calendar via n8n'
+                          : workflow.path === 'homebot/chat' ? 'Chat via n8n'
+                          : workflow.path === 'homebot/media-research' ? 'Media research via n8n'
+                          : workflow.powers;
+                        const status = workflow.status === 'available' ? 'Detected'
+                          : workflow.status === 'not_deployed' ? 'Not set up'
+                          : workflow.status === 'n8n_unreachable' ? 'Unknown'
+                          : 'Responding with an error';
+                        return (
+                          <div className="syscheck-row" key={workflow.path} style={{ fontSize: 13, padding: '2px 0' }}>
+                            <span style={{ fontWeight: 600 }}>{label}</span> — {status}
+                            {workflow.status === 'not_deployed' && workflow.path === 'homebot/calendar' && (
+                              <small className="setting-hint" style={{ display: 'block' }}>
+                                You can use a private iCal link in Settings for read-only Google events. The n8n route needs a protected workflow and a Google Calendar account connected in n8n.
+                              </small>
+                            )}
+                            {workflow.status === 'not_deployed' && workflow.path === 'homebot/chat' && (
+                              <small className="setting-hint" style={{ display: 'block' }}>
+                                This optional chat route needs an active protected workflow in n8n. HomeBot can still use your chosen local or online model directly.
+                              </small>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <Item label="Qdrant" ok={sysCheck.qdrant.reachable} detail={svc(sysCheck.qdrant)} />
                   <Item label="Write permissions" ok={sysCheck.permissions.canWrite} detail={sysCheck.permissions.canWrite ? 'OK' : 'cannot write to userData'} />
                   <Item label="GPU" ok={sysCheck.hardware.vramGB != null ? true : null} detail={sysCheck.hardware.vramGB != null ? `${sysCheck.hardware.gpuName ?? 'GPU'} \u00b7 ${sysCheck.hardware.vramGB} GB${sysCheck.hardware.profile ? ` \u00b7 ${sysCheck.hardware.profile}` : ''}` : 'not detected'} />

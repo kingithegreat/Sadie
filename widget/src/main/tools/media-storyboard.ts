@@ -8,10 +8,13 @@
 
 import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
 import { sanitizeTextCard } from '../../shared/text-card';
+import { plainBackgroundAccepted } from '../../shared/shot-picture-intent';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import type { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { getSettings } from '../config-manager';
+import { apiKeyForProvider } from '../../shared/cloud-llm';
 import {
   MovieProjectRunner,
   type MovieProject,
@@ -32,7 +35,7 @@ import {
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-style';
-import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
+import { readStoryboardExportState, resolveStoryboardExportPath, storyboardFileDigest } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 import { getMediaCapabilityRegistry } from '../provider-capability-registry';
 
@@ -53,6 +56,19 @@ function readProjectMeta(file: string): Record<string, any> {
  * Auto-Director. Only listed options are accepted, and saving a paid choice
  * grants nothing: it still needs the owner's confirmation in the Storyboard.
  */
+
+/** When a Gemini key is saved, new/unset storyboards default to Gemini (picker remains an override). */
+export function defaultStoryboardFrameProvider(): 'gemini' | undefined {
+  try {
+    const settings = getSettings() as any;
+    const key = apiKeyForProvider(settings, 'google-ai-studio') || apiKeyForProvider(settings, 'google-gemini');
+    return key ? 'gemini' : undefined;
+  } catch {
+    // Outside Electron (unit tests, tools-only) there is no app.getPath — treat as no key.
+    return undefined;
+  }
+}
+
 export async function setStoryboardFrameProvider(args: { projectId?: unknown; frameProvider?: unknown }): Promise<ToolResult> {
   const projectId = String(args?.projectId ?? '').trim();
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(projectId)) return { success: false, error: 'Choose a valid storyboard project.' };
@@ -167,7 +183,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
   const projectDir = path.join(rootDir, projectId);
 
   try {
-    const projectMeta: MovieProject = {
+    const projectMeta: MovieProject & { frameProvider?: string } = {
       projectId,
       name: title,
       createdAt: new Date().toISOString(),
@@ -178,6 +194,7 @@ export const mediaCreateStoryboardHandler: ToolHandler = async (
       defaultResolution: [1024, 576],
       defaultDurationSec: 5,
       notes: args.notes || '',
+      frameProvider: (typeof args.frameProvider === 'string' ? args.frameProvider : defaultStoryboardFrameProvider()) as any,
     };
 
     MovieProjectRunner.createProject(projectDir, projectMeta, []);
@@ -476,9 +493,26 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     // Frames are made only by the provider the owner chose for this project —
     // never by automatic routing, which could reach a paid or watermarking service.
     const projectMetaPath = path.join(rootDir, projectId, 'project.json');
-    const chosen = readProjectMeta(projectMetaPath).frameProvider;
+    let chosen = readProjectMeta(projectMetaPath).frameProvider;
     if (!isStoryboardFrameProviderId(chosen)) {
-      return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+      // Auto-default only when unset. An explicit retired/invalid value (e.g. Imagen)
+      // must ask the owner to choose again — never silently swap to Gemini.
+      const unset = chosen == null || chosen === '';
+      if (unset) {
+        const auto = defaultStoryboardFrameProvider();
+        if (auto) {
+          chosen = auto;
+          try {
+            const meta = readProjectMeta(projectMetaPath);
+            const staged = projectMetaPath + '.tmp';
+            fs.writeFileSync(staged, JSON.stringify({ ...meta, frameProvider: auto, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
+            fs.renameSync(staged, projectMetaPath);
+          } catch { /* best-effort persist */ }
+        }
+      }
+      if (!isStoryboardFrameProviderId(chosen)) {
+        return { success: false, error: 'Choose how this storyboard makes frame images before generating one.' };
+      }
     }
     const available = await resolveAvailableStoryboardFrameProvider(chosen);
     if (!available) return { success: false, error: 'That frame model is no longer available to this connected account. Choose another one.' };
@@ -517,6 +551,11 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     };
     fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf-8');
 
+    const generatedPromptFile = path.join(shotDir, 'prompt.json');
+    const generatedPromptData = readProjectMeta(generatedPromptFile);
+    delete generatedPromptData.plainBackgroundSha256;
+    fs.writeFileSync(generatedPromptFile, JSON.stringify(generatedPromptData, null, 2), 'utf-8');
+
     return {
       success: true,
       result: {
@@ -525,6 +564,7 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
         shotId,
         provider: res.provider || decision.chosen?.providerId || 'free-router',
         frameImagePath: imgPath,
+        frameImageSha256: imgPath ? await storyboardFileDigest(imgPath) : null,
         frameSize: { width: shape.width, height: shape.height, aspectRatio: shape.aspectRatio },
         message: `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`
           + ` Drawn ${shape.width}x${shape.height} for ${shape.aspectRatio}.`
@@ -629,6 +669,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : {};
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
+    const currentShots = assembleStoryboardScenes(projectDir).find(scene => scene.sceneId === sceneId)?.shots ?? [];
 
     for (const shot of shots) {
       const shotDir = path.join(sceneDir, shot.shotId);
@@ -663,6 +704,14 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       if (shot.textCard !== undefined) {
         const card = sanitizeTextCard(shot.textCard);
         if (card) promptData.textCard = card; else delete promptData.textCard;
+      }
+      if (shot.plainBackgroundSha256 !== undefined) {
+        const currentPicture = currentShots.find(saved => saved.shotId === shot.shotId)?.frameImageSha256;
+        if (plainBackgroundAccepted(shot.plainBackgroundSha256, currentPicture)) {
+          promptData.plainBackgroundSha256 = currentPicture;
+        } else {
+          delete promptData.plainBackgroundSha256;
+        }
       }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
@@ -974,6 +1023,11 @@ export async function setStoryboardShotImage(args: {
     const destFile = path.join(imgDir, `frame${ext}`);
     fs.copyFileSync(imagePath, destFile);
 
+    const importedPromptFile = path.join(shotDir, 'prompt.json');
+    const importedPromptData = readProjectMeta(importedPromptFile);
+    delete importedPromptData.plainBackgroundSha256;
+    fs.writeFileSync(importedPromptFile, JSON.stringify(importedPromptData, null, 2), 'utf-8');
+
     const statusFile = path.join(shotDir, 'status.json');
     const prevStatus = readProjectMeta(statusFile);
     const statusData = {
@@ -993,6 +1047,7 @@ export async function setStoryboardShotImage(args: {
         sceneId,
         shotId,
         frameImagePath: destFile,
+        frameImageSha256: await storyboardFileDigest(destFile),
         provider: 'custom_import',
         message: `Image for ${shotId} imported successfully from ${path.basename(imagePath)}.`,
       },

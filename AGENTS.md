@@ -7,7 +7,7 @@ this repo at the same time, often within minutes of each other. Read this before
 
 | File | What it holds |
 |---|---|
-| [HomeBot current Drive plan](https://docs.google.com/document/d/1sh2ss0epsUxe6VcbF7GwULs4_TFgSPJh9R_I46xYoH8/edit) | **The single live priority queue**, per Aden's later instruction: "drive is now the new brain." |
+| [HomeBot current Drive plan](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) | **The single live priority queue**, per Aden's later instruction: "drive is now the new brain." |
 | `CLAUDE.md` | **The contract.** Non-negotiable operating rules. It overrides this file. |
 | `CLAIMS.md` | **Who is building what right now**, plus rules of the road that changed recently. Read the tail first — newest section is last. |
 | `docs/USER_TESTING_PLAN.md` | **The shared work queue to user testing** (2026-09-17): gates, Media Studio, providers, Code mode vs Cursor, release. Pick items by ID, one item per PR, put the ID in the PR title. |
