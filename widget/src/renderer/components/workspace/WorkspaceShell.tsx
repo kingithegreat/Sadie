@@ -13,6 +13,7 @@ const ChangesPanel = lazy(() => import('./ChangesPanel'));
 const WorkspaceAssistantPanel = lazy(() => import('./WorkspaceAssistantPanel'));
 const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
 const SearchPanel = lazy(() => import('./SearchPanel'));
+const ProblemsPanel = lazy(() => import('./ProblemsPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -32,7 +33,7 @@ interface OpenFile {
   language: string;
 }
 
-type SideView = 'explorer' | 'search' | 'changes' | 'scm' | null;
+type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
@@ -262,6 +263,14 @@ export default function WorkspaceShell({
         ><Icon name="search" size={20} /></button>
         <button
           type="button"
+          className={`ws-activity-btn${sideView === 'problems' ? ' active' : ''}`}
+          title="Problems and tasks"
+          aria-label="Problems and tasks"
+          aria-pressed={sideView === 'problems'}
+          onClick={() => setSideView(v => (v === 'problems' ? null : 'problems'))}
+        ><Icon name="tools" size={20} /></button>
+        <button
+          type="button"
           className={`ws-activity-btn${terminalOpen ? ' active' : ''}`}
           title="Terminal (Ctrl+`)"
           aria-label="Toggle terminal"
@@ -335,6 +344,17 @@ export default function WorkspaceShell({
                   focusToken={searchFocusToken}
                 />
               )}
+            </Suspense>
+          </div>
+        </aside>
+      )}
+      {sideView === 'problems' && (
+        <aside className="ws-sidebar ws-sidebar-problems" aria-label="Problems and tasks">
+          <div className="ws-sidebar-title">Problems and tasks</div>
+          <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
+          <div className="ws-sidebar-body">
+            <Suspense fallback={<div className="tree-hint">Loading…</div>}>
+              {root && <ProblemsPanel root={root} onOpenFile={openFile} onStatus={setStatus} />}
             </Suspense>
           </div>
         </aside>

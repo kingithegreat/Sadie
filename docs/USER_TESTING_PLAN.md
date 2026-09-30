@@ -145,7 +145,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | IDE-8 | **Project rules:** load `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/*` and `.cursorrules` from the open folder into the IDE agent's context, shown in a Rules view. | A rule in the folder visibly changes the agent's assembled system prompt (asserted). | open |
 | IDE-9 | **Search across files** UI (Ctrl+Shift+F) with replace-in-files preview, on top of `search.ts` / `grep_code`. | Search finds matches in several files; replace preview then apply changes exactly those lines. | merged #397 |
 | IDE-10 | **Source control panel:** status, stage/unstage, commit, branch switch, diff, using `git.ts`. | A real repo round trip: change → stage → commit → log shows it. | merged #361 |
-| IDE-11 | **Problems and tasks:** run package scripts from the IDE; TypeScript/ESLint output parsed into a clickable Problems list. | A seeded type error appears in Problems and clicking opens the line. | open |
+| IDE-11 | **Problems and tasks:** run package scripts from the IDE; TypeScript/ESLint output parsed into a clickable Problems list. | A seeded type error appears in Problems and clicking opens the line. | implemented locally / pending review — disposable-profile Electron proof passes with real npm + installed TypeScript; no owner-project scripts or network used |
 | IDE-12 | **Plan mode and review:** the agent writes a plan the user approves before edits; "review my changes" runs over the working diff. | Plan requires approval before any write (asserted); review comments reference real diff lines. | open |
 | IDE-13 | **MCP tools in the IDE agent,** reusing HomeBot's existing MCP connections. | An MCP tool call from the IDE agent executes and is shown in activity. | open |
 

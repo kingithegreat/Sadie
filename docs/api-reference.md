@@ -1027,7 +1027,7 @@ artwork retain their existing behavior.
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (249)** — `window.electron`
+**Preload methods (251)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1089,10 +1089,10 @@ unhideFeed                          updateAutomation                    updateMe
 workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage
 workspaceGitStatus                  workspaceGitUnstage                 workspaceList                       workspaceProposalAccept
 workspaceProposalReject             workspaceProposals                  workspaceRead                       workspaceReplace
-workspaceRoot                       workspaceSave                       workspaceSearch                     writeClipboard
-writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
-youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
-youtubeUpload
+workspaceRoot                       workspaceSave                       workspaceSearch                     workspaceTaskList
+workspaceTaskRun                    writeClipboard                      writeDocument                       youtubeCancel
+youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
+youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
 **IPC channels, renderer → main (184)**
