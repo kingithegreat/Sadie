@@ -597,6 +597,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
   description:
     'Persists edits to a storyboard scene — shot order, framing/lens/movement, duration and narration text — ' +
     'to the real shot files the renderer reads from.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -747,6 +748,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
     'Renders a complete visual storyboard into an MP4 using local FFmpeg and saved output settings. ' +
     'Includes voiceover narration and optional captions; crop framing supports Ken Burns motion, while fit retains the whole image. ' +
     'Does not approve, upload or publish the movie.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -1060,6 +1062,7 @@ export async function setStoryboardShotImage(args: {
 export const mediaSetStoryboardImageDef: ToolDefinition = {
   name: 'media_set_storyboard_image',
   description: 'Imports an existing local image file as the rendered keyframe for a storyboard shot.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
