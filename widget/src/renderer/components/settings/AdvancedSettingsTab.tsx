@@ -624,9 +624,9 @@ export default function AdvancedSettingsTab() {
           </div>
 
           <div className="setting-group">
-            <label className="setting-label">\ud83d\ude80 First-time setup</label>
+            <label className="setting-label">🚀 First-time setup</label>
             <small className="setting-hint">
-              Choose again where HomeBot's thinking happens \u2014 on this PC or online \u2014 or
+              Choose again where HomeBot's thinking happens — on this PC or online — or
               finish a setup you skipped. Nothing you have already configured is lost.
             </small>
             {/* "Skip setup" on the welcome screen used to be a one-way door:
@@ -644,7 +644,7 @@ export default function AdvancedSettingsTab() {
             </button>
           </div>
           <div className="setting-group">
-            <label className="setting-label">\ud83e\ude7a System check</label>
+            <label className="setting-label">🩺 System check</label>
             <small className="setting-hint">Re-run the first-run environment checks on demand: disk space, Ollama / n8n / Qdrant reachability, write permissions, and detected GPU.</small>
             {sysCheckError && <div className="perf-empty">{sysCheckError}</div>}
             {sysCheck && (() => {
@@ -653,7 +653,7 @@ export default function AdvancedSettingsTab() {
                 <div className="syscheck-row" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '2px 0' }}>
                   <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: '50%', flex: '0 0 auto', background: dotColor(ok), display: 'inline-block' }} />
                   <span style={{ fontWeight: 600 }}>{label}</span>
-                  {detail && <span style={{ opacity: 0.8 }}>\u2014 {detail}</span>}
+                  {detail && <span style={{ opacity: 0.8 }}>— {detail}</span>}
                 </div>
               );
               const svc = (s: { reachable: boolean; latencyMs: number | null }) =>
