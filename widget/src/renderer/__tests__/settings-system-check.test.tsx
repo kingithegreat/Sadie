@@ -71,6 +71,24 @@ describe('SettingsPanel — System check', () => {
       .find(b => b.textContent?.includes(label)) as HTMLButtonElement | undefined;
   }
 
+  test('advanced setup labels render readable symbols and punctuation', () => {
+    const { container } = render(
+      <SettingsPanel settings={baseSettings as any} onSave={noop} onClose={noop} />
+    );
+    const advancedButton = Array.from(container.querySelectorAll('.sp-view-btn'))
+      .find(button => button.textContent?.trim() === 'Advanced') as HTMLElement;
+    fireEvent.click(advancedButton);
+    const diagnosticsButton = Array.from(container.querySelectorAll('.sp-section-toggle'))
+      .find(button => button.textContent?.includes('Diagnostics')) as HTMLElement;
+    fireEvent.click(diagnosticsButton);
+
+    const text = container.textContent ?? '';
+    expect(text).toContain('🚀 First-time setup');
+    expect(text).toContain("Choose again where HomeBot's thinking happens — on this PC or online — or");
+    expect(text).toContain('🩺 System check');
+    expect(text).not.toMatch(/\\u(?:[0-9a-fA-F]{4}|\{[0-9a-fA-F]+\})/);
+  });
+
   test('runs diagnostics on click and renders each check', async () => {
     const runDiagnostics = jest.fn().mockResolvedValue(sampleReport);
     (window as any).electron = baseElectron(runDiagnostics);
