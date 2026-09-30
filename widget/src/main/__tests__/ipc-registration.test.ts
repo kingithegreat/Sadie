@@ -39,6 +39,31 @@ jest.mock('../provider-capability-registry', () => ({
 const { registerIpcHandlers } = require('../ipc-handlers') as typeof import('../ipc-handlers');
 
 describe('IPC registration', () => {
+  it('Image panel status reaches main disclosure and generation uses the sender confirmation bridge', async () => {
+    const licensing = require('../licensing');
+    const web = require('../tools/web');
+    const router = require('../message-router');
+    const tier = jest.spyOn(licensing, 'getCurrentTier').mockReturnValue('pro');
+    const route = { localFirst: true, onlineAllowed: true, onlineProvider: { paid: true, label: 'Google · paid', cost: 'Google charges this account.' }, paidFallback: null };
+    const status = jest.spyOn(web, 'describeImageGenerationRoute').mockReturnValue(route);
+    const confirmation = jest.spyOn(router, 'requestConfirmationFrom').mockResolvedValue(false);
+    const generate = jest.spyOn(web.webToolHandlers, 'image_generate').mockImplementation(async (_args: unknown, context: any) => {
+      expect(await context.requestConfirmation('Review paid provider')).toBe(false);
+      return { success: false, code: 'PAID_CONFIRMATION_REQUIRED', error: 'Paid image was declined.' };
+    });
+    try {
+      registerIpcHandlers();
+      const sender = { id: 19 };
+      await expect(handles['homebot:automation:image:generate']({ sender }, { action: 'status', payload: { backend: 'hybrid' } }))
+        .resolves.toEqual({ status: 'ready', route });
+      expect(status).toHaveBeenCalledWith('hybrid');
+      expect(generate).not.toHaveBeenCalled();
+      await expect(handles['homebot:automation:image:generate']({ sender }, { action: 'generate', payload: { prompt: 'a cat', backend: 'cloud' } }))
+        .resolves.toMatchObject({ status: 'failure', error: { code: 'PAID_CONFIRMATION_REQUIRED' } });
+      expect(confirmation).toHaveBeenCalledWith(sender, 'Review paid provider');
+      expect(generate).toHaveBeenCalledTimes(1);
+    } finally { tier.mockRestore(); status.mockRestore(); confirmation.mockRestore(); generate.mockRestore(); }
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     mockClipboardWriteText.mockReset();
@@ -64,6 +89,13 @@ describe('IPC registration', () => {
   it('registers homebot:get-env handler', () => {
     registerIpcHandlers();
     expect(handles['homebot:get-env']).toBeDefined();
+  });
+
+  it('registers reachable local dictation start and cancellation handlers', () => {
+    registerIpcHandlers();
+    expect(handles['homebot:start-speech-recognition']).toBeDefined();
+    expect(handles['homebot:stop-speech-recognition']).toBeDefined();
+    expect(handles['homebot:stop-speech-recognition']({ sender: { id: 99 } })).toEqual({ success: true });
   });
 
   it('registers and reaches the connected-account media registry', async () => {

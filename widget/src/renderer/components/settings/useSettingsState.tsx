@@ -90,7 +90,7 @@ export interface Settings {
 
 export interface UseSettingsStateArgs {
   settings: SharedSettings;
-  onSave: (settings: SharedSettings) => void;
+  onSave: (settings: SharedSettings) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -203,6 +203,9 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   const [confirmDialog, confirmDestructive] = useConfirmDestructive();
 
   const [localSettings, setLocalSettings] = useState<Settings>(buildLocalSettings(settings));
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const saveInFlight = useRef(false);
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [permissions, setPermissions] = useState<Record<string, boolean>>(((settings as any).permissions || {}) as Record<string, boolean>);
   const [showTelemetryModal, setShowTelemetryModal] = useState(false);
@@ -259,6 +262,11 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     disk: { freeGB: number | null; ok: boolean; warning: string | null };
     ollama: { reachable: boolean; latencyMs: number | null };
     n8n: { reachable: boolean; latencyMs: number | null };
+    n8nWebhooks?: Array<{
+      path: string;
+      powers: string;
+      status: 'available' | 'not_deployed' | 'n8n_unreachable' | 'error';
+    }>;
     qdrant: { reachable: boolean; latencyMs: number | null };
     permissions: { canWrite: boolean };
     hardware: { vramGB: number | null; gpuName: string | null; profile: string | null };
@@ -741,7 +749,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        if (!saveInFlight.current) onClose();
       }
     };
 
@@ -827,7 +835,11 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     setModelsStale(false);
   }, [localSettings.customLLM?.apiUrl, selectedProvider, localSettings.useCustomLLM]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError(null);
     const llmToSave = localSettings.customLLM
       ? { ...localSettings.customLLM, enabled: !!localSettings.customLLM.enabled }
       : undefined;
@@ -883,11 +895,21 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
     (nextSettings as any).moaProposers = (localSettings as any).moaProposers;
     (nextSettings as any).moaAggregator = (localSettings as any).moaAggregator;
     (nextSettings as any).permissionPromptTimeoutMs = (localSettings as any).permissionPromptTimeoutMs;
-    onSave(nextSettings);
-    onClose();
+    try {
+      await onSave(nextSettings);
+      onClose();
+    } catch (error: any) {
+      setSaveError(`Could not save settings: ${error?.message || 'Please try again.'} Your previous settings are still active. Your edits are kept here; try Save again.`);
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
+    // A committed write cannot be cancelled. Keep the dialog visible until its
+    // acknowledgement so Cancel never appears to discard a save still in flight.
+    if (saveInFlight.current) return;
     setLocalSettings(buildLocalSettings(settings)); // Reset to original
     setAvailableModels([]);
     setModelFetchError(null);
@@ -970,6 +992,9 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
   };
 
   return {
+    saving,
+    saveError,
+    setSaveError,
     defaultModels,
     defaultCustomLLM,
     getDefaultApiUrl,

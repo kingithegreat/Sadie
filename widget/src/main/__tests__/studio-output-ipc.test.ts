@@ -12,6 +12,11 @@ beforeEach(() => {
   registerStudioIpc((_channel, handler) => handler, invokeTool, () => undefined);
 });
 
+test('explicit scene regeneration crosses the real job IPC without inventing payment consent', async () => {
+  await handlers['homebot:media:run']({}, 'draft', 'render', { regenerateScenes: true });
+  expect(invokeTool).toHaveBeenCalledWith({}, 'media_render', { job: 'draft', regenerateScenes: true });
+});
+
 test.each([undefined, false, true])('storyboard IPC preserves the caption choice %s without inventing a default', async burnSubtitles => {
   await handlers['homebot:media:storyboard:render']({}, { projectId: 'film', burnSubtitles });
   expect(invokeTool).toHaveBeenCalledWith({}, 'media_render_storyboard', expect.objectContaining({ projectId: 'film', burnSubtitles }));

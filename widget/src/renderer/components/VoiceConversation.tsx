@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { resolveVoiceEngine, whisperTranscribeOnce } from '../utils/speech';
+import { resolveVoiceEngine, whisperTranscribeOnce, type RecordingController } from '../utils/speech';
 import '../styles/voice-conversation.css';
 
 type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
@@ -35,15 +35,41 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
   // Track whether the component is mounted and open (for async safety).
   const mountedRef = useRef(true);
   const openRef = useRef(open);
+  openRef.current = open;
+  const sessionRef = useRef(0);
+  const recordingRef = useRef<RecordingController | null>(null);
+  const captureEngineRef = useRef<'whisper' | 'sapi' | null>(null);
+  const cancelCapture = useCallback(() => {
+    const session = ++sessionRef.current;
+    conversationActive.current = false;
+    recordingRef.current?.cancel();
+    recordingRef.current = null;
+    if (captureEngineRef.current === 'sapi') {
+      window.electron?.stopSpeechRecognition?.().then(result => {
+        if (!result.success && mountedRef.current && openRef.current && sessionRef.current === session) {
+          setError(result.error || 'Could not stop the microphone. Please close voice conversation.');
+        }
+      }).catch(() => {
+        if (mountedRef.current && openRef.current && sessionRef.current === session) {
+          setError('Could not stop the microphone. Please close voice conversation.');
+        }
+      });
+    }
+    captureEngineRef.current = null;
+  }, []);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
-  useEffect(() => { openRef.current = open; }, [open]);
+    return () => {
+      mountedRef.current = false;
+      cancelCapture();
+      window.electron?.ttsStop?.();
+    };
+  }, [cancelCapture]);
 
   // Reset state when the panel opens/closes.
   useEffect(() => {
     if (!open) {
+      cancelCapture();
       setState('idle');
       setTranscript('');
       setError(null);
@@ -51,10 +77,19 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
       lastSpokenRef.current = undefined;
       window.electron?.ttsStop?.();
     }
-  }, [open]);
+  }, [open, cancelCapture]);
+
+  const handleClose = useCallback(() => {
+    cancelCapture();
+    window.electron?.ttsStop?.();
+    onClose();
+  }, [cancelCapture, onClose]);
 
   // ── Start listening ──
   const startListening = useCallback(async () => {
+    if (!mountedRef.current || !openRef.current) return;
+    const session = ++sessionRef.current;
+    const active = () => mountedRef.current && openRef.current && sessionRef.current === session;
     setError(null);
     setState('listening');
     setTranscript('');
@@ -62,6 +97,7 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
     try {
       let settings: any = {};
       try { settings = (await (window.electron as any)?.getSettings?.()) || {}; } catch { /* defaults */ }
+      if (!active()) return;
       const engine = resolveVoiceEngine(settings.voiceEngine, {
         hasSapi: typeof window.electron?.startSpeechRecognition === 'function',
         hasWebSpeech: false, // conversation mode uses one-shot capture only
@@ -69,6 +105,7 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
 
       let text = '';
       let recognitionError: string | undefined;
+      captureEngineRef.current = engine === 'sapi' ? 'sapi' : 'whisper';
 
       if (engine === 'whisper') {
         const res = await whisperTranscribeOnce({
@@ -76,7 +113,13 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
           language: settings.voiceLanguage,
           micDeviceId: settings.voiceMicDeviceId,
           silenceStopSec: settings.voiceSilenceStopSec,
-          onStatus: (s) => { if (mountedRef.current) setTranscript(s); },
+          onStatus: (s) => { if (active()) setTranscript(s); },
+          onController: controller => {
+            // Permission may resolve after Stop/Close. Immediately release that
+            // newly-created recorder instead of reviving the old session.
+            if (!active()) controller.cancel();
+            else recordingRef.current = controller;
+          },
         });
         text = res.text;
       } else {
@@ -85,7 +128,9 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
         recognitionError = result?.error;
       }
 
-      if (!mountedRef.current) return;
+      if (!active()) return;
+      recordingRef.current = null;
+      captureEngineRef.current = null;
 
       if (text) {
         conversationActive.current = true;
@@ -100,7 +145,9 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
         }
       }
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!active()) return;
+      recordingRef.current = null;
+      captureEngineRef.current = null;
       setState('idle');
       setError('Speech recognition failed. Please try again.');
     }
@@ -119,28 +166,32 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
 
     // A new assistant message arrived — speak it.
     lastSpokenRef.current = lastAssistantMessage;
+    const session = sessionRef.current;
     setState('speaking');
     setTranscript(lastAssistantMessage);
 
     window.electron?.ttsSpeak?.(lastAssistantMessage)
       .then(() => {
-        if (!mountedRef.current || !openRef.current) return;
+        if (!mountedRef.current || !openRef.current || sessionRef.current !== session) return;
         setState('idle');
         if (continuousMode) {
           startListening();
         }
       })
       .catch(() => {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || !openRef.current || sessionRef.current !== session) return;
         setState('idle');
       });
   }, [open, lastAssistantMessage, continuousMode, startListening]);
 
-  // ── Stop speaking ──
+  // ── Stop recording or speaking ──
   const handleStop = useCallback(() => {
+    cancelCapture();
     window.electron?.ttsStop?.();
     setState('idle');
-  }, []);
+    setTranscript('');
+    setError(null);
+  }, [cancelCapture]);
 
   // ── Mic button click ──
   const handleMicClick = useCallback(() => {
@@ -161,11 +212,11 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose(); }
+      if (e.key === 'Escape') { e.stopPropagation(); handleClose(); }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
-  }, [open, onClose]);
+  }, [open, handleClose]);
   if (!open) return null;
 
   const micDisabled = state === 'thinking' || state === 'speaking' || state === 'listening';
@@ -181,7 +232,7 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
   // the live cascade, 13 of the app's 18 position:fixed classes were captured
   // that way — only the 5 named in that rule's :not() list survived.
   return createPortal((
-    <div className="voice-conversation-overlay" onClick={onClose}>
+    <div className="voice-conversation-overlay" onClick={handleClose}>
       <div
         className="voice-conversation-panel"
         onClick={(e) => e.stopPropagation()}
@@ -189,7 +240,7 @@ const VoiceConversation: React.FC<VoiceConversationProps> = ({
         {/* Close button */}
         <button
           className="voice-close-btn"
-          onClick={onClose}
+          onClick={handleClose}
           aria-label="Close voice conversation"
         >
           ✕

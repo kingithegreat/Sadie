@@ -1,7 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import type { Settings, CustomLLMConfig } from '../../shared/types';
+import type { Settings, CustomLLMConfig, SubscriptionCliStatus } from '../../shared/types';
 import { recommendModelsForVram, recommendSetupPath } from '../../shared/hardware-presets';
 import { assessModelDownloadFit, type ModelDownloadFit } from '../../shared/model-download-fit';
+import { knownModelsFor } from '../../shared/subscription-models';
 
 type Step = 'welcome' | 'setup' | 'done';
 const STEPS: Step[] = ['welcome', 'setup', 'done'];
@@ -14,11 +15,11 @@ type SetupPath = 'local' | 'cloud' | null;
 // screen. SettingsPanel already links out this way in five places; the wizard,
 // which is the one place a first-time user lands, was the exception.
 //
-// ORDER MATTERS: a first-time user reads this grid top-left to bottom-right and
-// picks the first name they recognise. Every provider with a genuinely free
-// tier therefore sits ABOVE every paid-only one — someone who has never heard
-// of any of these should never land on "paid" before seeing that free exists.
-const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint?: string; signupUrl?: string }[] = [
+// Subscription choices come first for people who already have an account.
+// Free API tiers precede paid-only API services for everyone else.
+const CLOUD_PROVIDERS: { id: CustomLLMConfig['provider']; name: string; freeHint?: string; signupUrl?: string; subscription?: boolean }[] = [
+  { id: 'codex', name: 'ChatGPT subscription', subscription: true },
+  { id: 'claude-code', name: 'Claude subscription', subscription: true },
   // ── Free tier available — shown first ──
   { id: 'groq', name: 'Groq', freeHint: 'Free tier available', signupUrl: 'https://console.groq.com/keys' },
   { id: 'openrouter', name: 'OpenRouter', freeHint: 'Free models available', signupUrl: 'https://openrouter.ai/keys' },
@@ -74,7 +75,23 @@ type LocalSetupPhase =
   | 'starting-ollama'
   | 'checking-models'
   | 'pulling-models'
+  | 'models-missing'
   | 'ready';
+
+// /api/tags includes embedding models, which cannot answer a chat request.
+function chatModelNames(models: any[]): string[] {
+  return models.filter(m => {
+    const name = String(m.name || m);
+    const families = m.details?.families || [m.details?.family];
+    return !/embed|all-minilm|bge-|e5-/i.test(name)
+      && !families.some((family: string | undefined) => /bert/i.test(family || ''));
+  }).map(m => m.name || m);
+}
+
+function sameModel(installed: string, requested: string): boolean {
+  const withTag = (name: string) => name.includes(':') ? name : `${name}:latest`;
+  return withTag(installed) === withTag(requested);
+}
 
 interface ModelPullProgress {
   model: string;
@@ -99,10 +116,31 @@ export default function FirstRunModal({
 }: {
   open: boolean;
   settings: Settings;
-  onSave: (s: Settings) => void;
+  onSave: (s: Settings) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const saveInFlight = useRef(false);
+
+  const persistSetup = async (payload: Settings) => {
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave(payload);
+      onClose();
+    } catch (error: any) {
+      setSaveError(`Could not save setup: ${error?.message || 'Please try again.'} Your choices are kept here; try again.`);
+    } finally {
+      saveInFlight.current = false;
+      setSaving(false);
+    }
+  };
   const [step, setStep] = useState<Step>('welcome');
   const [telemetryConsent, setTelemetryConsent] = useState(false);
   const [setupPath, setSetupPath] = useState<SetupPath>(null);
@@ -137,6 +175,8 @@ export default function FirstRunModal({
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudTesting, setCloudTesting] = useState(false);
   const [cloudOk, setCloudOk] = useState<boolean | null>(null);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionCliStatus['status'] | null>(null);
+  const isSubscriptionCli = cloudProvider === 'codex' || cloudProvider === 'claude-code';
   // What the "done" step is allowed to claim. Cloud counts only when the key
   // actually tested OK; local counts only when the local AI came up.
   const setupComplete =
@@ -195,22 +235,37 @@ export default function FirstRunModal({
 
   const checkModelsAndPull = useCallback(async () => {
     setLocalPhase('checking-models');
+    setModelsPulled([]);
+    setOllamaError(null);
     try {
       const modelList = await (window as any).electron.listOllamaModels?.();
+      if (!modelList?.success) throw new Error(modelList?.error || 'Could not check the installed AI models.');
       const installed: string[] = (modelList?.models || []).map((m: any) => m.name || m);
-      setModels(installed);
+      const installedChat = chatModelNames(modelList.models || []);
+      setModels(installedChat);
 
       // Pick a chat model that fits the detected GPU instead of a fixed default.
       // Falls back to the balanced default (qwen2.5:7b) when VRAM is unknown.
       const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
+      const chosen = installedChat.find(name => sameModel(name, draftRef.current.chatModel || ''));
       const essentialModels = [
-        { name: rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
+        { name: chosen || rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
         ...ESSENTIAL_MODELS.filter(m => m.name !== 'qwen2.5:7b'),
       ];
 
-      const missing = essentialModels.filter(m => !installed.some(i => i.startsWith(m.name.split(':')[0])));
-      if (missing.length === 0) {
+      const selectInstalledChat = (inventory: any[]) => {
+        const chat = chatModelNames(inventory);
+        setModels(chat);
+        const selected = chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
+          || chat.find(name => sameModel(name, rec.chat.id))
+          || chat[0];
+        if (!selected) throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
+        setDraft(d => ({ ...d, chatModel: selected }));
         setLocalPhase('ready');
+      };
+      const missing = essentialModels.filter(m => !installed.some(i => sameModel(i, m.name)));
+      if (missing.length === 0) {
+        selectInstalledChat(modelList.models);
         return;
       }
 
@@ -224,32 +279,38 @@ export default function FirstRunModal({
       setLocalPhase('pulling-models');
       pullCancelledRef.current = false;
       const pulled: string[] = [];
+      const pullErrors: string[] = [];
       for (let i = 0; i < missing.length; i++) {
         if (pullCancelledRef.current) break;
         // Skip any model that definitively won't fit instead of starting a doomed
         // download. unknown/tight/ok all proceed (the guard fails open).
         const fit = assessModelDownloadFit({ sizeGB: missing[i].sizeGB, freeGB });
         if (!fit.fits) {
-          console.warn('Skipping model pull \u2014 insufficient disk:', missing[i].name, fit.message);
+          pullErrors.push(fit.message || 'There is not enough free disk space for the chat model.');
           continue;
         }
         setModelPullIndex(i);
         setModelPullProgress({ model: missing[i].name, status: 'starting pull...', percent: 0, completedMB: null, totalMB: null });
         try {
-          await (window as any).electron.pullModelStream?.(missing[i].name);
+          const result = await (window as any).electron.pullModelStream?.(missing[i].name);
+          if (!result?.success) throw new Error(result?.error || 'The model download did not complete.');
           pulled.push(missing[i].name);
           setModelsPulled([...pulled]);
         } catch (e: any) {
-          console.warn('Model pull failed:', missing[i].name, e);
+          pullErrors.push(e?.message || 'The model download did not complete.');
         }
       }
       setModelPullProgress(null);
 
       const updatedList = await (window as any).electron.listOllamaModels?.();
-      setModels((updatedList?.models || []).map((m: any) => m.name || m));
-      setLocalPhase('ready');
-    } catch {
-      setLocalPhase('ready');
+      if (!updatedList?.success) throw new Error(updatedList?.error || 'Could not verify the installed AI models.');
+      if (pullCancelledRef.current) return;
+      selectInstalledChat(updatedList.models || []);
+      if (pullErrors.length) setOllamaError(`Chat is available, but some setup downloads failed: ${pullErrors.join(' ')}`);
+    } catch (e: any) {
+      setModelPullProgress(null);
+      setOllamaError(e?.message || 'Local AI setup did not finish. Please retry.');
+      setLocalPhase('models-missing');
     }
   }, []);
 
@@ -259,8 +320,6 @@ export default function FirstRunModal({
     setDiskWarning(null);
     setDiskOk(true);
     setModelDiskFit(null);
-    detectHardware();
-
     // E2E: skip the real Ollama detection. With no Ollama present,
     // checkConnection / checkOllamaInstalled / startOllama each run their full
     // network/spawn timeouts, which left the footer button stuck on "Setting
@@ -275,6 +334,10 @@ export default function FirstRunModal({
         return;
       }
     } catch { /* fall through to real detection */ }
+
+    // Keep the welcome screen immediate, but resolve the hardware reading
+    // before choosing a multi-GB model to download.
+    await detectHardware();
 
     // Check disk space before potentially pulling large models
     try {
@@ -340,11 +403,19 @@ export default function FirstRunModal({
   };
 
   const testCloudConnection = async () => {
-    if (!cloudApiKey.trim()) return;
+    if (!isSubscriptionCli && !cloudApiKey.trim()) return;
     setCloudTesting(true);
     setCloudOk(null);
     setCloudModel('');
     try {
+      if (isSubscriptionCli) {
+        const result = await (window as any).electron.checkSubscriptionCli?.(cloudProvider);
+        const status = result?.status || 'unknown';
+        setSubscriptionStatus(status);
+        setCloudOk(status === 'ready');
+        if (status === 'ready') setCloudModel(knownModelsFor(cloudProvider)[0]?.id || '');
+        return;
+      }
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
       const res = await (window as any).electron.listCustomLLMModels?.({
         apiUrl,
@@ -357,6 +428,7 @@ export default function FirstRunModal({
         setCloudModel(res.models[0].id);
       }
     } catch {
+      if (isSubscriptionCli) setSubscriptionStatus('unknown');
       setCloudOk(false);
     } finally {
       setCloudTesting(false);
@@ -375,14 +447,17 @@ export default function FirstRunModal({
     const payload: any = { ...draft, firstRun: false, telemetryEnabled: telemetryConsent };
     if (telemetryConsent) payload.telemetryConsentTimestamp = new Date().toISOString();
 
-    if (setupPath === 'cloud' && cloudApiKey.trim()) {
+    if (setupPath === 'cloud' && cloudOk === true && (isSubscriptionCli || cloudApiKey.trim())) {
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
       const model = cloudModel || PROVIDER_DEFAULT_MODELS[cloudProvider] || '';
       payload.useCustomLLM = true;
+      // Fresh profiles default to local Uncensored Mode, which overrides cloud
+      // routing. An explicit Online choice must make the chosen provider active.
+      payload.uncensoredMode = false;
       payload.customLLM = {
         name: CLOUD_PROVIDERS.find(p => p.id === cloudProvider)?.name || 'Cloud LLM',
         apiUrl,
-        apiKey: cloudApiKey.trim(),
+        apiKey: isSubscriptionCli ? '' : cloudApiKey.trim(),
         provider: cloudProvider,
         model,
         enabled: true
@@ -392,16 +467,12 @@ export default function FirstRunModal({
       else if (cloudProvider === 'google-ai-studio' || cloudProvider === 'google-gemini') payload.geminiApiKey = cloudApiKey.trim();
     }
 
-    try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun save failed:', e); }
-    onSave(payload);
-    onClose();
+    await persistSetup(payload);
   };
 
   const handleSkip = async () => {
     const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
-    try { await (window as any).electron.saveSettings?.(payload); } catch (e) { console.warn('FirstRun skip save failed:', e); }
-    onSave(payload);
-    onClose();
+    await persistSetup(payload);
   };
 
   if (!open) return null;
@@ -420,6 +491,7 @@ export default function FirstRunModal({
         </div>
 
         <div className="first-run-content">
+          {saveError && <p role="alert" className="wizard-error-detail">{saveError}</p>}
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>
@@ -590,15 +662,22 @@ export default function FirstRunModal({
               )}
 
               {/* Phase: Ready */}
+              {localPhase === 'models-missing' && (
+                <div className="wizard-setup-section">
+                  <div className="wizard-status error">{ollamaError}</div>
+                  <button type="button" className="first-run-btn first-run-btn-primary" onClick={runLocalSetup}>Retry</button>
+                </div>
+              )}
               {localPhase === 'ready' && (
                 <div className="wizard-setup-section">
                   <div className="wizard-status success">Ollama is ready!</div>
+                  {ollamaError && <div className="wizard-status warning">{ollamaError}</div>}
                   {models.length > 0 && (
                     <div className="wizard-model-compact">
                       <p className="wizard-step-desc">
-                        {models.length} model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
+                        {models.length} chat model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
                       </p>
-                      {models.length > 1 && (
+                      {models.length > 0 && (
                         <select
                           className="first-run-input"
                           aria-label="Select chat model"
@@ -623,11 +702,15 @@ export default function FirstRunModal({
                   what a key is in ordinary words, and link straight to the page
                   that issues one. */}
               <h2 className="wizard-step-title">Connect an AI service</h2>
+              {isSubscriptionCli ? (
+                <p className="wizard-step-desc">Use your subscription already signed in on this PC. No API key is needed.</p>
+              ) : (
               <p className="wizard-step-desc">
                 These companies run the AI for you. Pick one, make a free account, and it
                 gives you a long password called a key — paste that below. The ones marked
                 “free” don’t ask for a card.
               </p>
+              )}
 
               <div className="wizard-cloud-provider-grid">
                 {CLOUD_PROVIDERS.map(p => (
@@ -635,7 +718,7 @@ export default function FirstRunModal({
                     type="button"
                     key={p.id}
                     className={`wizard-cloud-chip${cloudProvider === p.id ? ' selected' : ''}`}
-                    onClick={() => { setCloudProvider(p.id); setCloudOk(null); setCloudModel(''); }}
+                    onClick={() => { setCloudProvider(p.id); setCloudOk(null); setCloudModel(''); if (p.subscription) setCloudApiKey(''); setSubscriptionStatus(null); }}
                   >
                     {p.name}
                     {p.freeHint && <span className="wizard-free-badge">free</span>}
@@ -666,31 +749,53 @@ export default function FirstRunModal({
                 </p>
               )}
 
-              <input
-                type="password"
-                className="first-run-input"
-                placeholder="Paste the key from your account page"
-                value={cloudApiKey}
-                onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
-                onKeyDown={e => { if (e.key === 'Enter' && cloudApiKey.trim()) testCloudConnection(); }}
-                autoComplete="off"
-              />
+              {isSubscriptionCli ? (
+                <div className="wizard-setup-section">
+                  <p className="wizard-step-desc">
+                    {cloudProvider === 'codex'
+                      ? <>Uses ChatGPT plan limits through Codex. Install it with <code>npm install -g @openai/codex</code>, then sign in with <code>codex login</code>. Codex chat cannot use HomeBot tools.</>
+                      : <>Requires Claude Code access on a Pro, Max, Team, or Enterprise plan. <a href="https://code.claude.com/docs/en/setup" target="_blank" rel="noopener noreferrer">Install Claude Code</a>, then sign in with <code>claude auth login</code>.</>}
+                  </p>
+                  <p className="wizard-step-desc">Check again after signing in. This check does not send a chat request.</p>
+                </div>
+              ) : (
+                <input
+                  type="password"
+                  className="first-run-input"
+                  placeholder="Paste the key from your account page"
+                  value={cloudApiKey}
+                  onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter' && cloudApiKey.trim()) testCloudConnection(); }}
+                  autoComplete="off"
+                />
+              )}
 
               <div className="wizard-btn-row wizard-test-row">
                 <button
                   type="button"
                   className="first-run-btn first-run-btn-primary"
                   onClick={testCloudConnection}
-                  disabled={cloudTesting || !cloudApiKey.trim()}
+                  disabled={cloudTesting || (!isSubscriptionCli && !cloudApiKey.trim())}
                 >
-                  {cloudTesting ? 'Testing...' : 'Test Connection'}
+                  {cloudTesting ? 'Checking...' : isSubscriptionCli ? 'Check sign-in' : 'Test Connection'}
                 </button>
               </div>
 
               {cloudOk === true && (
-                <div className="wizard-status success">Connected! Ready to chat.</div>
+                <div className="wizard-status success">{isSubscriptionCli ? 'Subscription sign-in found. Ready to try a chat.' : 'Connected! Ready to chat.'}</div>
               )}
-              {cloudOk === false && (
+              {isSubscriptionCli && subscriptionStatus && subscriptionStatus !== 'ready' && (
+                <div className="wizard-status warning">
+                  {subscriptionStatus === 'missing'
+                    ? 'The CLI is not installed or HomeBot cannot find it on this PC.'
+                    : subscriptionStatus === 'signed-out'
+                      ? 'The CLI is installed but has no active sign-in. Sign in, then check again.'
+                      : subscriptionStatus === 'api-key'
+                        ? 'The CLI is using an API key. Sign in with your subscription to use plan limits.'
+                        : 'Could not confirm the subscription sign-in. You can try chat after setup, but it is not verified yet.'}
+                </div>
+              )}
+              {!isSubscriptionCli && cloudOk === false && (
                 <div className="wizard-status error">Connection failed. Check your API key and try again.</div>
               )}
             </div>
@@ -709,7 +814,9 @@ export default function FirstRunModal({
               </h2>
               <p className="wizard-step-desc">
                 {setupComplete
-                  ? 'Try asking HomeBot anything — check the weather, search the web, read files, or just chat.'
+                  ? isSubscriptionCli
+                    ? 'Your subscription is selected for chat. Send a message to confirm it can answer on this PC.'
+                    : 'Try asking HomeBot anything — check the weather, search the web, read files, or just chat.'
                   : 'Nothing was set up yet — that’s fine. HomeBot will use whatever it can find on this PC, and you can finish setting up any time from Settings.'}
               </p>
               <div className="wizard-suggestions">
@@ -734,7 +841,7 @@ export default function FirstRunModal({
         </div>
 
         <div className="first-run-footer">
-          <button type="button" onClick={handleSkip} className="first-run-btn first-run-btn-secondary">Skip setup</button>
+          <button type="button" onClick={handleSkip} disabled={saving} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
               <button type="button" onClick={() => { setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
@@ -744,13 +851,13 @@ export default function FirstRunModal({
                 type="button"
                 onClick={() => setStep('done')}
                 className="first-run-btn first-run-btn-primary"
-                disabled={(setupPath === 'local' && (localBusy || !diskOk)) || (setupPath === 'cloud' && cloudOk !== true && cloudApiKey.trim().length > 0)}
+                disabled={(setupPath === 'local' && (localBusy || !diskOk)) || (setupPath === 'cloud' && !isSubscriptionCli && cloudOk !== true && cloudApiKey.trim().length > 0)}
               >
-                {setupPath === 'local' && !diskOk ? 'Free up disk space first' : setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' ? 'Continue anyway' : 'Next'}
+                {setupPath === 'local' && !diskOk ? 'Free up disk space first' : setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' || (isSubscriptionCli && cloudOk !== true) ? 'Continue anyway' : 'Next'}
               </button>
             )}
             {step === 'done' && (
-              <button type="button" onClick={handleFinish} className="first-run-btn first-run-btn-primary">Get Started</button>
+              <button type="button" onClick={handleFinish} disabled={saving} className="first-run-btn first-run-btn-primary">{saving ? 'Saving…' : 'Get Started'}</button>
             )}
           </div>
         </div>

@@ -296,6 +296,18 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
     setError(null);
     try {
       const result = await window.electron?.deleteAutomation?.({ id: auto.id, force });
+      const blocked = gateBlock(result);
+      if (blocked) {
+        setIsPro(false);
+        setUpgradePrompt(withCheckout(blocked, checkoutUrl));
+        setPendingDelete(null);
+        setDeleteBlocked(false);
+        return;
+      }
+      if (!result) {
+        setError('Failed to delete automation');
+        return;
+      }
       if (result && result.success === false) {
         // The main process kept the automation on purpose — surface why, and
         // offer the override rather than leaving the user stuck.
@@ -312,7 +324,7 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
     } finally {
       setDeleting(false);
     }
-  }, [pendingDelete]);
+  }, [pendingDelete, checkoutUrl]);
 
   const cancelDelete = useCallback(() => {
     setPendingDelete(null);
@@ -338,7 +350,7 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
   const saveEdit = useCallback(async () => {
     if (!editingId || !editName.trim() || !editInstructions.trim()) return;
     try {
-      await window.electron?.updateAutomation?.({
+      const result = await window.electron?.updateAutomation?.({
         id: editingId,
         name: editName.trim(),
         description: editDesc.trim(),
@@ -355,6 +367,18 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
         // would leave a stale URL in place and look like the edit was ignored.
         n8nWebhookUrl: editN8nUrl.trim(),
       });
+      const blocked = gateBlock(result);
+      if (blocked) {
+        setIsPro(false);
+        setUpgradePrompt(withCheckout(blocked, checkoutUrl));
+        return;
+      }
+      if (result?.success !== true) {
+        const reason = result && 'error' in result && typeof result.error === 'string' ? result.error : null;
+        setError(reason || 'Failed to save changes');
+        return;
+      }
+      setError(null);
       setAutomations(prev => prev.map(a => a.id === editingId ? {
         ...a,
         name: editName.trim(),
@@ -375,7 +399,7 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
     // like they worked — the boxes updated on screen — while the ORIGINAL
     // values were sent to disk. Caught by the tests asserting what the handler
     // receives rather than what the form shows.
-  }, [editingId, editName, editInstructions, editTrigger, editSchedule, editWatchPath, editWatchPattern, editDesc, editN8nUrl]);
+  }, [editingId, editName, editInstructions, editTrigger, editSchedule, editWatchPath, editWatchPattern, editDesc, editN8nUrl, checkoutUrl]);
 
   const applyExample = useCallback((ex: typeof EXAMPLE_AUTOMATIONS[0]) => {
     setFormName(ex.name);
@@ -737,13 +761,17 @@ export const AutomationCenter: React.FC<AutomationCenterProps> = ({ navContext }
                     id="edit-n8n-url"
                     className="setting-input"
                     data-testid="edit-n8n-url"
-                    placeholder="Leave blank to run this automation inside HomeBot"
+                    placeholder={auto.n8nWorkflowId ? 'Managed by HomeBot' : 'Leave blank to run this automation inside HomeBot'}
                     value={editN8nUrl}
                     onChange={(e) => setEditN8nUrl(e.target.value)}
+                    disabled={!!auto.n8nWorkflowId}
                   />
                   <small className="setting-hint">
-                    Clearing this detaches the workflow — the automation keeps running, just inside
-                    HomeBot rather than through your workflow server.
+                    {auto.n8nWorkflowId
+                      ? 'HomeBot manages this n8n workflow. Delete the automation to remove that workflow before creating a revised version.'
+                      : auto.n8nWebhookUrl
+                        ? 'Clearing this manually linked webhook detaches it from HomeBot. Manage the external workflow separately.'
+                        : 'Add a webhook URL to run this automation through n8n.'}
                   </small>
                   <div className="form-actions automation-edit-actions">
                     <button type="button" className="btn-primary" onClick={saveEdit} disabled={!editName.trim() || !editInstructions.trim() || (editTrigger === 'file' && !editWatchPath.trim())}>Save</button>

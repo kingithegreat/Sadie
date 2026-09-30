@@ -16,7 +16,7 @@ import * as fs from 'fs';
 
 export type N8nStatus = 'already_running' | 'started' | 'start_failed' | 'timeout' | 'skipped';
 
-const N8N_HEALTH_URL = 'http://localhost:5678';
+const DEFAULT_N8N_URL = 'http://localhost:5678';
 const CONTAINER_NAME = 'homebot-n8n';
 const POLL_INTERVAL_MS = 1500;
 const POLL_TIMEOUT_MS = 45_000;
@@ -36,10 +36,10 @@ function findDockerCompose(): string | null {
   return null;
 }
 
-/** Returns true if n8n responds on port 5678. */
-function checkN8nHealth(): Promise<boolean> {
+/** Returns true if the configured n8n instance responds. */
+function checkN8nHealth(baseUrl: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const req = http.get(N8N_HEALTH_URL, { timeout: 2000 }, (res) => {
+    const req = http.get(baseUrl, { timeout: 2000 }, (res) => {
       resolve(res.statusCode !== undefined && res.statusCode < 500);
       res.resume();
     });
@@ -49,10 +49,10 @@ function checkN8nHealth(): Promise<boolean> {
 }
 
 /** Polls n8n health until it's up or the timeout elapses. */
-async function waitForN8n(): Promise<boolean> {
+async function waitForN8n(baseUrl: string): Promise<boolean> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if (await checkN8nHealth()) return true;
+    if (await checkN8nHealth(baseUrl)) return true;
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }
   return false;
@@ -81,9 +81,11 @@ function startContainer(composeFile: string | null): Promise<void> {
  * - If not reachable: attempts to start the Docker container, then polls until healthy.
  * - In E2E test mode: returns `'skipped'` immediately.
  *
+ * @param baseUrl  Resolved n8n URL from Settings (or the environment override).
  * @param onStatusUpdate  Optional callback called when the status changes (e.g. to notify the renderer).
  */
 export async function ensureN8nRunning(
+  baseUrl = DEFAULT_N8N_URL,
   onStatusUpdate?: (status: 'checking' | 'starting' | N8nStatus) => void
 ): Promise<N8nStatus> {
   // Skip entirely in E2E tests so mock upstreams aren't disturbed
@@ -95,7 +97,7 @@ export async function ensureN8nRunning(
   onStatusUpdate?.('checking');
   console.log('[n8n-lifecycle] Checking n8n health...');
 
-  if (await checkN8nHealth()) {
+  if (await checkN8nHealth(baseUrl)) {
     console.log('[n8n-lifecycle] n8n already running ✓');
     onStatusUpdate?.('already_running');
     return 'already_running';
@@ -114,7 +116,7 @@ export async function ensureN8nRunning(
   await startContainer(composeFile);
   console.log('[n8n-lifecycle] Container start command sent. Waiting for n8n to become healthy...');
 
-  const healthy = await waitForN8n();
+  const healthy = await waitForN8n(baseUrl);
   const status: N8nStatus = healthy ? 'started' : 'timeout';
   console.log(`[n8n-lifecycle] Final status: ${status}`);
   onStatusUpdate?.(status);

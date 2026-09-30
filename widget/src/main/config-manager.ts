@@ -1,6 +1,6 @@
 import { app, safeStorage } from 'electron';
 import { join } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
 import { migrateRetiredModel } from './model-lifecycle';
 
@@ -671,6 +671,8 @@ export function saveSettings(settings: Settings): void {
     // Compare with previous to log telemetry consent events
     const previous = getSettings();
     const toSave = { ...settings } as Settings & { telemetryConsentTimestamp?: string; telemetryConsentVersion?: string };
+    // Encrypt the disk copy without changing a caller or cached nested config.
+    if (settings.customLLM) toSave.customLLM = { ...settings.customLLM };
     // Preserve the latest opaque grants. A renderer snapshot cannot replace
     // them, even if it supplies this private property itself.
     delete (toSave as any)._integrationSecrets;
@@ -754,7 +756,15 @@ export function saveSettings(settings: Settings): void {
         (toSave.customLLM as any).apiKey = encryptSecret(rawKey);
       }
     }
-    writeFileSync(settingsPath, JSON.stringify(toSave, null, 2), 'utf-8');
+    // A partial write must not destroy the previously saved policy. Replace
+    // the file only after a complete sibling write; publish the cache afterward.
+    const pendingPath = `${settingsPath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    try {
+      writeFileSync(pendingPath, JSON.stringify(toSave, null, 2), { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
+      renameSync(pendingPath, settingsPath);
+    } finally {
+      try { unlinkSync(pendingPath); } catch { /* renamed, or cleanup unavailable */ }
+    }
     invalidateSettingsCache();
     if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Settings saved successfully to:', settingsPath);
     // Log consent changes

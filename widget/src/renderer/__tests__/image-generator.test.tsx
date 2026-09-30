@@ -18,6 +18,32 @@ afterEach(() => {
 });
 
 describe('ImageGenerator — initial render', () => {
+  test('shows main-derived paid provider and fallback costs before generation, even in Best available', async () => {
+    const executeImageGenerate = jest.fn(async ({ action }) => action === 'status' ? {
+      route: { localFirst: true, onlineAllowed: true,
+        onlineProvider: { label: 'Gemini · paid', cost: 'Charged by Google; no free image tier.', paid: true, watermark: 'Invisible SynthID.' },
+        paidFallback: { label: 'OpenAI · paid', cost: 'Billed by token usage.' } },
+    } : null);
+    (window as any).electron = { executeImageGenerate };
+    await act(async () => { render(<ImageGenerator />); });
+    expect(executeImageGenerate).toHaveBeenCalledWith({ action: 'status', payload: { backend: 'hybrid' } });
+    expect(screen.getByText(/Gemini · paid/)).toHaveTextContent(/no free image tier/);
+    expect(screen.getByText(/Last fallback: OpenAI/)).toHaveTextContent(/Billed by token usage/);
+    expect(screen.getByText(/Every paid request requires/)).toBeInTheDocument();
+    expect(screen.getByText(/Tries engines on this PC first/)).toBeInTheDocument();
+    expect(executeImageGenerate.mock.calls.some(([request]) => request.action === 'generate')).toBe(false);
+    expect(screen.queryByText(/Online — free, no account/)).toBeNull();
+    await act(async () => { fireEvent.change(screen.getByLabelText(/Where to make it/), { target: { value: 'local' } }); });
+    expect(screen.queryByText(/Last fallback: OpenAI/)).toBeNull();
+  });
+
+  test('shows Online-off status without claiming a paid provider is free', async () => {
+    setupElectron(async () => ({ route: { localFirst: true, onlineAllowed: false,
+      onlineProvider: { label: 'Gemini · paid', cost: 'Charged by Google.', paid: true }, paidFallback: null } }));
+    await act(async () => { render(<ImageGenerator />); });
+    expect(screen.getByText(/Online is off/)).toBeInTheDocument();
+    expect(screen.getByText(/Gemini · paid/)).toBeInTheDocument();
+  });
   test('renders the heading', () => {
     render(<ImageGenerator />);
     expect(screen.getByText(/Image Generation/)).toBeInTheDocument();
@@ -259,7 +285,7 @@ describe('ImageGenerator — select controls', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Generate Image/i }));
     });
-    const payload = electronFn.mock.calls[0][0].payload;
+    const payload = electronFn.mock.calls.find(([request]: any[]) => request.action === 'generate')![0].payload;
     expect(payload.style).toBe('cartoon');
     expect(payload.resolution).toBe('256x256');
     expect(payload.prompt).toBe('a dog');
@@ -303,7 +329,7 @@ describe('ImageGenerator — stays readable for a non-technical user', () => {
     // Whether an image leaves the computer is the one thing worth being
     // unambiguous about.
     expect(screen.getByText(/Only on this PC/i)).toBeInTheDocument();
-    expect(screen.getByText(/Online — free, no account/i)).toBeInTheDocument();
+    expect(screen.getByText(/Online — review provider and cost/i)).toBeInTheDocument();
   });
 });
 

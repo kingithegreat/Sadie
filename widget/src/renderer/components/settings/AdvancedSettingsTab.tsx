@@ -663,6 +663,41 @@ export default function AdvancedSettingsTab() {
                   <Item label="Disk space" ok={sysCheck.disk.ok} detail={sysCheck.disk.freeGB != null ? `${sysCheck.disk.freeGB.toFixed(1)} GB free${sysCheck.disk.warning ? ` \u2014 ${sysCheck.disk.warning}` : ''}` : 'unknown'} />
                   <Item label="Ollama" ok={sysCheck.ollama.reachable} detail={svc(sysCheck.ollama)} />
                   <Item label="n8n" ok={sysCheck.n8n.reachable} detail={svc(sysCheck.n8n)} />
+                  {sysCheck.n8nWebhooks && sysCheck.n8nWebhooks.length > 0 && (
+                    <div data-testid="syscheck-workflows" style={{ margin: '8px 0 8px 17px' }}>
+                      <strong>Optional n8n workflows</strong>
+                      <small className="setting-hint" style={{ display: 'block' }}>
+                        These are optional; ordinary chat works without n8n, and calendar events can be saved on this PC.
+                      </small>
+                      {!sysCheck.n8n.reachable ? (
+                        <small className="setting-hint">Workflow status is unknown while n8n is offline.</small>
+                      ) : sysCheck.n8nWebhooks.map(workflow => {
+                        const label = workflow.path === 'homebot/calendar' ? 'Google Calendar via n8n'
+                          : workflow.path === 'homebot/chat' ? 'Chat via n8n'
+                          : workflow.path === 'homebot/media-research' ? 'Media research via n8n'
+                          : workflow.powers;
+                        const status = workflow.status === 'available' ? 'Detected'
+                          : workflow.status === 'not_deployed' ? 'Not set up'
+                          : workflow.status === 'n8n_unreachable' ? 'Unknown'
+                          : 'Responding with an error';
+                        return (
+                          <div className="syscheck-row" key={workflow.path} style={{ fontSize: 13, padding: '2px 0' }}>
+                            <span style={{ fontWeight: 600 }}>{label}</span> — {status}
+                            {workflow.status === 'not_deployed' && workflow.path === 'homebot/calendar' && (
+                              <small className="setting-hint" style={{ display: 'block' }}>
+                                You can use a private iCal link in Settings for read-only Google events. The n8n route needs a protected workflow and a Google Calendar account connected in n8n.
+                              </small>
+                            )}
+                            {workflow.status === 'not_deployed' && workflow.path === 'homebot/chat' && (
+                              <small className="setting-hint" style={{ display: 'block' }}>
+                                This optional chat route needs an active protected workflow in n8n. HomeBot can still use your chosen local or online model directly.
+                              </small>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <Item label="Qdrant" ok={sysCheck.qdrant.reachable} detail={svc(sysCheck.qdrant)} />
                   <Item label="Write permissions" ok={sysCheck.permissions.canWrite} detail={sysCheck.permissions.canWrite ? 'OK' : 'cannot write to userData'} />
                   <Item label="GPU" ok={sysCheck.hardware.vramGB != null ? true : null} detail={sysCheck.hardware.vramGB != null ? `${sysCheck.hardware.gpuName ?? 'GPU'} \u00b7 ${sysCheck.hardware.vramGB} GB${sysCheck.hardware.profile ? ` \u00b7 ${sysCheck.hardware.profile}` : ''}` : 'not detected'} />
