@@ -32,6 +32,7 @@ import {
   getSettingsPath, 
   resetPermissions, 
   exportTelemetryConsent,
+  settingsWithoutCredentials,
   getDefaultSettings
 } from './config-manager';
 import { fetchAvailableCustomModels, generateFromCustomLLM, resolveDeepseekModels, resolveGeminiModels } from './custom-llm-client';
@@ -1662,7 +1663,7 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
 
   ipcMain.handle('homebot:export-settings', async () => {
     try {
-      const settings = getSettings();
+      const settings = settingsWithoutCredentials(getSettings());
       const convStore = MemoryManager.loadConversationStore();
       const prefs = MemoryManager.loadPreferences();
       const toolStats = MemoryManager.loadToolStats();
