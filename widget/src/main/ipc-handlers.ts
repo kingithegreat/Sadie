@@ -711,8 +711,16 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   // ── RAG: index a local file or web content ──
-  ipcMain.handle('homebot:rag-index', async (_event, filePath: string, content?: string) => {
+  ipcMain.handle('homebot:rag-index', async (event, filePath: string, content?: string) => {
     try {
+      // Selecting a file in the main UI is consent to index it. Other windows
+      // and child frames cannot borrow that authority through the IPC bridge.
+      const trustedWindow = mainWindow ?? getMainWindow();
+      if (!trustedWindow || trustedWindow.isDestroyed()
+        || event.sender !== trustedWindow.webContents
+        || event.senderFrame !== trustedWindow.webContents.mainFrame) {
+        return { success: false, error: 'Document indexing request came from an untrusted window' };
+      }
       if (!filePath || typeof filePath !== 'string') {
         return { success: false, error: 'filePath is required' };
       }
@@ -2763,8 +2771,16 @@ EXAMPLE (follow this format exactly):
   });
 
   // ── Screen Capture ──────────────────────────────────────────────────────────
-  ipcMain.handle('homebot:capture-screen', async () => {
+  ipcMain.handle('homebot:capture-screen', async (event) => {
     try {
+      // The main UI's Capture screen button authorizes this action, separately
+      // from the screenshot tool permission used by model requests.
+      const trustedWindow = mainWindow ?? getMainWindow();
+      if (!trustedWindow || trustedWindow.isDestroyed()
+        || event.sender !== trustedWindow.webContents
+        || event.senderFrame !== trustedWindow.webContents.mainFrame) {
+        return { success: false, error: 'Screen capture request came from an untrusted window' };
+      }
       const { desktopCapturer } = require('electron');
       const sources = await desktopCapturer.getSources({
         types: ['screen'],
