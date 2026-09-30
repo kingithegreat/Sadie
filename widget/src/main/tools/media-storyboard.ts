@@ -597,6 +597,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
   description:
     'Persists edits to a storyboard scene — shot order, framing/lens/movement, duration and narration text — ' +
     'to the real shot files the renderer reads from.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -609,8 +610,13 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       musicVolume: { type: 'number', description: 'Save background-music gain from 0 to 1.' },
       shots: {
         type: 'array',
-        description: 'Ordered array of shot edits to persist.',
+        description: 'Shot edits to persist, each with its shotId. Shots you leave out stay on the board unchanged; '
+          + 'new shot IDs are added at the end; listing every shot in a new order reorders the scene.',
         items: { type: 'object' },
+      },
+      replaceShotList: {
+        type: 'boolean',
+        description: 'Only when shots is the complete scene: removes any shot left out of it. Omit to keep omitted shots.',
       },
     },
     required: ['projectId', 'shots'],
@@ -627,6 +633,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     return { success: false, error: 'Choose a valid storyboard project and scene.' };
   }
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
+  if (args.replaceShotList !== undefined && typeof args.replaceShotList !== 'boolean') {
+    return { success: false, error: 'replaceShotList must be true or false.' };
+  }
   if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
     return { success: false, error: 'Choose whether captions are on or off.' };
   }
@@ -720,7 +729,14 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       }
     }
 
-    sceneMeta.shots = shotIds;
+    // A save names the shots it edits. Only an explicit complete-scene save (the
+    // Storyboard Deck, via IPC) may drop shots it leaves out; a partial save from
+    // chat keeps them, so "fix shot_002's narration" cannot empty the board.
+    const boardIds = currentShots.map(saved => saved.shotId);
+    const coversBoard = boardIds.every(id => shotIds.includes(id));
+    sceneMeta.shots = args.replaceShotList === true || coversBoard
+      ? shotIds
+      : [...boardIds, ...shotIds.filter((id: string) => !boardIds.includes(id))];
     fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
     if (projectMeta) {
       const stagedMeta = `${metaPath}.saving`;
@@ -747,6 +763,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
     'Renders a complete visual storyboard into an MP4 using local FFmpeg and saved output settings. ' +
     'Includes voiceover narration and optional captions; crop framing supports Ken Burns motion, while fit retains the whole image. ' +
     'Does not approve, upload or publish the movie.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -1060,6 +1077,7 @@ export async function setStoryboardShotImage(args: {
 export const mediaSetStoryboardImageDef: ToolDefinition = {
   name: 'media_set_storyboard_image',
   description: 'Imports an existing local image file as the rendered keyframe for a storyboard shot.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {

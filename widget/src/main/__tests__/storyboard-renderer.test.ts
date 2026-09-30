@@ -14,6 +14,7 @@ import {
   renderStoryboardMovie,
   ShotManifest,
 } from '../movie/storyboard-renderer';
+import { assembleShotsForScene } from '../movie/storyboard-assembly';
 import {
   mediaCreateStoryboardHandler,
   mediaSaveStoryboardHandler,
@@ -359,6 +360,55 @@ describe('One-Click 1080p Storyboard Renderer', () => {
     const narrationCalls = (renderNarrationToFile as jest.Mock).mock.calls.map(c => c[0]);
     expect(narrationCalls).toEqual(['EDITED narration B.', 'EDITED narration A.']);
     expect(narrationCalls.join(' ')).not.toContain('Original narration');
+  });
+
+  test('a partial save (e.g. from chat) edits only the shots it names and keeps the rest on the board', async () => {
+    const created: any = await mediaCreateStoryboardHandler({
+      projectId: 'partial-save', title: 'Partial Save',
+      shots: [
+        { prompt: 'Prompt A', durationSec: 4, narration: 'Narration A.' },
+        { prompt: 'Prompt B', durationSec: 4, narration: 'Narration B.' },
+        { prompt: 'Prompt C', durationSec: 4, narration: 'Narration C.' },
+      ],
+    }, {} as any);
+    const projectDir = created.result.projectDir as string;
+    const sceneDir = path.join(projectDir, 'scenes', 'scene_01');
+    const boardIds = () => assembleShotsForScene(projectDir, 'scene_01').map(s => s.shotId);
+    expect(boardIds()).toEqual(['shot_001', 'shot_002', 'shot_003']);
+
+    // "Save the new narration for shot_002": a model can send just that shot.
+    const saved: any = await mediaSaveStoryboardHandler({
+      projectId: 'partial-save', sceneId: 'scene_01',
+      shots: [{ shotId: 'shot_002', narration: 'EDITED narration B.' }],
+    }, {} as any);
+    expect(saved.success).toBe(true);
+    expect(boardIds()).toEqual(['shot_001', 'shot_002', 'shot_003']);
+    const board = assembleShotsForScene(projectDir, 'scene_01');
+    expect(board.map(s => s.narration)).toEqual(['Narration A.', 'EDITED narration B.', 'Narration C.']);
+    expect(board.map(s => s.prompt)).toEqual(['Prompt A', 'Prompt B', 'Prompt C']);
+
+    // A new shot id in a partial save is appended after the kept shots.
+    await mediaSaveStoryboardHandler({
+      projectId: 'partial-save', sceneId: 'scene_01',
+      shots: [{ shotId: 'shot_004', prompt: 'Prompt D', durationSec: 2 }],
+    }, {} as any);
+    expect(boardIds()).toEqual(['shot_001', 'shot_002', 'shot_003', 'shot_004']);
+
+    // A complete list is a reorder, honoured without any extra flag.
+    await mediaSaveStoryboardHandler({
+      projectId: 'partial-save', sceneId: 'scene_01',
+      shots: ['shot_004', 'shot_003', 'shot_002', 'shot_001'].map(shotId => ({ shotId })),
+    }, {} as any);
+    expect(boardIds()).toEqual(['shot_004', 'shot_003', 'shot_002', 'shot_001']);
+
+    // Only an explicit complete-scene save (what the Storyboard Deck sends) removes
+    // omitted shots, and the removed shot's folder is retained on disk.
+    await mediaSaveStoryboardHandler({
+      projectId: 'partial-save', sceneId: 'scene_01', replaceShotList: true,
+      shots: [{ shotId: 'shot_001' }, { shotId: 'shot_003' }],
+    }, {} as any);
+    expect(boardIds()).toEqual(['shot_001', 'shot_003']);
+    expect(fs.existsSync(path.join(sceneDir, 'shot_002', 'script.txt'))).toBe(true);
   });
 
   test('MS-4 mixes a saved music bed with measured sidechain ducking, including transition exports', async () => {
