@@ -101,3 +101,16 @@ test('uses the Windows profile boundary when HOME differs', async () => {
     process.env.HOME = home;
   }
 });
+
+test('a filesystem-root profile (D:\\ on Windows, / on POSIX) still indexes a document under it', async () => {
+  const root = path.parse(fixtureRoot).root;
+  process.env.HOME = root;
+  process.env.USERPROFILE = root;
+  try {
+    const allowed = await handlers.rag_index({ path: path.join(home, 'Documents', 'inside.txt') }, {} as any);
+    expect(allowed.success).toBe(true);
+  } finally {
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+  }
+});
