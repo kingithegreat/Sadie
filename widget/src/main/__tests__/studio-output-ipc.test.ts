@@ -76,6 +76,11 @@ test('only the selected retry format crosses job and storyboard IPC, and partial
   expect(result).toMatchObject({ ok: false, error: 'Portrait stopped', moviePath: 'C:/landscape.mp4', jobId: 'review-landscape', variants });
 });
 
+test('the Storyboard Deck save is a complete-scene save, so its deleted shots are removed', async () => {
+  await handlers['homebot:media:storyboard:save']({}, { projectId: 'film', shots: [{ shotId: 'shot_001' }] });
+  expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_save_storyboard', expect.objectContaining({ replaceShotList: true }));
+});
+
 test('storyboard music and encoder choices cross save and render IPC without changing types', async () => {
   await handlers['homebot:media:storyboard:save']({}, {
     projectId: 'film', shots: [], musicEnabled: true, musicVolume: 0.24,
