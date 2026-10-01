@@ -357,6 +357,17 @@ Codex owns bounded FINISH-MCP-SHELL-PROOF-1 follow-up on this branch: prepare no
 
 Follow-up complete; claim released. Controlled cmd/Node actual proof passed 2/2 on first attempt, zero retries, with own identity chain absent after cleanup and fixture exit before native will-quit. No concrete shell-fixture failure, so no product edit. Default npx/network descendants remain unproved. Lane released; evidence .kilo/finish-20260927/mcp-shell-attempt-1-results and tasks/finish-mcp-shutdown-1.md.
 
+## 2026-10-01 NZ - HomeBot finishing takeover (Codex root)
+
+Root owns serial integration, independent evidence review and final build. Three
+existing-agent assignments are complete in docs/FINISHING_AGENT_PROMPTS.md; agent
+identity/receipt remains unconfirmed. Scope and acceptance gaps are recorded in
+docs/FINISHING_HANDOVER.md and the live Drive plan. Main 82c19c4e matches the tested
+#416 tree exactly. Root owns draft #417 review/checksum-oracle correction and the
+separate final package lane until another agent confirms ownership. No competing
+AP editor/generator, shared dependency rebuild, owner-profile replacement or paid
+generation. No full episode or fresh Windows installation acceptance claimed.
+
 ## 2026-09-29 NZ - PR #435 serial integration checkpoint (Codex)
 
 The first-run subscription branch was integrated with main `57df0044` in its isolated worktree. The generated IPC reference was regenerated to retain both voice and subscription methods. Focused first-run/CLI suites passed 55/55, widget typecheck, lint, production build and root docs check passed. Built Windows Electron acceptance used a disposable profile, empty MCP list and local Codex CLI fixture: the Online/ChatGPT choice persisted, the first chat returned the fixture reply, the visible Uncensored control switched off, and the model lock hint disappeared. A first integrated run reached the reply but timed out during Playwright `app.close()`; a same-build local-path close control passed, then the subscription run passed 1/1 with owned PID exit. The cause of the one close timeout is unproved. This is not a real account, packaged-app or installer acceptance. PR #435 stays draft with auto-merge disabled until exact-head required CI and serial merge verification.
