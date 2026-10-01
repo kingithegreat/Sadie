@@ -409,7 +409,7 @@ describe('storyboard export output contract', () => {
     expect(fs.readFileSync(lastGood)).toEqual(before);
     const meta = JSON.parse(fs.readFileSync(path.join(root, 'export-check', 'project.json'), 'utf8'));
     expect(meta.latestSuccessfulOutput.exportId).toBe(first.renderedOutput!.exportId);
-    expect(meta.latestSuccessfulOutput.sha256 || beforeHash).toBeTruthy();
+    expect(meta.latestSuccessfulOutput.sha256).toBe(beforeHash);
     const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
     expect(reopened.renderedMoviePath).toBe(lastGood);
     expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/Injected encoder failure|Movie export failed/i) });

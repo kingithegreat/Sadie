@@ -22,3 +22,21 @@ Full Milestone A owner visual/audio episode acceptance, installer proof, or clos
 ## Opt-in live gate
 
 Real Electron cases require `HOMEBOT_STUDIO_EXPORT_LIVE=1` and installed FFmpeg (`HOMEBOT_FFMPEG`). Ordinary CI still runs the unit checksum harness.
+
+## 2026-10-01 serial review on main 82c19c4e
+
+Merged current main without product changes. The persisted checksum must now equal
+the original movie checksum. A controlled stale checksum passed the former
+`sha256 || beforeHash` oracle and failed the strict oracle as expected. The strict
+file was restored; 64 export-contract cases, widget TypeScript and scoped ESLint
+passed. Local oracle evidence:
+`C:/Users/adenk/.homebot/pr417-integration-20261001/.kilo/checksum-oracle-1790813084924/evidence.json`.
+
+Independent production-built Windows Electron proof on identical main content
+exercised native Sharp/SQLite, real FFmpeg export, failure preservation, restart,
+playback and replacement. Evidence:
+`C:/Users/adenk/Desktop/homebot/.kilo/finish-20261001/built-media-acceptance-a21fe6bc-1790812900687`.
+The whole-clip decoded four-second 720p H.264/AAC contact sheet was inspected.
+This silent geometric fixture proves mechanics, not narrated/creative quality.
+The committed Kokoro live scenario remains unrun: no cached model was found in
+the matching dependency tree. The draft/owner acceptance hold remains in force.
