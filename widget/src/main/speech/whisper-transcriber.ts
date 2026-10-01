@@ -49,18 +49,30 @@ async function loadWhisper(modelId: string, allowDownloads: boolean, onProgress?
   let pending = loading.get(key);
   if (!pending) {
     pending = (async () => {
-      const { pipeline } = require('@huggingface/transformers') as typeof import('@huggingface/transformers');
+      const { WhisperForConditionalGeneration, AutoTokenizer, AutoProcessor, AutomaticSpeechRecognitionPipeline } =
+        require('@huggingface/transformers') as typeof import('@huggingface/transformers');
       let last = -1;
-      const asr = await pipeline('automatic-speech-recognition', modelId, {
+      const options = {
         cache_dir: whisperCacheDir(),
         local_files_only: !allowDownloads,
-        device: 'cpu',
+        device: 'cpu' as const,
         progress_callback: (p: any) => {
           if (p?.status === 'progress' && typeof p.progress === 'number') {
             const percent = Math.round(p.progress);
             if (percent !== last) { last = percent; onProgress?.({ status: 'downloading', percent }); }
           }
         },
+      };
+      // The generic factory discovers files before forwarding cache/consent
+      // options. Load Whisper's known components directly so every file obeys
+      // Online consent, including configuration and download metadata.
+      const [model, tokenizer, processor] = await Promise.all([
+        WhisperForConditionalGeneration.from_pretrained(modelId, options),
+        AutoTokenizer.from_pretrained(modelId, options),
+        AutoProcessor.from_pretrained(modelId, options),
+      ]);
+      const asr = new AutomaticSpeechRecognitionPipeline({
+        task: 'automatic-speech-recognition', model, tokenizer, processor,
       }) as unknown as Asr;
       loaded.set(modelId, asr);
       return asr;

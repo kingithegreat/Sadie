@@ -404,3 +404,15 @@ integration. Real local CLI baseline overwrote an edited title; fixed production
 UI preserves history without requests, retains fresh-reply generation and passes
 restart plus native closes. 108 affected tests/typecheck/lint/docs/build passed.
 See tasks/finish-history-title.md for evidence and retained probe failures.
+
+## 2026-10-01 - FINISH-WHISPER-OFFLINE-1 (Codex)
+
+Codex owns claude/finish-whisper-offline-20261001 from origin/main 12b243e5.
+Scope: remove the generic Transformers factory's unconditional discovery and
+metadata requests from Whisper startup. Actual c46d45eb package transcribed a
+known recording accurately and sent it to real subscription chat, but an
+offline restart attempted Hugging Face config.json despite cache-only consent.
+Own checkout/dependencies/profile/package only. Direct component loading,
+44 affected tests, typecheck, scoped lint and release build pass. Packaged
+offline proof and serial integration remain pending; human utterance is a
+separate acceptance gate. No owner installation or signing.
