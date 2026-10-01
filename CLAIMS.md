@@ -58,20 +58,6 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
-FINISH-KOKORO-CACHE-1 (Codex root, 2026-10-01): owns
-`claude/finish-kokoro-cache-20261001` from fresh main `861c11be` in the isolated
-`C:/Users/adenk/.homebot/finish-kokoro-cache-20261001` worktree. Actual unmodified
-packaged runtime inspection found Kokoro's Transformers cache under read-only
-`resources/app.asar/node_modules/.../.cache`. Scope: pass a writable per-profile
-cache directory to both underlying model/tokenizer loaders, retaining per-load
-Online/cache-only controls. No model downloads, credentials, AP edits or renders.
-Source implementation ready for serial CI/integration: three baseline cache
-regressions reproduced; 28 affected voice cases, separate typecheck, scoped lint,
-docs and release build passed. Six production-built UI/cache/restart stages
-passed with original cache-only loader methods; no weights downloaded. Evidence
-`tasks/finish-kokoro-cache-1.md`. Root owns integration and package refresh; existing
-voice-cancellation work is already merged and held #417 remains separate.
-
 IDE-11 diagnose/fix (Commit Cat 2026-09-24): dirty draft #408 (`codex/ide11-problems-tasks` @ `9b5d86e`) conflicts with main on `CLAIMS.md` only. Prior macOS shard-3 failure on run 35544094688 job 106166830314: Problems row visible (TS2322) but `.ws-tab.active` never showed `broken.ts`; cleanup also hit `ENOTEMPTY` under temp HOME `.npm`. Path-form fix already on #408 (`9b5d86e` raw project click paths). Fresh branch `claude/ide11-problems-diagnose-fix` rebased onto current main with that IDE-11 surface + best-effort temp HOME cleanup; #408 left untouched (no force-push). Held: diagnose reproduced failure only — no IDE-12+.
 
 FINISH-MEDIA-DECODE-1 — Source implementation complete; claim released to root
@@ -163,6 +149,7 @@ DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| ~~FINISH-KOKORO-CACHE-1~~ | claude/finish-kokoro-cache-20261001 | MERGED #454 on main c46d45eb; source claim retired, 2026-10-01 Codex root | All 23 PR-head checks passed, including every required context. Landed full tree equals tested 78877a63. Both model/tokenizer caches use userData/models/kokoro with per-load consent. 28 affected tests and six built plus six actual packaged cache/restart stages pass; 74 compiled files match ASAR bytes. Actual packaged native/export/failure/restart/playback/replacement acceptance passes. No model weights downloaded; successful offline narration and owner A/V remain open. Root owns package delivery; evidence tasks/finish-kokoro-cache-1.md. |
 | n8n Web Fetch existing-workflow guard repair | claude/n8n-webfetch-guard-20260929 | Ready for integration (2026-09-29, Codex; draft PR #436 pending serial queue) | Proven-unprotected HomeBot Web Fetch copies are removed before one guarded replacement; existing guarded, unreadable and no-key copies are not reimported. After activation, an authenticated no-fetch ping must return the expected response before deployment is logged. Negative stale-copy and false-activation regressions failed before their fixes; 72 affected n8n/IPC/guard/schema tests, widget typecheck, lint (0 errors) pass. Live n8n activation remains unverified. |
 | REL-1 / REL-3 — first-run subscription chat setup | claude/finish-first-run-subscriptions-20260928 | Draft PR #435 verified atop #428 (2026-09-28) | Keyless ChatGPT and Claude choices, CLI sign-in feedback, and active provider are verified by fresh-profile Electron fixture; the new subscription save retry preserves #428's single awaited save. #428 merged at `c4940454`. A first rebased E2E run produced the CLI fixture reply but timed out at teardown; after isolating HOME and seeding empty MCP config, one no-retry Electron run passed with owned PID exit. The original isolated worktree disappeared after push (cause unknown); work continues in `.codex-worktrees/rel1-subscription-resume-20260928`. Protected dependency targets were checked intact. Hold draft/auto-merge off until serial queue turn. |
 | ~~HB-M2 — reachable Studio module controls~~ | claude/studio-module-controls | Implementation verified; build claim released — Codex 2026-09-09 | PR #269 includes movie privacy #266 and image artifacts #267. Final Windows checkpoint: 3,867 widget tests (15 existing skipped), all 53 real Electron tests without retries, and preceding unchanged root 227 tests. Typechecks/build/lint/docs/import checks pass. Disable removes navigation/tools and blocks IPC; restart retains the choice/files; enable restores one copy. The measured startup-toast obstruction is fixed and covered by a failing-before/passing-after navigation regression; three fresh profiles open Studio in 386/211/463 ms, within M0 time/memory limits. Evidence and raw before/after samples: docs/STUDIO_MODULE_CONTROLS.md. Current required CI, merge status and integration ownership: https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565. Full M2/media acceptance remains open. |
