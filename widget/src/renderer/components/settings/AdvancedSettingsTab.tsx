@@ -10,6 +10,7 @@ import type { PerfStatSummary } from '../../../shared/types';
 import Tooltip from '../Tooltip';
 import { buildSparkline } from '../../../shared/sparkline';
 import { buildPerfAdvice } from '../../../shared/perf-advice';
+import './AdvancedSettingsTab.css';
 
 export default function AdvancedSettingsTab() {
   const {

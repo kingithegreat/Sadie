@@ -35,7 +35,7 @@ Deliver one reviewable defect PR at a time, relevant checks and actual productio
 
 Your outcome: existing first-run setup, chat/provider selection, settings persistence, voice cancellation, local automation and workspace controls are reachable, have their promised real effects and provide plain actionable failure guidance. n8n is optional for local workflows. Distinguish synthetic routing from an actual configured model response. Use reachability-audit and inspect-the-artifact.
 
-Start with the reproduced Advanced Settings display defect: C:\Users\adenk\Desktop\homebot\.kilo\finish-20261001\built-finishing-a21fe6bc-1790813100549\advanced-settings.png shows p50/p95/average metrics running together. Inspect widget/src/renderer/components/settings/AdvancedSettingsTab.tsx and its styles; make the existing metrics readable at compact and expanded widths. Settings opens in Simple, so exercise the actual route into Advanced. Root's seven-stage built proof already covers credential-free backup, explicit indexing with model permission off, same-prefix sibling denial and owned-index clearing; avoid repeating it absent a fresh concern.
+Root currently owns FINISH-SETTINGS-METRICS-1 for the reproduced Advanced metric collision on claude/finish-settings-metrics-20261001. Choose a different existing everyday-flow defect while that claim is active, and check its landed state before duplicating work. Settings opens in Simple, so exercise the actual route into Advanced. Root's seven-stage built proof already covers credential-free backup, explicit indexing with model permission off, same-prefix sibling denial and owned-index clearing; avoid repeating it absent a fresh concern.
 ```
 
 ## Agent 3: Packaging and release acceptance
