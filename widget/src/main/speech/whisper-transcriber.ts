@@ -12,6 +12,7 @@
 
 import { app } from 'electron';
 import * as path from 'path';
+import { existsSync } from 'fs';
 import { getSettings } from '../config-manager';
 import { resolveCloudLLM } from '../../shared/cloud-llm';
 
@@ -52,6 +53,13 @@ async function loadWhisper(modelId: string, allowDownloads: boolean, onProgress?
       const { WhisperForConditionalGeneration, AutoTokenizer, AutoProcessor, AutomaticSpeechRecognitionPipeline } =
         require('@huggingface/transformers') as typeof import('@huggingface/transformers');
       let last = -1;
+      // Tokenizer/processor discovery also omits loader options in Transformers
+      // 4.2. An absolute local directory keeps those nested reads local too.
+      const modelSource = allowDownloads ? modelId : path.join(whisperCacheDir(), modelId);
+      if (!allowDownloads && ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'preprocessor_config.json']
+        .some(file => !existsSync(path.join(modelSource, file)))) {
+        throw new Error('local_files_only: voice model was not found locally');
+      }
       const options = {
         cache_dir: whisperCacheDir(),
         local_files_only: !allowDownloads,
@@ -67,9 +75,9 @@ async function loadWhisper(modelId: string, allowDownloads: boolean, onProgress?
       // options. Load Whisper's known components directly so every file obeys
       // Online consent, including configuration and download metadata.
       const [model, tokenizer, processor] = await Promise.all([
-        WhisperForConditionalGeneration.from_pretrained(modelId, options),
-        AutoTokenizer.from_pretrained(modelId, options),
-        AutoProcessor.from_pretrained(modelId, options),
+        WhisperForConditionalGeneration.from_pretrained(modelSource, options),
+        AutoTokenizer.from_pretrained(modelSource, options),
+        AutoProcessor.from_pretrained(modelSource, options),
       ]);
       const asr = new AutomaticSpeechRecognitionPipeline({
         task: 'automatic-speech-recognition', model, tokenizer, processor,

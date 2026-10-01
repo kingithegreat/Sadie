@@ -4,6 +4,8 @@ const mockProcessor = jest.fn();
 const mockFactory = jest.fn();
 const mockConstruct = jest.fn();
 const mockAsr = jest.fn();
+const mockExists = jest.fn();
+jest.mock('fs', () => ({ ...jest.requireActual('fs'), existsSync: (...args: unknown[]) => mockExists(...args) }));
 jest.mock('@huggingface/transformers', () => ({
   pipeline: (...args: unknown[]) => mockFactory(...args),
   WhisperForConditionalGeneration: { from_pretrained: (...args: unknown[]) => mockModel(...args) },
@@ -20,6 +22,7 @@ import { toFloat32 } from '../speech/whisper-ipc';
 const audio = new Float32Array(16_000);
 beforeEach(() => {
   __resetWhisperForTests(); jest.clearAllMocks();
+  mockExists.mockReset().mockReturnValue(true);
   mockModel.mockReset().mockResolvedValue({ kind: 'model' });
   mockTokenizer.mockReset().mockResolvedValue({ kind: 'tokenizer' });
   mockProcessor.mockReset().mockResolvedValue({ kind: 'processor' });
@@ -45,7 +48,14 @@ test('Online off loads every component cache-only and a missing model explains s
   mockModel.mockRejectedValueOnce(new Error('`local_files_only=true` or `env.allowRemoteModels=false` and file was not found locally at "x/config.json".'));
   await expect(transcribeWithWhisper({ modelId: 'Xenova/whisper-tiny.en', audio })).rejects.toThrow('The voice model (whisper-tiny.en) downloads once. Turn on Online in Settings and try again — after that, voice works offline.');
   for (const loader of [mockModel, mockTokenizer, mockProcessor]) expect(loader.mock.calls[0][1]).toMatchObject({ local_files_only: true });
+  for (const loader of [mockModel, mockTokenizer, mockProcessor]) expect(loader.mock.calls[0][0]).toBe(path.join(whisperCacheDir(), 'Xenova/whisper-tiny.en'));
   expect(mockFactory).not.toHaveBeenCalled();
+});
+test('an incomplete offline cache explains setup before tokenizer discovery', async () => {
+  mockSettings = { useCustomLLM: false };
+  mockExists.mockReturnValue(false);
+  await expect(transcribeWithWhisper({ modelId: 'Xenova/whisper-base.en', audio })).rejects.toThrow('Turn on Online in Settings');
+  for (const loader of [mockModel, mockTokenizer, mockProcessor]) expect(loader).not.toHaveBeenCalled();
 });
 test('a failed component can be retried instead of retaining a rejected load', async () => {
   mockTokenizer.mockRejectedValueOnce(new Error('fetch failed'));
