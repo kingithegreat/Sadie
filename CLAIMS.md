@@ -58,6 +58,20 @@ preserved; this note corrects attribution without rewriting another worktree.
 
 ## Active claims
 
+FINISH-KOKORO-CACHE-1 (Codex root, 2026-10-01): owns
+`claude/finish-kokoro-cache-20261001` from fresh main `861c11be` in the isolated
+`C:/Users/adenk/.homebot/finish-kokoro-cache-20261001` worktree. Actual unmodified
+packaged runtime inspection found Kokoro's Transformers cache under read-only
+`resources/app.asar/node_modules/.../.cache`. Scope: pass a writable per-profile
+cache directory to both underlying model/tokenizer loaders, retaining per-load
+Online/cache-only controls. No model downloads, credentials, AP edits or renders.
+Source implementation ready for serial CI/integration: three baseline cache
+regressions reproduced; 28 affected voice cases, separate typecheck, scoped lint,
+docs and release build passed. Six production-built UI/cache/restart stages
+passed with original cache-only loader methods; no weights downloaded. Evidence
+`tasks/finish-kokoro-cache-1.md`. Root owns integration and package refresh; existing
+voice-cancellation work is already merged and held #417 remains separate.
+
 IDE-11 diagnose/fix (Commit Cat 2026-09-24): dirty draft #408 (`codex/ide11-problems-tasks` @ `9b5d86e`) conflicts with main on `CLAIMS.md` only. Prior macOS shard-3 failure on run 35544094688 job 106166830314: Problems row visible (TS2322) but `.ws-tab.active` never showed `broken.ts`; cleanup also hit `ENOTEMPTY` under temp HOME `.npm`. Path-form fix already on #408 (`9b5d86e` raw project click paths). Fresh branch `claude/ide11-problems-diagnose-fix` rebased onto current main with that IDE-11 surface + best-effort temp HOME cleanup; #408 left untouched (no force-push). Held: diagnose reproduced failure only — no IDE-12+.
 
 FINISH-MEDIA-DECODE-1 — Source implementation complete; claim released to root
