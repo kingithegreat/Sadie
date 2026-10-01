@@ -700,8 +700,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     try {
       const convData = await window.electron.getConversation?.(id);
       if (convData?.success && convData.data) {
-        setConversationId(id);
-        setConversationSystemPrompt(convData.data.systemPrompt || '');
         await window.electron.setActiveConversation?.(id);
 
         // Convert stored messages to ChatMessage format
@@ -713,6 +711,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           streamingState: (m.streamingState as any) || undefined,
           error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
         }));
+        // Viewing a saved reply must preserve its title without another model call.
+        // A conversation with no completed reply can still get its first title.
+        if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
+          (!m.streamingState || m.streamingState === 'finished'))) {
+          titleGeneratedRef.current.add(id);
+        }
+        setConversationId(id);
+        setConversationSystemPrompt(convData.data.systemPrompt || '');
         setMessages(loadedMsgs);
 
         // Scroll to the target message after render

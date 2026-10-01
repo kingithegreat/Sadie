@@ -387,3 +387,19 @@ row and no overflow. Screenshots inspected, native close passed. Production buil
 TypeScript, scoped ESLint, docs sync and six existing tests passed. Root owns
 serial review/CI/landed-content check and package refresh. Evidence and retained
 initial resize-probe failure are in tasks/finish-settings-metrics.md.
+
+## 2026-10-01 NZ - FINISH-HISTORY-TITLE-1 (Codex root)
+
+Root owns claude/finish-history-title-20261001 from fresh main 17c5a541.
+Actual packaged ChatGPT reply survived restart, but selecting its saved sidebar
+row spawned another title request. Scope: suppress title regeneration when
+loading history, preserve saved titles/messages and fresh-reply title generation.
+Use a local CLI fixture for further verification; no further account calls are
+needed. Agent 2 should choose another defect. Root retains serial package lane.
+Metrics #452 is landed; all required checks passed and tested contents match main.
+
+FINISH-HISTORY-TITLE-1 verified locally; implementation claim released to root
+integration. Real local CLI baseline overwrote an edited title; fixed production
+UI preserves history without requests, retains fresh-reply generation and passes
+restart plus native closes. 108 affected tests/typecheck/lint/docs/build passed.
+See tasks/finish-history-title.md for evidence and retained probe failures.
