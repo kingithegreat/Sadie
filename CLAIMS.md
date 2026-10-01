@@ -360,3 +360,12 @@ Follow-up complete; claim released. Controlled cmd/Node actual proof passed 2/2 
 ## 2026-09-29 NZ - PR #435 serial integration checkpoint (Codex)
 
 The first-run subscription branch was integrated with main `57df0044` in its isolated worktree. The generated IPC reference was regenerated to retain both voice and subscription methods. Focused first-run/CLI suites passed 55/55, widget typecheck, lint, production build and root docs check passed. Built Windows Electron acceptance used a disposable profile, empty MCP list and local Codex CLI fixture: the Online/ChatGPT choice persisted, the first chat returned the fixture reply, the visible Uncensored control switched off, and the model lock hint disappeared. A first integrated run reached the reply but timed out during Playwright `app.close()`; a same-build local-path close control passed, then the subscription run passed 1/1 with owned PID exit. The cause of the one close timeout is unproved. This is not a real account, packaged-app or installer acceptance. PR #435 stays draft with auto-merge disabled until exact-head required CI and serial merge verification.
+
+## 2026-10-01 NZ - FINISH-SETTINGS-METRICS-1 (Codex root)
+
+Root owns claude/finish-settings-metrics-20261001 from main 82c19c4e for the
+reproduced Advanced Diagnostics metric collision. Existing perf classes have no
+CSS definitions. Scope: scoped responsive styles only, real built-UI baseline and
+narrow/wide visual verification; no telemetry logic, provider or AP changes.
+Agent 2 should choose a different existing everyday-flow defect while root holds
+this claim. Shared dependency targets and owner profiles remain untouched.
