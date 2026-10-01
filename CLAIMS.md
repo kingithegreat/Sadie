@@ -380,3 +380,10 @@ CSS definitions. Scope: scoped responsive styles only, real built-UI baseline an
 narrow/wide visual verification; no telemetry logic, provider or AP changes.
 Agent 2 should choose a different existing everyday-flow defect while root holds
 this claim. Shared dependency targets and owner profiles remain untouched.
+
+FINISH-SETTINGS-METRICS-1 verified locally: old built renderer reproduced zero
+badge spacing; fixed narrow/wide viewports show 8px separation, a separate summary
+row and no overflow. Screenshots inspected, native close passed. Production build,
+TypeScript, scoped ESLint, docs sync and six existing tests passed. Root owns
+serial review/CI/landed-content check and package refresh. Evidence and retained
+initial resize-probe failure are in tasks/finish-settings-metrics.md.
