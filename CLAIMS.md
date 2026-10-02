@@ -413,6 +413,11 @@ metadata requests from Whisper startup. Actual c46d45eb package transcribed a
 known recording accurately and sent it to real subscription chat, but an
 offline restart attempted Hugging Face config.json despite cache-only consent.
 Own checkout/dependencies/profile/package only. Direct component loading,
-44 affected tests, typecheck, scoped lint and release build pass. Packaged
-offline proof and serial integration remain pending; human utterance is a
+44 affected tests, typecheck, scoped lint and release build pass. The rebuilt
+package passed the packaged offline proof on 2026-10-02: the pre-fix package
+reproduced the regression with one controlled config.json request, and the fixed
+package returned the exact transcript with zero controlled fetches and every
+component loaded cache-only (evidence
+.kilo/whisper-offline-package-proof-1790915933557/evidence.json). Serial
+integration remains pending; human utterance is a
 separate acceptance gate. No owner installation or signing.

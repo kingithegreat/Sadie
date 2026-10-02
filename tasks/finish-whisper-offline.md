@@ -15,7 +15,19 @@ with the same explicit writable cache and consent options, then construct the
 real AutomaticSpeechRecognitionPipeline. No global library settings are changed.
 
 Local checks: five affected suites, 44 tests; TypeScript; scoped ESLint; release
-build all passed. Actual packaged offline acceptance is pending.
+build all passed.
+
+The rebuilt package then passed the packaged offline proof on 2026-10-02. The
+pre-fix package reproduced the regression: with Online off it issued one
+controlled request for
+https://huggingface.co/Xenova/whisper-base.en/resolve/main/config.json and
+failed. The fixed package returned the exact known transcript with zero
+controlled fetches, and WhisperForConditionalGeneration, AutoTokenizer and
+AutoProcessor all loaded from the writable profile cache under local_files_only.
+Evidence: C:/Users/adenk/.homebot/.kilo/whisper-offline-package-proof-1790915933557/evidence.json
+(earlier retained failure: C:/Users/adenk/.homebot/.kilo/whisper-offline-package-proof-1790852479112/evidence.json).
+The fixed branch was then merged with main (e057b39e); serial integration
+remains pending.
 
 Retained baseline evidence under C:/Users/adenk/.homebot/.kilo:
 - packaged-voice-reply-1790846023464/evidence.json: online path succeeded;
