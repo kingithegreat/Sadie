@@ -405,6 +405,23 @@ UI preserves history without requests, retains fresh-reply generation and passes
 restart plus native closes. 108 affected tests/typecheck/lint/docs/build passed.
 See tasks/finish-history-title.md for evidence and retained probe failures.
 
+## 2026-10-01 - FINISH-WHISPER-OFFLINE-1 (Codex)
+
+Codex owns claude/finish-whisper-offline-20261001 from origin/main 12b243e5.
+Scope: remove the generic Transformers factory's unconditional discovery and
+metadata requests from Whisper startup. Actual c46d45eb package transcribed a
+known recording accurately and sent it to real subscription chat, but an
+offline restart attempted Hugging Face config.json despite cache-only consent.
+Own checkout/dependencies/profile/package only. Direct component loading,
+44 affected tests, typecheck, scoped lint and release build pass. The rebuilt
+package passed the packaged offline proof on 2026-10-02: the pre-fix package
+reproduced the regression with one controlled config.json request, and the fixed
+package returned the exact transcript with zero controlled fetches and every
+component loaded cache-only (evidence
+.kilo/whisper-offline-package-proof-1790915933557/evidence.json). Serial
+integration remains pending; human utterance is a
+separate acceptance gate. No owner installation or signing.
+
 ## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — draft ready, root integration
 
 Codex plan-gap agent owns the bounded Code save-snapshot correction on
