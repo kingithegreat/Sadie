@@ -223,7 +223,9 @@ export default function WorkspaceShell({
     if (!active) return;
     const res = await api?.workspaceSave?.(active.path, active.content);
     if (res?.success) {
-      setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, original: f.content } : f)));
+      // The write contains this snapshot. Edits made while its reply is pending
+      // still need saving; marking the latest text clean would silently lose them.
+      setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, original: active.content } : f)));
       setStatus(`Saved ${active.name}`);
       window.setTimeout(() => setStatus(s => (s === `Saved ${active.name}` ? null : s)), 2000);
     } else {

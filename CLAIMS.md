@@ -421,3 +421,19 @@ component loaded cache-only (evidence
 .kilo/whisper-offline-package-proof-1790915933557/evidence.json). Serial
 integration remains pending; human utterance is a
 separate acceptance gate. No owner installation or signing.
+
+## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — draft ready, root integration
+
+Codex plan-gap agent owns the bounded Code save-snapshot correction on
+`claude/finish-save-snapshot-20261002`, draft PR #458. A save acknowledgement
+must mark only the text actually sent clean; edits typed while its reply is
+pending stay unsaved and retain the dirty-tab close prompt. No navigation or
+shortcut-dispatch changes. Based on current main with merged IDE Back #456.
+
+Regression fails before and passes after; three new cases plus affected tests,
+TypeScript, scoped lint, docs and release build passed. Actual built Windows
+Electron proof passed six stages using the unchanged real file-save handler
+with its first reply delayed; screenshot inspected. Evidence, executed counts
+and retained initial probe limitation: `tasks/finish-save-snapshot.md`.
+Implementation is draft ready, not merged or packaged. Root owns current-head
+CI, serial integration, claim retirement and refreshed package verification.
