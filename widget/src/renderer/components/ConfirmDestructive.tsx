@@ -44,9 +44,10 @@ export interface ConfirmDestructiveRequest {
 
 /**
  * Returns `[dialog, confirm]`. Render `dialog`; call `confirm(request)` from the
- * destructive handler.
+ * destructive handler. `confirm(null)` dismisses a pending prompt, as Cancel
+ * would — for a host view that is being hidden while one is open.
  */
-export function useConfirmDestructive(): [ReactNode, (req: ConfirmDestructiveRequest) => void] {
+export function useConfirmDestructive(): [ReactNode, (req: ConfirmDestructiveRequest | null) => void] {
   const [req, setReq] = useState<ConfirmDestructiveRequest | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement | null>(null);
@@ -91,5 +92,5 @@ export function useConfirmDestructive(): [ReactNode, (req: ConfirmDestructiveReq
     </OverlayPortal>
   ) : null;
 
-  return [dialog, setReq as (r: ConfirmDestructiveRequest) => void];
+  return [dialog, setReq];
 }
