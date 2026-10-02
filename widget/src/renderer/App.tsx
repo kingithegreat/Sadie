@@ -238,6 +238,33 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
   const [mode, setMode] = useState<AppMode>('chat');
+  // Where the IDE's Back button returns to: the last view of the main
+  // interface before Code mode was entered. Chat is the app's starting view.
+  const modeBeforeCodeRef = useRef<AppMode>('chat');
+  useEffect(() => {
+    if (mode !== 'code') modeBeforeCodeRef.current = mode;
+  }, [mode]);
+  // Code mode and the header Workspace button show ONE WorkspaceShell. It is
+  // mounted on first use and then only hidden, never unmounted, so leaving
+  // the IDE keeps its open tabs and unsaved edits for when the user returns.
+  const workspaceVisible = mode === 'code' || workspaceOpen;
+  const [workspaceEverShown, setWorkspaceEverShown] = useState(false);
+  useEffect(() => {
+    if (workspaceVisible) setWorkspaceEverShown(true);
+  }, [workspaceVisible]);
+  const workspaceMounted = workspaceEverShown || workspaceVisible;
+  const leaveWorkspaceBack = useCallback(() => {
+    setWorkspaceOpen(false);
+    setMode(current => (current === 'code' ? modeBeforeCodeRef.current : current));
+  }, []);
+  const leaveWorkspaceToChat = useCallback(() => {
+    setWorkspaceOpen(false);
+    setMode(current => (current === 'code' ? 'chat' : current));
+  }, []);
+  const leaveWorkspaceHome = useCallback(() => {
+    setWorkspaceOpen(false);
+    setMode('dashboard');
+  }, []);
   const moduleState = useModules();
   const moduleViews = registeredModuleViews(moduleState.modules);
   const ActiveModuleView = moduleViews.find(view => view.id === mode)?.Component;
@@ -1599,14 +1626,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // The Code mode makes it a first-class destination the assistant can
         // navigate to directly, carrying context (e.g. "help me with this repo"
         // opens the workspace pointed at the project root).
-        <Suspense fallback={<div className="mode-loading">Loading...</div>}>
-          <WorkspaceShell
-            open={true}
-            onClose={() => setMode('chat')}
-            onHome={() => setMode('dashboard')}
-            navContext={navContext}
-          />
-        </Suspense>
+        //
+        // It is rendered once, below, shared with the header Workspace button
+        // and kept mounted so leaving Code mode does not discard unsaved edits.
+        // It portals over the whole window, so this branch renders nothing.
+        null
       ) : mode === 'browser' ? (
         // The same panel the Workspace uses. It was reachable only by opening
         // the Workspace and finding an icon in its activity bar — two levels
@@ -1682,18 +1706,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       </Suspense>
 
       {/* Workspace — VS Code-shaped IDE: Explorer, tabbed editor, docked terminal */}
-      {workspaceOpen && (
-        <Suspense fallback={null}>
-                    {/* The header Workspace button opens this overlay independently of the
-              mode bar's Code button. Carrying navContext keeps the two entry
-              points consistent: a handoff that rooted the shell on a repo
+      {workspaceMounted && (
+        <Suspense fallback={workspaceVisible ? <div className="mode-loading">Loading...</div> : null}>
+                    {/* One shell for both entry points: the mode bar's Code button and
+              the header Workspace button. Carrying navContext keeps the two
+              consistent: a handoff that rooted the shell on a repo
               ("help me with this repo") must survive the header-open path too.
               Dropping navContext here makes Code mode reach the same
-              dead-end-on-second-handoff class the bootstrap effect guards. */ }
+              dead-end-on-second-handoff class the bootstrap effect guards.
+              `open` only hides it; staying mounted is what preserves edits. */ }
           <WorkspaceShell
-            open={workspaceOpen}
-            onClose={() => setWorkspaceOpen(false)}
-            onHome={() => { setWorkspaceOpen(false); setMode('dashboard'); }}
+            open={workspaceVisible}
+            onClose={leaveWorkspaceToChat}
+            onHome={leaveWorkspaceHome}
+            onBack={leaveWorkspaceBack}
             navContext={navContext}
           />
         </Suspense>

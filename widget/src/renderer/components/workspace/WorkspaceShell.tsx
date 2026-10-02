@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useConfirmDestructive } from '../ConfirmDestructive';
 import { createPortal } from 'react-dom';
 import Icon from '../Icon';
@@ -37,15 +37,54 @@ type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 
+/**
+ * Focus targets that own Escape themselves. CodeMirror's content is a
+ * contenteditable DIV, not a textarea, so a tag check alone let Escape inside
+ * the editor (closing autocomplete, collapsing a multi-cursor selection, the
+ * find panel's buttons) leave the whole workspace.
+ */
+const ESCAPE_OWNING_FOCUS = 'input, textarea, select, [contenteditable="true"], .cm-editor';
+
+/**
+ * Overlays that can sit above the workspace and close on Escape. Most mark
+ * themselves aria-modal; the tool-approval and shortcuts overlays do not, and
+ * they listen on window after this shell does, so they are named here.
+ */
+const ESCAPE_OWNING_OVERLAY = '[aria-modal="true"], .confirmation-overlay, .shortcuts-overlay';
+
+/**
+ * Whether a keydown is the workspace's "go back" Escape rather than one meant
+ * for the editor, a field, or a dialog on top. Exported for tests.
+ */
+export function isWorkspaceBackEscape(e: KeyboardEvent): boolean {
+  if (e.key !== 'Escape' || e.defaultPrevented) return false;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return false;
+  const target = e.target as Element | null;
+  if (target && typeof target.closest === 'function' && target.closest(ESCAPE_OWNING_FOCUS)) return false;
+  if (document.querySelector(ESCAPE_OWNING_OVERLAY)) return false;
+  return true;
+}
+
 export default function WorkspaceShell({
   open,
   onClose,
   onHome,
+  onBack,
   navContext,
 }: {
+  /**
+   * Visibility, not lifetime. While `open` is false the shell renders nothing
+   * but keeps its state, so a parent that keeps it mounted (App does) gets the
+   * same tabs and unsaved edits back when the user returns.
+   */
   open: boolean;
   onClose: () => void;
   onHome?: () => void;
+  /**
+   * The header Back button and Escape: return to wherever the user came from
+   * in the main HomeBot interface. Falls back to onClose.
+   */
+  onBack?: () => void;
   /**
    * Context handed over when the assistant sent the user here with
    * navigate_to_mode. Only `path` means anything: a directory becomes the
@@ -74,6 +113,11 @@ export default function WorkspaceShell({
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
   const dirty = active ? active.content !== active.original : false;
+  const back = onBack ?? onClose;
+  // The navContext object each handoff arrived in, once applied. The shell now
+  // outlives leaving the view, so re-opening it must not re-apply the same
+  // handoff and pull focus off the tab the user was actually working in.
+  const appliedHandoffRef = useRef<Record<string, unknown> | null>(null);
 
   const openFile = useCallback(async (path: string, line?: number) => {
     // Already open? Just focus its tab — never reload over unsaved edits.
@@ -147,12 +191,14 @@ export default function WorkspaceShell({
     typeof navContext?.path === 'string' ? navContext.path.trim() : '';
   useEffect(() => {
     if (!open || !ctxPath) return;
+    if (navContext && appliedHandoffRef.current === navContext) return;
     let cancelled = false;
     (async () => {
       // If the handoff's path is a directory we could live under, adopt it
       // (per-field guard — `prev => prev || ctxPath` keeps an existing root).
       const asDir = await api?.workspaceList?.(ctxPath);
       if (cancelled) return;
+      appliedHandoffRef.current = navContext ?? null;
       if (asDir?.success) {
         setRoot(prev => prev || (asDir.path || ctxPath));
         return;
@@ -162,7 +208,7 @@ export default function WorkspaceShell({
       void openFile(ctxPath);
     })();
     return () => { cancelled = true; };
-  }, [open, ctxPath, api, openFile]);
+  }, [open, ctxPath, navContext, api, openFile]);
 
 
   const closeTab = useCallback((path: string) => {
@@ -216,19 +262,22 @@ export default function WorkspaceShell({
         setSideView('search');
         setSearchFocusToken(t => t + 1);
       }
-      // Escape leaves the workspace. "Back to chat" sits at the bottom of the
-      // activity bar, so it is the first thing to disappear if the layout ever
-      // overflows again — and the workspace covers the mode tabs, which were
-      // the only other way out. A keyboard path cannot be clipped off-screen.
-      // Ignored while editing so it can't discard a half-typed line.
-      if (e.key === 'Escape' && !dirty) {
-        const tag = (e.target as HTMLElement | null)?.tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') { e.preventDefault(); onClose(); }
-      }
+      // Escape is the header Back button's keyboard path: the workspace covers
+      // the mode tabs, and a keyboard path cannot be clipped off-screen. It no
+      // longer refuses while a file is dirty, because leaving keeps the shell's
+      // state (see `open`) — nothing is discarded. It still never takes Escape
+      // from the editor, a field or a dialog on top (isWorkspaceBackEscape).
+      if (isWorkspaceBackEscape(e)) { e.preventDefault(); back(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, save, dirty, onClose]);
+  }, [open, save, back]);
+
+  // A pending "close without saving?" prompt must not outlive the view: while
+  // hidden it would still swallow the next Escape pressed anywhere in the app.
+  useEffect(() => {
+    if (!open) confirm(null);
+  }, [open, confirm]);
 
   if (!open) return null;
 
@@ -386,6 +435,23 @@ export default function WorkspaceShell({
 
       {/* Editor area */}
       <main className="ws-main">
+        {/* The way back to the main HomeBot interface, at the top where people
+            look for it. The status-bar Home and the activity-bar chat icon sit
+            along the bottom edge and were not found. Open tabs and unsaved
+            edits survive the trip (see `open`). */}
+        <div className="ws-header">
+          <button
+            type="button"
+            className="ws-header-back"
+            onClick={back}
+            title="Back to HomeBot (Esc)"
+            aria-label="Back to HomeBot"
+          >
+            <span aria-hidden="true">←</span>
+            Back
+          </button>
+          <span className="ws-header-root" title={root}>{baseName(root) || root}</span>
+        </div>
         <div className="ws-tabs" role="tablist" aria-label="Open files">
           {files.length === 0 && <div className="ws-tabs-empty">No file open</div>}
           {files.map(f => (
@@ -399,10 +465,10 @@ export default function WorkspaceShell({
             >
               <span className="ws-tab-name">{f.name}</span>
               {f.content !== f.original && <span className="ws-tab-dirty" aria-label="Unsaved changes">●</span>}
-              {/* The ● beside the name already says "unsaved", and Escape
-                  already refuses to leave the workspace while dirty — but this
-                  ✕ closed the tab regardless, discarding edits to a real file
-                  on one click. Only asks when there is something to lose. */}
+              {/* The ● beside the name already says "unsaved" — but this ✕
+                  closed the tab regardless, discarding edits to a real file
+                  on one click. Only asks when there is something to lose.
+                  (Leaving the workspace keeps tabs, so it needs no prompt.) */}
               <button
                 type="button"
                 className="ws-tab-close"
