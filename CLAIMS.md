@@ -419,7 +419,8 @@ reproduced the regression with one controlled config.json request, and the fixed
 package returned the exact transcript with zero controlled fetches and every
 component loaded cache-only (evidence
 .kilo/whisper-offline-package-proof-1790915933557/evidence.json). Serial
-integration remains pending; human utterance is a
+integration is complete: MERGED as #457 into main 4c78098f on 2026-10-02, so the
+claim is released. Human utterance remains a
 separate acceptance gate. No owner installation or signing.
 
 ## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — draft ready, root integration
