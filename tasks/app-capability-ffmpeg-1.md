@@ -58,8 +58,8 @@ and commit, renderer/neutral resolver identity, and both real probe bounds.
 The original precommit proof remains preserved; its baseline source-head label
 does not claim that the later commit was already checked out.
 
-Cloud checks for the corrected commit must complete before integration. This
-draft PR remains under root review with automatic merging disabled.
+The corrected commit was held as a draft under root review with automatic
+merging disabled while its cloud checks ran. Final integration is recorded below.
 
 After the Code view-state PR #463 landed as `9613c7c766c75396deefb2b9be07507c61bbf35d`,
 this published branch was refreshed by a normal merge, preserving history.
@@ -70,7 +70,8 @@ unchanged from reviewed `e8d625f`. The merged tree passes 11 widget suites /
 scoped ESLint for both areas, docs drift and whitespace checks. Retained logs
 are `main9613-merged-*` under `.kilo/evidence`; a separate exact merged-head
 `ffmpeg-integrated-real-source-proof-<head>.json` preserves the refreshed CLI
-proof without rewriting older receipts. Fresh merged-head CI remains required.
+proof without rewriting older receipts. The fresh merged-head CI subsequently
+completed as recorded below.
 
 Dependencies are a read-only junction to the root-owned private integration
 tree after four manifests/locks matched exactly. No dependency installation,
@@ -78,3 +79,40 @@ native rebuild, Electron GUI, package build, media render, download, provider
 request, owner-profile change or merge was performed. Source-level execution
 and real FFmpeg CLI behavior are proved; refreshed built/package/installer
 acceptance remains separate. Root owns integration and delivery.
+
+## Source completion and separate delivery hold
+
+Root merged [PR #462](https://github.com/kingithegreat/Sadie/pull/462) at
+`c2ea3121b10eded032062586ad4162f6229edef4` on 2026-10-03T07:35:14Z.
+The reviewed head was `9072151c09bb520c5c2fcdcdde30f0f7f500e751`.
+An exit-0 complete-tree comparison and identical tree object
+`85f9e56845aa3b7ce27b59c763247ed27636b8ac` prove that the reviewed content landed.
+The retained receipt is `.kilo/evidence/pr462-landed-provenance.json` in the
+private `pro-reliability-20261003` worktree. The APP-CAPABILITY-FFMPEG-1 source
+claim is retired; this documentation follow-up contains no production changes.
+
+All 23 final-head check contexts succeeded, including both build contexts.
+All six live strict required contexts were present and green: build,
+duplicate-export-guard, ESLint (React Hooks), Permissions smoke test, widget
+and e2e-all. The nine OS shard jobs actually executed their E2E step successfully
+in [the final matrix run](https://github.com/kingithegreat/Sadie/actions/runs/37105562423).
+This does not mean all tests passed on their first attempt. Windows shard 1's
+media-feed case failed its initial execution and retry 1, then passed retry 2;
+whole attempt 1 nevertheless exited 1. The existing workflow's whole attempt 2
+completed 24 passed and exited 0. No retry policy or gate was changed here.
+
+The final reviewed source also retains the integrated 143 widget tests
+(97 FFmpeg + 46 Code), 8 root boundary tests, TypeScript, scoped ESLint, docs
+and whitespace results. The exact-head real-CLI proof is
+`.kilo/evidence/ffmpeg-integrated-real-source-proof-9072151c09bb520c5c2fcdcdde30f0f7f500e751.json`.
+Earlier failed logs and source proof receipts remain unchanged.
+
+Refreshed current-main package acceptance is still pending the standing
+5 GiB disk / 2 GiB RAM resource gate. At 2026-10-03T07:36:05.841Z the guarded
+invocation rejected 4.736400604 GiB disk headroom before launching any child;
+RAM then passed at 2.201671600 GiB. The later 07:37:46.946Z read-only snapshot
+reported 4.734916687 GiB disk and 1.981899261 GiB RAM, with no helper lock.
+No stage or widget/out was allocated. This source completion does not claim a
+refreshed package, GUI proof, installed acceptance or owner-profile change.
+Root retains APP-PACKAGE-REFRESH-2 execution and delivery ownership. External
+claims and the other owner's #461 are preserved.

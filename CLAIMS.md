@@ -508,26 +508,25 @@ No install, shared native rebuild, owner profile change or new package is claime
 
 ## 2026-10-03 — APP-CAPABILITY-FFMPEG-1 (Codex reliability lane)
 
-Codex `/root/release_finish` owns `claude/pro-reliability-ffmpeg-readiness-20261003`
-from fresh main `d22443b1`, private `pro-reliability-20261003`. Scope:
-`widget/src/main/capability-probe.ts`, its FFmpeg regression suite, neutral
-`ffmpeg-resolver.ts` and the compatibility re-export in `media-render.ts`, plus
-this claim and task evidence.
-Align reachable capability diagnosis with
-the existing media resolver's explicit/managed/PATH/portable binary discovery;
-require the selected binary to execute with the bounded version probe.
-No Settings/first-run/Code renderer, AP/image, package/dependency changes,
-GUI, install, provider call or owner-profile mutation. Read-only private
-dependency reuse only; root owns integration and delivery.
+Source claim retired: root merged PR #462 at `c2ea3121b10eded032062586ad4162f6229edef4`
+on 2026-10-03 after reviewing `9072151c09bb520c5c2fcdcdde30f0f7f500e751`.
+Their complete trees are identical (`85f9e56845aa3b7ce27b59c763247ed27636b8ac`);
+the original failed boundary gate and neutral-resolver correction remain recorded
+in `tasks/app-capability-ffmpeg-1.md`. The boundary checker was not weakened.
 
-Held draft PR #462: its initial root build gate rejected the Core-to-Studio
-import. The approved neutral resolver extraction preserves that boundary and
-rendering's existing export/default probe; the checker is unchanged. Six
-regression failures reproduced against unchanged main; corrected root boundary
-suite (8 tests), 4 affected widget suites (97 tests), widget TypeScript, scoped
-ESLint and diff check pass. Actual unchanged FFmpeg CLI source-level A/B:
-with PATH/managed discovery absent, baseline diagnosis is false, fixed is true,
-and Media Studio's resolver selects the same working explicit binary. GUI,
-new package and installed acceptance remain unverified for this change.
-Corrected-head cloud checks and root review are required before integration.
-See `tasks/app-capability-ffmpeg-1.md`; root owns integration and final delivery.
+All 23 final-head check contexts succeeded; all six strict required contexts
+were present and green, and all nine OS shards executed their E2E test step.
+Windows shard 1 needed retries: media-feed failed its initial run and retry 1,
+then passed retry 2; whole attempt 1 still exited 1. Whole attempt 2 completed
+24 passed and exited 0. This records retry-assisted success, not a clean first run.
+Integrated local verification passed 143 widget tests (97 FFmpeg + 46 Code),
+8 root boundary tests, widget TypeScript, scoped ESLint, docs and whitespace
+checks. The separately retained exact-907 source proof uses the real unchanged
+FFmpeg executable and proves baseline false / fixed true diagnosis.
+
+Refreshed package acceptance remains pending. The guarded package invocation
+launched nothing: disk was below 5 GiB; a later resource snapshot also put RAM
+below 2 GiB. No new stage, GUI, cache copy or installer acceptance is claimed.
+This retirement changes only this owned claim and its task; external claims,
+including the other owner's #461, remain untouched. Root owns package execution,
+integration and final delivery; APP-PACKAGE-REFRESH-2 is a separate active lane.
