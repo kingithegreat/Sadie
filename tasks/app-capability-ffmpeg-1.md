@@ -61,6 +61,17 @@ does not claim that the later commit was already checked out.
 Cloud checks for the corrected commit must complete before integration. This
 draft PR remains under root review with automatic merging disabled.
 
+After the Code view-state PR #463 landed as `9613c7c766c75396deefb2b9be07507c61bbf35d`,
+this published branch was refreshed by a normal merge, preserving history.
+Only CLAIMS.md conflicted; both owner sections were preserved. The renderer
+tree is byte-identical to landed main, while the FFmpeg production files are
+unchanged from reviewed `e8d625f`. The merged tree passes 11 widget suites /
+143 tests (97 FFmpeg + 46 Code), the 8 root boundary tests, widget TypeScript,
+scoped ESLint for both areas, docs drift and whitespace checks. Retained logs
+are `main9613-merged-*` under `.kilo/evidence`; a separate exact merged-head
+`ffmpeg-integrated-real-source-proof-<head>.json` preserves the refreshed CLI
+proof without rewriting older receipts. Fresh merged-head CI remains required.
+
 Dependencies are a read-only junction to the root-owned private integration
 tree after four manifests/locks matched exactly. No dependency installation,
 native rebuild, Electron GUI, package build, media render, download, provider

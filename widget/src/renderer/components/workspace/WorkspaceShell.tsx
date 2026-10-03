@@ -3,7 +3,7 @@ import { useConfirmDestructive } from '../ConfirmDestructive';
 import { createPortal } from 'react-dom';
 import Icon from '../Icon';
 import FileTree from './FileTree';
-import CodeEditor from './CodeEditor';
+import CodeEditor, { type CodeEditorSession } from './CodeEditor';
 
 const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // Lazy: the browser panel is off by default, and its first render triggers an
@@ -31,6 +31,7 @@ interface OpenFile {
   content: string;
   original: string;
   language: string;
+  editorSession: CodeEditorSession;
 }
 
 type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
@@ -135,6 +136,7 @@ export default function WorkspaceShell({
       content: res.content ?? '',
       original: res.content ?? '',
       language: res.language || 'plaintext',
+      editorSession: { current: null },
     }]);
     setActivePath(path);
     if (line) setReveal({ path, line });
@@ -500,14 +502,15 @@ export default function WorkspaceShell({
         <div className="ws-editor-area">
           {active ? (
             <CodeEditor
-              // Keyed per file: a search jump into a newly opened tab must land
-              // on its line, and a fresh view per file is also what keeps each
-              // file's undo history its own.
+              // The DOM view is keyed per file, while the tab owns its editor
+              // state so Back and tab switches preserve only that file's undo.
               key={active.path}
+              session={active.editorSession}
               value={active.content}
               language={active.language}
               onSave={save}
               focusLine={reveal && reveal.path === active.path ? reveal.line : undefined}
+              onFocusLineConsumed={() => setReveal(current => current === reveal ? null : current)}
               onChange={(next) =>
                 setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, content: next } : f)))
               }

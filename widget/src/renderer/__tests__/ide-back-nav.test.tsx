@@ -13,6 +13,8 @@
  */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { EditorView } from 'codemirror';
+import { EditorSelection } from '@codemirror/state';
+import { redo, redoDepth, undo, undoDepth } from '@codemirror/commands';
 import App from '../App';
 import WorkspaceShell, { isWorkspaceBackEscape } from '../components/workspace/WorkspaceShell';
 
@@ -149,6 +151,113 @@ describe('IDE Back control (App)', () => {
     expect(api.workspaceRead).toHaveBeenCalledTimes(1);
     expect(api.workspaceSave).not.toHaveBeenCalled();
   });
+
+  test('Back preserves editor selections, scroll, undo and redo with current save handlers', async () => {
+    const api = await renderApp();
+    await enterCode();
+    await openAndEdit();
+    const before = editorView();
+    const edited = before.state.doc.toString();
+    const selection = EditorSelection.create([
+      EditorSelection.range(2, 7), EditorSelection.range(20, 24),
+    ], 1);
+    act(() => { before.dispatch({ selection }); });
+    before.scrollDOM.scrollTop = 120;
+    before.scrollDOM.scrollLeft = 35;
+    expect(undoDepth(before.state)).toBe(1);
+
+    fireEvent.click(backButton());
+    await waitFor(() => expect(shell()).toBeNull());
+    await enterCode();
+    await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull());
+    const restored = editorView();
+    expect(restored.state.selection.toJSON()).toEqual(selection.toJSON());
+    expect(restored.scrollDOM.scrollTop).toBe(120);
+    expect(restored.scrollDOM.scrollLeft).toBe(35);
+    expect(document.querySelector('.code-cursor-pos')).toHaveTextContent('Ln 2, Col 8');
+    expect(undoDepth(restored.state)).toBe(1);
+    act(() => { expect(undo(restored)).toBe(true); });
+    expect(restored.state.doc.toString()).toBe(ORIGINAL);
+    expect(redoDepth(restored.state)).toBe(1);
+
+    // A second Back must preserve a redo stack, not only the undo stack.
+    fireEvent.click(backButton());
+    await waitFor(() => expect(shell()).toBeNull());
+    await enterCode();
+    await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull());
+    act(() => { expect(redo(editorView())).toBe(true); });
+    expect(editorView().state.doc.toString()).toBe(edited);
+    expect(screen.getByLabelText('Unsaved changes')).toBeInTheDocument();
+    act(() => {
+      editorView().contentDOM.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true,
+      }));
+    });
+    await waitFor(() => expect(api.workspaceSave).toHaveBeenCalledWith(FILE, edited));
+    await waitFor(() => expect(screen.queryByLabelText('Unsaved changes')).toBeNull());
+
+    // Closing the file discards its session, including its prior undo history.
+    fireEvent.click(screen.getByRole('button', { name: 'Close notes.ts' }));
+    await waitFor(() => expect(document.querySelector('.cm-editor')).toBeNull());
+    await openNotes();
+    expect(editorView().state.doc.toString()).toBe(ORIGINAL);
+    expect(editorView().state.selection.main.head).toBe(0);
+    expect(undoDepth(editorView().state)).toBe(0);
+  });
+
+  test('each open file retains its own undo history when switching A/B/A', async () => {
+    const api = await renderApp();
+    const otherPath = `${ROOT}/other.ts`;
+    const otherOriginal = 'const other = true;\n';
+    api.workspaceList.mockResolvedValue({ success: true, path: ROOT, entries: [
+      { name: 'notes.ts', path: FILE, isDirectory: false },
+      { name: 'other.ts', path: otherPath, isDirectory: false },
+    ] });
+    api.workspaceRead.mockImplementation(async (path?: string) => ({
+      success: true, content: path === otherPath ? otherOriginal : ORIGINAL, language: 'typescript',
+    }));
+    await enterCode();
+    await openAndEdit();
+    fireEvent.click(await screen.findByRole('treeitem', { name: /other\.ts/ }));
+    await waitFor(() => expect(editorView().state.doc.toString()).toBe(otherOriginal));
+    act(() => {
+      const view = editorView();
+      view.dispatch({ changes: { from: view.state.doc.length, insert: '// B only\n' } });
+    });
+    fireEvent.click(screen.getByRole('tab', { name: /notes\.ts/ }));
+    act(() => { expect(undo(editorView())).toBe(true); });
+    expect(editorView().state.doc.toString()).toBe(ORIGINAL);
+    fireEvent.click(screen.getByRole('tab', { name: /other\.ts/ }));
+    expect(editorView().state.doc.toString()).toBe(`${otherOriginal}// B only\n`);
+    act(() => { expect(undo(editorView())).toBe(true); });
+    expect(editorView().state.doc.toString()).toBe(otherOriginal);
+  });
+
+  test('a consumed search jump stays consumed after Back, but a new same-line result still jumps', async () => {
+    const api = await renderApp();
+    Object.assign(api, { workspaceSearch: jest.fn().mockResolvedValue({
+      success: true, matches: [{ file: 'notes.ts', path: FILE, line: 1, text: ORIGINAL.trim() }],
+    }) });
+    await enterCode();
+    fireEvent.click(screen.getByRole('button', { name: 'Search across files' }));
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Search query' }), { target: { value: 'saved' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run search' }));
+    const searchResult = await screen.findByTestId('ws-search-match-notes.ts-1');
+    fireEvent.click(searchResult);
+    await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull());
+    expect(editorView().state.selection.main.head).toBe(0);
+    act(() => { editorView().dispatch({ selection: { anchor: 7 } }); });
+    fireEvent.click(backButton());
+    await waitFor(() => expect(shell()).toBeNull());
+    await enterCode();
+    await waitFor(() => expect(document.querySelector('.cm-editor')).not.toBeNull());
+    expect(editorView().state.selection.main.head).toBe(7);
+
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Search query' }), { target: { value: 'saved' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Run search' }));
+    fireEvent.click(await screen.findByTestId('ws-search-match-notes.ts-1'));
+    await waitFor(() => expect(editorView().state.selection.main.head).toBe(0));
+  }, 15_000);
 
   test('Escape leaves with a dirty file and the edit survives', async () => {
     await renderApp();

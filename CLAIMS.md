@@ -477,6 +477,35 @@ Source implementation is merged and the claim is retired. Root retains
 refreshed final-package verification; the six built stages are not a new
 package or fresh Windows installation acceptance claim.
 
+## 2026-10-03 FINISH-CODE-VIEW-STATE-1 — locally runtime verified (Codex)
+
+Owner: `/root/remaining_code`, with `/root` owning independent review, runtime
+verification and serial integration. Branch: `claude/finish-code-view-state-20261003`.
+Isolated worktree: `C:/Users/adenk/.homebot/finish-code-view-state-20261003`,
+based on fresh main `d22443b1`. Current Drive master was read on 3 October;
+its later finishing direction permits bounded app defect fixes.
+
+Scope: preserve CodeMirror selection, scroll and undo/redo when visible Back
+closes Code and the user returns. Preserve terminal/browser unmount behavior,
+dirty tabs, save-snapshot semantics and explicit file/line navigation. Regression
+must exercise the actual editor; actual built Electron evidence is required.
+This is a known limitation in the current technical delivery, not new Code scope.
+
+The original actual editor regression failed; the repair passed 46 focused
+tests, widget TypeScript, scoped lint and release build. Independent review found
+no unresolved source issue. Six production-built Windows stages passed actual
+nonzero scroll/cursor/selection restoration, keyboard undo/redo, dirty Close/Cancel,
+real Save with exact bytes, controlled offline transports and native exit.
+The standard built Electron regression passed 1/1 with zero retries. Evidence
+and retained failed-probe limits: `tasks/finish-code-view-state.md`.
+Current-head CI, integration and refreshed package acceptance remain pending.
+
+Other new agents are read-only: `/root/integration_queue` reviews live GitHub
+status; `/root/release_artifact` checks immutable existing package hashes and
+receipts. The other session's documentation PR #461 remains with its owner.
+Existing AP ownership and held #417/#413/#296/#368/#261 lanes are preserved.
+No install, shared native rebuild, owner profile change or new package is claimed.
+
 ## 2026-10-03 — APP-CAPABILITY-FFMPEG-1 (Codex reliability lane)
 
 Codex `/root/release_finish` owns `claude/pro-reliability-ffmpeg-readiness-20261003`
