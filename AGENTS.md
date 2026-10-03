@@ -15,6 +15,11 @@ this repo at the same time, often within minutes of each other. Read this before
 | `docs/FINISHING_HANDOVER.md` | Detailed earlier delivery receipts and ownership history. Its earlier current-source/package checkpoint is superseded by the dated technical snapshot; preserve its evidence and its owner's active edits. |
 | `C:\Users\adenk\Documents\Brain\Ai-Brain\01_Projects\HomeBot\Plan.md` | Historical project context and earlier tracks. Outside the repo, readable directly; not a competing live queue. |
 
+Older documents that describe themselves as a shared work queue, including
+`USER_TESTING_PLAN.md`'s opening paragraph, are superseded by the Drive master.
+Use their item IDs and acceptance criteria only after the current Drive queue
+assigns that work. Read `docs/CURRENT_STATUS.md` for the dated technical checkpoint.
+
 The vault at `C:\Users\adenk\Documents\Brain\Ai-Brain` is Aden's notes, not repo content. **Read it
 freely; never copy it into the repo** — it holds project history that does not belong in git.
 Useful paths: `01_Projects/HomeBot/` (Plan, Bugs, Decisions, Testing_Log),
