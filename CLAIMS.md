@@ -477,7 +477,7 @@ Source implementation is merged and the claim is retired. Root retains
 refreshed final-package verification; the six built stages are not a new
 package or fresh Windows installation acceptance claim.
 
-## 2026-10-03 FINISH-CODE-VIEW-STATE-1 — locally runtime verified (Codex)
+## 2026-10-03 FINISH-CODE-VIEW-STATE-1 — merged, source claim retired (Codex)
 
 Owner: `/root/remaining_code`, with `/root` owning independent review, runtime
 verification and serial integration. Branch: `claude/finish-code-view-state-20261003`.
@@ -489,7 +489,8 @@ Scope: preserve CodeMirror selection, scroll and undo/redo when visible Back
 closes Code and the user returns. Preserve terminal/browser unmount behavior,
 dirty tabs, save-snapshot semantics and explicit file/line navigation. Regression
 must exercise the actual editor; actual built Electron evidence is required.
-This is a known limitation in the current technical delivery, not new Code scope.
+This corrected a limitation in the earlier `4c78098f` technical delivery; it
+does not reopen held Code features.
 
 The original actual editor regression failed; the repair passed 46 focused
 tests, widget TypeScript, scoped lint and release build. Independent review found
@@ -498,11 +499,17 @@ nonzero scroll/cursor/selection restoration, keyboard undo/redo, dirty Close/Can
 real Save with exact bytes, controlled offline transports and native exit.
 The standard built Electron regression passed 1/1 with zero retries. Evidence
 and retained failed-probe limits: `tasks/finish-code-view-state.md`.
-Current-head CI, integration and refreshed package acceptance remain pending.
+PR [#463](https://github.com/kingithegreat/Sadie/pull/463) merged on 3 October
+as `9613c7c766c75396deefb2b9be07507c61bbf35d`. All 23 checks at reviewed head
+`5a4d3ef07f0fd374e5001e2f56c049a5980128e1` passed, including all six required
+contexts and nine OS shards. The tested and merged full trees compare equal
+(diff exit 0, zero lines). Current main retains the implementation. The source
+claim is retired; refreshed-package acceptance remains with the existing
+root/release_finish packaging lane, `APP-PACKAGE-REFRESH-2`.
 
-Other new agents are read-only: `/root/integration_queue` reviews live GitHub
-status; `/root/release_artifact` checks immutable existing package hashes and
-receipts. The other session's documentation PR #461 remains with its owner.
+At that checkpoint, `/root/integration_queue` reviewed live GitHub status and
+`/root/release_artifact` checked immutable existing package hashes and receipts.
+The other session's documentation PR #461 remains with its owner.
 Existing AP ownership and held #417/#413/#296/#368/#261 lanes are preserved.
 No install, shared native rebuild, owner profile change or new package is claimed.
 
@@ -531,3 +538,30 @@ and Media Studio's resolver selects the same working explicit binary. GUI,
 new package and installed acceptance remain unverified for this change.
 Corrected-head cloud checks and root review are required before integration.
 See `tasks/app-capability-ffmpeg-1.md`; root owns integration and final delivery.
+
+## 2026-10-03 — FINISH-STATUS-REFRESH-1 documentation (Codex)
+
+Owner: `/root/remaining_code`; root owns independent review and publication.
+Branch `claude/finish-status-refresh-20261003` starts from fetched main
+`c2ea3121b10eded032062586ad4162f6229edef4` in its own worktree. The claim was
+published and read back in the canonical Drive master before editing.
+
+Scope: retire this session's Code claim above, correct AGENTS.md's authority
+table, and add `docs/CURRENT_STATUS.md` as a dated technical snapshot. Drive
+remains the only live queue. The new snapshot supersedes earlier Handover
+current-source/package assumptions without rewriting the owner-held Handover.
+Other-owner PR #461 files remain untouched. The FFmpeg claim and task belong
+to the owner of #464 and are preserved unchanged here.
+
+Source main includes merged #463 and #462. The earlier verified `4c78098f`
+package and all historical receipts remain intact; no verified replacement is
+claimed. The existing root/release_finish packaging lane owns
+`APP-PACKAGE-REFRESH-2`; a source-only `c2ea3121` preparation checkpoint was
+observed, while final package verification remains pending. The targeted
+missing-FFmpeg live case passed (1 passed, 5 skipped), and the post-merge P2 was
+not reproduced with installed ts-jest 29.4.5/TypeScript 5.9.3. The FFmpeg owner
+retains thread disposition; this is not full-nightly or package acceptance and
+does not assert that its owner stopped a build or changed a source pin.
+Leila art/rig/episode, human voice/listening, entitled Pro and fresh Windows
+installation acceptance remain owner gates. This documentation lane changes
+no app source, dependencies, package or owner profile.
