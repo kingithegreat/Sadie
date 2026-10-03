@@ -505,3 +505,29 @@ status; `/root/release_artifact` checks immutable existing package hashes and
 receipts. The other session's documentation PR #461 remains with its owner.
 Existing AP ownership and held #417/#413/#296/#368/#261 lanes are preserved.
 No install, shared native rebuild, owner profile change or new package is claimed.
+
+## 2026-10-03 — APP-CAPABILITY-FFMPEG-1 (Codex reliability lane)
+
+Codex `/root/release_finish` owns `claude/pro-reliability-ffmpeg-readiness-20261003`
+from fresh main `d22443b1`, private `pro-reliability-20261003`. Scope:
+`widget/src/main/capability-probe.ts`, its FFmpeg regression suite, neutral
+`ffmpeg-resolver.ts` and the compatibility re-export in `media-render.ts`, plus
+this claim and task evidence.
+Align reachable capability diagnosis with
+the existing media resolver's explicit/managed/PATH/portable binary discovery;
+require the selected binary to execute with the bounded version probe.
+No Settings/first-run/Code renderer, AP/image, package/dependency changes,
+GUI, install, provider call or owner-profile mutation. Read-only private
+dependency reuse only; root owns integration and delivery.
+
+Held draft PR #462: its initial root build gate rejected the Core-to-Studio
+import. The approved neutral resolver extraction preserves that boundary and
+rendering's existing export/default probe; the checker is unchanged. Six
+regression failures reproduced against unchanged main; corrected root boundary
+suite (8 tests), 4 affected widget suites (97 tests), widget TypeScript, scoped
+ESLint and diff check pass. Actual unchanged FFmpeg CLI source-level A/B:
+with PATH/managed discovery absent, baseline diagnosis is false, fixed is true,
+and Media Studio's resolver selects the same working explicit binary. GUI,
+new package and installed acceptance remain unverified for this change.
+Corrected-head cloud checks and root review are required before integration.
+See `tasks/app-capability-ffmpeg-1.md`; root owns integration and final delivery.
