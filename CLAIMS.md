@@ -476,3 +476,24 @@ and retained initial probe limitation: `tasks/finish-save-snapshot.md`.
 Source implementation is merged and the claim is retired. Root retains
 refreshed final-package verification; the six built stages are not a new
 package or fresh Windows installation acceptance claim.
+
+## 2026-10-03 — APP-CAPABILITY-FFMPEG-1 (Codex reliability lane)
+
+Codex `/root/release_finish` owns `claude/pro-reliability-ffmpeg-readiness-20261003`
+from fresh main `d22443b1`, private `pro-reliability-20261003`. Scope:
+`widget/src/main/capability-probe.ts`, its FFmpeg regression suite and a
+comment-only correction in `media-render.ts`, plus this claim and task evidence.
+Align reachable capability diagnosis with
+the existing media resolver's explicit/managed/PATH/portable binary discovery;
+require the selected binary to execute with the bounded version probe.
+No Settings/first-run/Code renderer, AP/image, package/dependency changes,
+GUI, install, provider call or owner-profile mutation. Read-only private
+dependency reuse only; root owns integration and delivery.
+
+Ready for root integration review: six regression failures reproduced against
+unchanged main; final 3 suites/78 tests, widget TypeScript, scoped ESLint and
+diff check pass. Actual unchanged FFmpeg CLI source-level A/B also passes:
+with PATH/managed discovery absent, baseline diagnosis is false, fixed is true,
+and Media Studio's resolver selects the same working explicit binary. GUI,
+new package and installed acceptance remain unverified for this change.
+See `tasks/app-capability-ffmpeg-1.md`; root owns publication and final delivery.

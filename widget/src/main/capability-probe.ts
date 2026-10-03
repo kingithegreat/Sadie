@@ -50,27 +50,20 @@ async function ollamaModelCount(base: string): Promise<number | null> {
  * present for a different architecture, looks identical to a working one until
  * a render fails.
  *
- * TWO locations are checked, because there are two ways to have ffmpeg here.
- * PATH is the system install. The managed copy is the one HomeBot's own
- * one-click setup downloads into userData, and Media Studio renders happily
- * from it. A probe that only asked PATH therefore reported "ffmpeg: not
- * installed" on a machine where setup had completed successfully and rendering
- * worked — the capability existed and nothing asked it the right question.
+ * Use the same discovery as rendering: an explicit portable binary, the
+ * managed install, PATH, then the usual Windows install locations. Otherwise
+ * a working portable installation is incorrectly reported as missing.
  */
 async function ffmpegRunnable(): Promise<boolean> {
-  // PATH first: the common case, and the cheap one.
-  if (await runsVersion('ffmpeg')) return true;
-
-  // Then the managed copy. `findManagedFfmpeg` SEARCHES rather than assuming a
-  // layout, so this keeps working across BtbN's directory renames instead of
-  // going quietly false the next time the zip prefix changes.
+  let managed: string | null = null;
   try {
     const { findManagedFfmpeg } = await import('./ffmpeg-setup');
-    const managed = findManagedFfmpeg();
-    return managed ? await runsVersion(managed) : false;
-  } catch {
-    return false;
-  }
+    managed = findManagedFfmpeg();
+  } catch { /* A managed lookup failure must not hide other working installs. */ }
+  try {
+    const { findFfmpeg } = await import('./media-render');
+    return Boolean(await findFfmpeg(managed, runsVersion));
+  } catch { return false; }
 }
 
 /** Runs `<bin> <args>`. True only if it actually executed. */

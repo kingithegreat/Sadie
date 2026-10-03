@@ -730,8 +730,9 @@ export async function findFfmpeg(
   managedPath?: string | null,
   /**
    * How to decide a binary is usable. Injectable so the search ORDER can be
-   * asserted without needing a real ffmpeg on the test machine — the default is
-   * the real thing, and production never passes this.
+   * asserted without needing a real ffmpeg on the test machine. Capability
+   * checks also supply their bounded runnable probe; rendering uses the real
+   * default probe.
    */
   probe: (bin: string) => Promise<boolean> = canRun,
 ): Promise<string | null> {
