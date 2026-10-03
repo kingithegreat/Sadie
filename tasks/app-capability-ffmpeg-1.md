@@ -107,12 +107,60 @@ and whitespace results. The exact-head real-CLI proof is
 `.kilo/evidence/ffmpeg-integrated-real-source-proof-9072151c09bb520c5c2fcdcdde30f0f7f500e751.json`.
 Earlier failed logs and source proof receipts remain unchanged.
 
-Refreshed current-main package acceptance is still pending the standing
-5 GiB disk / 2 GiB RAM resource gate. At 2026-10-03T07:36:05.841Z the guarded
+At the historical resource-gate checkpoint, refreshed package acceptance was
+pending the standing 5 GiB disk / 2 GiB RAM guard. At
+2026-10-03T07:36:05.841Z the guarded
 invocation rejected 4.736400604 GiB disk headroom before launching any child;
 RAM then passed at 2.201671600 GiB. The later 07:37:46.946Z read-only snapshot
 reported 4.734916687 GiB disk and 1.981899261 GiB RAM, with no helper lock.
-No stage or widget/out was allocated. This source completion does not claim a
-refreshed package, GUI proof, installed acceptance or owner-profile change.
+No stage or widget/out was allocated by that rejected invocation. This source
+completion does not claim a refreshed package, GUI proof, installed acceptance
+or owner-profile change.
 Root retains APP-PACKAGE-REFRESH-2 execution and delivery ownership. External
 claims and the other owner's #461 are preserved.
+
+## Documentation refresh after #465
+
+This retirement is integrated against documentation baseline main
+`2a656bc7315be85acc4ba1e43d84095ae6bdc2d8`. The foreign #465 authority/status
+changes and Code claim are preserved; #461's owner-held files are untouched.
+Only this task and the APP-CAPABILITY-FFMPEG-1 claim differ from that baseline.
+Root/release_finish owns the new source-2a656bc package lane. Its new runtime
+Code/native/Whisper/Kokoro proof and replacement delivery remain pending; the
+earlier delivered 4c78098f package and failed intermediate attempts are retained.
+
+The earlier draft #464 CI at exact `05f714277e63674a59d4b64fdbeb0808418131ae`
+is historical after this refresh. Independent saved-log verification proved
+all 23 successful checks, all six strict required contexts, and actual Build
+widget / Run E2E execution in all nine OS shards: 196 passed and 95 skipped,
+291 declared across the matrix. All nine passed their first outer invocation;
+no internal Retry markers or flaky summaries were observed. Widget workflow
+attempt 3 executed 371 passing unit suites / 4,932 passing tests (11 suites /
+33 tests skipped), a real build, and 14 passing E2E tests. Earlier attempt 2's
+installed-model delete assertion received null at model-delete.test.tsx:68;
+that failed log is retained, and precise scheduling cause is unproved.
+The reviewed head and actual CI synthetic checkout `ee0b9a77` had identical
+full trees `1a2a8f7186cf82735ce0fa582cf36ac1544e5f87`. These checks do not
+transfer to this refreshed head; root must review its fresh exact-head CI.
+Immutable independent receipt:
+`C:/Users/adenk/.homebot/.kilo/pr464-independent-ci-verification-1791016867701.json`.
+
+### Narrow post-merge P2 disposition
+
+The retained #462 review concern
+[P2](https://github.com/kingithegreat/Sadie/pull/462#discussion_r4172181544)
+was not reproduced with installed ts-jest 29.4.5 / TypeScript 5.9.3. The actual
+transformed re-export had a configurable getter; the spy returned null and
+restored the original result, while a deliberately nonconfigurable getter
+produced the claimed failure. The existing selected missing-FFmpeg live case
+passed one test with five skips and exit 0, using `HOMEBOT_LIVE=1` and
+`--forceExit`. It exercised no real FFmpeg/TTS or GUI/package and establishes
+neither full-nightly success nor natural full-suite shutdown.
+
+Receipt and transcripts:
+`C:/Users/adenk/.homebot/integration-audit-20261003/ffmpeg-review-triage/receipt.json`.
+They are retrospective transcriptions from retained tool responses; full raw
+logs and truncated registration noise are unavailable. The source/test hashes
+match this refresh, but no test was rerun by this documentation lane. No source
+correction is warranted by that bounded result. Root retains thread disposition;
+the last recorded thread status was unresolved, not newly cleared here.

@@ -10,8 +10,15 @@ this repo at the same time, often within minutes of each other. Read this before
 | [HomeBot current Drive plan](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) | **The single live priority queue**, per Aden's later instruction: "drive is now the new brain." |
 | `CLAUDE.md` | **The contract.** Non-negotiable operating rules. It overrides this file. |
 | `CLAIMS.md` | **Who is building what right now**, plus rules of the road that changed recently. Read the tail first — newest section is last. |
-| `docs/USER_TESTING_PLAN.md` | **The shared work queue to user testing** (2026-09-17): gates, Media Studio, providers, Code mode vs Cursor, release. Pick items by ID, one item per PR, put the ID in the PR title. |
+| `docs/USER_TESTING_PLAN.md` | Historical testing requirements and acceptance evidence (2026-09-17). Retain its item IDs and done-when criteria; the Drive master alone determines current priorities and ownership. |
+| [`docs/CURRENT_STATUS.md`](docs/CURRENT_STATUS.md) | Dated technical snapshot of current source, verified delivery and remaining verification limits. Read it for source/package freshness; it is not another work queue. |
+| `docs/FINISHING_HANDOVER.md` | Detailed earlier delivery receipts and ownership history. Its earlier current-source/package checkpoint is superseded by the dated technical snapshot; preserve its evidence and its owner's active edits. |
 | `C:\Users\adenk\Documents\Brain\Ai-Brain\01_Projects\HomeBot\Plan.md` | Historical project context and earlier tracks. Outside the repo, readable directly; not a competing live queue. |
+
+Older documents that describe themselves as a shared work queue, including
+`USER_TESTING_PLAN.md`'s opening paragraph, are superseded by the Drive master.
+Use their item IDs and acceptance criteria only after the current Drive queue
+assigns that work. Read `docs/CURRENT_STATUS.md` for the dated technical checkpoint.
 
 The vault at `C:\Users\adenk\Documents\Brain\Ai-Brain` is Aden's notes, not repo content. **Read it
 freely; never copy it into the repo** — it holds project history that does not belong in git.
