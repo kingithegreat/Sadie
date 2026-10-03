@@ -87,6 +87,10 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     const player = page.getByLabel('Exported storyboard video');
     await expect(player).toHaveAttribute('src', /freshness-b/);
     await expect(page.getByText(/Previous successful export.*latest attempt failed/i)).toBeVisible();
+    // Milestone A: last-good bytes must survive the injected failure AND the restart
+    // before owner playback; src must still resolve to the pre-failure movie path.
+    expect(movie('freshness-b')).toBe(movieB);
+    expect(hash(movieB)).toBe(hashB);
     await player.evaluate(async (video: HTMLVideoElement) => { await video.play(); });
     await expect.poll(() => player.evaluate((video: HTMLVideoElement) => video.currentTime)).toBeGreaterThan(0.1);
     expect(hash(movieB)).toBe(hashB);
@@ -131,7 +135,18 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     await expect(page.getByText('Saved source (scene scene_01)')).toBeVisible();
     await page.getByLabel('Export history').selectOption(replacementB);
     await page.getByRole('region', { name: 'Export freshness' }).screenshot({ path: testInfo.outputPath('recovered-b-preview.png'), animations: 'disabled' });
-    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({ profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB), sceneExport, projectA: meta('freshness-a'), projectB: meta('freshness-b'), historicalOpenRevealIpcVerified: true, osLaunchTrapped: true, openFailureVisible: true, reviewWithoutApproval: true }, null, 2));
+    fs.writeFileSync(testInfo.outputPath('freshness-evidence.json'), JSON.stringify({
+      profile, movieA, hashA, movieB, hashB, replacementB, replacementHash: hash(replacementB),
+      sceneExport, projectA: meta('freshness-a'), projectB: meta('freshness-b'),
+      historicalOpenRevealIpcVerified: true, osLaunchTrapped: true, openFailureVisible: true, reviewWithoutApproval: true,
+      // Milestone A / #390: injected corrupt-frame re-render on freshness-b kept movieB
+      // byte-identical through restart + playback; path and sha256 retained for owner review.
+      milestoneALastGoodAfterRestart: true,
+      milestoneAInjectedFailureProject: 'freshness-b',
+      milestoneALastGoodPath: movieB,
+      milestoneALastGoodSha256: hashB,
+      milestoneAPlayableAfterRestart: true,
+    }, null, 2));
   } catch (error) {
     fs.writeFileSync(testInfo.outputPath('failure-surface.json'), JSON.stringify(await page.evaluate(() => ({
       title: document.title, body: document.body.innerText, viewport: { width: innerWidth, height: innerHeight },
