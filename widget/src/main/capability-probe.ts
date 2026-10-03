@@ -61,7 +61,7 @@ async function ffmpegRunnable(): Promise<boolean> {
     managed = findManagedFfmpeg();
   } catch { /* A managed lookup failure must not hide other working installs. */ }
   try {
-    const { findFfmpeg } = await import('./media-render');
+    const { findFfmpeg } = await import('./ffmpeg-resolver');
     return Boolean(await findFfmpeg(managed, runsVersion));
   } catch { return false; }
 }

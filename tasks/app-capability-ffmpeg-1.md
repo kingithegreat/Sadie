@@ -16,10 +16,11 @@ maps `ffmpegAvailable` into ready/missing guidance. No renderer behavior changes
 The probe now reuses `findFfmpeg` with its own real runnable version check and
 4,000 ms per-process timeout. It preserves rendering's explicit/managed/PATH/
 portable search order, validates execution rather than file presence, and falls
-back after a managed-directory lookup failure. `media-render.ts` has only an
-adjacent comment correction; its implementation and 10-second default render
-probe are unchanged. The resolver's imports are Node builtins and pure geometry/
-caption/filter helpers, with no startup side effect or capability import cycle.
+back after a managed-directory lookup failure. Executable discovery now lives
+in the neutral `ffmpeg-resolver.ts`, importing only Node `fs` and `child_process`.
+`media-render.ts` re-exports the same function for existing rendering callers.
+The resolver's search behavior and 10-second default render probe are unchanged;
+there is no startup side effect or capability import cycle.
 
 Verification:
 
@@ -36,6 +37,29 @@ Verification:
   same absolute executable. Real `-version` succeeds and executable SHA-256 is
   unchanged. `.kilo/prove-ffmpeg-readiness.cjs` and
   `.kilo/evidence/ffmpeg-real-source-proof.json` retain that proof.
+
+PR #462's initial `b0a8a5c` failed both root build contexts in the root Jest
+module-boundary test: the diagnostic's dynamic import of `media-render.ts`
+crossed Core into Production Studio. The unchanged clean `d22443b1` tree passes
+the same scanner; `b0a8a5c` produces exactly that one violation. Failed cloud
+logs are preserved as `.kilo/evidence/ci-37104075693-failed.log` and
+`ci-37104079635-build-job.log`. The boundary checker and its exceptions remain
+unchanged. Extracting only the shared executable resolver removes that edge.
+
+The corrected tree passes the actual root boundary Jest suite (8 tests,
+including positive controls for forbidden imports) and 4 affected widget suites
+(97 tests), including the existing setup/rendering resolver contract tests.
+Widget TypeScript and all changed-file ESLint checks pass. Logs are retained as
+`resolver-root-boundary-jest.log`, `ffmpeg-resolver-focused.log`,
+`resolver-typecheck.log` and `resolver-scoped-lint.log` under `.kilo/evidence`.
+The refreshed real-CLI proof is written separately to
+`ffmpeg-resolver-real-source-proof.json`, recording the executed source hashes
+and commit, renderer/neutral resolver identity, and both real probe bounds.
+The original precommit proof remains preserved; its baseline source-head label
+does not claim that the later commit was already checked out.
+
+Cloud checks for the corrected commit must complete before integration. This
+draft PR remains under root review with automatic merging disabled.
 
 Dependencies are a read-only junction to the root-owned private integration
 tree after four manifests/locks matched exactly. No dependency installation,
