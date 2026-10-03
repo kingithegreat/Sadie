@@ -1,3 +1,5 @@
+> **CURRENT PLAN RULE — 2026-10-03:** The only active HomeBot execution queue and status source is the [HomeBot — Current Plan in Drive](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit). This repository file is the detailed acceptance checklist only. The dated status/checkpoint text below is historical and may be stale; do not assign work from it or use its PR numbers, branch states, or commit hashes as current. Verify current repo state before acting. Keep captions off and preserve all owner approval, art, provider, and spending gates.
+
 # HomeBot — plan to user testing
 
 **Owner:** Aden. **Reconciled:** 2026-09-20, from `origin/main` at `c2614b2` and live GitHub PR/issue state. The prior status pass in PR #385 was based on an older main and conflicted; this document supersedes it.

@@ -1,3 +1,5 @@
+> **STATUS NOTICE — 2026-10-03:** This handover contains historical evidence checkpoints. Its PR numbers, commits, package references, and task states are not current. Use the [HomeBot — Current Plan in Drive](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) as the sole execution queue and current status source; use [USER_TESTING_PLAN.md](USER_TESTING_PLAN.md) for acceptance criteria. Verify live GitHub state before acting. Do not treat old agent assignments or package evidence as current authorization.
+
 # HomeBot finishing handover
 
 The owner asked Codex to take charge, deploy agents and finish HomeBot. Three

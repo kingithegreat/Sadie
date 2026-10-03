@@ -1,3 +1,5 @@
+> **CURRENT PLAN RULE — 2026-10-03:** This file is retained for technical background and acceptance criteria, not as an execution queue. Follow the [HomeBot — Current Plan in Drive](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) for current work order/status and [USER_TESTING_PLAN.md](USER_TESTING_PLAN.md) for detailed acceptance requirements. Historical repository snapshots and PR statuses below are not current assignments. Do not follow old status claims or proposals unless the live plan authorizes them.
+
 # HomeBot media studio — approved execution plan
 
 Approved by Aden on 2026-09-08 after a read-only repository and runtime audit.

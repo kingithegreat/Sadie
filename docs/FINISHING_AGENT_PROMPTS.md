@@ -1,3 +1,5 @@
+> **STATUS NOTICE — 2026-10-03:** These prompts preserve an earlier finishing handover and contain stale commit/package references. Before using them, follow the [HomeBot — Current Plan in Drive](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit) and current [USER_TESTING_PLAN.md](USER_TESTING_PLAN.md); verify PRs and ownership against live GitHub. This file is reference material, not an independent execution plan. Preserve existing owners and all approval gates.
+
 # HomeBot finishing agent prompts
 
 Each block is complete. Agent identities and receipt remain unconfirmed.
