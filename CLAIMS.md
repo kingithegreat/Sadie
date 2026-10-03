@@ -1,5 +1,33 @@
 # Work Claims
 
+## 2026-10-03 NZ — final finishing documentation checkpoint (Codex media agent)
+
+Codex `/root/media_finish` completed only CLAIMS.md and docs/FINISHING_HANDOVER.md
+in private `finish-coordination-20261002`, branch
+`claude/finish-coordination-20261002`, from merged #456 main `516e1034`.
+Current actual lanes: root serial integration/package; `/root/plan_gap_audit`
+save-snapshot #458; `/root/release_finish` exact-head offline Whisper #457;
+`/root/media_finish` completed read-only media review and this documentation.
+#456 is landed. #458 merged as 8fe85569 after all 23 reviewed bde2d62a checks
+passed, including all six required contexts and nine OS shards; its save
+implementation claim is retired. #457 merged as 4c78098f after all 23 reviewed
+c7068f93 checks passed, including all six required contexts and nine executed
+OS shards; its source claim is retired. Preserve the newer separate
+session's packaged Whisper proof/task/claim evidence on #457. AP review verified 20 staged sprites and
+16 tracked sources against a3288d3, with 22 missing slots and explicit owner
+acceptance independently recorded only for Cell 1. No AP edit/render or new
+provider/model call. This private docs branch uses documentation baseline
+cb95f970 (docs-only #459 above production 4c78098f).
+The exact 4c78098f package is built and integrity scanned; actual native, Code,
+offline Whisper and offline Kokoro scopes passed. The validated 316-file
+launcher, eleven genuine cached model files and new distinct Desktop shortcut
+are delivered. HomeBot stores are isolated; CODEX_HOME intentionally shares
+the existing owner auth/config/history store. Earlier capacity/probe failures
+are retained; owner listening/human utterance, Leila rig/full episode, fresh
+Windows installation and actual entitled Pro gates remain open. Documentation
+claim is retired; root retains publication ownership. Preserve older dated notes
+as history and the original #459 retirement text below.
+
 ## 2026-09-29 Codex nightly scene render gate claim
 
 Codex owns `claude/nightly-scene-fixture-20260929` from current `origin/main` (`8169bc43`). Scope: repair the scheduled `media-render.live.test.ts` scene case after #430 with deterministic local scene art and separately prove a generated fallback plate is rejected. The September 27–29 scheduled runs each failed one scene test; the preceding three passed. Ready for integration review: real Windows FFmpeg positive and rejection cases passed 2/2, adjacent render/source-QA suites passed 67/67, widget TypeScript passed, lint had zero errors/seven existing warnings, root docs:check and diff check passed. Scene pictures, sine audio and captions were generated inside an isolated test directory; no network provider call, user profile, model download, or shared dependency mutation was made. `preflightScenePictures` and product code are unchanged. The full scheduled Windows job and next nightly run remain unverified until CI executes them; image-provider availability and visual quality remain outside this deterministic gate.
@@ -407,7 +435,10 @@ See tasks/finish-history-title.md for evidence and retained probe failures.
 
 ## 2026-10-01 - FINISH-WHISPER-OFFLINE-1 (Codex)
 
-Codex owns claude/finish-whisper-offline-20261001 from origin/main 12b243e5.
+Codex's source claim on claude/finish-whisper-offline-20261001 is retired:
+PR #457 MERGED as 4c78098fa9c4a03fa3cbb33cfed8166a9898bfcf after all 23 checks
+at reviewed c7068f93 passed, including all six required contexts and nine
+executed OS shards. The branch originally started from origin/main 12b243e5.
 Scope: remove the generic Transformers factory's unconditional discovery and
 metadata requests from Whisper startup. Actual c46d45eb package transcribed a
 known recording accurately and sent it to real subscription chat, but an
@@ -423,10 +454,16 @@ integration is complete: MERGED as #457 into main 4c78098f on 2026-10-02, so the
 claim is released. Human utterance remains a
 separate acceptance gate. No owner installation or signing.
 
-## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — draft ready, root integration
+The final technical package verification and delivery above are complete;
+root retains release ownership and the remaining owner acceptance gates.
 
-Codex plan-gap agent owns the bounded Code save-snapshot correction on
-`claude/finish-save-snapshot-20261002`, draft PR #458. A save acknowledgement
+## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — merged, source claim retired
+
+Codex plan-gap agent's bounded Code save-snapshot correction on
+`claude/finish-save-snapshot-20261002` merged through PR #458 as
+`8fe8556967f49be9615490208e4301ccf30d8286`. All 23 reviewed bde2d62a checks
+passed, including all six required contexts and nine OS shards; landed 8fe85569
+has a zero full-tree diff from that tested bde2d62a head. A save acknowledgement
 must mark only the text actually sent clean; edits typed while its reply is
 pending stay unsaved and retain the dirty-tab close prompt. No navigation or
 shortcut-dispatch changes. Based on current main with merged IDE Back #456.
@@ -436,5 +473,6 @@ TypeScript, scoped lint, docs and release build passed. Actual built Windows
 Electron proof passed six stages using the unchanged real file-save handler
 with its first reply delayed; screenshot inspected. Evidence, executed counts
 and retained initial probe limitation: `tasks/finish-save-snapshot.md`.
-Implementation is draft ready, not merged or packaged. Root owns current-head
-CI, serial integration, claim retirement and refreshed package verification.
+Source implementation is merged and the claim is retired. Root retains
+refreshed final-package verification; the six built stages are not a new
+package or fresh Windows installation acceptance claim.
