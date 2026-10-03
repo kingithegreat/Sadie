@@ -1,12 +1,15 @@
 /** @jest-environment jsdom */
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { EditorView } from 'codemirror';
-import { undo } from '@codemirror/commands';
+import { undo, undoDepth } from '@codemirror/commands';
+import { EditorState } from '@codemirror/state';
+import { EditorView as CMEditorView } from '@codemirror/view';
 import CodeEditor, {
   languageExtension,
   buildInlineEditPrompt,
   cleanCodeReplacement,
   computeSimpleLineDiff,
+  type CodeEditorSession,
 } from '../components/workspace/CodeEditor';
 
 // jsdom has no layout; CodeMirror only needs these to exist.
@@ -50,6 +53,38 @@ test('read-only refuses edits from the keyboard', () => {
   const view = viewOf(container);
   expect(view.state.readOnly).toBe(true);
   expect(container.querySelector('.cm-content')?.getAttribute('contenteditable')).toBe('false');
+});
+
+test('restored editor state uses current handlers, compartments, read-only mode and theme', () => {
+  const session: CodeEditorSession = { current: null };
+  const oldChange = jest.fn();
+  const oldSave = jest.fn();
+  const first = render(<CodeEditor value="first" language="plaintext" onChange={oldChange} onSave={oldSave} session={session} />);
+  act(() => { viewOf(first.container).dispatch({ changes: { from: 5, insert: ' edit' } }); });
+  first.unmount();
+  oldChange.mockClear();
+  document.documentElement.setAttribute('data-theme', 'light');
+  const nextChange = jest.fn();
+  const nextSave = jest.fn();
+  const second = render(<CodeEditor value="first edit" language="typescript" onChange={nextChange} onSave={nextSave} readOnly session={session} />);
+  const view = viewOf(second.container);
+  expect(undoDepth(view.state)).toBe(1);
+  expect(view.state.readOnly).toBe(true);
+  expect(view.state.facet(CMEditorView.darkTheme)).toBe(false);
+  second.rerender(<CodeEditor value="first edit" language="json" onChange={nextChange} onSave={nextSave} session={session} />);
+  expect(view.state.facet(EditorState.readOnly)).toBe(false);
+  act(() => {
+    expect(undo(view)).toBe(true);
+    view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true,
+    }));
+  });
+  expect(nextChange).toHaveBeenLastCalledWith('first');
+  expect(nextSave).toHaveBeenCalledTimes(1);
+  expect(oldChange).not.toHaveBeenCalled();
+  expect(oldSave).not.toHaveBeenCalled();
+  second.unmount();
+  document.documentElement.removeAttribute('data-theme');
 });
 
 describe('IDE-5: Inline Edit (Ctrl+K)', () => {
