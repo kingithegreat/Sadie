@@ -693,3 +693,90 @@ contains its description/icon/possible badge. Only that scoped locator changes
 from exact to the existing nonexact name query; other exact names match JSX.
 The executing `0ef4405e` run remains historical evidence, not acceptance for
 this locator correction. No production/component/unit/scenario change is added.
+
+## 2026-10-05 — FIX-STUDIO-SHUTDOWN-20261005
+
+Root owns serial integration and delivery from fresh main `c5e40ca` in
+`.homebot/fix-studio-shutdown-20261005`, branch
+`claude/fix-studio-shutdown-20261005`. The canonical Drive claim was published
+and read back before this edit; existing owners and held PRs are preserved.
+
+Release's bounded quit-barrier edit is complete and released to root integration.
+Root reproduced the synchronous cleanup contract failure: original handler
+1 failed regression/3 passing controls; fixed handler 4/4 passed. All 36 related
+MCP tests and scoped lint passed. QA independently reviewed the minimal defer;
+the historical Studio timeout's cause remains unproven. These are controlled
+main-handler fixtures, not actual Electron shutdown acceptance.
+QA's existing `media-panel-debug.e2e.spec.ts` diagnostic uses real stage error
+and persistence assertions, fresh fixture stores and passive close/native
+milestones. It preserves genuine production close and the 180-second budget.
+No mocked close, dependency change, new workflow or global process kill.
+Media's read-only delivery feasibility is complete. Root owns this claim and
+`tasks/fix-studio-shutdown.md`; completed source edits are released into named
+root serial integration for exact-head hosted CI, runtime evidence review,
+configured review and landing. Those gates remain pending at this checkpoint.
+
+Fresh resources (4.22042 GiB disk / 1.46753 GiB RAM) hold local heavy build/GUI
+jobs under the existing 5/2 floor. Serial fixture-only checks may use the light
+1/0.5 floor; hosted compiled CI can provide runtime proof. The existing Desktop
+2a package and owner stores are preserved. Prior Studio timeout points to the
+close boundary but does not establish a product cause or repaired symptom.
+
+Hosted/review correction checkpoint: head 26445c8 is not accepted. Ubuntu's
+new diagnostic failed after normal close resolved because app.process() was
+read from a disposed Playwright handle. QA owns retaining the pre-close child
+handle; product behavior and the historical timeout cause remain separate.
+Configured review found two existing opt-in MCP suites still require the old
+emitted shutdown string. Release owns aligning only those pre-launch assertions
+in `mcp-shutdown.live.e2e.spec.ts` and `mcp-shell-shutdown.live.e2e.spec.ts`.
+Their real fixtures and normal shutdown assertions stay intact. Root retains
+integration, failed-run evidence and draft/auto-merge-off hold; editing of this
+bounded follow-up will be released to root before new-head publication.
+Follow-up source editing is complete and released to named root integration.
+The retained-child instrument and unchanged opt-in behavioral checks received
+independent review; final diagnostic SHA is 33693E84. Old failed results remain
+historical and fresh exact-head hosted/runtime/configured review is required.
+
+Same finishing lane: actual viewed hosted Studio Working screenshot exposed
+generic job busy being announced as Export in progress during Write script.
+Root claims the bounded progress correction before edits. Media owns test-first
+parent-component reproduction and minimal explicit render-operation tracking
+in MediaStudioPanel; root executes baseline before product changes. Tag all
+real render callers and preserve persisted active export attempts, ordinary busy
+disabling, existing previews and other owners. QA/release independently review;
+all source editing is released to root before final-head publication. No real
+provider/media output, credentials, new workflow or local heavy launch.
+Media source editing is complete and released to root serial integration.
+Actual parent-component A/B: 3 failed/11 passed before, 14/14 passed after;
+related preview/status suites 25/25 passed and final scoped lint passed.
+Frozen panel 5DEC214A / unit 0D7D7D57 / shared status B9A46270 were retained.
+Independent review accepted all five render tags, busy-control preservation
+and persisted active-export fallback. These are React/API fixtures; fresh
+compiled UI and whole current-head CI/review remain pending at this checkpoint.
+Root follow-up integration: 387cf hosted typecheck rejected two unsupported
+ByRole `exact` test options. Removed only those options, preserving exact string
+names and all product/diagnostic source. Corrected E685C29E unit passes 25 related
+tests with native 0/null; fresh exact-head full CI/review/evidence pending.
+Configured f19c8 review reopened only the media pair for overlap P2.
+Actual test-first 7 failures/14 controls led to immutable per-job render counts;
+fixed 21/21 and related 32/32 pass with native 0/null, scoped lint passed.
+Final panel90655EC9/unit7D624372 source editing released to root integration.
+Other-job actions and either same-job render completion cannot clear a pending
+render; five operation tags, persisted status fallback and ordinary busy paths
+remain intact. Fresh hosted current-head typecheck/CI/review/evidence pending.
+
+Current c6714 full widget CI passed 4,957 tests (33 skipped), typecheck,
+build and floating-overlay acceptance; configured review completed without
+new findings and the two prior addressed threads are resolved. Matrix
+37231291017 is FAILED: Windows Studio functional stages and normal native
+exit passed, but six executions failed the main-PID equality assertion.
+Playwright's installed Windows launcher uses shell:true, so app.process()
+owns the shell while app.evaluate sees Electron main. All quit milestones
+exist under the distinct main PID. This is an instrument failure, not proof
+of a product hang or resolution of the historical 180-second timeout.
+Root reopens ONLY the Studio diagnostic for media to capture main PID/PPID
+and assert the actual shell-parent relation, preserving both native exits,
+compiled provenance, real close, transport controls and the time budget.
+QA/release audit read-only; root owns serial checks and new-head publication.
+PR468 is draft/auto-merge off. Failed evidence remains immutable; the next
+head requires fresh whole CI, configured review and three-OS artifact proof.
