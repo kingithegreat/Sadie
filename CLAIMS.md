@@ -657,3 +657,23 @@ Baseline/fixed/related receipts remain separate and bind actual source hashes.
 Local full TypeScript/build/GUI remain held by the unchanged 5 GiB / 2 GiB guard;
 root owns the draft PR and hosted CI. This is source-only readiness, not an
 updated package, visible Online acceptance or full app completion.
+
+Approved follow-up scope adds one Windows-only regression to the existing
+`widget/src/renderer/e2e/first-run.e2e.spec.ts`. Existing hosted CI builds the
+current compiled Electron UI/preload; the test will defer only the model-list
+IPC response in an isolated dummy-key fixture and retain the production
+settings save/load handlers. Assert current provider/model and encrypted
+secret persistence where available, with the plaintext dummy key recovered
+through unchanged settings-load IPC. Postlaunch transport guards have positive
+controls and bounded coverage; they do not claim startup or blanket privacy.
+No component/unit/dependency/workflow edits or local GUI/build are added.
+Root owns updated draft publication and exact-head hosted execution; the
+earlier source receipts and tested package remain preserved.
+
+The added compiled-UI case is hosted Windows GitHub Actions only and skips
+normal local runs. Legacy dev RAG eagerly reads its source-derived CI-workspace
+`memory/rag-index.json` outside the fixture stores. The test records that exact
+import read exception and before-launch/after-native-termination absence or
+SHA-256 equality; no RAG/chat action or write is allowed. Claims cover named
+fixture stores, not universal store isolation. PASS requires unchanged RAG and
+actual owned native exit 0 / null signal. Hosted execution is still pending.

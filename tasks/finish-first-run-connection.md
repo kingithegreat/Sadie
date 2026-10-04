@@ -61,3 +61,45 @@ provider request, owner key/profile, package rebuild,
 installation or canonical document write is claimed by this source lane.
 
 Root owns review, publication, CI, serial integration and final delivery.
+
+## Hosted compiled-UI regression preparation
+
+The approved follow-up adds one Windows regression to the existing
+`first-run.e2e.spec.ts`, using its existing `launchElectronApp` and the workflow's
+fresh electron-vite build. It asserts actual `out/main` execution, the compiled
+renderer file URL, hydrated UI and explicit disposable userData/HOME/USERPROFILE/
+APPDATA/LOCALAPPDATA/TEMP/TMP/CODEX/AP/projects paths. Only the model-discovery
+IPC map entry is replaced with deferred dummy responses; the original preload,
+wizard and settings save/load remain unchanged. All dummy payloads are retained.
+
+The UI starts Groq/key-A, switches to OpenAI/key-B, starts the current request
+and then receives the old success. It must remain Checking with Next disabled
+until the current response arrives. Finishing must persist the current provider
+and model; when secureStorage is available the dummy key is encrypted on disk.
+The unchanged settings-load IPC must recover key-B.
+
+Postlaunch transport denial has five Node fetch/http/https positive controls
+and one Chromium-session control via Electron net. The renderer's actual CSP
+would block an external fetch before the session callback, so it is not weakened
+or counted as a transport hit. Complete observed blocks are retained; only the
+fixture-provider destinations are asserted absent. This is bounded postlaunch
+coverage, not startup or blanket privacy. Handler restoration and normal child
+close are independently bounded, with original proof and separate cleanup errors
+retained. Denial remains active until the owned child terminates; success also
+requires its actual exit code 0 and no signal.
+
+This regression has not been run locally or in hosted CI yet. Historical
+source head `2f8445ce` CI is not green: the macOS shard-3 dependency installation
+failed with ECONNRESET before Build widget/E2E. Root retained job 111412065869's
+log separately. The upcoming amended head requires fresh exact-head CI;
+historical source-test receipts are preserved rather than relabeled.
+
+The compiled-UI case is restricted to Windows GitHub Actions and deliberately
+skips normal local runs. Development RAG eagerly imports
+`path.resolve(out/main, '../../../../memory/rag-index.json')`, which is outside
+the fixture HOME/userData. This is an explicit CI-workspace import read
+exception; the test records the exact path and its before-launch/after-native-
+termination absence or SHA-256 equality. It performs no RAG or chat action and
+must prove no RAG write. The profile claims therefore cover the named fixture
+stores, not universal per-store isolation. PASS also requires native exit 0 and
+no signal. No product hook or compiled-tree copy was introduced.
