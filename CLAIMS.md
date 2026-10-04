@@ -586,13 +586,18 @@ Leila art/rig/episode, human voice/listening, entitled Pro and fresh Windows
 installation acceptance remain owner gates. This documentation lane changes
 no app source, dependencies, package or owner profile.
 
-## FINISH-PLAN-STATUS-20261004 — claimed 2026-10-04
+## FINISH-PLAN-STATUS-20261004 — source edits complete, claim released 2026-10-04
 
 Codex / root/integration_queue owns this bounded documentation lane on
 `claude/finish-plan-status-20261004`, isolated from fresh main
 `102b4c562c3545552c08f33a70ffb360b4636e8b`. Root published and read back the
 canonical FINISH-PLAN-EXECUTION-20261004 delegation before this repository claim.
 Drive remains the sole live queue; root owns serial review and integration.
+
+The bounded source edits are complete and their editing claim is released to
+root's serial integration queue. Only exact-head CI/review and landing remain
+with root; this handoff does not assert that publication has landed. Canonical
+Drive records the verified landing and later thread disposition.
 
 Scope is only `docs/CURRENT_STATUS.md`, the obsolete pending-check sentences
 in retired APP-CAPABILITY-FFMPEG-1's CLAIMS/task, and this appended status note.
