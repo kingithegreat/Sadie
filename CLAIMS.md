@@ -693,3 +693,31 @@ contains its description/icon/possible badge. Only that scoped locator changes
 from exact to the existing nonexact name query; other exact names match JSX.
 The executing `0ef4405e` run remains historical evidence, not acceptance for
 this locator correction. No production/component/unit/scenario change is added.
+
+## 2026-10-05 — FIX-STUDIO-SHUTDOWN-20261005
+
+Root owns serial integration and delivery from fresh main `c5e40ca` in
+`.homebot/fix-studio-shutdown-20261005`, branch
+`claude/fix-studio-shutdown-20261005`. The canonical Drive claim was published
+and read back before this edit; existing owners and held PRs are preserved.
+
+Release's bounded quit-barrier edit is complete and released to root integration.
+Root reproduced the synchronous cleanup contract failure: original handler
+1 failed regression/3 passing controls; fixed handler 4/4 passed. All 36 related
+MCP tests and scoped lint passed. QA independently reviewed the minimal defer;
+the historical Studio timeout's cause remains unproven. These are controlled
+main-handler fixtures, not actual Electron shutdown acceptance.
+QA's existing `media-panel-debug.e2e.spec.ts` diagnostic uses real stage error
+and persistence assertions, fresh fixture stores and passive close/native
+milestones. It preserves genuine production close and the 180-second budget.
+No mocked close, dependency change, new workflow or global process kill.
+Media's read-only delivery feasibility is complete. Root owns this claim and
+`tasks/fix-studio-shutdown.md`; completed source edits are released into named
+root serial integration for exact-head hosted CI, runtime evidence review,
+configured review and landing. Those gates remain pending at this checkpoint.
+
+Fresh resources (4.22042 GiB disk / 1.46753 GiB RAM) hold local heavy build/GUI
+jobs under the existing 5/2 floor. Serial fixture-only checks may use the light
+1/0.5 floor; hosted compiled CI can provide runtime proof. The existing Desktop
+2a package and owner stores are preserved. Prior Studio timeout points to the
+close boundary but does not establish a product cause or repaired symptom.

@@ -26,7 +26,7 @@ function harness() {
     }),
   };
   const otherCleanup = {
-    stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
+    closeAllWorkspaceTasks: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
     globalShortcut: { unregisterAll: jest.fn() }, supervisorHandle: { stop: jest.fn() },
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
@@ -40,9 +40,10 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   const h = harness();
   h.app.quit();
   h.handlers.get('window-all-closed')!();
+  await settle();
   expect(h.nativeQuits()).toBe(0);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
-  for (const cleanup of [h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
+  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
     h.otherCleanup.closeAllServiceWindows, h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
     expect(cleanup).toHaveBeenCalledTimes(1);
   }
@@ -63,11 +64,34 @@ test('a cleanup rejection is reported and still resumes native quit', async () =
   expect(h.nativeQuits()).toBe(1);
 });
 
+test('a synchronous MCP shutdown exception is reported and repeated quit still resumes native quit once', async () => {
+  const h = harness();
+  const error = new Error('controlled synchronous MCP shutdown failure');
+  h.shutdownMcpServers.mockImplementationOnce(() => { throw error; });
+  let escaped: unknown;
+  try { h.app.quit(); } catch (caught) { escaped = caught; }
+  // Exercise the real repeat path even if the first event handler threw.
+  h.handlers.get('window-all-closed')!();
+  expect(h.nativeQuits()).toBe(0);
+  await settle();
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(h.nativeQuits()).toBe(1);
+  expect(escaped).toBeUndefined();
+  expect(h.safeCatch).toHaveBeenCalledTimes(1);
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge,
+    h.otherCleanup.destroyBrowserPanel, h.otherCleanup.closeAllServiceWindows,
+    h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  }
+});
+
 test('an unrelated service cleanup error cannot bypass or strand connector cleanup', async () => {
   const h = harness();
   const error = new Error('controlled service failure');
   h.otherCleanup.globalShortcut.unregisterAll.mockImplementationOnce(() => { throw error; });
   h.app.quit();
+  await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.closeAllServiceWindows).toHaveBeenCalledTimes(1);
