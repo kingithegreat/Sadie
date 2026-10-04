@@ -622,3 +622,38 @@ Other-owner #461's four files and held provider/Code/rig PRs remain untouched.
 There is no app-source edit, build, install, native rebuild, GUI run or owner
 profile change in this lane. Human art/rig/episode, microphone/listening,
 entitled Pro and fresh Windows installation acceptance remain open gates.
+
+## 2026-10-04 — FINISH-FIRST-RUN-CONNECTION-1 (Codex)
+
+Owner: `/root/release_finish`; `/root` owns review, publication, CI and delivery.
+Branch `claude/finish-first-run-connection-20261004` starts from fresh main
+`5af9d592e357fe773ae5dbd087af54fabba37c94` in the private source-only worktree
+`C:/Users/adenk/.homebot/finish-first-run-connection-20261004`. Root published
+and read back the canonical Drive claim before this repository claim/edit.
+
+Scope: only `widget/src/renderer/components/FirstRunModal.tsx`, its existing
+`first-run-modal.test.tsx` suite, this appended claim and the owned task.
+Invalidate pending Online checks when provider/key/path changes; only the
+current check may publish success, failure, model or busy state. Preserve
+privacy consent, subscription choices and local setup. Deferred IPC tests
+must reproduce stale responses before the fix and cover provider/key,
+subscription, A→B→A changes and out-of-order completions with current controls.
+
+Source-handler reproduction is retained in
+`.homebot/.kilo/first-run-stale-check-source-proof-1791107165839.json`; it is
+not React or GUI acceptance. Focused React checks use fixture-only IPC and
+the authorized light-job resource wrapper with read-only dependency junctions.
+No provider credentials/calls, dependencies install/copy/native rebuild, GUI,
+package/build, owner data changes or canonical document writes are authorized
+in this lane. The existing tested package remains preserved. Validation and
+handoff will be recorded in `tasks/finish-first-run-connection.md`.
+
+Source handoff: the unchanged component fails eight deferred race/duplicate
+checks while two current-result controls pass. With the bounded generation
+repair, all ten targeted checks and all four unfiltered related suites / 81
+tests pass; scoped ESLint exits 0 without warnings. Independent read-only review
+accepts lifecycle, A→B→A, stale catch/finally and final-save preservation.
+Baseline/fixed/related receipts remain separate and bind actual source hashes.
+Local full TypeScript/build/GUI remain held by the unchanged 5 GiB / 2 GiB guard;
+root owns the draft PR and hosted CI. This is source-only readiness, not an
+updated package, visible Online acceptance or full app completion.

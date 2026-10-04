@@ -183,6 +183,29 @@ export default function FirstRunModal({
     (setupPath === 'cloud' && cloudOk === true) ||
     (setupPath === 'local' && localPhase === 'ready');
   const [cloudModel, setCloudModel] = useState('');
+  const cloudCheckGeneration = useRef(0);
+  const cloudCheckInFlight = useRef<number | null>(null);
+
+  const invalidateCloudCheck = useCallback((resetResult = true) => {
+    // A generation, rather than value equality, also invalidates A -> B -> A.
+    cloudCheckGeneration.current += 1;
+    cloudCheckInFlight.current = null;
+    setCloudTesting(false);
+    if (resetResult) {
+      setCloudOk(null);
+      setCloudModel('');
+      setSubscriptionStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) invalidateCloudCheck();
+    return () => {
+      // Late IPC replies must not update a closed or unmounted wizard.
+      cloudCheckGeneration.current += 1;
+      cloudCheckInFlight.current = null;
+    };
+  }, [open, invalidateCloudCheck]);
 
   useEffect(() => { setDraft(settings); }, [settings]);
 
@@ -403,13 +426,18 @@ export default function FirstRunModal({
   };
 
   const testCloudConnection = async () => {
-    if (!isSubscriptionCli && !cloudApiKey.trim()) return;
+    if (cloudCheckInFlight.current !== null || (!isSubscriptionCli && !cloudApiKey.trim())) return;
+    const generation = ++cloudCheckGeneration.current;
+    cloudCheckInFlight.current = generation;
+    const isCurrent = () => cloudCheckGeneration.current === generation;
     setCloudTesting(true);
     setCloudOk(null);
     setCloudModel('');
+    setSubscriptionStatus(null);
     try {
       if (isSubscriptionCli) {
         const result = await (window as any).electron.checkSubscriptionCli?.(cloudProvider);
+        if (!isCurrent()) return;
         const status = result?.status || 'unknown';
         setSubscriptionStatus(status);
         setCloudOk(status === 'ready');
@@ -422,20 +450,26 @@ export default function FirstRunModal({
         apiKey: cloudApiKey.trim(),
         provider: cloudProvider
       });
+      if (!isCurrent()) return;
       const ok = res?.success && res.models?.length > 0;
       setCloudOk(ok);
       if (ok && res.models?.[0]?.id) {
         setCloudModel(res.models[0].id);
       }
     } catch {
+      if (!isCurrent()) return;
       if (isSubscriptionCli) setSubscriptionStatus('unknown');
       setCloudOk(false);
     } finally {
-      setCloudTesting(false);
+      if (isCurrent()) {
+        cloudCheckInFlight.current = null;
+        setCloudTesting(false);
+      }
     }
   };
 
   const enterSetupStep = (path: SetupPath) => {
+    invalidateCloudCheck();
     setSetupPath(path);
     setStep('setup');
     if (path === 'local') {
@@ -444,6 +478,7 @@ export default function FirstRunModal({
   };
 
   const handleFinish = async () => {
+    invalidateCloudCheck(false);
     const payload: any = { ...draft, firstRun: false, telemetryEnabled: telemetryConsent };
     if (telemetryConsent) payload.telemetryConsentTimestamp = new Date().toISOString();
 
@@ -471,6 +506,7 @@ export default function FirstRunModal({
   };
 
   const handleSkip = async () => {
+    invalidateCloudCheck(false);
     const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
     await persistSetup(payload);
   };
@@ -718,7 +754,7 @@ export default function FirstRunModal({
                     type="button"
                     key={p.id}
                     className={`wizard-cloud-chip${cloudProvider === p.id ? ' selected' : ''}`}
-                    onClick={() => { setCloudProvider(p.id); setCloudOk(null); setCloudModel(''); if (p.subscription) setCloudApiKey(''); setSubscriptionStatus(null); }}
+                    onClick={() => { invalidateCloudCheck(); setCloudProvider(p.id); if (p.subscription) setCloudApiKey(''); }}
                   >
                     {p.name}
                     {p.freeHint && <span className="wizard-free-badge">free</span>}
@@ -764,7 +800,7 @@ export default function FirstRunModal({
                   className="first-run-input"
                   placeholder="Paste the key from your account page"
                   value={cloudApiKey}
-                  onChange={e => { setCloudApiKey(e.target.value); setCloudOk(null); setCloudModel(''); }}
+                  onChange={e => { invalidateCloudCheck(); setCloudApiKey(e.target.value); }}
                   onKeyDown={e => { if (e.key === 'Enter' && cloudApiKey.trim()) testCloudConnection(); }}
                   autoComplete="off"
                 />
@@ -844,12 +880,12 @@ export default function FirstRunModal({
           <button type="button" onClick={handleSkip} disabled={saving} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
-              <button type="button" onClick={() => { setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
+              <button type="button" onClick={() => { invalidateCloudCheck(); setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
             )}
             {step === 'setup' && (
               <button
                 type="button"
-                onClick={() => setStep('done')}
+                onClick={() => { invalidateCloudCheck(false); setStep('done'); }}
                 className="first-run-btn first-run-btn-primary"
                 disabled={(setupPath === 'local' && (localBusy || !diskOk)) || (setupPath === 'cloud' && !isSubscriptionCli && cloudOk !== true && cloudApiKey.trim().length > 0)}
               >
