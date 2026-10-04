@@ -140,8 +140,9 @@ attempt 3 executed 371 passing unit suites / 4,932 passing tests (11 suites /
 installed-model delete assertion received null at model-delete.test.tsx:68;
 that failed log is retained, and precise scheduling cause is unproved.
 The reviewed head and actual CI synthetic checkout `ee0b9a77` had identical
-full trees `1a2a8f7186cf82735ce0fa582cf36ac1544e5f87`. These checks do not
-transfer to this refreshed head; root must review its fresh exact-head CI.
+full trees `1a2a8f7186cf82735ce0fa582cf36ac1544e5f87`. These old checks did not
+transfer; refreshed retirement head `f7f55a9f` completed its own exact-head
+checks and root review, then merged as `102b4c56`.
 Immutable independent receipt:
 `C:/Users/adenk/.homebot/.kilo/pr464-independent-ci-verification-1791016867701.json`.
 
