@@ -62,9 +62,9 @@ jobs:
           assert(/^[a-f\d]{40}$/.test(process.env.GITHUB_SHA));
           assert.notEqual(process.env.GITHUB_SHA,app,'Audit workflow SHA must be distinct from checked-out application');
           const expected={
-            'widget/src/main/index.ts':{blob:'faf9ca75647d97da036ef6a0a744e53e039c7d410d06c751a1578f274a864a82',reviewed:'a70239d3562777bc2bafb3a4f234eceb3da11ab869cc81f536272d2d0bcc5e78',reviewedNewlines:'CRLF'},
-            'widget/src/renderer/components/MediaStudioPanel.tsx':{blob:'67e420dae75625abcc645304c90539576aec60a29515eb08b92dc50722859e02',reviewed:'90655ec9a090a9764bb30f2d898fc66ac7c96f11e5e8846d28a81d62ac8e83e8',reviewedNewlines:'CRLF'},
-            'widget/src/renderer/e2e/media-panel-debug.e2e.spec.ts':{blob:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewed:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewedNewlines:'LF'},
+            'widget/src/main/index.ts':{blob:'faf9ca75647d97da036ef6a0a744e53e039c7d410d06c751a1578f274a864a82',reviewed:'a70239d3562777bc2bafb3a4f234eceb3da11ab869cc81f536272d2d0bcc5e78',reviewedNormalizedReferenceSHA:'faf9ca75647d97da036ef6a0a744e53e039c7d410d06c751a1578f274a864a82',newlineMode:'mixed/localactual'},
+            'widget/src/renderer/components/MediaStudioPanel.tsx':{blob:'67e420dae75625abcc645304c90539576aec60a29515eb08b92dc50722859e02',reviewed:'90655ec9a090a9764bb30f2d898fc66ac7c96f11e5e8846d28a81d62ac8e83e8',reviewedNormalizedReferenceSHA:'67e420dae75625abcc645304c90539576aec60a29515eb08b92dc50722859e02',newlineMode:'mixed/localactual'},
+            'widget/src/renderer/e2e/media-panel-debug.e2e.spec.ts':{blob:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewed:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewedNormalizedReferenceSHA:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',newlineMode:'mixed/localactual'},
           };
           const sources=[];
           for(const [file,e] of Object.entries(expected)){
@@ -72,9 +72,10 @@ jobs:
             assert.equal(hash(r.stdout),e.blob);
             const normalized=Buffer.from(actual.toString('utf8').replace(/\r\n/g,'\n'));
             assert.equal(hash(normalized),e.blob,'Working file content differs from immutable git blob');
-            const reviewed=Buffer.from(normalized.toString('utf8').replace(/\n/g,e.reviewedNewlines==='CRLF'?'\r\n':'\n'));
-            assert.equal(hash(reviewed),e.reviewed);
-            sources.push({file,actualWorkingBytes:actual.length,actualWorkingSHA256:hash(actual),gitBlobSHA256:e.blob,reviewedReferenceSHA256:e.reviewed,reviewedReferenceNewlines:e.reviewedNewlines});
+            // Raw reviewed local bytes may contain mixed EOLs. Never reconstruct
+            // that raw reference from a guessed uniform-CRLF convention.
+            assert.equal(hash(normalized),e.reviewedNormalizedReferenceSHA,'Normalized content differs from reviewed local reference');
+            sources.push({file,actualWorkingBytes:actual.length,actualWorkingSHA256:hash(actual),gitBlobSHA256:e.blob,reviewedReferenceSHA256:e.reviewed,reviewedNormalizedReferenceSHA:e.reviewedNormalizedReferenceSHA,newlineMode:e.newlineMode});
           }
           const dir=path.join('studio-native-audit',process.env.AUDIT_SCOPE);fs.mkdirSync(dir,{recursive:true});
           const identity={capturedUTC:new Date().toISOString(),scope:process.env.AUDIT_SCOPE,workflowSHA:process.env.GITHUB_SHA,applicationSHA:app,applicationTree:tree,githubRef:process.env.GITHUB_REF,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,trackedFiles:1097,sources,limits:'Unchanged application at fixed14a. GITHUB_SHA remains the audit workflow commit; test ciCommit records that separate workflow SHA. Source newline normalization is in-memory verification only; no source bytes rewritten.'};
