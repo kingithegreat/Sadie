@@ -1,0 +1,230 @@
+# Isolated diagnostic workflow on the named audit branch; application source is unchanged.
+# No pull_request trigger; product/test files are always checked out at fixed 14a0.
+name: Studio Native Exit Audit (fixed application source)
+
+on:
+  push:
+    branches: [audit/studio-native-20261005]
+
+permissions:
+  contents: read
+
+jobs:
+  native-audit:
+    name: Windows native audit (${{ matrix.scope }})
+    runs-on: windows-latest
+    # Aggregate diagnostic budget only. The unchanged test still has its original
+    # 180s timeout; no app.close timeout, retry, or kill behavior is altered.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        scope: [studio-only, suite-order]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      AUDIT_SCOPE: ${{ matrix.scope }}
+      AUDIT_APPLICATION_SHA: 14a0dc55ee15e86a340b172ec358b7950afbb1db
+      AUDIT_APPLICATION_TREE: 57c4de68c13f18dc829268b1829348d664bc6d6f
+      HOMEBOT_E2E: '1'
+      NODE_ENV: test
+      PLAYWRIGHT_JUNIT_OUTPUT: test-results/studio-native/${{ matrix.scope }}/${{ github.run_id }}-${{ github.run_attempt }}/junit.xml
+      PLAYWRIGHT_HTML_REPORT: playwright-report/studio-native/${{ matrix.scope }}/${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout immutable application (workflow SHA remains audit SHA)
+        uses: actions/checkout@v4
+        with:
+          ref: 14a0dc55ee15e86a340b172ec358b7950afbb1db
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Bind application source and distinct workflow identity
+        run: |
+          @'
+          const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto'),assert=require('node:assert/strict');
+          const git=args=>{const r=cp.spawnSync('git',args,{encoding:'utf8'});assert.equal(r.status,0,r.stderr);assert.equal(r.signal,null);return r.stdout.trim();};
+          const hash=b=>crypto.createHash('sha256').update(b).digest('hex');
+          const app=process.env.AUDIT_APPLICATION_SHA,tree=process.env.AUDIT_APPLICATION_TREE;
+          assert.equal(app,'14a0dc55ee15e86a340b172ec358b7950afbb1db');
+          assert.equal(tree,'57c4de68c13f18dc829268b1829348d664bc6d6f');
+          assert.equal(git(['rev-parse','HEAD']),app);assert.equal(git(['rev-parse','HEAD^{tree}']),tree);
+          assert.equal(git(['status','--porcelain=v1']), '');
+          assert.equal(git(['ls-tree','-r','--name-only','HEAD']).split('\n').length,1097);
+          assert.equal(process.env.GITHUB_REF,'refs/heads/audit/studio-native-20261005');
+          assert.equal(process.env.GITHUB_EVENT_NAME,'push');
+          assert(/^[a-f\d]{40}$/.test(process.env.GITHUB_SHA));
+          assert.notEqual(process.env.GITHUB_SHA,app,'Audit workflow SHA must be distinct from checked-out application');
+          const expected={
+            'widget/src/main/index.ts':{blob:'faf9ca75647d97da036ef6a0a744e53e039c7d410d06c751a1578f274a864a82',reviewed:'a70239d3562777bc2bafb3a4f234eceb3da11ab869cc81f536272d2d0bcc5e78',reviewedNewlines:'CRLF'},
+            'widget/src/renderer/components/MediaStudioPanel.tsx':{blob:'67e420dae75625abcc645304c90539576aec60a29515eb08b92dc50722859e02',reviewed:'90655ec9a090a9764bb30f2d898fc66ac7c96f11e5e8846d28a81d62ac8e83e8',reviewedNewlines:'CRLF'},
+            'widget/src/renderer/e2e/media-panel-debug.e2e.spec.ts':{blob:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewed:'7919f80b926ea7215ac5a182d5370a566e940e28987740c78a70c1b583115997',reviewedNewlines:'LF'},
+          };
+          const sources=[];
+          for(const [file,e] of Object.entries(expected)){
+            const actual=fs.readFileSync(file),r=cp.spawnSync('git',['show',app+':'+file]);assert.equal(r.status,0);
+            assert.equal(hash(r.stdout),e.blob);
+            const normalized=Buffer.from(actual.toString('utf8').replace(/\r\n/g,'\n'));
+            assert.equal(hash(normalized),e.blob,'Working file content differs from immutable git blob');
+            const reviewed=Buffer.from(normalized.toString('utf8').replace(/\n/g,e.reviewedNewlines==='CRLF'?'\r\n':'\n'));
+            assert.equal(hash(reviewed),e.reviewed);
+            sources.push({file,actualWorkingBytes:actual.length,actualWorkingSHA256:hash(actual),gitBlobSHA256:e.blob,reviewedReferenceSHA256:e.reviewed,reviewedReferenceNewlines:e.reviewedNewlines});
+          }
+          const dir=path.join('studio-native-audit',process.env.AUDIT_SCOPE);fs.mkdirSync(dir,{recursive:true});
+          const identity={capturedUTC:new Date().toISOString(),scope:process.env.AUDIT_SCOPE,workflowSHA:process.env.GITHUB_SHA,applicationSHA:app,applicationTree:tree,githubRef:process.env.GITHUB_REF,runId:process.env.GITHUB_RUN_ID,runAttempt:process.env.GITHUB_RUN_ATTEMPT,trackedFiles:1097,sources,limits:'Unchanged application at fixed14a. GITHUB_SHA remains the audit workflow commit; test ciCommit records that separate workflow SHA. Source newline normalization is in-memory verification only; no source bytes rewritten.'};
+          fs.writeFileSync(path.join(dir,'application-source-identity.json'),JSON.stringify(identity,null,2)+'\n',{flag:'wx'});
+          console.log(JSON.stringify(identity));
+          '@ | node -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install immutable widget dependencies
+        timeout-minutes: 10
+        run: |
+          npm ci --prefix widget
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install Playwright browsers
+        timeout-minutes: 10
+        working-directory: widget
+        run: |
+          npx playwright install --with-deps
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build immutable widget
+        run: |
+          npm run build --prefix widget
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: One unchanged native CLI invocation, no outer or inner retry
+        run: |
+          @'
+          const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),assert=require('node:assert/strict');
+          const scope=process.env.AUDIT_SCOPE;assert(['studio-only','suite-order'].includes(scope));
+          const app='14a0dc55ee15e86a340b172ec358b7950afbb1db';
+          const head=cp.spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8'});assert.equal(head.status,0);assert.equal(head.stdout.trim(),app);
+          const dir=path.resolve('studio-native-audit',scope);assert(fs.existsSync(path.join(dir,'application-source-identity.json')));
+          const output=path.join('test-results','studio-native',scope,process.env.GITHUB_RUN_ID+'-'+process.env.GITHUB_RUN_ATTEMPT);
+          const args=[path.resolve('widget/node_modules/@playwright/test/cli.js'),'test'];
+          if(scope==='studio-only')args.push('src/renderer/e2e/media-panel-debug.e2e.spec.ts','--repeat-each=10');
+          else args.push('--shard=1/3');
+          args.push('--workers=1','--retries=0','--output='+output);
+          const startedUTC=new Date().toISOString();
+          fs.writeFileSync(path.join(dir,'test-start.json'),JSON.stringify({scope,startedUTC,workflowSHA:process.env.GITHUB_SHA,applicationSHA:app,args},null,2)+'\n',{flag:'wx'});
+          console.log('AUDIT ONE INVOCATION',JSON.stringify({scope,startedUTC,workflowSHA:process.env.GITHUB_SHA,applicationSHA:app,args}));
+          const r=cp.spawnSync(process.execPath,args,{cwd:path.resolve('widget'),stdio:'inherit',windowsHide:true,shell:false});
+          const endedUTC=new Date().toISOString(),nativeCode=Number.isInteger(r.status)?r.status:1;
+          const result={scope,workflowSHA:process.env.GITHUB_SHA,applicationSHA:app,startedUTC,endedUTC,elapsedMilliseconds:Date.parse(endedUTC)-Date.parse(startedUTC),nativeStatus:r.status,signal:r.signal,spawnError:r.error?.message||null,args,exitCode:nativeCode===0&&r.signal===null&&!r.error?0:1,limits:'No rerun loop. Test180s/real app.close/native0 assertions unchanged. Individual repeated cases remain distinct report results.'};
+          fs.writeFileSync(path.join(dir,'native-cli-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+          console.log('AUDIT NATIVE CLI RESULT',JSON.stringify(result));
+          process.exitCode=result.exitCode;
+          '@ | node -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Passive bounded Windows Application Error events
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $auditDir = Join-Path 'studio-native-audit' $env:AUDIT_SCOPE
+          if (-not (Test-Path -LiteralPath $auditDir)) {
+            Write-Output 'No source identity/start receipt; no event query performed.'
+            exit 0
+          }
+          $startFile = Join-Path $auditDir 'test-start.json'
+          $eventOutput = Join-Path $auditDir 'windows-application-events.json'
+          if (-not (Test-Path -LiteralPath $startFile)) {
+            @{ status='not-queried-tests-never-started'; scope=$env:AUDIT_SCOPE; workflowSHA=$env:GITHUB_SHA; applicationSHA=$env:AUDIT_APPLICATION_SHA } | ConvertTo-Json | Set-Content -LiteralPath $eventOutput -Encoding utf8
+            exit 0
+          }
+          $start = Get-Content -LiteralPath $startFile -Raw | ConvertFrom-Json
+          $from = [DateTime]::Parse($start.startedUTC).ToUniversalTime()
+          $until = [DateTime]::UtcNow
+          $fixtureOutput = Join-Path 'widget/test-results/studio-native' "$($env:AUDIT_SCOPE)/$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
+          $ownedPids = [System.Collections.Generic.HashSet[long]]::new()
+          $inputNotes = [System.Collections.Generic.List[string]]::new()
+          if (Test-Path -LiteralPath $fixtureOutput) {
+            $diagnosticFiles = @(Get-ChildItem -LiteralPath $fixtureOutput -Recurse -File | Where-Object { $_.Name -match 'studio-(diagnostics|before-close|final-diagnostics|latest-diagnostics|native-milestones).*\.(json|jsonl)$' })
+            if ($diagnosticFiles.Count -gt 512) { throw 'Unexpected diagnostic inventory size' }
+            foreach ($file in $diagnosticFiles) {
+              if ($file.Length -gt 2097152 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unbounded or linked diagnostic file' }
+              try {
+                $text = Get-Content -LiteralPath $file.FullName -Raw
+                if ($file.Extension -eq '.jsonl') {
+                  foreach ($line in ($text.Trim() -split '\r?\n')) {
+                    if (-not $line) { continue }
+                    $row = $line | ConvertFrom-Json
+                    if ($row.pid -gt 0) { [void]$ownedPids.Add([long]$row.pid) }
+                  }
+                } else {
+                  $row = $text | ConvertFrom-Json
+                  foreach ($pidValue in @($row.native.pid, $row.launch.pid, $row.processOwnership.mainPID, $row.processOwnership.ownedChildPID)) {
+                    if ($pidValue -gt 0) { [void]$ownedPids.Add([long]$pidValue) }
+                  }
+                }
+              } catch { $inputNotes.Add("Cannot parse diagnostic $($file.Name): $($_.Exception.Message)") }
+            }
+          }
+          $records = [System.Collections.Generic.List[object]]::new()
+          $queryStatus = 'completed'
+          $queryError = $null
+          $unattributedElectronEvents = 0
+          $queriedEvents = @()
+          try {
+            $queriedEvents = @(Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=$from; EndTime=$until} -MaxEvents 2048 -ErrorAction Stop)
+          } catch {
+            if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { $queryStatus='completed-no-events' }
+            else { $queryStatus='unavailable'; $queryError=$_.Exception.Message }
+          }
+          foreach ($event in $queriedEvents) {
+            [xml]$xml = $event.ToXml()
+            $data = @{}
+            foreach ($item in @($xml.Event.EventData.Data)) {
+              if ($item.Name) { $data[[string]$item.Name] = [string]$item.'#text' }
+            }
+            # Event1000 has named application/PID fields; WER1001 may omit PID.
+            # Do not use the EventLog service's Execution.ProcessID as app PID.
+            $appNames = @($data.AppName, $data.FaultingApplicationName, $data.P1, $data.ApplicationName) | Where-Object { $_ }
+            if (-not ($appNames | Where-Object { [IO.Path]::GetFileName($_) -ieq 'electron.exe' })) { continue }
+            $appPid = $null
+            foreach ($candidate in @($data.ProcessId, $data.ProcessID, $data.FaultingProcessId)) {
+              if (-not $candidate) { continue }
+              try {
+                if ($candidate -match '^0x[0-9a-f]+$') { $appPid=[Convert]::ToInt64($candidate.Substring(2),16) }
+                elseif ($candidate -match '^\d+$') { $appPid=[long]$candidate }
+              } catch { }
+              if ($null -ne $appPid) { break }
+            }
+            if ($ownedPids.Count -gt 0 -and ($null -eq $appPid -or -not $ownedPids.Contains($appPid))) {
+              $unattributedElectronEvents++
+              continue
+            }
+            $selected = @{}
+            foreach ($name in @('AppName','AppVersion','AppPath','ModuleName','ModuleVersion','ModulePath','ExceptionCode','FaultingOffset','ProcessId','ProcessID','FaultingProcessId','FaultingApplicationName','ApplicationName','P1','P2','P3','P4','P5','P6','P7','P8','P9','P10','ReportId','IntegratorReportId')) {
+              if ($data.ContainsKey($name)) { $selected[$name]=$data[$name].Substring(0,[Math]::Min(2048,$data[$name].Length)) }
+            }
+            $records.Add(@{id=$event.Id;recordId=$event.RecordId;timeUTC=$event.TimeCreated.ToUniversalTime().ToString('o');applicationPID=$appPid;pidBinding= $(if ($ownedPids.Count -gt 0) {'matched-retained-owned-pid'} else {'unavailable-no-retained-owner-pid'});data=$selected})
+          }
+          $result = @{ status=$queryStatus; error=$queryError; scope=$env:AUDIT_SCOPE; workflowSHA=$env:GITHUB_SHA; applicationSHA=$env:AUDIT_APPLICATION_SHA; startUTC=$from.ToString('o'); endUTC=$until.ToString('o'); queryIds=@(1000,1001); eventLimit=2048; queryReachedLimit=($queriedEvents.Count -eq 2048); ownedPIDs=@($ownedPids | Sort-Object); retainedEvents=$records.ToArray(); unattributedElectronEventCount=$unattributedElectronEvents; inputNotes=$inputNotes.ToArray(); limits='Passive time-range Application log read only. No dump collection, system writes, kills, environment dump, or credentials. Missing/unavailable events do not prove absence of a crash; events without an application PID cannot be attributed to owned PID when ownership is available.' }
+          $result | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $eventOutput -Encoding utf8
+          Write-Output "Passive event query: status=$queryStatus retained=$($records.Count) ownerPIDs=$($ownedPids.Count)"
+
+      - name: Upload unique single-invocation evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-native-${{ matrix.scope }}-${{ github.run_id }}-${{ github.run_attempt }}-14a0dc55ee15e86a340b172ec358b7950afbb1db
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            studio-native-audit/${{ matrix.scope }}/
+            widget/playwright-report/studio-native/${{ matrix.scope }}/${{ github.run_id }}-${{ github.run_attempt }}/
+            widget/test-results/studio-native/${{ matrix.scope }}/${{ github.run_id }}-${{ github.run_attempt }}/
+
+# A green audit means only its recorded fixed-source executions completed.
+# Failed/absent EventLog diagnostics, skipped tests, and fixture scope remain explicit.
+# No PR merge gate, Desktop refresh, crash fix, or original180s cause is claimed here.
