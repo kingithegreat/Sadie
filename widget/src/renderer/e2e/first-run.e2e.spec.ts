@@ -191,7 +191,7 @@ test.describe('First-run onboarding and config persistence', () => {
       expect(await app.evaluate(() => (globalThis as any).firstRunRaceFixture.controls.length)).toBe(6);
 
       const modal = page.locator('.first-run-modal');
-      await modal.getByRole('button', { name: 'Online', exact: true }).click();
+      await modal.getByRole('button', { name: 'Online' }).click();
       const key = modal.getByPlaceholder('Paste the key from your account page');
       await key.fill('fixture-key-A');
       await modal.getByRole('button', { name: 'Test Connection', exact: true }).click();

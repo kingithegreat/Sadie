@@ -141,3 +141,25 @@ availability assumption remains. Independent review accepted the correction;
 component/unit bytes, race scenario, network guards, attachments and cleanup
 remain unchanged. Fresh exact-head hosted execution is required; no local GUI
 or build has run.
+
+While corrected head `0ef4405e` was executing in hosted run `37196190037`,
+root's source audit identified a second instrument issue: the Online path
+card's accessible name includes its icon, description and possible recommendation
+badge. The scoped exact `Online` role query would not match that name. A one-line
+correction uses the same scoped nonexact name query as the existing first-run
+case. Other exact locators were checked against current JSX: OpenAI has no free
+badge; Test Connection/Checking, Next and Get Started render only their expected
+button text; the success status has the expected plain text. This is a
+source-derived locator correction, not a new production defect or an executed
+race result. The `0ef4405e` run and any cancellation/failure evidence remain
+separate; the next published head requires fresh hosted execution.
+
+Root's lightweight React role probe passes one case with 62 intentionally
+excluded tests, native exit 0/null. Exact Online is absent; /Online/ finds the
+path card and clicking it exposes the key input. Testing Library defaults to
+exact string matching, whereas this Playwright locator defaults to substring
+matching. Two initial private-probe failures (module resolution and string
+matching semantics) remain preserved; only that private runner was corrected.
+Receipt `.kilo/online-accessibility-1791111536558/receipt.json` records the
+actual proof. Scoped E2E ESLint also exits 0/null with no errors. Component and
+unit-test hashes remain unchanged; no hosted Electron success is inferred.

@@ -687,3 +687,9 @@ correction captures full argv, independently binds actual appPath and checks
 the real loaded CommonJS module after renderer hydration. Independent review
 accepts the correction; component/unit/scenario/guards remain unchanged.
 Fresh exact-head hosted execution and built regression acceptance are pending.
+
+A further source audit found the Online path card's full accessible name also
+contains its description/icon/possible badge. Only that scoped locator changes
+from exact to the existing nonexact name query; other exact names match JSX.
+The executing `0ef4405e` run remains historical evidence, not acceptance for
+this locator correction. No production/component/unit/scenario change is added.
