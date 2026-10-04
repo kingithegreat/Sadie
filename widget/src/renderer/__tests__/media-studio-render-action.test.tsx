@@ -123,7 +123,7 @@ test.each([
     mediaRun,
   };
   await act(async () => { render(<MediaStudioPanel />); });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: button, exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: button })); });
 
   try {
     expect(mediaRun).toHaveBeenCalledTimes(1);
@@ -175,7 +175,7 @@ test('job export progress: pending render is an export and keeps the previous mo
       renderInputs: { imagePath: null, visuals: 'plain' } }]), mediaRun,
   };
   await act(async () => { render(<MediaStudioPanel />); });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Make the video', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Make the video' })); });
 
   try {
     expect(mediaRun).toHaveBeenCalledTimes(1);

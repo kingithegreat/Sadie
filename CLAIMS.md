@@ -753,3 +753,7 @@ Frozen panel 5DEC214A / unit 0D7D7D57 / shared status B9A46270 were retained.
 Independent review accepted all five render tags, busy-control preservation
 and persisted active-export fallback. These are React/API fixtures; fresh
 compiled UI and whole current-head CI/review remain pending at this checkpoint.
+Root follow-up integration: 387cf hosted typecheck rejected two unsupported
+ByRole `exact` test options. Removed only those options, preserving exact string
+names and all product/diagnostic source. Corrected E685C29E unit passes 25 related
+tests with native 0/null; fresh exact-head full CI/review/evidence pending.

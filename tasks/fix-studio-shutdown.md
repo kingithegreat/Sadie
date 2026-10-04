@@ -104,6 +104,15 @@ Final diagnostic source SHA is
 All lightweight tests use root's serial resource wrapper, minimum 1 GiB disk
 and 0.5 GiB RAM, and read-only junctions after four matching dependency manifests.
 Heavy local build/package/GUI jobs still require 5 GiB disk and 2 GiB RAM.
+Hosted follow-up 387cf / matrix 37230292900 is retained as an unaccepted head:
+Windows typechecking caught unsupported `exact` options in two new ByRole
+assertions. Root removed those options; their string accessible names retain
+exact matching. Product panel/main/diagnostic sources are unchanged. Actual
+corrected unit E685C29E passed all 25 related tests, native code 0/signal null,
+receipt `.kilo/studio-progress-related-1791144152250.json`, log SHA
+`6828A3CCCD36EA762B1450698BE60A7BC64771D26D6C1C25B3206982F8D50747`.
+The corrected test source needs another exact-head hosted typecheck/full CI,
+configured review and compiled evidence before landing; prior runs stay preserved.
 The previously verified Desktop 2a package remains unchanged. A source repair
 or hosted result does not refresh that executable or prove complete app acceptance.
 The read-only delivery audit binds the actual shortcut and launcher to 2a.
