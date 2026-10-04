@@ -622,3 +622,74 @@ Other-owner #461's four files and held provider/Code/rig PRs remain untouched.
 There is no app-source edit, build, install, native rebuild, GUI run or owner
 profile change in this lane. Human art/rig/episode, microphone/listening,
 entitled Pro and fresh Windows installation acceptance remain open gates.
+
+## 2026-10-04 — FINISH-FIRST-RUN-CONNECTION-1 (Codex)
+
+Owner: `/root/release_finish`; `/root` owns review, publication, CI and delivery.
+Branch `claude/finish-first-run-connection-20261004` starts from fresh main
+`5af9d592e357fe773ae5dbd087af54fabba37c94` in the private source-only worktree
+`C:/Users/adenk/.homebot/finish-first-run-connection-20261004`. Root published
+and read back the canonical Drive claim before this repository claim/edit.
+
+Scope: only `widget/src/renderer/components/FirstRunModal.tsx`, its existing
+`first-run-modal.test.tsx` suite, this appended claim and the owned task.
+Invalidate pending Online checks when provider/key/path changes; only the
+current check may publish success, failure, model or busy state. Preserve
+privacy consent, subscription choices and local setup. Deferred IPC tests
+must reproduce stale responses before the fix and cover provider/key,
+subscription, A→B→A changes and out-of-order completions with current controls.
+
+Source-handler reproduction is retained in
+`.homebot/.kilo/first-run-stale-check-source-proof-1791107165839.json`; it is
+not React or GUI acceptance. Focused React checks use fixture-only IPC and
+the authorized light-job resource wrapper with read-only dependency junctions.
+No provider credentials/calls, dependencies install/copy/native rebuild, GUI,
+package/build, owner data changes or canonical document writes are authorized
+in this lane. The existing tested package remains preserved. Validation and
+handoff will be recorded in `tasks/finish-first-run-connection.md`.
+
+Source handoff: the unchanged component fails eight deferred race/duplicate
+checks while two current-result controls pass. With the bounded generation
+repair, all ten targeted checks and all four unfiltered related suites / 81
+tests pass; scoped ESLint exits 0 without warnings. Independent read-only review
+accepts lifecycle, A→B→A, stale catch/finally and final-save preservation.
+Baseline/fixed/related receipts remain separate and bind actual source hashes.
+Local full TypeScript/build/GUI remain held by the unchanged 5 GiB / 2 GiB guard;
+root owns the draft PR and hosted CI. This is source-only readiness, not an
+updated package, visible Online acceptance or full app completion.
+
+Approved follow-up scope adds one Windows-only regression to the existing
+`widget/src/renderer/e2e/first-run.e2e.spec.ts`. Existing hosted CI builds the
+current compiled Electron UI/preload; the test will defer only the model-list
+IPC response in an isolated dummy-key fixture and retain the production
+settings save/load handlers. Assert current provider/model and encrypted
+secret persistence where available, with the plaintext dummy key recovered
+through unchanged settings-load IPC. Postlaunch transport guards have positive
+controls and bounded coverage; they do not claim startup or blanket privacy.
+No component/unit/dependency/workflow edits or local GUI/build are added.
+Root owns updated draft publication and exact-head hosted execution; the
+earlier source receipts and tested package remain preserved.
+
+The added compiled-UI case is hosted Windows GitHub Actions only and skips
+normal local runs. Legacy dev RAG eagerly reads its source-derived CI-workspace
+`memory/rag-index.json` outside the fixture stores. The test records that exact
+import read exception and before-launch/after-native-termination absence or
+SHA-256 equality; no RAG/chat action or write is allowed. Claims cover named
+fixture stores, not universal store isolation. PASS requires unchanged RAG and
+actual owned native exit 0 / null signal.
+
+Hosted head `8ff66604` failed all six Windows case executions before fixture/UI
+at the launch identity assertion: Playwright injected `--inspect=0` into argv[1].
+Raw failures and artifact `11301430699` remain preserved; its three retained
+final-outer-attempt receipts show native exit 0/null and absent unchanged RAG.
+No model-race or transport-control success is claimed. An instrument-only
+correction captures full argv, independently binds actual appPath and checks
+the real loaded CommonJS module after renderer hydration. Independent review
+accepts the correction; component/unit/scenario/guards remain unchanged.
+Fresh exact-head hosted execution and built regression acceptance are pending.
+
+A further source audit found the Online path card's full accessible name also
+contains its description/icon/possible badge. Only that scoped locator changes
+from exact to the existing nonexact name query; other exact names match JSX.
+The executing `0ef4405e` run remains historical evidence, not acceptance for
+this locator correction. No production/component/unit/scenario change is added.

@@ -624,6 +624,139 @@ describe('FirstRunModal — Get Started (final step)', () => {
   });
 });
 
+describe('FirstRunModal — pending Online validation', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+    return { promise, resolve, reject };
+  }
+
+  const success = (model: string) => ({ success: true, models: [{ id: model }] });
+
+  async function startApiCheck(onSave = jest.fn()) {
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    const input = screen.getByPlaceholderText('Paste the key from your account page');
+    fireEvent.change(input, { target: { value: 'fixture-old-key' } });
+    await act(async () => { fireEvent.click(screen.getByText('Test Connection')); });
+    return input;
+  }
+
+  test('changing provider discards an outstanding success and requires a current check', async () => {
+    const old = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise);
+    await startApiCheck();
+    fireEvent.click(screen.getByText('OpenAI'));
+    await act(async () => { old.resolve(success('old-provider-model')); });
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  test('editing the key discards an outstanding success', async () => {
+    const old = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise);
+    const input = await startApiCheck();
+    fireEvent.change(input, { target: { value: 'fixture-new-key' } });
+    await act(async () => { old.resolve(success('old-key-model')); });
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  test('provider A to B to A cannot revive the first A result', async () => {
+    const old = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise);
+    await startApiCheck();
+    fireEvent.click(screen.getByText('OpenAI'));
+    fireEvent.click(screen.getByRole('button', { name: /^Groq/ }));
+    await act(async () => { old.resolve(success('expired-groq-model')); });
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  test('changing subscription discards the previous sign-in result', async () => {
+    const old = deferred<{ status: string }>();
+    (window as any).electron.checkSubscriptionCli.mockReturnValueOnce(old.promise);
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText('Online'));
+    fireEvent.click(screen.getByText('ChatGPT subscription'));
+    fireEvent.click(screen.getByText('Check sign-in'));
+    fireEvent.click(screen.getByText('Claude subscription'));
+    await act(async () => { old.resolve({ status: 'ready' }); });
+    expect(screen.queryByText('Subscription sign-in found. Ready to try a chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Continue anyway')).toBeInTheDocument();
+  });
+
+  test('Back and return to Online invalidates the old check', async () => {
+    const old = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise);
+    await startApiCheck();
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Online'));
+    await act(async () => { old.resolve(success('expired-path-model')); });
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  test('an old success and finally do not clear the newer pending check', async () => {
+    const old = deferred<ReturnType<typeof success>>(), current = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const input = await startApiCheck();
+    fireEvent.change(input, { target: { value: 'fixture-new-key' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((window as any).electron.listCustomLLMModels).toHaveBeenCalledTimes(2);
+    await act(async () => { old.resolve(success('old-model')); });
+    expect(screen.getByText('Checking...')).toBeDisabled();
+    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    await act(async () => { current.resolve(success('current-model')); });
+    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+  });
+
+  test('an old rejection does not overwrite a newer successful check', async () => {
+    const old = deferred<ReturnType<typeof success>>(), current = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const input = await startApiCheck();
+    fireEvent.change(input, { target: { value: 'fixture-new-key' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => { current.resolve(success('current-model')); });
+    await act(async () => { old.reject(new Error('expired fixture failure')); });
+    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+    expect(screen.queryByText('Connection failed. Check your API key and try again.')).not.toBeInTheDocument();
+  });
+
+  test('Enter does not start a duplicate check for unchanged pending input', async () => {
+    const pending = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValue(pending.promise);
+    const input = await startApiCheck();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect((window as any).electron.listCustomLLMModels).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve(success('current-model')); });
+  });
+
+  test('the current successful check saves its own key and model', async () => {
+    const pending = deferred<ReturnType<typeof success>>(), onSave = jest.fn();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(pending.promise);
+    await startApiCheck(onSave);
+    await act(async () => { pending.resolve(success('current-model')); });
+    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Next'));
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+      useCustomLLM: true,
+      customLLM: expect.objectContaining({ provider: 'groq', apiKey: 'fixture-old-key', model: 'current-model' }),
+    }));
+  });
+
+  test('the current failure remains visible and blocks unverified API setup', async () => {
+    const pending = deferred<ReturnType<typeof success>>();
+    (window as any).electron.listCustomLLMModels.mockReturnValueOnce(pending.promise);
+    await startApiCheck();
+    await act(async () => { pending.reject(new Error('current fixture failure')); });
+    expect(screen.getByText('Connection failed. Check your API key and try again.')).toBeInTheDocument();
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+});
+
 describe('FirstRunModal — Skip setup button', () => {
   test('calls onSave with firstRun: false on Skip setup', async () => {
     const onSave = jest.fn();
