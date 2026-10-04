@@ -8,7 +8,7 @@
  * user was a dead end at the last step.
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, within } from '@testing-library/react';
 import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 
@@ -103,3 +103,106 @@ test('requested changes on a saved movie lead to its source, never a new script 
   expect(screen.queryByText('Write script')).toBeNull();
   expect(screen.getByText(/Changes requested.*source project/)).toBeTruthy();
 });
+
+const EXPORT_PROGRESS = 'Export in progress — previous movies are kept';
+
+function deferredJobOperation() {
+  let resolve!: (result: { ok: boolean; error?: string }) => void;
+  const promise = new Promise<{ ok: boolean; error?: string }>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+test.each([
+  { stage: 'script', state: 'idea', button: 'Write script', script: undefined },
+  { stage: 'narrate', state: 'script_draft', button: 'Record narration', script: 'A saved script.' },
+])('job export progress: pending $stage is not an export', async ({ stage, state, button, script }) => {
+  const operation = deferredJobOperation();
+  const mediaRun = jest.fn().mockReturnValue(operation.promise);
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB, state, script, narrationPath: undefined }]),
+    mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: button, exact: true })); });
+
+  try {
+    expect(mediaRun).toHaveBeenCalledTimes(1);
+    expect(mediaRun).toHaveBeenCalledWith('j1', stage, stage === 'narrate'
+      ? { voice: undefined, engine: undefined } : undefined);
+    expect(document.querySelector('.ms-job .ms-working')).toHaveTextContent(button);
+    const status = screen.getByRole('region', { name: 'Export freshness' });
+    expect(within(status).queryByText(EXPORT_PROGRESS)).toBeNull();
+    expect(within(status).getByText('No movie selected')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: `Burn captions into ${JOB.title}` })).toBeDisabled();
+  } finally {
+    await act(async () => { operation.resolve({ ok: false, error: 'Controlled stage failure.' }); });
+  }
+  expect(screen.getByText('Controlled stage failure.')).toBeInTheDocument();
+  expect(screen.getByRole('checkbox', { name: `Burn captions into ${JOB.title}` })).not.toBeDisabled();
+});
+
+test('job export progress: pending output settings save is not an export', async () => {
+  const operation = deferredJobOperation();
+  const mediaRun = jest.fn().mockReturnValue(operation.promise);
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB, burnSubtitles: false }]), mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  const captions = screen.getByRole('checkbox', { name: `Burn captions into ${JOB.title}` });
+  await act(async () => { fireEvent.click(captions); });
+
+  try {
+    expect(mediaRun).toHaveBeenCalledTimes(1);
+    expect(mediaRun).toHaveBeenCalledWith('j1', 'output', { burnSubtitles: true });
+    expect(document.querySelector('.ms-job .ms-working')).toHaveTextContent('Saving output');
+    const status = screen.getByRole('region', { name: 'Export freshness' });
+    expect(within(status).queryByText(EXPORT_PROGRESS)).toBeNull();
+    expect(within(status).getByText('No movie selected')).toBeInTheDocument();
+    expect(captions).toBeDisabled();
+  } finally {
+    await act(async () => { operation.resolve({ ok: false, error: 'Controlled settings failure.' }); });
+  }
+  expect(screen.getByText('Controlled settings failure.')).toBeInTheDocument();
+  expect(captions).not.toBeDisabled();
+});
+
+test('job export progress: pending render is an export and keeps the previous movie', async () => {
+  const operation = deferredJobOperation();
+  const mediaRun = jest.fn().mockReturnValue(operation.promise);
+  const moviePath = 'C:\\media\\j1\\previous.mp4';
+  (window as any).electron = {
+    mediaList: jest.fn().mockResolvedValue([{ ...JOB, renderPath: moviePath,
+      renderInputs: { imagePath: null, visuals: 'plain' } }]), mediaRun,
+  };
+  await act(async () => { render(<MediaStudioPanel />); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Make the video', exact: true })); });
+
+  try {
+    expect(mediaRun).toHaveBeenCalledTimes(1);
+    expect(mediaRun).toHaveBeenCalledWith('j1', 'render', undefined);
+    const status = screen.getByRole('region', { name: 'Export freshness' });
+    expect(within(status).getByText(EXPORT_PROGRESS)).toBeInTheDocument();
+    expect(screen.getByTestId('ms-video-j1')).toHaveAttribute('src', 'file:///C:/media/j1/previous.mp4');
+    expect(screen.getByRole('checkbox', { name: `Burn captions into ${JOB.title}` })).toBeDisabled();
+  } finally {
+    await act(async () => { operation.resolve({ ok: false, error: 'Controlled render failure.' }); });
+  }
+  expect(screen.getByText('Controlled render failure.')).toBeInTheDocument();
+  expect(screen.getByTestId('ms-video-j1')).toHaveAttribute('src', 'file:///C:/media/j1/previous.mp4');
+  expect(screen.getByRole('region', { name: 'Export freshness' })).not.toHaveTextContent(EXPORT_PROGRESS);
+});
+
+test.each(['preparing', 'rendering', 'validating'])(
+  'job export progress: persisted %s attempt remains an export', async status => {
+    const mediaRun = jest.fn();
+    (window as any).electron = {
+      mediaList: jest.fn().mockResolvedValue([{ ...JOB,
+        latestExportAttempt: { id: 'existing-attempt', status, sourceRevision: null,
+          startedAt: '2026-10-05T00:00:00Z' } }]), mediaRun,
+    };
+    await act(async () => { render(<MediaStudioPanel />); });
+    const exportStatus = screen.getByRole('region', { name: 'Export freshness' });
+    expect(within(exportStatus).getByText(EXPORT_PROGRESS)).toBeInTheDocument();
+    expect(mediaRun).not.toHaveBeenCalled();
+  },
+);

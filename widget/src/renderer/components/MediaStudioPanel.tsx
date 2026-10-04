@@ -292,6 +292,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [renderingJobId, setRenderingJobId] = useState<string | null>(null);
   /**
    * What the busy job is doing, in the user's words.
    *
@@ -841,8 +842,9 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     return fn();
   };
 
-  const run = async (id: string, fn: () => Promise<any>, label = '') => {
-    setBusy(id); setBusyLabel(label); setError(null); setDone(null);
+  const run = async (id: string, fn: () => Promise<any>, label = '', operation?: 'render') => {
+    setBusy(id); setRenderingJobId(operation === 'render' ? id : null);
+    setBusyLabel(label); setError(null); setDone(null);
     try {
       const res = await fn();
       if (res && res.ok === false) setError(res.error || 'That move was refused.');
@@ -851,7 +853,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     } catch (e: any) {
       setError(e?.message || 'Something went wrong.');
     } finally {
-      setBusy(null); setBusyLabel('');
+      setBusy(null); setRenderingJobId(null); setBusyLabel('');
     }
   };
 
@@ -868,7 +870,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           voice: narrateVoice || undefined,
           engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
         }
-      : undefined), a.label);
+      : undefined), a.label, a.action === 'render' ? 'render' : undefined);
   };
 
   /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
@@ -2162,9 +2164,9 @@ ${shots.map((s, idx) => `
     <StudioExportStatus state={jobExportInfo?.job === job ? jobExportInfo.state : {
       sourceRevision: null, sourceSavedAt: job.updatedAt, latestAttempt: job.latestExportAttempt, outputs: [] }}
       moviePath={jobMoviePath(job) ?? null} unsaved={false} busy={busy === job.id}
-      rendering={busy === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
+      rendering={renderingJobId === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
       onRetry={(job.perExportReview || job.outputSpec?.variants?.length === 2) && job.state === 'media_production' ? variantId => {
-        void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`);
+        void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`, 'render');
       } : undefined}
       onSelect={moviePath => selectJobMovie(job, moviePath)} />
     {(job.perExportReview || job.outputSpec?.variants?.length === 2) && <button className="ms-btn" disabled={!jobs.some(item => item.reviewSource?.type === 'job' && item.reviewSource.id === job.id && item.renderPath === jobMoviePath(job))}
@@ -2181,7 +2183,7 @@ ${shots.map((s, idx) => `
         const moved = await api()?.mediaAdvance?.(job.id, 'media_production');
         if (!moved?.ok) return moved;
         return api()?.mediaRun?.(job.id, 'render');
-      }, 'Retrying export')}>
+      }, 'Retrying export', 'render')}>
         Retry export with saved inputs
       </button>}
   </>;
@@ -2632,7 +2634,7 @@ ${shots.map((s, idx) => `
               j.renderInputs?.visuals !== 'plain' && !hasExternalMediaRenderer(j) && (
               <button type="button" className="ms-btn"
                 title="Make new scene pictures for this video. Any previous movie stays unchanged; current online and payment settings still apply."
-                onClick={() => void run(j.id, () => api()?.mediaRun?.(j.id, 'render', { regenerateScenes: true }), 'Regenerating scene pictures')}>
+                onClick={() => void run(j.id, () => api()?.mediaRun?.(j.id, 'render', { regenerateScenes: true }), 'Regenerating scene pictures', 'render')}>
                 Regenerate scene pictures
               </button>
             )}
@@ -3632,7 +3634,7 @@ ${shots.map((s, idx) => `
                         style={{ width: '100%', marginBottom: 6 }}
                         onClick={() => {
                           const a = stageAction(job)!;
-                          run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label);
+                          run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label, a.action === 'render' ? 'render' : undefined);
                         }}
                       >
                         ⚡ {stageAction(job)!.label}

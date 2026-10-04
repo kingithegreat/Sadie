@@ -721,3 +721,35 @@ jobs under the existing 5/2 floor. Serial fixture-only checks may use the light
 1/0.5 floor; hosted compiled CI can provide runtime proof. The existing Desktop
 2a package and owner stores are preserved. Prior Studio timeout points to the
 close boundary but does not establish a product cause or repaired symptom.
+
+Hosted/review correction checkpoint: head 26445c8 is not accepted. Ubuntu's
+new diagnostic failed after normal close resolved because app.process() was
+read from a disposed Playwright handle. QA owns retaining the pre-close child
+handle; product behavior and the historical timeout cause remain separate.
+Configured review found two existing opt-in MCP suites still require the old
+emitted shutdown string. Release owns aligning only those pre-launch assertions
+in `mcp-shutdown.live.e2e.spec.ts` and `mcp-shell-shutdown.live.e2e.spec.ts`.
+Their real fixtures and normal shutdown assertions stay intact. Root retains
+integration, failed-run evidence and draft/auto-merge-off hold; editing of this
+bounded follow-up will be released to root before new-head publication.
+Follow-up source editing is complete and released to named root integration.
+The retained-child instrument and unchanged opt-in behavioral checks received
+independent review; final diagnostic SHA is 33693E84. Old failed results remain
+historical and fresh exact-head hosted/runtime/configured review is required.
+
+Same finishing lane: actual viewed hosted Studio Working screenshot exposed
+generic job busy being announced as Export in progress during Write script.
+Root claims the bounded progress correction before edits. Media owns test-first
+parent-component reproduction and minimal explicit render-operation tracking
+in MediaStudioPanel; root executes baseline before product changes. Tag all
+real render callers and preserve persisted active export attempts, ordinary busy
+disabling, existing previews and other owners. QA/release independently review;
+all source editing is released to root before final-head publication. No real
+provider/media output, credentials, new workflow or local heavy launch.
+Media source editing is complete and released to root serial integration.
+Actual parent-component A/B: 3 failed/11 passed before, 14/14 passed after;
+related preview/status suites 25/25 passed and final scoped lint passed.
+Frozen panel 5DEC214A / unit 0D7D7D57 / shared status B9A46270 were retained.
+Independent review accepted all five render tags, busy-control preservation
+and persisted active-export fallback. These are React/API fixtures; fresh
+compiled UI and whole current-head CI/review remain pending at this checkpoint.

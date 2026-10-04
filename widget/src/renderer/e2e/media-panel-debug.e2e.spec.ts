@@ -6,6 +6,7 @@ import os from 'os';
 import http from 'http';
 import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
+import type { ChildProcess } from 'child_process';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 
@@ -112,6 +113,7 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
     }
   };
   let launched: Awaited<ReturnType<typeof launchElectronApp>> | undefined;
+  let ownedChild: ChildProcess | undefined;
   let primaryError: unknown;
   try {
     expect(fs.existsSync(entry)).toBe(true);
@@ -123,6 +125,7 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
     }, profile);
     const { app, page } = launched;
     const child = app.process();
+    ownedChild = child;
     evidence.native = { pid: child.pid, exitCode: child.exitCode, signal: child.signalCode };
     child.once('exit', (code, signal) => {
       evidence.native = { pid: child.pid, exitCode: code, signal };
@@ -258,6 +261,7 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
       await attach(name, file, 'image/png');
     };
     await expect(row.getByRole('button', { name: 'Write script', exact: true })).toBeEnabled();
+    await row.scrollIntoViewIfNeeded();
     await capture('studio-created');
     await row.getByRole('button', { name: 'Write script', exact: true }).click();
     await expect(row.locator('.ms-working')).toBeVisible();
@@ -266,6 +270,10 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
     expect(generation.body).toMatchObject({ model, stream: false });
     expect(generation.body.prompt).toContain(title);
     expect(requests.some(request => request.method === 'POST' && request.path === '/webhook/homebot/media-research')).toBe(true);
+    const exportStatus = row.locator('.ms-export-status strong');
+    evidence.scriptExportStatus = await exportStatus.innerText();
+    await expect(exportStatus).toHaveText('No movie selected');
+    await row.scrollIntoViewIfNeeded();
     await capture('studio-working');
     releaseGeneration!(); releaseGeneration = undefined;
     await expect(page.locator('.ms-error')).toContainText('503');
@@ -277,6 +285,7 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
     expect(savedJob).toMatchObject({ id: jobId, title, state: 'idea' });
     expect(savedJob.script || '').toBe('');
     evidence.persistedJob = { id: savedJob.id, title: savedJob.title, state: savedJob.state, script: savedJob.script || '' };
+    await page.locator('.ms-error').scrollIntoViewIfNeeded();
     await capture('studio-failed-generation');
     expect(evidence.pageErrors).toEqual([]);
     expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
@@ -296,7 +305,10 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
       try {
         await launched.app.close();
         evidence.closeResolvedAt = Date.now();
-        const child = launched.app.process();
+        // Playwright disposes its application handle when close resolves.
+        // Inspect the exact native child captured while the handle was live.
+        const child = ownedChild;
+        if (!child) throw new Error('Owned native child was not captured before close');
         if (child.exitCode === null && child.signalCode === null) await new Promise<void>(resolve => child.once('exit', () => resolve()));
         evidence.native = { pid: child.pid, exitCode: child.exitCode, signal: child.signalCode };
         evidence.legacyRag.after = snapshot(legacyRagPath);
