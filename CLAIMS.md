@@ -757,3 +757,10 @@ Root follow-up integration: 387cf hosted typecheck rejected two unsupported
 ByRole `exact` test options. Removed only those options, preserving exact string
 names and all product/diagnostic source. Corrected E685C29E unit passes 25 related
 tests with native 0/null; fresh exact-head full CI/review/evidence pending.
+Configured f19c8 review reopened only the media pair for overlap P2.
+Actual test-first 7 failures/14 controls led to immutable per-job render counts;
+fixed 21/21 and related 32/32 pass with native 0/null, scoped lint passed.
+Final panel90655EC9/unit7D624372 source editing released to root integration.
+Other-job actions and either same-job render completion cannot clear a pending
+render; five operation tags, persisted status fallback and ordinary busy paths
+remain intact. Fresh hosted current-head typecheck/CI/review/evidence pending.

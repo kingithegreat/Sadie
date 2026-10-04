@@ -113,6 +113,26 @@ receipt `.kilo/studio-progress-related-1791144152250.json`, log SHA
 `6828A3CCCD36EA762B1450698BE60A7BC64771D26D6C1C25B3206982F8D50747`.
 The corrected test source needs another exact-head hosted typecheck/full CI,
 configured review and compiled evidence before landing; prior runs stay preserved.
+
+The configured f19c8 review completed and raised a second P2: a single render
+job ID loses pending status when another job starts or an overlapping call
+settles. Root kept PR468 draft/auto-merge off and reopened only the media pair.
+Actual frozen 5DEC/7D624 baseline reproduced seven missing-status failures with
+the existing 14 cases passing (native 1/null, 21 total), receipt
+`.kilo/studio-overlap-baseline-1791144638345.json`, log SHA
+`1C094164797F1D4A581ED9D13337691E7827D10256ED4CBFE6D7CD4182967C19`.
+Immutable per-job render counts now increment/decrement only their own captured
+render invocation; ordinary work does not clear another render. Counts preserve
+two jobs, either completion order, and repeated scene regeneration for one job.
+Panel SHA `90655EC9A090A9764BB30F2D898FC66AC7C96F11E5E8846D28A81D62AC8E83E8`
+and unit SHA `7D6243724B8137AC1E78B88A3C495F2F0D699C343DAFB7DA6C1761BA420D9F5D`
+froze across fixed 21/21 and related 32/32 passes (both native 0/null), receipts
+`.kilo/studio-overlap-fixed-1791144677562.json` and
+`.kilo/studio-overlap-related-1791144683683.json`; related log SHA
+`B381941F294A92B48390F45529638F9CDBA60A4B8F1B6B303B8649B43C25A73E`.
+Scoped two-file lint passed. Shutdown sources remain unchanged and bound to
+the prior 36 passing related tests. Fresh final-head hosted checks/review remain
+required; earlier single-job evidence is not acceptance of the changed source.
 The previously verified Desktop 2a package remains unchanged. A source repair
 or hosted result does not refresh that executable or prove complete app acceptance.
 The read-only delivery audit binds the actual shortcut and launcher to 2a.

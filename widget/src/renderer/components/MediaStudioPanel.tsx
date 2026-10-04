@@ -292,7 +292,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [renderingJobId, setRenderingJobId] = useState<string | null>(null);
+  const [pendingRenderCounts, setPendingRenderCounts] = useState<Map<string, number>>(() => new Map());
   /**
    * What the busy job is doing, in the user's words.
    *
@@ -843,7 +843,12 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   };
 
   const run = async (id: string, fn: () => Promise<any>, label = '', operation?: 'render') => {
-    setBusy(id); setRenderingJobId(operation === 'render' ? id : null);
+    setBusy(id);
+    if (operation === 'render') setPendingRenderCounts(current => {
+      const next = new Map(current);
+      next.set(id, (next.get(id) ?? 0) + 1);
+      return next;
+    });
     setBusyLabel(label); setError(null); setDone(null);
     try {
       const res = await fn();
@@ -853,7 +858,14 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     } catch (e: any) {
       setError(e?.message || 'Something went wrong.');
     } finally {
-      setBusy(null); setRenderingJobId(null); setBusyLabel('');
+      setBusy(null); setBusyLabel('');
+      if (operation === 'render') setPendingRenderCounts(current => {
+        const next = new Map(current);
+        const remaining = (next.get(id) ?? 0) - 1;
+        if (remaining > 0) next.set(id, remaining);
+        else next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -2164,7 +2176,7 @@ ${shots.map((s, idx) => `
     <StudioExportStatus state={jobExportInfo?.job === job ? jobExportInfo.state : {
       sourceRevision: null, sourceSavedAt: job.updatedAt, latestAttempt: job.latestExportAttempt, outputs: [] }}
       moviePath={jobMoviePath(job) ?? null} unsaved={false} busy={busy === job.id}
-      rendering={renderingJobId === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
+      rendering={(pendingRenderCounts.get(job.id) ?? 0) > 0 || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
       onRetry={(job.perExportReview || job.outputSpec?.variants?.length === 2) && job.state === 'media_production' ? variantId => {
         void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`, 'render');
       } : undefined}
