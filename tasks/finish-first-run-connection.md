@@ -88,7 +88,7 @@ close are independently bounded, with original proof and separate cleanup errors
 retained. Denial remains active until the owned child terminates; success also
 requires its actual exit code 0 and no signal.
 
-This regression has not been run locally or in hosted CI yet. Historical
+At initial preparation this regression had not run locally or in hosted CI. Historical
 source head `2f8445ce` CI is not green: the macOS shard-3 dependency installation
 failed with ECONNRESET before Build widget/E2E. Root retained job 111412065869's
 log separately. The upcoming amended head requires fresh exact-head CI;
@@ -110,3 +110,34 @@ upload retains them. A JSON attachment failure preserves any original proof or
 teardown error; otherwise it fails the test. No workflow or scenario changed.
 The attachment-only update passes scoped ESLint (native exit 0, no warnings);
 actual hosted artifact retention remains pending.
+
+## Hosted launch-instrument failure and bounded correction
+
+Exact head `8ff66604`, run `37194870580`, Windows shard-1 job
+`111414537576` failed all six executions before the model fixture or UI race.
+The harness incorrectly treated `process.argv[1]` as the compiled entry;
+Playwright prepends `--inspect=0`. This is an instrument failure, not evidence
+of a production race failure. The first outer attempt's three failures remain
+in the raw job log; the uploaded HTML report retains the final outer attempt's
+three JSON receipts. Each retained receipt records native exit 0/null and an
+absent, unchanged legacy RAG file. Model responses and the six transport
+controls did not execute, and there are no success screenshots for this case.
+
+Artifact `11301430699` is preserved with digest
+`4dba8618973bae8d5f674fef10a465fd1e66db4a258a67d0db0eeed744126b10`.
+Independent semantic review is retained in
+`.kilo/hosted-first-run-failure-review-1791110412033.json`. Full source-tree
+equality between reviewed `8ff66604` and actual synthetic checkout `9faa3f32`
+is separately retained; it is not UI acceptance.
+
+The correction changes only launch verification: capture full live argv and
+require a unique exact absolute compiled entry, then bind Electron's actual
+appPath to its directory. After the unchanged renderer URL/hydration checks,
+inspect the real CommonJS cache via Node's builtin createRequire at that actual
+appPath; require the loaded module's actual filename and loaded flag. Installed
+Playwright and Electron default-app source establish the flag injection and
+independent appPath resolution. No positional argv or process.mainModule
+availability assumption remains. Independent review accepted the correction;
+component/unit bytes, race scenario, network guards, attachments and cleanup
+remain unchanged. Fresh exact-head hosted execution is required; no local GUI
+or build has run.

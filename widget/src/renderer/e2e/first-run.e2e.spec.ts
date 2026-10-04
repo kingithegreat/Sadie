@@ -100,14 +100,30 @@ test.describe('First-run onboarding and config persistence', () => {
     };
     try {
       evidence.launch = await app.evaluate(({ app }, expected) => ({
-        entry: process.argv[1], userData: app.getPath('userData'),
+        argv: [...process.argv], appPath: app.getAppPath(), userData: app.getPath('userData'),
         stores: Object.fromEntries(Object.keys(expected).map(key => [key, process.env[key]])),
       }), stores);
-      expect(path.resolve(evidence.launch.entry)).toBe(entry);
+      // Playwright prepends inspector flags. Verify the actual supplied entry
+      // across argv, and Electron's independently resolved application path.
+      expect(evidence.launch.argv.filter((arg: string) => path.isAbsolute(arg))
+        .map((arg: string) => path.resolve(arg)).filter((arg: string) => arg === entry)).toEqual([entry]);
+      expect(path.resolve(evidence.launch.appPath)).toBe(path.dirname(entry));
       expect(evidence.launch.userData).toBe(profile);
       expect(evidence.launch.stores).toEqual(stores);
       expect(fileURLToPath(page.url())).toBe(renderer);
       await expect(page.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+      // The compiled main is CommonJS, imported by Electron's default loader.
+      // Read the real loaded-module cache after hydration; process.mainModule
+      // need not be assigned by that dynamic-import bootstrap.
+      evidence.launch.compiledModule = await app.evaluate(({ app }) => {
+        const nodePath = (process as any).getBuiltinModule('path');
+        const nodeModule = (process as any).getBuiltinModule('module');
+        const applicationEntry = nodePath.join(app.getAppPath(), 'index.js');
+        const loaded = nodeModule.createRequire(applicationEntry).cache[applicationEntry];
+        return { filename: loaded?.filename ?? null, loaded: loaded?.loaded ?? false };
+      });
+      expect(evidence.launch.compiledModule.filename).toBe(entry);
+      expect(evidence.launch.compiledModule.loaded).toBe(true);
       expect(await page.evaluate(() => window.electron.mcpListServers!())).toEqual([]);
 
       // Use the existing acceptance IPC seam. removeHandler + handle would be

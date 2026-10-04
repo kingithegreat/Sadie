@@ -676,4 +676,14 @@ normal local runs. Legacy dev RAG eagerly reads its source-derived CI-workspace
 import read exception and before-launch/after-native-termination absence or
 SHA-256 equality; no RAG/chat action or write is allowed. Claims cover named
 fixture stores, not universal store isolation. PASS requires unchanged RAG and
-actual owned native exit 0 / null signal. Hosted execution is still pending.
+actual owned native exit 0 / null signal.
+
+Hosted head `8ff66604` failed all six Windows case executions before fixture/UI
+at the launch identity assertion: Playwright injected `--inspect=0` into argv[1].
+Raw failures and artifact `11301430699` remain preserved; its three retained
+final-outer-attempt receipts show native exit 0/null and absent unchanged RAG.
+No model-race or transport-control success is claimed. An instrument-only
+correction captures full argv, independently binds actual appPath and checks
+the real loaded CommonJS module after renderer hydration. Independent review
+accepts the correction; component/unit/scenario/guards remain unchanged.
+Fresh exact-head hosted execution and built regression acceptance are pending.
