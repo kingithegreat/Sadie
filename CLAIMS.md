@@ -545,8 +545,8 @@ executed build and E2E steps (196 passed, 95 skipped). Widget workflow attempt 3
 passed 371 suites / 4,932 unit tests and 14 E2E tests after the retained attempt-2
 installed-model delete-control assertion received null. The head and actual
 synthetic checkout had identical full trees; the precise CI race cause remains
-unproved. This refreshed head needs its own checks and root review before
-publication; no failed gate was waived.
+unproved. Refreshed retirement head `f7f55a9f` completed its own checks and
+root review, then merged as `102b4c56`; no failed gate was waived.
 
 The #462 P2 was not reproduced by the installed-toolchain retrospective:
 the configurable re-export spy restored correctly, its nonconfigurable control
@@ -585,3 +585,40 @@ does not assert that its owner stopped a build or changed a source pin.
 Leila art/rig/episode, human voice/listening, entitled Pro and fresh Windows
 installation acceptance remain owner gates. This documentation lane changes
 no app source, dependencies, package or owner profile.
+
+## FINISH-PLAN-STATUS-20261004 — source edits complete, claim released 2026-10-04
+
+Codex / root/integration_queue owns this bounded documentation lane on
+`claude/finish-plan-status-20261004`, isolated from fresh main
+`102b4c562c3545552c08f33a70ffb360b4636e8b`. Root published and read back the
+canonical FINISH-PLAN-EXECUTION-20261004 delegation before this repository claim.
+Drive remains the sole live queue; root owns serial review and integration.
+
+The bounded source edits are complete and their editing claim is released to
+root's serial integration queue. Only exact-head CI/review and landing remain
+with root; this handoff does not assert that publication has landed. Canonical
+Drive records the verified landing and later thread disposition.
+
+Scope is only `docs/CURRENT_STATUS.md`, the obsolete pending-check sentences
+in retired APP-CAPABILITY-FFMPEG-1's CLAIMS/task, and this appended status note.
+All older evidence, failed attempts and retry histories remain preserved.
+The refreshed snapshot records the independently audited source-`2a656bc7`,
+compiled-`c2ea3121` private preview, whose app inputs match main `102b4c56`.
+The sealed-package receipt and its 18 bound evidence files were read/hash-checked
+with zero mismatches. Code/native scopes retain recorded native exits; voice
+scopes retain wrapper success and awaited closures without exact Electron exit
+codes. Human acceptance is not inferred. The dated snapshot preserves prior
+packages, the `05f71427` failed CI evidence and each recorded retry history.
+
+The two obsolete pending-check sentences now record the refreshed `f7f55a9f`
+retirement head's completed checks/root review and merge as `102b4c56`.
+Its post-merge documentation P2 is being corrected in this lane; root retains
+thread resolution after verified landing. No blanket cloud-review clearance
+is claimed. Root drives exact-head review, CI and serial landing; final
+completion and thread disposition are recorded in canonical Drive.
+
+APP-PACKAGE-REFRESH-2 and the delivered preview remain with root/release_finish.
+Other-owner #461's four files and held provider/Code/rig PRs remain untouched.
+There is no app-source edit, build, install, native rebuild, GUI run or owner
+profile change in this lane. Human art/rig/episode, microphone/listening,
+entitled Pro and fresh Windows installation acceptance remain open gates.
