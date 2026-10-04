@@ -764,3 +764,19 @@ Final panel90655EC9/unit7D624372 source editing released to root integration.
 Other-job actions and either same-job render completion cannot clear a pending
 render; five operation tags, persisted status fallback and ordinary busy paths
 remain intact. Fresh hosted current-head typecheck/CI/review/evidence pending.
+
+Current c6714 full widget CI passed 4,957 tests (33 skipped), typecheck,
+build and floating-overlay acceptance; configured review completed without
+new findings and the two prior addressed threads are resolved. Matrix
+37231291017 is FAILED: Windows Studio functional stages and normal native
+exit passed, but six executions failed the main-PID equality assertion.
+Playwright's installed Windows launcher uses shell:true, so app.process()
+owns the shell while app.evaluate sees Electron main. All quit milestones
+exist under the distinct main PID. This is an instrument failure, not proof
+of a product hang or resolution of the historical 180-second timeout.
+Root reopens ONLY the Studio diagnostic for media to capture main PID/PPID
+and assert the actual shell-parent relation, preserving both native exits,
+compiled provenance, real close, transport controls and the time budget.
+QA/release audit read-only; root owns serial checks and new-head publication.
+PR468 is draft/auto-merge off. Failed evidence remains immutable; the next
+head requires fresh whole CI, configured review and three-OS artifact proof.

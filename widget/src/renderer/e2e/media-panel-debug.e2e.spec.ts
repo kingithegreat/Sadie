@@ -114,6 +114,7 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
   };
   let launched: Awaited<ReturnType<typeof launchElectronApp>> | undefined;
   let ownedChild: ChildProcess | undefined;
+  let mainPID: number | undefined;
   let primaryError: unknown;
   try {
     expect(fs.existsSync(entry)).toBe(true);
@@ -153,12 +154,30 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
       process.on('exit', code => stamp('process-exit', { code }));
       stamp('observer-installed');
       return {
+        pid: process.pid, ppid: process.ppid, platform: process.platform,
         argv: [...process.argv], appPath: app.getAppPath(), userData: app.getPath('userData'),
         nodeHome: (process as any).getBuiltinModule('os').homedir(),
         stores: Object.fromEntries(Object.keys(expected.stores).map(key => [key, process.env[key]])),
         ollamaUrl: process.env.OLLAMA_URL, comfyEndpoint: process.env.COMFY_ENDPOINT,
       };
     }, { milestones, stores });
+    mainPID = evidence.launch.pid;
+    evidence.processOwnership = {
+      case: process.platform === 'win32' ? 'windows-shell-parent' : 'direct-electron-child',
+      hostPlatform: process.platform, mainPlatform: evidence.launch.platform,
+      ownedChildPID: child.pid, mainPID, mainPPID: evidence.launch.ppid,
+    };
+    for (const pid of [child.pid, mainPID, evidence.launch.ppid]) {
+      expect(Number.isSafeInteger(pid) && pid > 0).toBe(true);
+    }
+    expect(evidence.launch.platform).toBe(process.platform);
+    // Playwright spawns a shell on Windows; elsewhere its child is Electron main.
+    if (process.platform === 'win32') {
+      expect(mainPID).not.toBe(child.pid);
+      expect(evidence.launch.ppid).toBe(child.pid);
+    } else {
+      expect(mainPID).toBe(child.pid);
+    }
     expect(evidence.launch.argv.filter((arg: string) => path.isAbsolute(arg)).map((arg: string) => path.resolve(arg)).filter((arg: string) => arg === entry)).toEqual([entry]);
     expect(path.resolve(evidence.launch.appPath)).toBe(path.dirname(entry));
     expect(evidence.launch.userData).toBe(profile);
@@ -315,10 +334,15 @@ test('the Studio panel does what its buttons say', async ({}, testInfo) => {
         expect(evidence.legacyRag.after).toEqual(evidence.legacyRag.before);
         expect(evidence.native).toMatchObject({ exitCode: 0, signal: null });
         evidence.milestones = fs.readFileSync(milestones, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-        for (const event of ['before-quit', 'will-quit', 'quit', 'process-exit']) {
-          expect(evidence.milestones.some((row: any) => row.event === event && row.pid === child.pid)).toBe(true);
+        expect(evidence.milestones.every((row: any) => row.pid === mainPID)).toBe(true);
+        for (const event of ['observer-installed', 'before-quit', 'will-quit', 'quit', 'process-exit']) {
+          expect(evidence.milestones.some((row: any) => row.event === event && row.pid === mainPID)).toBe(true);
         }
-        evidence.transport = evidence.milestones.filter((row: any) => row.event === 'process-exit').slice(-1)[0]?.transport;
+        for (const event of ['quit', 'process-exit']) {
+          expect(evidence.milestones.filter((row: any) => row.event === event)
+            .every((row: any) => row.code === 0)).toBe(true);
+        }
+        evidence.transport = evidence.milestones.filter((row: any) => row.event === 'process-exit' && row.pid === mainPID).slice(-1)[0]?.transport;
         expect(evidence.transport?.controls).toHaveLength(6);
         expect(evidence.transport?.blocked).toEqual([]);
       } catch (error) { cleanupError ||= error; evidence.cleanupError ||= errorText(error); }

@@ -142,3 +142,36 @@ floor gives a planning baseline of 7.063 GiB free disk plus unknown overhead;
 available resources after the checks were 4.185 GiB disk / 1.850 GiB RAM.
 Deduplication was assessed but not performed: equal runtime bytes alone cannot
 cover the entry shortage, and model hardlinks introduce cross-stage write aliases.
+
+## Windows process-ownership instrument correction
+
+c6714's full widget CI passed 371 suites / 4,957 tests, with 11 suites / 33
+tests skipped, plus typecheck/build/overlay checks. Configured review completed
+without new findings; both earlier addressed P2 threads are resolved.
+Matrix 37231291017 failed only Windows shard 1. All six Studio executions
+completed functional stages and normal native exit, then failed line 319's
+requirement that Electron main milestone PID equal app.process().pid.
+The retained final retry evidence has shell/main pairs 1528/8360, 8124/5624
+and 1704/7648, native exit 0/null and all four main quit milestones present.
+Installed Playwright's Windows launch sets shell:true; Unix launches directly.
+The correction must bind Electron's captured PID/PPID/platform to the owned
+shell on Windows, and direct owned child on Unix. Check main quit/process-exit
+code 0 independently of the owned child exit 0/null. Preserve real close,
+transport controls, isolated stores, provenance and the original timeout.
+Windows artifact 11314377795 SHA256
+`0f08d53b15ddfd2a7d70ed8887dc494e675aa0ab05f5b3162e8bdb239a4dc3e3`
+and job 111521278394 log SHA256
+`cc90e69918285bce43d19fe125083d4b702bd3aeca13ceea61e4b647df1c3fb9`
+remain failed evidence. PR468 is draft with auto-merge disabled. No historical
+timeout cause, new-head acceptance or refreshed Desktop build is claimed.
+
+Released diagnostic SHA256
+`7919F80B926EA7215AC5A182D5370A566E940E28987740C78A70C1B583115997`
+captures main PID/PPID/platform before close. Windows requires a distinct
+main PID whose PPID equals the owned shell PID; Linux/Mac require direct PID
+equality. Every lifecycle row must match main PID, observer-installed is
+required, and quit/process-exit must each report code 0. The wrapper still
+must exit 0 without a signal. Root's scoped ESLint and Playwright discovery
+both exited 0/null at 20:36 UTC; discovery found exactly the one target test.
+No local Electron launch or typecheck is claimed under the heavy resource
+hold. Fresh hosted ancestry/runtime/whole-CI proof remains mandatory.
