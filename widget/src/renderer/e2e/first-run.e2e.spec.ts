@@ -197,10 +197,14 @@ test.describe('First-run onboarding and config persistence', () => {
       await expect(modal.getByRole('button', { name: 'Checking...', exact: true })).toBeDisabled();
       await expect(modal.getByText('Connected! Ready to chat.', { exact: true })).toHaveCount(0);
       await expect(modal.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
-      await modal.screenshot({ path: testInfo.outputPath('old-reply-current-check-pending.png') });
+      const pendingScreenshot = testInfo.outputPath('old-reply-current-check-pending.png');
+      await modal.screenshot({ path: pendingScreenshot });
+      await testInfo.attach('old-reply-current-check-pending', { path: pendingScreenshot, contentType: 'image/png' });
       await app.evaluate(() => (globalThis as any).firstRunRaceFixture.requests[1].resolve({ success: true, models: [{ id: 'fixture-current-model' }] }));
       await expect(modal.getByText('Connected! Ready to chat.', { exact: true })).toBeVisible();
-      await modal.screenshot({ path: testInfo.outputPath('current-check-connected.png') });
+      const connectedScreenshot = testInfo.outputPath('current-check-connected.png');
+      await modal.screenshot({ path: connectedScreenshot });
+      await testInfo.attach('current-check-connected', { path: connectedScreenshot, contentType: 'image/png' });
       await modal.getByRole('button', { name: 'Next', exact: true }).click();
       await modal.getByRole('button', { name: 'Get Started', exact: true }).click();
       await expect(modal).toHaveCount(0);
@@ -264,16 +268,28 @@ test.describe('First-run onboarding and config persistence', () => {
       }
       evidence.status = evidence.proofCompleted && evidence.restored && !evidence.closeError && !evidence.terminationError && evidence.legacyRag.unchanged
         && child.exitCode === 0 && child.signalCode === null ? 'passed' : 'failed';
-      fs.writeFileSync(testInfo.outputPath('first-run-race-evidence.json'), JSON.stringify(evidence, null, 2));
+      const evidencePath = testInfo.outputPath('first-run-race-evidence.json');
+      fs.writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
       // Preserve the original assertion error; teardown diagnostics stay in its
       // evidence. A successful proof still fails if normal teardown failed.
-      if (!evidence.proofError) {
-        expect(evidence.restored).toBe(true);
-        expect(evidence.closeError).toBeUndefined();
-        expect(evidence.terminationError).toBeUndefined();
-        expect(evidence.legacyRag.unchanged).toBe(true);
-        expect(child.exitCode).toBe(0);
-        expect(child.signalCode).toBeNull();
+      try {
+        if (!evidence.proofError) {
+          expect(evidence.restored).toBe(true);
+          expect(evidence.closeError).toBeUndefined();
+          expect(evidence.terminationError).toBeUndefined();
+          expect(evidence.legacyRag.unchanged).toBe(true);
+          expect(child.exitCode).toBe(0);
+          expect(child.signalCode).toBeNull();
+        }
+      } finally {
+        try {
+          await testInfo.attach('first-run-race-evidence', { path: evidencePath, contentType: 'application/json' });
+        } catch (error) {
+          // Do not replace an existing proof/teardown failure with a reporter
+          // failure. A successful proof still fails if evidence cannot attach.
+          if (evidence.proofError || evidence.status === 'failed') console.error('First-run evidence attachment failed:', error);
+          else throw error;
+        }
       }
     }
   });

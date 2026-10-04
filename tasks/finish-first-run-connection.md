@@ -103,3 +103,10 @@ termination absence or SHA-256 equality. It performs no RAG or chat action and
 must prove no RAG write. The profile claims therefore cover the named fixture
 stores, not universal per-store isolation. PASS also requires native exit 0 and
 no signal. No product hook or compiled-tree copy was introduced.
+
+Both success screenshots and the final JSON receipt are explicitly attached
+with their PNG/JSON content types so the existing per-OS Playwright HTML report
+upload retains them. A JSON attachment failure preserves any original proof or
+teardown error; otherwise it fails the test. No workflow or scenario changed.
+The attachment-only update passes scoped ESLint (native exit 0, no warnings);
+actual hosted artifact retention remains pending.
