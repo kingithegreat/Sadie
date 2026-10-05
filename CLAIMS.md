@@ -780,3 +780,35 @@ compiled provenance, real close, transport controls and the time budget.
 QA/release audit read-only; root owns serial checks and new-head publication.
 PR468 is draft/auto-merge off. Failed evidence remains immutable; the next
 head requires fresh whole CI, configured review and three-OS artifact proof.
+
+## 2026-10-05 — APP-PACKAGE-SCAN-STREAM
+
+Root coordinates this bounded lane from landed main `794c41e` in
+`.homebot/fix-package-scanner-20261005`, branch
+`claude/fix-package-scanner-20261005`; the canonical Drive claim was read back
+before edits. Media owns only `scripts/scan-package-integrity.js`, its bounded
+native Node fixture test, the thin widget Jest wrapper
+`widget/src/main/__tests__/scan-package-integrity.test.ts`, this claim and
+`tasks/fix-package-scanner.md`.
+Test-first controls precede production changes. Root alone executes fixtures,
+integrates, publishes and runs final acceptance; QA/release review read-only.
+Pin the intended `resources/app.asar`, reject ambiguity, and preserve forbidden
+entry-name checks while verifying packed/unpacked/link readability without a
+full extracted tree. No dependencies, manifests, build, GUI, caches, profiles,
+installer, live Ancient Pathways assets or foreign source edits. Installed
+official ASAR/tool dependencies remain read-only. The initial resource snapshot
+met the 2 GiB RAM floor but disk 3.969 GiB held heavy work under 5 GiB; the prior full-delivery
+planning baseline remains about 7.063 GiB plus unmeasured overhead. Scanner
+fixtures and any storage benefit do not establish fresh Desktop acceptance.
+
+Root's original 31-control baseline ran 17 passed / 14 failed, exit 1/null.
+The added directory-alias A/B ran 32 passed / 2 failed (ancestor and sibling
+cycles), followed by final scanner `ADF0E90A` passing all 34 controls, exit
+0/null, zero skipped. The existing-CI widget wrapper passed its one Jest test,
+which runs and asserts those same 34 native controls; this is not 35 distinct
+controls. Root also scanned the unchanged retained 2a archive read-only:
+15,306 files / 17,903 entries / 936,777,992 payload bytes. The archive hash
+remained unchanged. That byte count describes logical temporary extraction
+writes avoided, not measured physical reclamation. Earlier failures remain
+retained. Media editing is released to root; full CI, typecheck, publication
+and fresh Desktop delivery remain root-owned and pending.
