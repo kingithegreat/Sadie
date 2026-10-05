@@ -1,0 +1,65 @@
+# Private unsigned artifact only. The coordinator alone publishes this audit branch.
+name: Owned Windows Package (pinned application)
+on:
+  push:
+    branches: [audit/release-package-20261005]
+permissions:
+  contents: read
+concurrency:
+  group: owned-release-package-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      APPLICATION_SHA: 794c41e8ece0247f24aab59da2e6025fb5b43875
+      APPLICATION_TREE: 57c4de68c13f18dc829268b1829348d664bc6d6f
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      HOMEBOT_ENABLE_AUTO_UPDATE: '0'
+    steps:
+      - name: Checkout workflow controls (distinct workflow SHA)
+        uses: actions/checkout@v4
+        with:
+          path: controls
+          persist-credentials: false
+      - name: Checkout immutable application
+        uses: actions/checkout@v4
+        with:
+          ref: 794c41e8ece0247f24aab59da2e6025fb5b43875
+          path: application
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Production package, strict scanner and actual packaged native proof
+        run: |
+          node controls/.github/owned-release/package-owned-windows.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain small independent-review proof without runtime allocation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-homebot-windows-proof-${{ github.run_id }}-${{ github.run_attempt }}-794c41e8
+          path: owned-package/evidence/
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
+      - name: Retain exact runtime, installer and all phase/proof evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owned-homebot-windows-${{ github.run_id }}-${{ github.run_attempt }}-794c41e8
+          path: |
+            owned-package/evidence/
+            owned-package/widget/dist-electron/win-unpacked/
+            owned-package/widget/dist-electron/*.exe
+            owned-package/widget/dist-electron/*.exe.blockmap
+            owned-package/widget/dist-electron/latest.yml
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
