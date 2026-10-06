@@ -8,15 +8,15 @@ test('tree rows keep file names and depth separate from nested action controls a
   (window as any).electron = { workspaceList: async (directory: string) => ({ success: true, entries: directory === '/fixture' ? [source] : [file] }) };
   const onOpen = jest.fn(), onAction = jest.fn();
   render(<FileTree root="/fixture" activePath={null} onOpenFile={onOpen} onAction={onAction} />);
-  const folder = await screen.findByRole('treeitem', { name: 'src', exact: true });
+  const folder = await screen.findByRole('treeitem', { name: 'src' });
   expect(folder).toHaveAttribute('aria-level', '1');
   fireEvent.keyDown(folder, { key: 'ArrowRight' });
-  const row = await screen.findByRole('treeitem', { name: 'app.ts', exact: true });
+  const row = await screen.findByRole('treeitem', { name: 'app.ts' });
   expect(folder).toHaveAttribute('aria-expanded', 'true');
   expect(row).toHaveAttribute('aria-level', '2');
   row.focus(); fireEvent.keyDown(row, { key: 'Enter' });
   expect(onOpen).toHaveBeenCalledWith(file.path);
-  const action = screen.getByRole('combobox', { name: 'Actions for app.ts', exact: true });
+  const action = screen.getByRole('combobox', { name: 'Actions for app.ts' });
   fireEvent.keyDown(action, { key: 'Enter' });
   expect(onOpen).toHaveBeenCalledTimes(1);
   fireEvent.change(action, { target: { value: 'move' } });
