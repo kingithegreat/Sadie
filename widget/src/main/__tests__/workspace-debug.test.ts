@@ -12,10 +12,10 @@ async function waitForPaused(expectedLine?: number) {
   for (let attempts = 0; attempts < 50; attempts++) {
     const state = await call('state');
     if (!state.success || !state.running) throw new Error(state.error || 'The actual debug program exited before its requested pause.');
-    lastLine = state.frames?.[0].line;
+    lastLine = state.frames?.[0]?.line;
     // A resume response can arrive before Debugger.resumed. Do not mistake
     // the old entry pause for the subsequently requested breakpoint event.
-    if (state.paused && (expectedLine === undefined || (state.frames?.[0].path === file && lastLine === expectedLine))) return state;
+    if (state.paused && (expectedLine === undefined || (state.frames?.[0]?.path === file && lastLine === expectedLine))) return state;
     await new Promise(resolve => setTimeout(resolve, 30));
   }
   throw new Error(`The actual program never paused${expectedLine === undefined ? '' : ` at ${file}:${expectedLine}`}. Last top-frame line: ${lastLine}.`);
