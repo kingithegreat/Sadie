@@ -86,7 +86,7 @@ describe('actual inline draft IPC through the real model HTTP boundary', () => {
     const sends = await draft();
     expect(bodies).toHaveLength(1);
     expect(bodies[0].tools).toBeUndefined();
-    const prompt = JSON.stringify(bodies[0].messages);
+    const prompt = bodies[0].messages.map((message: any) => message.content).join('\n');
     expect(prompt).toContain(fs.realpathSync(root)); expect(prompt).toContain('Return only the requested replacement source code');
     expect(prompt).not.toContain('Read-only planning'); expect(prompt).not.toContain('PRIVATE_ASSISTANT_HISTORY');
     expect(sends.filter(send => send.channel === 'homebot:stream-error')).toEqual([]);
