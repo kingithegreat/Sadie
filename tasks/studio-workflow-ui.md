@@ -50,6 +50,13 @@ wrap long actions and adapt at narrower widths.
   `workflow-tools-fixed-results`; its baseline is `workflow-tools-baseline-results`.
   Repeated dark/light theme and visual checks after the CSS fix passed 2/2 with
   zero retries: `workflow-tools-theme-results` and `workflow-tools-theme-junit.xml`.
+- The later review claim that a rejected list reload loses a successful save
+  result was checked against `refresh()`, which catches reload failures. A new
+  behavioral test passed without production changes: successful create plus
+  rejected list reload clears the submitted title, reports the reload error and
+  repeated Enter does not create a second job. All 13 workflow regressions pass;
+  evidence is `workflow-refresh-regression.json`. This finding is a verified
+  false positive, not an unimplemented fix.
 
 Evidence: `C:/Users/adenk/.homebot/workflow-ui-tests.json`,
 `workflow-ui-baseline-results`, `workflow-ui-compact-results` (intermediate),

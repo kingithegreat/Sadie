@@ -118,6 +118,19 @@ test('successful creation selects and focuses the new project so its next action
   expect(screen.getByRole('button', { name: 'Write script' })).toBeInTheDocument();
 });
 
+test('a successful save followed by a refused list reload clears the submitted title and reports the reload error', async () => {
+  const mediaList = jest.fn().mockResolvedValueOnce([]).mockRejectedValue(new Error('Could not reload saved projects.'));
+  const mediaCreate = jest.fn().mockResolvedValue({ ok: true, job: job('saved', 'idea') });
+  await mount([], { mediaList, mediaCreate });
+  const title = screen.getByRole('textbox', { name: 'New video title' });
+  fireEvent.change(title, { target: { value: 'Saved idea' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add video' })); });
+  expect(title).toHaveValue('');
+  expect(screen.getByRole('alert')).toHaveTextContent('Could not reload saved projects.');
+  await act(async () => { fireEvent.keyDown(title, { key: 'Enter' }); });
+  expect(mediaCreate).toHaveBeenCalledTimes(1);
+});
+
 test('repeated Enter while creation is pending makes one job and preserves a newer draft', async () => {
   let resolve!: (value: any) => void;
   const mediaCreate = jest.fn(() => new Promise(done => { resolve = done; }));
