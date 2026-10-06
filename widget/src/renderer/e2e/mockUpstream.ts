@@ -108,6 +108,9 @@ export async function startMockUpstream(opts?: { chunkIntervalMs?: number; chunk
     legacyN8nStreamUrl: `http://127.0.0.1:${port}/webhook/homebot/stream`,
     // Provide a generic openai-style endpoint alias used by the proxy and tests
     openaiEndpoint: `http://127.0.0.1:${port}/mock-sse`,
-    close: () => new Promise<void>((r) => server.close(() => r())),
+    close: () => new Promise<void>((r) => {
+      server.close(() => r());
+      server.closeAllConnections();
+    }),
   };
 }

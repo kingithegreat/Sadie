@@ -14,6 +14,7 @@ import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+import { closeElectronApp } from './helpers/closeApp';
 
 const OUT = path.resolve(__dirname, '../../../test-results/visual');
 
@@ -63,7 +64,8 @@ test.describe('visual check', () => {
     await expect(page.getByRole('heading', { name: /Media Studio/ }).first()).toBeVisible();
     // The line that states the guardrail — if this is missing the panel
     // rendered something else.
-    await expect(page.getByText(/without your approval/i)).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Your video workflow' }))
+      .toContainText('You review the result before approving. Uploading is a separate action.');
 
     // Browser: the BrowserView floats ABOVE the DOM, so the screenshot is the
     // only way to tell an attached page from an empty placeholder.
@@ -72,6 +74,6 @@ test.describe('visual check', () => {
     await page.screenshot({ path: path.join(OUT, '3-browser.png') });
 
     console.log('screenshots written to', OUT);
-    await app.close();
+    await closeElectronApp(app, 'visual check');
   });
 });

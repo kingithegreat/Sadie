@@ -90,18 +90,16 @@ afterEach(() => {
 });
 
 describe('Media Studio Workspaces & DCC Navigation', () => {
-  test('renders top DCC branding ribbon and status chips', async () => {
+  test('renders a clear Studio heading and navigation without vendor status claims', async () => {
     setup();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
 
-    expect(screen.getByText('🎬 Media Studio & Movie Engine')).toBeInTheDocument();
-    expect(screen.getByText('Showrunner 2D')).toBeInTheDocument();
-    expect(screen.getByText('Shot Router')).toBeInTheDocument();
-    expect(screen.getByText('NLE CapCut')).toBeInTheDocument();
-    expect(screen.getByText('Blender Stage')).toBeInTheDocument();
-    expect(screen.getByText('ComfyUI Nodes')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Media Studio' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Projects/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByText('NLE CapCut')).toBeNull();
+    expect(screen.queryByText('Blender Stage')).toBeNull();
   });
 
   test('renders Director Quick Launch Hub with interactive cards in default view', async () => {
@@ -115,9 +113,9 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
     expect(within(hub).getByText('Movie Router')).toBeInTheDocument();
     // Google retired Imagen 3 (#334); the hub must not advertise it as an engine.
     expect(hub.textContent).not.toMatch(/Imagen/);
-    expect(within(hub).getByText('Ancient Pathways 2D')).toBeInTheDocument();
-    expect(within(hub).getByText('CapCut Timeline')).toBeInTheDocument();
-    expect(within(hub).getByText('Stage Viewport')).toBeInTheDocument();
+    expect(within(hub).getByText('Ancient Pathways')).toBeInTheDocument();
+    expect(within(hub).getByText('Timeline')).toBeInTheDocument();
+    expect(within(hub).getByText('Stage')).toBeInTheDocument();
   });
 
   test('clicking Movie Router hub card switches to the Movie Router view and loads projects', async () => {
@@ -283,7 +281,7 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
     });
 
     // Click tab
-    const timelineTab = screen.getByRole('tab', { name: /CapCut Timeline/i });
+    const timelineTab = screen.getByRole('tab', { name: /Timeline/i });
     await act(async () => {
       fireEvent.click(timelineTab);
     });
@@ -305,7 +303,7 @@ describe('Media Studio Workspaces & DCC Navigation', () => {
       render(<MediaStudioPanel />);
     });
 
-    const stageTab = screen.getByRole('tab', { name: /Stage Viewport/i });
+    const stageTab = screen.getByRole('tab', { name: /Stage/i });
     await act(async () => {
       fireEvent.click(stageTab);
     });

@@ -52,7 +52,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
   test('Play starts the actual rendered media, and Pause stops it', async () => {
     setup();
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
     await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
     const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
@@ -67,7 +67,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
       { id: 'empty', title: 'Script only', state: 'script_draft', script: 'A script is not yet audio.' },
     ]) });
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
     const audio = document.querySelector('.ms-timeline-workspace audio');
     expect(audio).toHaveAttribute('src', 'file:///mock/voice%20%231.wav');
     await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
@@ -81,7 +81,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
   test('time comes from media; seek, volume, mute and speed change the actual player', async () => {
     setup();
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
     const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
     Object.defineProperty(video, 'duration', { configurable: true, value: 12 });
     await act(async () => { fireEvent.loadedMetadata(video); });
@@ -103,7 +103,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
     setup();
     (HTMLMediaElement.prototype.play as jest.Mock).mockRejectedValueOnce(new Error('decoder rejected file'));
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
     const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
     await act(async () => { fireEvent.click(screen.getByTitle('Play (Space)')); });
     expect(screen.getByRole('alert')).toHaveTextContent('Timeline playback failed');
@@ -117,7 +117,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
   test('end of a marked range pauses or loops the actual media', async () => {
     setup();
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
     const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
     await act(async () => { fireEvent.click(screen.getByTitle('Step frame forward 1s (▶|)')); });
     await act(async () => { fireEvent.click(screen.getByText('[I] In')); });
@@ -144,7 +144,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
     });
 
     // Switch to CapCut Timeline
-    const timelineTab = screen.getByRole('tab', { name: /CapCut Timeline/i });
+    const timelineTab = screen.getByRole('tab', { name: /Timeline/i });
     await act(async () => {
       fireEvent.click(timelineTab);
     });
@@ -184,7 +184,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
 
     // Switch to Timeline
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
     });
 
     // Lock Track V1
@@ -222,7 +222,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
 
     // Switch to Timeline
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
     });
 
     // Mark In point
@@ -265,7 +265,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
 
     // Switch to Timeline
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
     });
 
     // Switch to Transitions & FX tab
@@ -300,7 +300,7 @@ describe('Media Studio Pro NLE Timeline Workspace', () => {
 
     // Switch to Timeline
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
     });
 
     // Space key toggles playback
@@ -349,7 +349,7 @@ describe('MS-6: the inspector reaches the exported file', () => {
   /** Open the Timeline with the monitor loaded and one split marker down. */
   const openTimelineWithCut = async () => {
     await act(async () => { render(<MediaStudioPanel />); });
-    await click(tab(/CapCut Timeline/i));
+    await click(tab(/Timeline/i));
     // jsdom reports no duration, so give the monitor one and move the playhead:
     // a split marker only lands inside the clip (S is the split hotkey).
     const video = document.querySelector('.ms-monitor-video') as HTMLVideoElement;
@@ -404,7 +404,7 @@ describe('MS-6: the inspector reaches the exported file', () => {
   test('the transitions that cannot be rendered are gone from the inspector', async () => {
     withSplice();
     await act(async () => { render(<MediaStudioPanel />); });
-    await click(tab(/CapCut Timeline/i));
+    await click(tab(/Timeline/i));
     await click(tab(/Transitions & FX/i));
 
     expect(screen.getByRole('button', { name: /Cross Dissolve/i })).toBeInTheDocument();

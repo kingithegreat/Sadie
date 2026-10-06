@@ -53,7 +53,7 @@ test('voice samples require Play, coordinate with the job, and never autoplay af
   nativePlay(voice);
   expect(pauseMovie).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('tab', { name: /Timeline/ }));
-  fireEvent.click(screen.getByRole('tab', { name: /Director/ }));
+  fireEvent.click(screen.getByRole('tab', { name: /Projects/ }));
   expect(screen.getByTestId('ms-voice-sample')).not.toHaveAttribute('autoplay');
 });
 
