@@ -95,3 +95,17 @@ test('an external edit during the durable temporary write is rechecked before re
   expect(fs.readFileSync(file, 'utf8')).toBe('external during write');
   expect(fs.readdirSync(folder)).toEqual(['race.txt']);
 });
+
+test('redirecting a parent to another allowed folder with identical bytes cannot redirect Save', () => {
+  const project = path.join(folder, 'project'); const moved = path.join(folder, 'moved-project'); const other = path.join(folder, 'other');
+  fs.mkdirSync(project); fs.mkdirSync(other);
+  const file = path.join(project, 'same.txt'); fs.writeFileSync(file, 'original'); fs.writeFileSync(path.join(other, 'same.txt'), 'original');
+  const opened = readWorkspaceSnapshot(file);
+  const sync = jest.spyOn(require('fs'), 'fsyncSync').mockImplementationOnce(() => {
+    fs.renameSync(project, moved); fs.symlinkSync(other, project, process.platform === 'win32' ? 'junction' : 'dir');
+  });
+  try { expect(() => saveWorkspaceSnapshot(file, 'draft', { expectedVersion: opened.version })).toThrow(/path changed/); }
+  finally { sync.mockRestore(); }
+  expect(fs.readFileSync(path.join(moved, 'same.txt'), 'utf8')).toBe('original');
+  expect(fs.readFileSync(path.join(other, 'same.txt'), 'utf8')).toBe('original');
+});

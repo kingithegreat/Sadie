@@ -32,6 +32,8 @@ export function atomicWorkspaceWrite(file: string, bytes: Buffer, mode?: number)
 }
 
 export function saveWorkspaceSnapshot(file: string, content: string, options: Partial<WorkspaceSaveOptions> = {}): WorkspaceSaveResult {
+  const capturedPath = checkedWorkspacePath(file);
+  if (capturedPath !== file) throw new Error('This file path changed. Reopen the file before saving.');
   if (typeof options.expectedVersion !== 'string' || !/^[a-f0-9]{64}$/.test(options.expectedVersion)) {
     return { success: false, error: 'Reopen this file before saving: its disk version is unavailable.' };
   }
@@ -50,6 +52,6 @@ export function saveWorkspaceSnapshot(file: string, content: string, options: Pa
   // These operations are synchronous, so another IPC save cannot interleave.
   // Recheck immediately before replacing; no unguarded force-write path exists.
   if (versionOf(fs.readFileSync(file)) !== disk.version) return { success: false, conflict: true, disk: readWorkspaceSnapshot(file), error: 'The file changed again. Review the latest disk version.' };
-  atomicProjectWrite(file, bytes, { expectedExists: true, expectedHash: disk.version, validate: () => { checkedWorkspacePath(file); } });
+  atomicProjectWrite(file, bytes, { expectedExists: true, expectedHash: disk.version, validate: () => { if (checkedWorkspacePath(file) !== capturedPath) throw new Error('This file path changed during Save. Its draft and disk versions were preserved.'); } });
   return { success: true, version: versionOf(bytes), eol, bom };
 }
