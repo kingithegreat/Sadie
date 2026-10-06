@@ -783,6 +783,10 @@ export function getCannedResponse(message: string): string | null {
 // Exported deterministic intent router so it can be used by the message handler
 // and imported directly by unit tests.
 export async function preProcessIntent(userMessage: string, conversationId?: string): Promise<{ calls: any[] } | null> {
+  // Legacy automatic intents include direct Desktop writes and other pseudo
+  // handlers outside registered tool review. Every IDE scope, even an approved
+  // plan, must use the model's workspace-gated tools and Changes proposals.
+  if (currentWorkspace()) return null;
   if (!userMessage || typeof userMessage !== 'string') return null;
   const rawM = userMessage.toLowerCase();
   let m = rawM;
