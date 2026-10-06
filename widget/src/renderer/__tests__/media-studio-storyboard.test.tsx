@@ -9,11 +9,12 @@ import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 
-// jsdom does not implement HTMLMediaElement playback; make play/pause no-ops so
-// the animatic narration audio effect does not log "not implemented" errors.
+// jsdom does not decode media or release native files. Simulate those methods;
+// individual playback tests supply metadata and inspect the actual calls.
 beforeAll(() => {
   (HTMLMediaElement.prototype as any).play = jest.fn(async () => {});
   (HTMLMediaElement.prototype as any).pause = jest.fn();
+  (HTMLMediaElement.prototype as any).load = jest.fn();
 });
 
 /** Real catalog entries with a status per option; default: only This PC is ready. */
@@ -668,7 +669,9 @@ describe('Media Studio Visual Storyboard Deck', () => {
   });
 
   test('opens Animatic Player modal and shows playback HUD and controls', async () => {
-    setup();
+    const ttsSampleVoice = jest.fn().mockResolvedValue({ success: true, path: 'C:/fake/path/narration.mp3', engine: 'edge' });
+    setup({ ttsSampleVoice });
+    (HTMLMediaElement.prototype.play as jest.Mock).mockClear();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
@@ -686,6 +689,13 @@ describe('Media Studio Visual Storyboard Deck', () => {
     // Modal dialog should open
     expect(screen.getByRole('dialog', { name: /Storyboard Animatic Player/i })).toBeInTheDocument();
     expect(screen.getByText(/Animatic Playback: Pyramid Builders/i)).toBeInTheDocument();
+    const narration = screen.getByLabelText('Animatic narration') as HTMLAudioElement;
+    expect(ttsSampleVoice).toHaveBeenCalledWith(undefined, 'The sun rises over the limestone ramps.', undefined);
+    expect(narration).toHaveAttribute('src', expect.stringContaining('narration.mp3'));
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    Object.defineProperty(narration, 'duration', { configurable: true, value: 5 });
+    fireEvent.loadedMetadata(narration);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /⏸ Pause/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Close Animatic Player/i })).toBeInTheDocument();
     // A draggable scrubber seeks the whole sequence.

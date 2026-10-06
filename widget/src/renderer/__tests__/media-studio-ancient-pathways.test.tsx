@@ -481,3 +481,10 @@ describe('Media Studio — From Ancient Pathways', () => {
     expect(screen.getByText(/4 shot\(s\) generated/)).toBeInTheDocument();
   });
 });
+
+// jsdom has no decoder; these suites inspect UI rather than native playback.
+beforeAll(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+afterAll(() => { jest.restoreAllMocks(); });

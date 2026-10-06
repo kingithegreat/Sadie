@@ -323,3 +323,10 @@ test.each([0, 1])('job export overlap: repeated A regeneration stays announced w
     });
   }
 });
+
+// jsdom has no decoder; these suites inspect UI rather than native playback.
+beforeAll(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+afterAll(() => { jest.restoreAllMocks(); });

@@ -26,6 +26,9 @@ import {
   saveDraft, undo as historyUndo, type History, type StoryboardDraft,
 } from './storyboard-history';
 import { useTimelinePlayback } from './useTimelinePlayback';
+import { StudioMedia } from './StudioMedia';
+import { StudioMonitor } from './StudioMonitor';
+import { useAnimaticPlayback } from './useAnimaticPlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
@@ -162,6 +165,14 @@ interface MediaJob {
   createdAt: string;
   updatedAt: string;
   history: MediaJobEvent[];
+}
+
+/** Approval/title changes are not a new recording; a generation event is. */
+export function studioPlaybackRevision(job: Pick<MediaJob, 'createdAt' | 'history'>, kind: 'video' | 'audio'): string {
+  const generated = [...(Array.isArray(job.history) ? job.history : [])].reverse().find(event => kind === 'audio'
+    ? event.by === 'narration stage' && event.to === 'media_production'
+    : event.by === 'render stage');
+  return generated?.at || job.createdAt || 'legacy';
 }
 
 const FAILURE: MediaJobState[] = ['blocked', 'failed', 'needs_revision', 'rejected'];
@@ -505,12 +516,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   // Animatic Player State
   const [animaticOpen, setAnimaticOpen] = useState(false);
-  const [animaticPlaying, setAnimaticPlaying] = useState(false);
-  const [animaticIndex, setAnimaticIndex] = useState(0);
-  const [animaticElapsedSec, setAnimaticElapsedSec] = useState(0);
   const [animaticLoop, setAnimaticLoop] = useState(false);
-  const [animaticAudioUrl, setAnimaticAudioUrl] = useState('');
-  const animaticAudioRef = useRef<HTMLAudioElement | null>(null);
   const [storyboardRendering, setStoryboardRendering] = useState(false);
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   // Voice for the next storyboard export. '' keeps the saved setting.
@@ -1670,85 +1676,21 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     });
   };
 
-  // Animatic Playback Timer
-  useEffect(() => {
-    if (!animaticOpen || !animaticPlaying || !activeStoryboardScene) return;
-    const scene = activeStoryboardScene;
-    const shots = scene?.shots || [];
-    if (shots.length === 0) return;
-
-    const interval = setInterval(() => {
-      setAnimaticElapsedSec(prev => {
-        const curShot = shots[animaticIndex];
-        const maxDur = curShot?.durationSec || 5;
-        const nextSec = prev + 0.1;
-        if (nextSec >= maxDur) {
-          if (animaticIndex < shots.length - 1) {
-            setAnimaticIndex(idx => idx + 1);
-            return 0;
-          } else {
-            if (animaticLoop) {
-              setAnimaticIndex(0);
-              return 0;
-            } else {
-              setAnimaticPlaying(false);
-              return maxDur;
-            }
-          }
-        }
-        return nextSec;
-      });
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboardScene]);
-
-  // Narration for the current animatic shot, synthesised on demand through the
-  // SAME TTS engine that will record it, so the preview sounds like the render.
-  // A shot with no narration stays silent.
-  const loadAnimaticAudio = useCallback(async (shot: any) => {
-    const text = shot?.narration?.trim();
-    if (!text) {
-      setAnimaticAudioUrl('');
-      return;
-    }
-    try {
-      const res = await api()?.ttsSampleVoice?.(
-        undefined,
-        text,
-        narrateEngine === 'kokoro' ? 'kokoro' : undefined,
-      );
-      setAnimaticAudioUrl(res?.success && res.path ? toMediaFileUrl(res.path) : '');
-    } catch {
-      setAnimaticAudioUrl('');
-    }
+  const loadAnimaticAudio = useCallback(async (text: string): Promise<string> => {
+    const result = await api()?.ttsSampleVoice?.(
+      undefined, text, narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+    );
+    if (!result?.success || !result.path) throw new Error(result?.error || 'Narration could not be prepared.');
+    return toMediaFileUrl(result.path);
   }, [narrateEngine]);
-
-  // Load (and later play) the narration for whichever shot the animatic is on.
-  useEffect(() => {
-    if (!animaticOpen) return;
-    void loadAnimaticAudio(activeStoryboardScene?.shots?.[animaticIndex]);
-  }, [animaticOpen, animaticIndex, activeStoryboardScene, loadAnimaticAudio]);
-
-  // Play/pause the narration with the animatic, and start the next shot's
-  // narration as soon as its audio is ready (the URL changing here replays it).
-  useEffect(() => {
-    const el = animaticAudioRef.current;
-    if (!el) return;
-    // jsdom does not implement HTMLMediaElement playback; ignore its errors so
-    // the animatic tests (which run there) stay quiet and the real renderer
-    // still plays.
-    try {
-      if (animaticPlaying && animaticAudioUrl) {
-        void el.play().catch(() => {});
-      } else {
-        el.pause();
-        el.currentTime = 0;
-      }
-    } catch {
-      /* media playback not available in this environment */
-    }
-  }, [animaticPlaying, animaticAudioUrl, animaticIndex]);
+  const animatic = useAnimaticPlayback({
+    active: animaticOpen && activeWorkspace === 'storyboard',
+    sceneKey: `${selectedStoryboardId}:${activeStoryboardScene?.sceneId || ''}`,
+    shots: activeStoryboardScene?.shots || [], loop: animaticLoop,
+    loadAudio: loadAnimaticAudio, onError: setError,
+  });
+  const { index: animaticIndex, elapsed: animaticElapsedSec, playing: animaticPlaying,
+    setPlaying: setAnimaticPlaying } = animatic;
 
   const handleEnhancePrompt = (shotId: string) => {
     if (!activeStoryboard) return;
@@ -2270,7 +2212,7 @@ ${shots.map((s, idx) => `
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -2493,12 +2435,16 @@ ${shots.map((s, idx) => `
                 <strong>Watch the selected movie.</strong> Approval is a separate decision; it does not upload or publish the video.
               </div>
             </div>
-            <video
+            <StudioMedia
+              kind="video"
               className="ms-video"
-              controls
-              preload="metadata"
-              data-testid={`ms-video-${j.id}`}
+              label={`Movie preview: ${j.title}`}
+              testId={`ms-video-${j.id}`}
               src={toMediaFileUrl(moviePath)}
+              active={j.id === currentSelectedJob?.id}
+              onActivate={() => setSelectedJobId(j.id)}
+              reveal={() => revealJobMovie(moviePath)}
+              persistence={{ jobId: j.id, revision: studioPlaybackRevision(j, 'video') }}
             />
             <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
               <button
@@ -2514,12 +2460,17 @@ ${shots.map((s, idx) => `
         ) : j.narrationPath ? (
           /* Hearing the narration is the only way to judge it before there is
              a picture. file:// works because the renderer loads from disk. */
-          <audio
+          <StudioMedia
+            kind="audio"
             className="ms-audio"
-            controls
+            label={`Narration preview: ${j.title}`}
             preload="none"
-            data-testid={`ms-audio-${j.id}`}
+            testId={`ms-audio-${j.id}`}
             src={toMediaFileUrl(j.narrationPath)}
+            active={j.id === currentSelectedJob?.id}
+            onActivate={() => setSelectedJobId(j.id)}
+            reveal={() => revealJobMovie(j.narrationPath!)}
+            persistence={{ jobId: j.id, revision: studioPlaybackRevision(j, 'audio') }}
           />
         ) : null}
         {j.videoId && (
@@ -3277,7 +3228,9 @@ ${shots.map((s, idx) => `
         {/* Mini Preview Stage */}
         {currentSelectedJob && renderJobExportStatus(currentSelectedJob)}
         <div className="ms-timeline-stage-row">
-          <div className="ms-timeline-monitor">
+          <StudioMonitor playing={timelinePlaying} onPlayingChange={setTimelinePlaying}
+            time={timelineTime} duration={duration} onSeek={seekTimeline} onError={setError}
+            canPlay={timelineCanPlay}>
             <div className="ms-monitor-screen">
               {job?.renderPath ? (
                 <video
@@ -3334,7 +3287,7 @@ ${shots.map((s, idx) => `
                 {formatTimecode(timelineTime)} / {formatTimecode(duration)}
               </div>
             </div>
-          </div>
+          </StudioMonitor>
 
           <div className="ms-timeline-inspector">
             <h4>Inspector · {job ? job.title : 'No Project Selected'}</h4>
@@ -4112,10 +4065,14 @@ ${shots.map((s, idx) => `
             <div className={`ms-viewport-screen ${aspectClass}`} style={{ position: 'relative', overflow: 'hidden' }}>
               {/* Active Image or Video Layer */}
               {job?.renderPath ? (
-                <video
+                <StudioMedia
+                  kind="video"
                   className="ms-viewport-content-video"
+                  label={`Stage video preview: ${job.title}`}
+                  testId="ms-stage-video"
                   src={toMediaFileUrl(jobMoviePath(job)!)}
-                  controls
+                  reveal={() => revealJobMovie(jobMoviePath(job)!)}
+                  persistence={{ jobId: job.id, revision: studioPlaybackRevision(job, 'video') }}
                 />
               ) : (
                 <MultiPlaneStage
@@ -4956,8 +4913,7 @@ ${shots.map((s, idx) => `
                 onChange={e => {
                   setSelectedStoryboardSceneId(e.target.value);
                   setAnimaticPlaying(false);
-                  setAnimaticIndex(0);
-                  setAnimaticElapsedSec(0);
+                  animatic.goTo(0);
                 }}
               >
                 {activeStoryboard.scenes.map((scene, index) => (
@@ -5007,8 +4963,7 @@ ${shots.map((s, idx) => `
               className="ms-btn"
               disabled={!activeStoryboard || shots.length === 0}
               onClick={() => {
-                setAnimaticIndex(0);
-                setAnimaticElapsedSec(0);
+                animatic.goTo(0);
                 setAnimaticPlaying(true);
                 setAnimaticOpen(true);
               }}
@@ -5520,14 +5475,14 @@ ${shots.map((s, idx) => `
                     ✕
                   </button>
                 </div>
-                <video
+                <StudioMedia
+                  kind="video"
                   key={renderedMoviePath}
                   className="ms-video"
-                  controls
-                  preload="metadata"
-                  aria-label="Exported storyboard video"
-                  data-testid="ms-video-storyboard-export"
+                  label="Exported storyboard video"
+                  testId="ms-video-storyboard-export"
                   src={toMediaFileUrl(renderedMoviePath)}
+                  reveal={() => revealJobMovie(renderedMoviePath)}
                   style={{ width: '100%', maxHeight: 360, flexBasis: '100%' }}
                 />
               </div>
@@ -5983,11 +5938,18 @@ ${shots.map((s, idx) => `
 
               {/* Narration for the current shot, silent when there is none. */}
               <audio
-                ref={animaticAudioRef}
-                src={animaticAudioUrl}
-                preload="auto"
+                key={animatic.audioUrl || 'empty'}
+                {...animatic.events}
+                src={animatic.audioUrl || undefined}
+                aria-label="Animatic narration"
+                preload="metadata"
                 style={{ display: 'none' }}
               />
+              {animatic.loading && <p role="status">Preparing narration...</p>}
+              {animatic.error && <div role="alert">
+                <p>{animatic.error}</p>
+                <button type="button" className="ms-btn" onClick={animatic.retry}>Retry narration</button>
+              </div>}
 
               {/* Progress Scrubber — drag to seek through the whole sequence. */}
               <div className="ms-animatic-progress-bar">
@@ -5998,19 +5960,7 @@ ${shots.map((s, idx) => `
                   max={totalDuration || 1}
                   step={0.1}
                   value={sequenceElapsed}
-                  onChange={(e) => {
-                    const pos = Number(e.target.value);
-                    let acc = 0;
-                    for (let i = 0; i < shots.length; i++) {
-                      const d = Number(shots[i]?.durationSec) || 5;
-                      if (pos < acc + d) {
-                        setAnimaticIndex(i);
-                        setAnimaticElapsedSec(Math.max(0, pos - acc));
-                        break;
-                      }
-                      acc += d;
-                    }
-                  }}
+                  onChange={(e) => animatic.seek(Number(e.target.value))}
                   aria-label="Animatic timeline scrubber"
                 />
               </div>
@@ -6029,10 +5979,7 @@ ${shots.map((s, idx) => `
                     type="button"
                     className="ms-btn"
                     disabled={animaticIndex === 0}
-                    onClick={() => {
-                      setAnimaticIndex(prev => Math.max(0, prev - 1));
-                      setAnimaticElapsedSec(0);
-                    }}
+                    onClick={() => animatic.goTo(animaticIndex - 1)}
                   >
                     ⏮ Prev
                   </button>
@@ -6040,10 +5987,7 @@ ${shots.map((s, idx) => `
                     type="button"
                     className="ms-btn"
                     disabled={animaticIndex === shots.length - 1}
-                    onClick={() => {
-                      setAnimaticIndex(prev => Math.min(shots.length - 1, prev + 1));
-                      setAnimaticElapsedSec(0);
-                    }}
+                    onClick={() => animatic.goTo(animaticIndex + 1)}
                   >
                     Next ⏭
                   </button>
@@ -6490,12 +6434,12 @@ ${shots.map((s, idx) => `
 
           {/* A rendered voice sample, played inline — hear it before recording. */}
           {samplePath && (
-            <audio
-              className="ms-audio"
-              controls
-              autoPlay
-              src={toMediaFileUrl(samplePath)}
-            />
+            <>
+              <p role="status">Voice sample ready. Press Play to listen.</p>
+              <StudioMedia kind="audio" className="ms-audio" label="Voice sample"
+                testId="ms-voice-sample" src={toMediaFileUrl(samplePath)}
+                reveal={() => revealJobMovie(samplePath)} />
+            </>
           )}
 
           {awaiting.length > 0 && (

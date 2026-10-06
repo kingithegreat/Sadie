@@ -141,3 +141,10 @@ test('a late history result from A cannot replace selected B', async () => {
   expect(screen.getByLabelText('Export history')).toHaveValue(jobs[1].renderPath);
   expect(within(screen.getByLabelText('Export history')).queryByRole('option', { name: /j1-old/ })).not.toBeInTheDocument();
 });
+
+// jsdom has no decoder; these suites inspect UI rather than native playback.
+beforeAll(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+afterAll(() => { jest.restoreAllMocks(); });

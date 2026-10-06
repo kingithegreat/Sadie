@@ -128,3 +128,10 @@ describe('MediaStudioPanel - YouTube Upload flow', () => {
     expect(await screen.findByText(/Uploaded to YouTube/i)).toBeInTheDocument();
   });
 });
+
+// jsdom has no decoder; these suites inspect UI rather than native playback.
+beforeAll(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+afterAll(() => { jest.restoreAllMocks(); });

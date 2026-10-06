@@ -1,5 +1,27 @@
 # Work Claims
 
+## 2026-10-07 — STUDIO-PLAYBACK
+
+User requested agents fix the reviewed playback audit. Root owns serial integration
+in `.homebot/studio-playback-20261007`, branch `claude/studio-playback-20261007`,
+from main `79ffc386`. Players owns MediaStudioPanel integration, shared native
+players/coordinator, lazy job previews and bounded volume/resume persistence.
+Animatic owns its decoder-clock hook and regressions. Monitor owns timeline hook
+coordination, fullscreen controls and real Electron acceptance coverage. Root
+alone runs tests/builds, publishes and lands; all agents released source editing
+to root integration after implementation and cross-review.
+Preserve existing clip speed/export semantics. No provider generation, model
+downloads, owner profile changes or Ancient Pathways edits. Fresh 5 GiB disk /
+2 GiB RAM preflight and one guarded heavy job apply to builds/GUI acceptance.
+Full-suite checkpoint: 4,998 widget and 232 root tests passed. Final affected
+media checkpoint: 225 tests passed, then 37 permission/fullscreen tests passed.
+Typecheck, lint and fresh compilation passed. Real Electron acceptance passed
+1/1, zero retries: exclusive playback, explicit voice, missing-file error,
+fullscreen transport/Escape and narrated animatic pause/seek/resume.
+Root owns remaining exact-head hosted CI/review, publication and delivery.
+Local fixtures do not prove real speech or artistic quality.
+Evidence: `tasks/studio-playback.md`.
+
 ## 2026-10-03 NZ — final finishing documentation checkpoint (Codex media agent)
 
 Codex `/root/media_finish` completed only CLAIMS.md and docs/FINISHING_HANDOVER.md

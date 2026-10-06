@@ -13,6 +13,7 @@ import { MediaStudioPanel } from '../components/MediaStudioPanel';
 beforeAll(() => {
   (HTMLMediaElement.prototype as any).play = jest.fn(async () => {});
   (HTMLMediaElement.prototype as any).pause = jest.fn();
+  (HTMLMediaElement.prototype as any).load = jest.fn();
 });
 
 const board = () => ({
