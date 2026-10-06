@@ -2,9 +2,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import WorkspaceShell from '../components/workspace/WorkspaceShell';
 jest.mock('../components/workspace/FileTree', () => ({ __esModule: true, default: ({ onOpenFile }: any) => <><button onClick={() => onOpenFile('C:/project/a.ts')}>Open a</button><button onClick={() => onOpenFile('C:/project/b.ts')}>Open b</button></> }));
-jest.mock('../components/workspace/CodeEditor', () => ({ __esModule: true, default: ({ value, onChange, onApplyEdits, filePath, root }: any) => <><textarea aria-label={`Editor ${filePath}`} value={value} onChange={e => onChange(e.target.value)} /><button onClick={() => { void onApplyEdits([{ path: 'C:/project/a.ts', expectedContent: 'foo', changes: [{ start: 0, length: 3, text: 'bar' }] }, { path: 'C:/project/b.ts', expectedContent: 'foo', changes: [{ start: 0, length: 3, text: 'bar' }] }]); }}>Stage refactor</button><span data-testid="editor-project">{root}</span></> }));
+jest.mock('../components/workspace/CodeEditor', () => ({ __esModule: true, default: ({ value, onChange, onApplyEdits, filePath, root }: any) => <><textarea className="cm-content" aria-label={`Editor ${filePath}`} value={value} onChange={e => onChange(e.target.value)} /><button onClick={() => { void onApplyEdits([{ path: 'C:/project/a.ts', expectedContent: 'foo', changes: [{ start: 0, length: 3, text: 'bar' }] }, { path: 'C:/project/b.ts', expectedContent: 'foo', changes: [{ start: 0, length: 3, text: 'bar' }] }]); }}>Stage refactor</button><span data-testid="editor-project">{root}</span></> }));
 jest.mock('../components/TerminalPanel', () => ({ __esModule: true, default: () => null }));
-jest.mock('../components/workspace/WorkspaceNavigator', () => ({ __esModule: true, default: ({ mode, commands, onClose }: any) => <div role="dialog" aria-label={mode}><button onClick={() => { commands.find((c: any) => c.id === 'search').run(); onClose(); }}>Run search command</button><button onClick={onClose}>Close picker</button></div> }), { virtual: true });
+jest.mock('../components/workspace/WorkspaceNavigator', () => ({ __esModule: true, default: ({ mode, commands, onOpen, onClose }: any) => <div role="dialog" aria-label={mode}><button onClick={() => { commands.find((c: any) => c.id === 'search').run(); onClose(); }}>Run search command</button><button onClick={() => { onClose(); void onOpen('C:/project/b.ts'); }}>Open picker file</button><button onClick={onClose}>Close picker</button></div> }), { virtual: true });
 function setup() {
   const texts: Record<string, string> = { 'C:/project/a.ts': 'foo', 'C:/project/b.ts': 'foo' };
   const workspaceSave = jest.fn(async (path: string, content: string) => { texts[path] = content; return { success: true, version: 'saved' }; });
@@ -27,6 +27,14 @@ test('multi-file refactors load unopened targets and stage all drafts without wr
   expect(screen.getByLabelText('Editor C:/project/a.ts')).toHaveValue('bar');
   fireEvent.click(screen.getByRole('tab', { name: /b.ts/ })); expect(screen.getByLabelText('Editor C:/project/b.ts')).toHaveValue('bar');
   expect(app.texts).toEqual({ 'C:/project/a.ts': 'foo', 'C:/project/b.ts': 'foo' }); expect(app.workspaceSave).not.toHaveBeenCalled();
+});
+
+test('Quick Open focuses the newly active editor after the picker closes', async () => {
+  setup(); fireEvent.click(await screen.findByText('Open a')); await screen.findByLabelText('Editor C:/project/a.ts');
+  fireEvent.click(screen.getByText('Quick Open')); await screen.findByRole('dialog', { name: 'files' });
+  fireEvent.click(screen.getByText('Open picker file'));
+  const editor = await screen.findByLabelText('Editor C:/project/b.ts');
+  await waitFor(() => expect(editor).toHaveFocus());
 });
 test('split keeps a second target and focused Ctrl+S writes that pane; layout sliders change real sizes', async () => {
   const app = setup(); fireEvent.click(await screen.findByText('Open a')); await screen.findByLabelText('Editor C:/project/a.ts');

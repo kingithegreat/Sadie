@@ -224,7 +224,7 @@ export async function runCodeSearch(opts: CodeSearchOptions, validateRoot?: (inp
     if (pattern.length > 500) return { success: false, error: 'pattern too long (max 500 chars)' };
 
     const requested = String(opts.directory || process.cwd());
-    const v = validateRoot ? { valid: true, resolved: validateRoot(requested) } : validatePath(requested);
+    const v: { valid: boolean; resolved: string; error?: string } = validateRoot ? { valid: true, resolved: validateRoot(requested) } : validatePath(requested);
     if (!v.valid) return { success: false, error: v.error };
 
     const caseSensitive = opts.caseSensitive === true;

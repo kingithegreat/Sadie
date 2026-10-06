@@ -164,10 +164,13 @@ export default function WorkspaceShell({
   const appliedHandoffRef = useRef<Record<string, unknown> | null>(null);
 
   const openFile = useCallback(async (path: string, line?: number) => {
+    const project = rootRef.current;
+    try {
     // Existing tabs reconcile disk, preserving dirty drafts and flagging conflicts.
     const existing = files.find(f => pathKey(f.path) === pathKey(path));
     if (existing) {
       const result = await api?.workspaceRead?.(path);
+      if (rootRef.current !== project) return;
       setFiles(prev => prev.map(f => f.path === existing.path ? reconcile(f, result) : f));
       setActivePath(existing.path);
       // A search result landing on an already-open tab still needs its jump.
@@ -175,6 +178,7 @@ export default function WorkspaceShell({
       return;
     }
     const res = await api?.workspaceRead?.(path);
+    if (rootRef.current !== project) return;
     if (!res?.success) { setStatus(res?.error || 'Could not open that file.'); return; }
     const targetPath = res.path || path;
     setFiles(prev => prev.some(f => pathKey(f.path) === pathKey(targetPath)) ? prev : [...prev, {
@@ -189,11 +193,12 @@ export default function WorkspaceShell({
     setActivePath(targetPath);
     if (line) setReveal({ path: targetPath, line });
     setStatus(null);
+    } catch { if (rootRef.current === project) setStatus('Could not open that file. Try again.'); }
   }, [files, api]);
 
   const syncFiles = useCallback(async () => {
     const snapshot = filesRef.current;
-    const results = await Promise.all(snapshot.map(async f => ({ path: f.path, result: await api?.workspaceRead?.(f.path) })));
+    const results = await Promise.all(snapshot.map(async f => ({ path: f.path, result: await Promise.resolve(api?.workspaceRead?.(f.path)).catch(() => ({ success: false, error: 'Could not refresh this file. Your draft is preserved.' })) })));
     setFiles(prev => prev.map(f => {
       const result = results.find(r => r.path === f.path);
       return result ? reconcile(f, result.result) : f;
@@ -478,6 +483,17 @@ export default function WorkspaceShell({
     if (!open) { confirm(null); setNavigation(null); setComparePath(null); setFileDialog(null); }
   }, [open, confirm]);
 
+  const [navigationFocus, setNavigationFocus] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !navigationFocus || navigation || !activePath || pathKey(activePath) !== pathKey(navigationFocus)) return;
+    const frame = window.requestAnimationFrame(() => {
+      const host = [...document.querySelectorAll<HTMLElement>('[data-workspace-editor]')].find(node => pathKey(node.dataset.workspaceEditor || '') === pathKey(activePath));
+      host?.querySelector<HTMLElement>('.cm-content')?.focus();
+      setNavigationFocus(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [navigationFocus, navigation, activePath, open]);
+
   if (!open) return null;
 
   const commands = [
@@ -506,6 +522,7 @@ export default function WorkspaceShell({
       onChange={content => setFiles(prev => prev.map(f => f.path === file.path ? { ...f, content } : f))} />
   </div>;
 
+
   // Portalled to document.body. As a direct child of .app-container this was
   // matched by the blanket rule in chatgpt-theme.css:
   //
@@ -519,7 +536,7 @@ export default function WorkspaceShell({
   return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
       {confirmDialog}
-      {navigation && root && <Suspense fallback={<div role="status">Loading project navigation…</div>}><WorkspaceNavigator root={root} activePath={activePath ?? undefined} content={active?.content} buffers={files.map(f => ({ path: f.path, content: f.content }))} onOpen={openFile} commands={commands} mode={navigation} onClose={() => setNavigation(null)} /></Suspense>}
+      {navigation && root && <Suspense fallback={<div role="status">Loading project navigation…</div>}><WorkspaceNavigator root={root} activePath={activePath ?? undefined} content={active?.content} buffers={files.map(f => ({ path: f.path, content: f.content }))} onOpen={async (path, line) => { await openFile(path, line); setNavigationFocus(path); }} commands={commands} mode={navigation} onClose={() => setNavigation(null)} /></Suspense>}
       {fileDialog && <div className="confirm-destructive-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1300 }}>
         <form className="confirm-destructive" role="dialog" aria-modal="true" aria-label="File action" onSubmit={e => { e.preventDefault(); void submitFileDialog(); }}>
           <h2>{fileDialog.action === 'move' ? 'Rename or move' : fileDialog.action === 'save-as' ? 'Save As' : fileDialog.action === 'create-folder' ? 'New folder' : 'New file'}</h2>
