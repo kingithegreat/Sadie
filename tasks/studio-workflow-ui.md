@@ -41,6 +41,15 @@ wrap long actions and adapt at narrower widths.
   both specs now use the existing bounded Electron-close helper. The final run
   closed naturally within its budget. Evidence: `workflow-theme-bounded-results`
   and `workflow-theme-bounded-junit.xml`; the earlier run remains retained.
+- Review identified a real expanded-menu grid regression: the inherited icon
+  column constrained tool descriptions to 32px. The compiled baseline reproduced
+  that exact width. A scoped three-class override now allocates the card width to
+  text and an auto-sized arrow; all five tool text widths exceed 100px. The new
+  complete workflow/playback acceptance passed 1/1 with zero retries, and the
+  expanded-menu screenshot was inspected. Final native evidence is
+  `workflow-tools-fixed-results`; its baseline is `workflow-tools-baseline-results`.
+  Repeated dark/light theme and visual checks after the CSS fix passed 2/2 with
+  zero retries: `workflow-tools-theme-results` and `workflow-tools-theme-junit.xml`.
 
 Evidence: `C:/Users/adenk/.homebot/workflow-ui-tests.json`,
 `workflow-ui-baseline-results`, `workflow-ui-compact-results` (intermediate),

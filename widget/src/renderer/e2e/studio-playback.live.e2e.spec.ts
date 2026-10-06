@@ -145,6 +145,14 @@ require('electron').app.whenReady().then(()=>{
       await disclosure.press('Enter');
       const storyboardTool = page.getByRole('region', { name: 'Studio Quick Launch' })
         .getByRole('button', { name: /^Storyboard/ });
+      await storyboardTool.scrollIntoViewIfNeeded();
+      const toolText = page.getByRole('region', { name: 'Studio Quick Launch' }).locator('.ms-hub-info');
+      await expect(toolText).toHaveCount(5);
+      for (const info of await toolText.all()) {
+        expect((await info.boundingBox())!.width).toBeGreaterThan(100);
+      }
+      await page.mouse.move(0, 0);
+      await page.screenshot({ path: testInfo.outputPath('studio-tools-expanded.png') });
       await storyboardTool.press('Space');
       await expect(page.getByRole('tab', { name: /Storyboard/ })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByRole('region', { name: 'Visual Storyboard Deck' })).toContainText('Playback board');

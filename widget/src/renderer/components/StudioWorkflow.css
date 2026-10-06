@@ -30,7 +30,8 @@
 .ms-workflow-counts dd { font-size: 1.25rem; font-weight: 650; margin: .2rem 0 0; }
 .ms-tools-disclosure > summary { cursor: pointer; color: var(--text-secondary); padding: .5rem 0; font-size: .9rem; }
 .ms-tools-disclosure .ms-director-hub { margin-top: .75rem; }
-.ms-tools-disclosure .ms-hub-card { text-align: start; color: var(--text-primary); font: inherit; }
+.media-studio .ms-tools-disclosure .ms-hub-card { grid-template-columns: minmax(0, 1fr) auto; text-align: start; color: var(--text-primary); font: inherit; }
+.ms-tools-disclosure .ms-hub-info { min-width: 0; }
 .ms-tools-disclosure .ms-hub-title, .ms-tools-disclosure .ms-hub-desc { display: block; }
 .ms-tools-disclosure .ms-hub-title { color: var(--text-primary); }
 .ms-create-heading h3 { margin: 0; font-size: 1.05rem; }
