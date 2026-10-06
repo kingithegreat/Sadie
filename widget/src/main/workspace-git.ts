@@ -11,7 +11,7 @@
 import { execFile } from 'child_process';
 import * as path from 'path';
 import { promisify } from 'util';
-import { validatePath } from './tools/filesystem';
+import { validateTrustedWorkspaceRoot } from './workspace-trust';
 
 const execFileAsync = promisify(execFile);
 const OUTSIDE_HOME = 'Source control only works for folders inside your home folder.';
@@ -47,19 +47,18 @@ function gitError(e: unknown): string {
 
 /** The repository containing a folder inside home, or null when it is not in one. */
 async function repoRoot(folder: string): Promise<string | null> {
-  const v = validatePath(folder);
-  if (!v.valid) throw new Error(OUTSIDE_HOME);
+  let canonicalFolder: string;
+  try { canonicalFolder = validateTrustedWorkspaceRoot(folder); } catch { throw new Error(OUTSIDE_HOME); }
   try {
-    const top = (await git(['rev-parse', '--show-toplevel'], v.resolved)).trim();
+    const top = (await git(['rev-parse', '--show-toplevel'], canonicalFolder)).trim();
     if (!top) return null;
-    const checked = validatePath(top);
-    if (!checked.valid) throw new Error(OUTSIDE_HOME);
-    return checked.resolved;
+    try { return validateTrustedWorkspaceRoot(top); } catch { throw new Error(OUTSIDE_HOME); }
   } catch (e) {
     if ((e as Error).message === OUTSIDE_HOME) throw e;
     return null;
   }
 }
+export { repoRoot as workspaceRepositoryRoot, git as runWorkspaceGit, safeRelPaths as workspaceGitPaths };
 
 const KIND: Record<string, GitChangeKind> = {
   M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', T: 'type-changed', U: 'conflicted',

@@ -90,3 +90,4 @@ test('branches are listed and switched; an unknown branch is refused', async () 
   expect((await gitWorkspaceStatus(repo)).branch).toBe('feature/x');
   await expect(gitWorkspaceCheckout(repo, 'main; rm -rf /')).rejects.toThrow(/existing branches/);
 });
+jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));

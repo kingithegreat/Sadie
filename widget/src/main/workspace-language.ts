@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
-import { validatePath } from './tools/filesystem';
 import { homeDir } from './user-paths';
+import { validateTrustedWorkspaceRoot, checkedAnyTrustedWorkspacePath } from './workspace-trust';
 import type { WorkspaceLanguageRequest, WorkspaceLanguageResult, WorkspaceLanguageEdit, WorkspaceLanguageLocation } from '../shared/workspace-language-types';
 
 const MAX_FILES = 2000;
@@ -27,11 +27,7 @@ function configGlobMatches(file: string, directory: string, pattern: string): bo
   return new RegExp(`^${expression}$`, process.platform === 'win32' ? 'i' : '').test(relative);
 }
 function resolveAllowed(input: string): string {
-  const result = validatePath(input);
-  if (!result.valid) throw new Error(result.error || 'This path is not allowed.');
-  const real = fs.realpathSync(result.resolved);
-  if (!within(fs.realpathSync(homeDir()), real)) throw new Error('The project must remain inside your home directory, including linked paths.');
-  return real;
+  return checkedAnyTrustedWorkspacePath(input);
 }
 
 /** No writes, command execution, plugins, or arbitrary tsconfig extensions. */
@@ -90,7 +86,7 @@ class LanguageProject {
       let manifest: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown>; optionalDependencies?: Record<string, unknown>; peerDependencies?: Record<string, unknown> };
       try {
         const file = path.join(directory, 'package.json');
-        if (!within(directory, fs.realpathSync(file)) || !within(home, fs.realpathSync(file))) continue;
+        if (!within(directory, fs.realpathSync(file)) || checkedAnyTrustedWorkspacePath(file) !== fs.realpathSync(file)) continue;
         const size = fs.statSync(file).size;
         if (size > 64 * 1024 || manifestBytes + size > 2 * 1024 * 1024) continue;
         manifestBytes += size;
@@ -100,11 +96,11 @@ class LanguageProject {
       for (const name of names) {
         if (!/^(?:@[a-zA-Z0-9_.-]+\/)?[a-zA-Z0-9_.-]+$/.test(name) || name.split('/').some(part => part === '..' || part === '.')) continue;
         let directoryCandidate = directory;
-        while (within(home, directoryCandidate)) {
+        while (within(home, directoryCandidate) || within(this.root, directoryCandidate)) {
           const candidate = path.join(directoryCandidate, 'node_modules', name);
           try {
             const real = fs.realpathSync(candidate);
-            if (!within(home, real) || !fs.statSync(real).isDirectory()) break;
+            if (checkedAnyTrustedWorkspacePath(real) !== real || !fs.statSync(real).isDirectory()) break;
             if (!this.dependencyRoots.some(root => key(root) === key(real)) && this.dependencyRoots.length < 100) { this.dependencyRoots.push(real); queue.push({ directory: real, depth: depth + 1 }); }
             break;
           } catch { /* Try the parent package store. */ }
@@ -206,7 +202,7 @@ export function disposeWorkspaceLanguageServices(): void { for (const project of
 export function queryWorkspaceLanguage(request: WorkspaceLanguageRequest): WorkspaceLanguageResult {
   try {
     if (!request || typeof request.root !== 'string' || typeof request.path !== 'string' || typeof request.content !== 'string' || (request.buffers && (!Array.isArray(request.buffers) || request.buffers.length > MAX_BUFFERS))) throw new Error('Invalid language request.');
-    const root = resolveAllowed(request.root);
+    const root = validateTrustedWorkspaceRoot(request.root);
     if (!fs.statSync(root).isDirectory()) throw new Error('Choose a project folder first.');
     const file = resolveAllowed(request.path);
     if (!within(root, file)) throw new Error('The editor file must belong to the displayed project.');

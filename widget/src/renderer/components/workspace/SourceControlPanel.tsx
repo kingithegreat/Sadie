@@ -7,20 +7,22 @@
  * no second confirmation; nothing here pushes, resets or discards changes.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorkspaceGitChange } from '../../../shared/types';
+import type { WorkspaceGitActionRequest, WorkspaceGitActionResult } from '../../../shared/workspace-git-action-types';
 
 interface Props {
   /** The folder the Workspace has open; its repository is the one shown. */
   folder: string;
   onOpenFile: (absolutePath: string) => void;
+  onFilesChanged?: () => void;
 }
 
 const KIND_LETTER: Record<WorkspaceGitChange['kind'], string> = {
   modified: 'M', added: 'A', deleted: 'D', renamed: 'R', copied: 'C', untracked: 'U', conflicted: '!', 'type-changed': 'T',
 };
 
-export default function SourceControlPanel({ folder, onOpenFile }: Props) {
+export default function SourceControlPanel({ folder, onOpenFile, onFilesChanged }: Props) {
   const api = (window as any).electron;
   const [status, setStatus] = useState<{ isRepo: boolean; root?: string; branch?: string; staged: WorkspaceGitChange[]; unstaged: WorkspaceGitChange[] } | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
@@ -28,35 +30,60 @@ export default function SourceControlPanel({ folder, onOpenFile }: Props) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<WorkspaceGitActionResult | null>(null);
+  const [diffFile, setDiffFile] = useState('');
+  const [diffStaged, setDiffStaged] = useState(false);
+  const [newBranch, setNewBranch] = useState('');
+  const [cloneUrl, setCloneUrl] = useState('');
+  const [cloneTarget, setCloneTarget] = useState('');
+  const [mergeText, setMergeText] = useState('');
+  const currentFolder = useRef(folder); currentFolder.current = folder;
 
   const refresh = useCallback(async () => {
     if (!folder) return;
+    try {
     const res = await api?.workspaceGitStatus?.(folder);
+    if (currentFolder.current !== folder) return;
     if (!res?.success) { setError(res?.error || 'Could not read the repository.'); return; }
-    setError(null);
     setStatus({ isRepo: !!res.isRepo, root: res.root, branch: res.branch, staged: res.staged || [], unstaged: res.unstaged || [] });
     if (res.isRepo) {
       const b = await api?.workspaceGitBranches?.(folder);
+      if (currentFolder.current !== folder) return;
       setBranches(b?.success ? b.branches || [] : []);
     }
+    } catch (error) { if (currentFolder.current === folder) setError(error instanceof Error ? error.message : String(error)); }
   }, [api, folder]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { setStatus(null); setDetail(null); setError(null); setBusy(false); void refresh(); }, [refresh]);
 
   const act = async (label: string, run: () => Promise<{ success: boolean; error?: string; hash?: string } | undefined>) => {
     setBusy(true); setNote(null);
     try {
       const res = await run();
+      if (currentFolder.current !== folder) return;
       if (!res?.success) setError(res?.error || `${label} failed.`);
       else { setError(null); if (res.hash) setNote(`Committed ${res.hash}.`); }
+    } catch (error) { if (currentFolder.current === folder) setError(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(false);
-      await refresh();
+      if (currentFolder.current === folder) { setBusy(false); await refresh(); }
     }
+  };
+  const gitAction = async (action: WorkspaceGitActionRequest['action'], extra: Partial<WorkspaceGitActionRequest> = {}) => {
+    setBusy(true); setError(null); setNote(null);
+    try {
+      const result: WorkspaceGitActionResult = await api?.workspaceGitAction?.({ folder, action, ...extra }) || { success: false, error: 'This Git action is unavailable in this build.' };
+      if (currentFolder.current !== folder) return;
+      if (!result.success) setError(result.error || 'The Git action failed.');
+      else {
+        if (['diff', 'history', 'blame', 'conflict'].includes(action)) { setDetail(result); if (result.conflict) setMergeText(result.conflict.current); }
+        else { setNote(`${action.replace(/-/g, ' ')} completed.`); setDetail(null); }
+      }
+    } catch (error) { if (currentFolder.current === folder) setError(error instanceof Error ? error.message : String(error)); }
+    finally { if (currentFolder.current === folder) { if (['pull', 'stash', 'stash-pop', 'create-branch', 'resolve-conflict', 'clone', 'init'].includes(action)) onFilesChanged?.(); setBusy(false); await refresh(); } }
   };
 
   if (!status) return <div className="tree-hint">{error || 'Reading the repository…'}</div>;
-  if (!status.isRepo) return <div className="tree-hint">This folder is not in a git repository.</div>;
+  if (!status.isRepo) return <div className="scm-panel"><p>This folder is not in a Git repository.</p><button disabled={busy} onClick={() => void gitAction('init')}>Initialize repository</button><label>Repository address<input aria-label="Clone repository address" value={cloneUrl} onChange={event => setCloneUrl(event.target.value)} /></label><label>New folder<input aria-label="Clone folder name" value={cloneTarget} onChange={event => setCloneTarget(event.target.value)} /></label><button disabled={busy || !cloneUrl || !cloneTarget} onClick={() => void gitAction('clone', { url: cloneUrl, target: cloneTarget })}>Clone repository</button>{error && <p role="alert">{error}</p>}{note && <p role="status">{note}</p>}</div>;
 
   const absolute = (rel: string) => `${status.root}/${rel}`;
   const row = (change: WorkspaceGitChange, stagedList: boolean) => (
@@ -73,6 +100,9 @@ export default function SourceControlPanel({ folder, onOpenFile }: Props) {
           : api?.workspaceGitStage?.(folder, [change.path]))}>
         {stagedList ? '−' : '+'}
       </button>
+      <button disabled={busy} aria-label={`Diff ${change.path}`} onClick={() => { setDiffFile(change.path); setDiffStaged(stagedList); void gitAction('diff', { file: change.path, staged: stagedList }); }}>Diff</button>
+      <button disabled={busy} aria-label={`Blame ${change.path}`} onClick={() => void gitAction('blame', { file: change.path })}>Blame</button>
+      {change.kind === 'conflicted' && <button disabled={busy} aria-label={`Resolve ${change.path}`} onClick={() => void gitAction('conflict', { file: change.path })}>Resolve</button>}
     </li>
   );
 
@@ -82,11 +112,15 @@ export default function SourceControlPanel({ folder, onOpenFile }: Props) {
     <div className="scm-panel" aria-label="Source control">
       <label className="scm-branch">Branch{' '}
         <select aria-label="Branch" value={status.branch} disabled={busy || branches.length === 0}
-          onChange={e => act('Switch branch', () => api?.workspaceGitCheckout?.(folder, e.target.value))}>
+          onChange={e => act('Switch branch', async () => { const result = await api?.workspaceGitCheckout?.(folder, e.target.value); if (result?.success) onFilesChanged?.(); return result; })}>
           {!branches.includes(status.branch || '') && <option value={status.branch}>{status.branch}</option>}
           {branches.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
       </label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {(['fetch', 'pull', 'push', 'history', 'stash', 'stash-pop'] as const).map(action => <button key={action} disabled={busy} onClick={() => void gitAction(action)}>{action.replace(/-/g, ' ')}</button>)}
+      </div>
+      <label>New branch<input aria-label="New branch name" value={newBranch} onChange={event => setNewBranch(event.target.value)} /></label><button disabled={busy || !newBranch.trim()} onClick={() => void gitAction('create-branch', { branch: newBranch })}>Create branch</button>
 
       <textarea className="scm-message" aria-label="Commit message" placeholder="Commit message" rows={3}
         value={message} onChange={e => setMessage(e.target.value)} disabled={busy} />
@@ -116,6 +150,12 @@ export default function SourceControlPanel({ folder, onOpenFile }: Props) {
         <ul className="scm-list" aria-label="Unstaged changes">{status.unstaged.map(c => row(c, false))}</ul>
       </div>
       <button type="button" className="scm-refresh" onClick={() => void refresh()} disabled={busy}>Refresh</button>
+      {detail && <section aria-label="Git details" style={{ overflow: 'auto', maxHeight: '60vh' }}><button onClick={() => setDetail(null)}>Close details</button>
+        {detail.diff !== undefined && <><pre style={{ whiteSpace: 'pre-wrap' }}>{detail.diff || 'No text difference.'}</pre>{detail.hunks?.map(hunk => <div key={hunk.index}><strong>{hunk.header}</strong><button disabled={busy || diffStaged} onClick={() => void gitAction('stage-hunk', { file: diffFile, hunk: hunk.index, expectedDiff: detail.diff })}>Stage this hunk</button></div>)}</>}
+        {detail.history?.map(commit => <div key={commit.hash}><code>{commit.hash}</code> {commit.subject}<small> {commit.author} — {commit.date}</small></div>)}
+        {detail.text && <pre style={{ whiteSpace: 'pre-wrap' }}>{detail.text}</pre>}
+        {detail.conflict && <><p>Compare all versions. Resolving changes this file; staging remains a separate action.</p>{(['base', 'ours', 'theirs'] as const).map(side => <details key={side} open><summary>{side}</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{detail.conflict![side]}</pre></details>)}<label>Manual result<textarea aria-label="Merged file result" value={mergeText} onChange={event => setMergeText(event.target.value)} rows={10} /></label>{(['ours', 'theirs', 'manual'] as const).map(resolution => <button key={resolution} disabled={busy} onClick={() => void gitAction('resolve-conflict', { file: detail.conflict!.path, resolution, content: mergeText, expectedContent: detail.conflict!.current })}>Use {resolution}</button>)}</>}
+      </section>}
     </div>
   );
 }
