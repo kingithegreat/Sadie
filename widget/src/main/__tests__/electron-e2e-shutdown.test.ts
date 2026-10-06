@@ -91,3 +91,10 @@ test('snapshot disappearance waits for the original held OS exit receipt, never 
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt).toMatchObject({ graceful: true, verificationScope: 'native-main', nativeExit: { code: 0 } }); expect(receipt.snapshotFailure).toContain('main disappeared');
 });
+test('native exit diagnostics survive main teardown without relying on a disposed evaluate transport', async () => {
+  const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  const diagnostic = { helpers: [{ purpose: 'identity', duration: 1800, error: { killed: true }, stdout: '' }], refusals: [] };
+  f.child.stdout.emit('data', '[E2E-SHUTDOWN-DIAGNOSTIC] ' + JSON.stringify(diagnostic) + '\n'); f.finish({ code: 0 });
+  await closeElectronApp(f.app);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.productionAtExit).toEqual(diagnostic);
+});

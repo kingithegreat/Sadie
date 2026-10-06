@@ -9,6 +9,13 @@ interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; ent
 const states = new WeakMap<ElectronApplication, Promise<State>>();
 const pendingApps = new Set<ElectronApplication>();
 const closings = new WeakMap<ElectronApplication, Promise<number>>();
+const EXIT_DIAGNOSTIC_MARKER = '[E2E-SHUTDOWN-DIAGNOSTIC] ';
+function exitDiagnostics(stdout: string): unknown {
+  const line = stdout.split(/\r?\n/).reverse().find(value => value.includes(EXIT_DIAGNOSTIC_MARKER));
+  if (!line) return undefined;
+  try { return JSON.parse(line.slice(line.indexOf(EXIT_DIAGNOSTIC_MARKER) + EXIT_DIAGNOSTIC_MARKER.length)); }
+  catch { return { parseError: 'Final native diagnostic marker was incomplete.' }; }
+}
 function bounded<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   let timer: NodeJS.Timeout;
   return Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), Math.max(1, milliseconds)); })]).finally(() => clearTimeout(timer));
@@ -27,6 +34,14 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
     const info = await app.evaluate(({ dialog }) => {
       const cp = (process as any).getBuiltinModule('child_process');
       const log = (global as any).__homebotE2eShutdown = { helpers: [] as unknown[], refusals: [] as unknown[] };
+      process.once('exit', () => {
+        const final = {
+          helpers: log.helpers.slice(-12).map((value: any) => ({ ...value, stdout: value.stdout?.slice(0, 2048), stderr: value.stderr?.slice(0, 512), error: value.error ? { ...value.error, message: value.error.message?.slice(0, 512) } : null })),
+          refusals: log.refusals.slice(-4),
+        };
+        while (JSON.stringify(final).length > 48 * 1024 && final.helpers.length) final.helpers.shift();
+        console.log('[E2E-SHUTDOWN-DIAGNOSTIC] ' + JSON.stringify(final));
+      });
       const original = cp.execFile;
       const observer = function (this: unknown, ...args: any[]) {
         const argv = args[1]; let purpose = '', pid: number | undefined;
@@ -101,6 +116,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       }
     }
     receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    receipt.productionAtExit = exitDiagnostics(state.stdout);
     const nativeExit = receipt.nativeExit as NativeAppExit;
     if (nativeExit.code !== 0 || nativeExit.signal) throw new Error('Actual Electron main exited with a nonzero OS code or termination signal.');
     receipt.verificationScope = tree ? 'captured-owned-tree' : 'native-main';
@@ -109,6 +125,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     for (;;) {
       receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
       receipt.identityObservations = state.monitor.observations;
+      receipt.productionAtExit = exitDiagnostics(state.stdout);
       persist();
       if (receipt.capturedIdentitiesGone) break;
       if (deadline - Date.now() <= 200) throw new Error('Captured owned processes remain alive after native main exit within the close budget.');
@@ -122,6 +139,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     receipt.failure = error instanceof Error ? error.message : String(error);
     if (state) {
       receipt.stderr = state.stderr; receipt.stdout = state.stdout;
+      receipt.productionAtExit = exitDiagnostics(state.stdout);
       try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
       persist();
       try { receipt.forcedOwnedCleanup = await bounded(state.monitor.cleanup(tree), 6500, 'Owned native cleanup unconfirmed'); receipt.cleanupExit = await bounded(state.monitor.exit, 3000, 'Owned native OS exit unconfirmed'); } catch (cleanupError) { receipt.cleanupError = String(cleanupError); }
