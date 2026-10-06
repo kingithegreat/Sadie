@@ -91,15 +91,40 @@ test('native quit waits for package task ownership and keeps the renderer availa
   h.app.quit(); await settle();
   expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
   expect(h.nativeQuits()).toBe(0);
+  expect(h.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(h.otherCleanup.stopAssistantBridge).not.toHaveBeenCalled();
   const error = new Error('owned package tree stop unconfirmed');
   failStop(error); await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
   expect(h.nativeQuits()).toBe(0);
   expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
   expect(h.createMainWindow).not.toHaveBeenCalled();
+  expect(h.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(h.otherCleanup.globalShortcut.unregisterAll).not.toHaveBeenCalled();
   h.app.quit(); await settle();
   expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(2);
   expect(h.nativeQuits()).toBe(1);
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
+});
+
+test.each(['debugger', 'test', 'terminal', 'task', 'calendar'])('refused %s cleanup preserves every unrelated service until successful retry', async kind => {
+  const h = harness(true);
+  const owned = {
+    debugger: h.otherCleanup.stopWorkspaceDebuggers, test: h.otherCleanup.stopWorkspaceTestRuns,
+    terminal: h.otherCleanup.workspacePtySessions.closeAll, task: h.otherCleanup.closeAllWorkspaceTasks,
+    calendar: h.otherCleanup.stopCalendarHelpers,
+  };
+  owned[kind as keyof typeof owned].mockRejectedValueOnce(new Error('owned close remains unconfirmed'));
+  h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(0); expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  const ordinary = [h.shutdownMcpServers, h.otherCleanup.disposeWorkspaceLanguageServices, h.otherCleanup.stopAssistantBridge,
+    h.otherCleanup.destroyBrowserPanel, h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.closeAllServiceWindows, h.otherCleanup.supervisorHandle.stop];
+  for (const cleanup of ordinary) expect(cleanup).not.toHaveBeenCalled();
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
+  h.resolve(); h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(1);
+  for (const cleanup of ordinary) expect(cleanup).toHaveBeenCalledTimes(1);
 });
 
 test('unconfirmed calendar helper close blocks native quit and resumes admission only after refusal', async () => {

@@ -674,24 +674,26 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (mcpQuitPending) return;
   mcpQuitPending = true;
-  try { disposeWorkspaceLanguageServices(); } catch (e) { safeCatch(e); }
-  try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
-  try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
-  try { globalShortcut.unregisterAll(); } catch (e) { safeCatch(e); }
-  try { closeAllServiceWindows(); } catch (e) { safeCatch(e); }
-  try { if (supervisorHandle) supervisorHandle.stop(); } catch (e) { safeCatch(e); }
-  // shutdown owns in-flight transports too and bounds each close. Allow the
-  // native quit only once cleanup settles; repeated quit requests share it.
+  // Keep ordinary services available until owned process cleanup is confirmed.
+  // A refused quit must leave the retained renderer able to use HomeBot.
   let runtimeReady = true;
   Promise.resolve().then(async () => {
-    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks, stopCalendarHelpers];
+    const cleanupJobs = [stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks, stopCalendarHelpers];
     const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
-    results.forEach((result, index) => {
+    results.forEach(result => {
       if (result.status === 'rejected') {
         safeCatch(result.reason);
-        if (index > 0) runtimeReady = false;
+        runtimeReady = false;
       }
     });
+    if (!runtimeReady) return;
+    for (const cleanup of [disposeWorkspaceLanguageServices, stopAssistantBridge, destroyBrowserPanel,
+      () => globalShortcut.unregisterAll(), closeAllServiceWindows, () => supervisorHandle?.stop()]) {
+      try { cleanup(); } catch (error) { safeCatch(error); }
+    }
+    // MCP owns in-flight transports and bounds each close. It remains available
+    // on refusal; a connector close error after confirmed runtime cleanup is logged.
+    try { await shutdownMcpServers(); } catch (error) { safeCatch(error); }
   }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
     if (!runtimeReady) {
       mcpQuitPending = false;
