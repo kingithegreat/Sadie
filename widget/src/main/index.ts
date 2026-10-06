@@ -4,7 +4,7 @@ import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol, dialog 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
-import { createMainWindow } from './window-manager';
+import { createMainWindow as createOwnedMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
@@ -655,6 +655,19 @@ app.whenReady().then(async () => {
 
 let mcpQuitPending = false;
 let mcpQuitReady = false;
+function preserveMainWindowOnClose(event: Electron.Event): void {
+  if (mcpQuitReady) return;
+  // Keep the owning renderer available if cleanup refuses quit: a replacement
+  // window has a different sender and cannot control this window's terminals.
+  event.preventDefault();
+  app.quit();
+}
+function createMainWindow(): BrowserWindow {
+  const window = createOwnedMainWindow();
+  window.removeListener('close', preserveMainWindowOnClose);
+  window.on('close', preserveMainWindowOnClose);
+  return window;
+}
 app.on('before-quit', event => {
   if (mcpQuitReady) return;
   event.preventDefault();

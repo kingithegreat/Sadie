@@ -11,7 +11,7 @@ const quitSource = source.slice(stateStart >= 0 ? stateStart : handlerStart);
 if (handlerStart < 0 || !quitSource.includes("app.on('window-all-closed'")) throw new Error('Actual main quit wiring was not found');
 const compiled = ts.transpileModule(quitSource, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
 
-function harness() {
+function harness(keepExistingWindow = false) {
   let resolve!: () => void;
   let reject!: (reason: Error) => void;
   const cleanup = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
@@ -34,11 +34,35 @@ function harness() {
   const shutdownMcpServers = jest.fn(() => cleanup);
   const safeCatch = jest.fn();
   const dialog = { showMessageBox: jest.fn(async () => ({ response: 1 })) };
-  const createMainWindow = jest.fn(() => ({ isDestroyed: () => false }));
-  vm.runInNewContext(compiled, { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, mainWindow: null, createMainWindow, process: { platform: 'win32' } });
-  return { app, handlers, otherCleanup, shutdownMcpServers, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
+  const windowHandlers = new Map<string, (...args: any[]) => void>();
+  const ownedWindow = { isDestroyed: () => false, on: jest.fn((name: string, handler: any) => windowHandlers.set(name, handler)), removeListener: jest.fn() };
+  const createMainWindow = jest.fn(() => ownedWindow);
+  const context = { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
+  vm.runInNewContext(compiled, context);
+  vm.runInNewContext('createMainWindow()', context);
+  createMainWindow.mockClear();
+  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
 async function settle() { for (let n = 0; n < 10; n++) await Promise.resolve(); }
+
+test('native window close retains its owning renderer through a refusal, then permits close after retry cleanup', async () => {
+  const h = harness(true);
+  h.otherCleanup.workspacePtySessions.closeAll.mockRejectedValueOnce(new Error('owned terminal identity unavailable'));
+  const firstClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(firstClose);
+  expect(firstClose.preventDefault).toHaveBeenCalledTimes(1);
+  h.resolve(); await settle();
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  const retryClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(retryClose);
+  expect(retryClose.preventDefault).toHaveBeenCalledTimes(1);
+  await settle(); expect(h.nativeQuits()).toBe(1);
+  const finalClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(finalClose);
+  expect(finalClose.preventDefault).not.toHaveBeenCalled();
+});
 
 test('native quit waits for owned MCP cleanup, repeats share the barrier, and other services still stop once', async () => {
   const h = harness();
