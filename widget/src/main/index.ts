@@ -19,8 +19,15 @@ import { registerWorkspaceIpc } from './workspace-ipc';
 import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
 import { disposeWorkspaceLanguageServices } from './workspace-language';
 import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
-import { currentWorkspace } from './workspace-context';
+import { registerWorkspaceGitActionIpc } from './workspace-git-action-ipc';
+import { registerWorkspaceDebugIpc } from './workspace-debug-ipc';
+import { registerWorkspaceTestIpc } from './workspace-test-ipc';
+import { stopWorkspaceDebuggers } from './workspace-debug';
+import { stopWorkspaceTestRuns } from './workspace-tests';
+import { currentWorkspace, createWorkspaceBridgeToken } from './workspace-context';
 import { registerWorkspaceTaskIpc } from './workspace-task-ipc';
+import { registerWorkspaceTerminalIpc } from './workspace-terminal-ipc';
+import { workspacePtySessions } from './workspace-terminal-pty';
 import { closeAllWorkspaceTasks } from './workspace-tasks';
 import { registerProblemReportIpc } from './problem-report-ipc';
 import { registerWhisperIpc } from './speech/whisper-ipc';
@@ -356,7 +363,11 @@ app.whenReady().then(async () => {
   registerWorkspaceIpc(() => getSettings()?.projectPath);
   registerWorkspaceLanguageIpc();
   registerWorkspaceAiHandlers();
+  registerWorkspaceGitActionIpc();
+  registerWorkspaceDebugIpc();
+  registerWorkspaceTestIpc();
   registerWorkspaceTaskIpc();
+  registerWorkspaceTerminalIpc();
   // Settings → Report a problem: a local, secret-free text report the tester chooses to share.
   registerProblemReportIpc();
   // Voice input: Whisper runs here, not in the renderer (whose CSP blocks the model download).
@@ -375,7 +386,7 @@ app.whenReady().then(async () => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
           const workspace = currentWorkspace();
-          mainWindow.webContents.send('homebot:assistant-tool-activity', { ...info, root: workspace?.root, streamId: workspace?.streamId });
+          mainWindow.webContents.send('homebot:assistant-tool-activity', { ...info, root: workspace?.displayRoot, streamId: workspace?.streamId });
         }
       } catch (e) { safeCatch(e); }
     },
@@ -387,12 +398,12 @@ app.whenReady().then(async () => {
     // them every bridged call is refused for want of a permission grant.
     setAssistantBridgeProvider(() => ({
       url: bridge.url,
-      token: bridge.token,
+      token: createWorkspaceBridgeToken() || bridge.token,
       toolNames: CODING_TOOLS.map(t => `mcp__homebot__${t}`),
       // Deterministic cwd. Otherwise the CLI inherits Electron's, which in a
       // packaged build is the install directory — so project settings and
       // relative paths resolve somewhere the user never chose.
-      cwd: (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
+      cwd: currentWorkspace()?.root || (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
     }));
     // Record success where it can actually be read. A bridge that fails leaves
     // the assistant with no HomeBot tools at all, which looks identical to
@@ -658,7 +669,10 @@ app.on('before-quit', event => {
   try { if (supervisorHandle) supervisorHandle.stop(); } catch (e) { safeCatch(e); }
   // shutdown owns in-flight transports too and bounds each close. Allow the
   // native quit only once cleanup settles; repeated quit requests share it.
-  Promise.resolve().then(() => shutdownMcpServers()).catch(safeCatch).finally(() => {
+  Promise.resolve().then(async () => {
+    const results = await Promise.allSettled([shutdownMcpServers(), stopWorkspaceDebuggers(), stopWorkspaceTestRuns(), workspacePtySessions.closeAll()]);
+    for (const result of results) if (result.status === 'rejected') safeCatch(result.reason);
+  }).catch(safeCatch).finally(() => {
     mcpQuitReady = true;
     app.quit();
   });

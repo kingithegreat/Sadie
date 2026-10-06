@@ -5,7 +5,12 @@ import type { CaptionStyle } from '../shared/caption-style';
 import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 import type { WorkspaceFileActionRequest, WorkspaceRecoveryState, WorkspaceSaveOptions } from '../shared/workspace-file-types';
 import type { WorkspaceLanguageRequest } from '../shared/workspace-language-types';
-import type { WorkspaceAiTurn, WorkspaceCheckpointRestoreOptions } from '../shared/workspace-ai-types';
+import type { WorkspaceGitActionRequest } from '../shared/workspace-git-action-types';
+import type { WorkspaceDebugRequest } from '../shared/workspace-debug-types';
+import type { WorkspaceTestRequest } from '../shared/workspace-test-types';
+import type { WorkspaceTaskRequest, WorkspaceTaskEvent } from '../shared/workspace-task-types';
+import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent } from '../shared/workspace-terminal-types';
+import type { WorkspaceAiTurn, WorkspaceCheckpointRestoreOptions, WorkspaceCheckpointRunRestoreOptions } from '../shared/workspace-ai-types';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -91,6 +96,9 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_RECOVERY_LOAD: 'homebot:workspace:recovery-load',
   WORKSPACE_RECOVERY_SAVE: 'homebot:workspace:recovery-save',
   WORKSPACE_LANGUAGE: 'homebot:workspace:language',
+  WORKSPACE_GIT_ACTION: 'homebot:workspace:git-action',
+  WORKSPACE_DEBUG: 'homebot:workspace:debug',
+  WORKSPACE_TESTS: 'homebot:workspace:tests',
   WORKSPACE_AI_SESSION: 'homebot:workspace-ai:session',
   WORKSPACE_AI_SAVE_SESSION: 'homebot:workspace-ai:save-session',
   WORKSPACE_AI_PREPARE_PLAN: 'homebot:workspace-ai:prepare-plan',
@@ -102,6 +110,10 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_CHECKPOINT_COMPARE: 'homebot:workspace-ai:checkpoint-diff',
   WORKSPACE_CHECKPOINT_RESTORE: 'homebot:workspace-ai:restore',
   WORKSPACE_AI_MCP: 'homebot:workspace-ai:mcp',
+  WORKSPACE_CHECKPOINT_COMPARE_RUN: 'homebot:workspace-ai:compare-run',
+  WORKSPACE_CHECKPOINT_RESTORE_RUN: 'homebot:workspace-ai:restore-run',
+  WORKSPACE_TRUSTED_FOLDERS: 'homebot:workspace-ai:trusted-folders',
+  WORKSPACE_REVOKE_FOLDER: 'homebot:workspace-ai:revoke-folder',
   WORKSPACE_SEARCH: 'homebot:workspace:search',
   WORKSPACE_REPLACE: 'homebot:workspace:replace',
   WORKSPACE_GIT_STATUS: 'homebot:workspace:git-status',
@@ -134,6 +146,16 @@ const ALLOWED_CHANNELS = {
   MEDIA_SPLICE_VIDEO: 'homebot:media:splice-video',
   WORKSPACE_TASK_LIST: 'homebot:workspace:tasks:list',
   WORKSPACE_TASK_RUN: 'homebot:workspace:tasks:run',
+  WORKSPACE_TASK_STOP: 'homebot:workspace:tasks:stop',
+  WORKSPACE_TASK_STATUS: 'homebot:workspace:tasks:status',
+  WORKSPACE_TASK_EVENT: 'homebot:workspace:tasks:event',
+  WORKSPACE_TERMINAL_PROFILES: 'homebot:workspace:terminal:profiles',
+  WORKSPACE_TERMINAL_CREATE: 'homebot:workspace:terminal:create',
+  WORKSPACE_TERMINAL_WRITE: 'homebot:workspace:terminal:write',
+  WORKSPACE_TERMINAL_RESIZE: 'homebot:workspace:terminal:resize',
+  WORKSPACE_TERMINAL_INTERRUPT: 'homebot:workspace:terminal:interrupt',
+  WORKSPACE_TERMINAL_CLOSE: 'homebot:workspace:terminal:close',
+  WORKSPACE_TERMINAL_EVENT: 'homebot:workspace:terminal:event',
 };
 
 // Listen for router logs forwarded from main so tests and Playwright traces
@@ -613,6 +635,9 @@ const electronAPI: ElectronAPI = {
   workspaceRecoveryLoad: async (root: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_RECOVERY_LOAD, root),
   workspaceRecoverySave: async (root: string, state: WorkspaceRecoveryState) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_RECOVERY_SAVE, root, state),
   workspaceLanguage: async (request: WorkspaceLanguageRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LANGUAGE, request),
+  workspaceGitAction: async (request: WorkspaceGitActionRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_ACTION, request),
+  workspaceDebug: async (request: WorkspaceDebugRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_DEBUG, request),
+  workspaceTests: async (request: WorkspaceTestRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TESTS, request),
   workspaceAiSession: async (root: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_AI_SESSION, root),
   workspaceAiSaveSession: async (root: string, turns: WorkspaceAiTurn[]) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_AI_SAVE_SESSION, root, turns),
   workspaceAiPreparePlan: async (root: string, text: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_AI_PREPARE_PLAN, root, text),
@@ -624,6 +649,10 @@ const electronAPI: ElectronAPI = {
   workspaceCheckpointCompare: async (root: string, id: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_COMPARE, root, id),
   workspaceCheckpointRestore: async (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_RESTORE, root, id, options),
   workspaceAiMcpStatus: async () => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_AI_MCP),
+  workspaceCheckpointCompareRun: async (root: string, id: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_COMPARE_RUN, root, id),
+  workspaceCheckpointRestoreRun: async (root: string, id: string, options?: WorkspaceCheckpointRunRestoreOptions) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_RESTORE_RUN, root, id, options),
+  workspaceTrustedFolders: async () => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TRUSTED_FOLDERS),
+  workspaceRevokeFolder: async (root: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_REVOKE_FOLDER, root),
   workspaceSearch: async (opts: {
     pattern: string;
     directory?: string;
@@ -648,7 +677,25 @@ const electronAPI: ElectronAPI = {
   workspaceProposalAccept: async (id: string, hunkIndexes: number[]): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_ACCEPT, id, hunkIndexes),
   workspaceProposalReject: async (id: string): Promise<any> => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROPOSAL_REJECT, id),
   workspaceTaskList: async (args: { projectDir: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_LIST, args),
-  workspaceTaskRun: async (args: { projectDir: string; scriptName: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_RUN, args),
+  workspaceTaskRun: async (args: WorkspaceTaskRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_RUN, args),
+  workspaceTaskStop: async (args: { taskId: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_STOP, args),
+  workspaceTaskStatus: async (args: { projectDir: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TASK_STATUS, args),
+  workspaceTerminalProfiles: async () => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_PROFILES),
+  workspaceTerminalCreate: async (args: WorkspaceTerminalCreateRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_CREATE, args),
+  workspaceTerminalWrite: async (args: { sessionId: string; data: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_WRITE, args),
+  workspaceTerminalResize: async (args: { sessionId: string; cols: number; rows: number }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_RESIZE, args),
+  workspaceTerminalInterrupt: async (args: { sessionId: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_INTERRUPT, args),
+  workspaceTerminalClose: async (args: { sessionId: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_CLOSE, args),
+  onWorkspaceTerminalEvent: (callback: (event: WorkspaceTerminalEvent) => void) => {
+    const listener = (_event: unknown, event: WorkspaceTerminalEvent) => callback(event);
+    ipcRenderer.on(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_EVENT, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.WORKSPACE_TERMINAL_EVENT, listener);
+  },
+  onWorkspaceTaskEvent: (callback: (event: WorkspaceTaskEvent) => void) => {
+    const listener = (_event: unknown, event: WorkspaceTaskEvent) => callback(event);
+    ipcRenderer.on(ALLOWED_CHANNELS.WORKSPACE_TASK_EVENT, listener);
+    return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.WORKSPACE_TASK_EVENT, listener);
+  },
 
   /** Tool calls made by the external assistant (Claude Code) via the bridge.
    *  Returns an unsubscribe function. */

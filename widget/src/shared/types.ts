@@ -5,7 +5,13 @@ import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from '.
 import type { MediaCapabilityRegistry } from './media-capability-registry';
 import type { WorkspaceDiskSnapshot, WorkspaceFileActionRequest, WorkspaceFileActionResult, WorkspaceProjectResult, WorkspaceRecoveryResult, WorkspaceRecoveryState, WorkspaceSaveOptions } from './workspace-file-types';
 import type { WorkspaceLanguageRequest, WorkspaceLanguageResult } from './workspace-language-types';
+import type { WorkspaceGitActionRequest, WorkspaceGitActionResult } from './workspace-git-action-types';
+import type { WorkspaceDebugRequest, WorkspaceDebugResult } from './workspace-debug-types';
+import type { WorkspaceTestRequest, WorkspaceTestResult } from './workspace-test-types';
+import type { WorkspaceTaskRequest, WorkspaceTaskEvent } from './workspace-task-types';
+import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalResult } from './workspace-terminal-types';
 import type { WorkspaceAiRequestScope, WorkspaceAiTurn, WorkspaceAiPlan, WorkspaceAiSessionResult, WorkspaceAiRulesResult, WorkspaceAiMcpStatusResult, WorkspaceCodeSearchResult, WorkspaceCodeCompletionResult, WorkspaceCheckpointRow, WorkspaceCheckpointRestoreOptions, WorkspaceCheckpointRestoreResult, WorkspaceCheckpointCompareResult } from './workspace-ai-types';
+import type { WorkspaceCheckpointRun, WorkspaceCheckpointRunComparison, WorkspaceCheckpointRunRestoreOptions, WorkspaceCheckpointRunRestoreResult, WorkspaceTrustedFoldersResult } from './workspace-ai-types';
 
 export type LicenseTier = 'free' | 'pro';
 
@@ -1082,6 +1088,16 @@ export interface ElectronAPI {
   workspaceRecoveryLoad?: (root: string) => Promise<WorkspaceRecoveryResult>;
   workspaceRecoverySave?: (root: string, state: WorkspaceRecoveryState) => Promise<{ success: boolean; error?: string }>;
   workspaceLanguage?: (request: WorkspaceLanguageRequest) => Promise<WorkspaceLanguageResult>;
+  workspaceGitAction?: (request: WorkspaceGitActionRequest) => Promise<WorkspaceGitActionResult>;
+  workspaceDebug?: (request: WorkspaceDebugRequest) => Promise<WorkspaceDebugResult>;
+  workspaceTests?: (request: WorkspaceTestRequest) => Promise<WorkspaceTestResult>;
+  workspaceTerminalProfiles?: () => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalCreate?: (request: WorkspaceTerminalCreateRequest) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalWrite?: (request: { sessionId: string; data: string }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalResize?: (request: { sessionId: string; cols: number; rows: number }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalInterrupt?: (request: { sessionId: string }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalClose?: (request: { sessionId: string }) => Promise<WorkspaceTerminalResult>;
+  onWorkspaceTerminalEvent?: (callback: (event: WorkspaceTerminalEvent) => void) => () => void;
   workspaceAiSession?: (root: string) => Promise<WorkspaceAiSessionResult>;
   workspaceAiSaveSession?: (root: string, turns: WorkspaceAiTurn[]) => Promise<{ success: boolean; error?: string }>;
   workspaceAiPreparePlan?: (root: string, text: string) => Promise<WorkspaceAiPlan>;
@@ -1089,9 +1105,13 @@ export interface ElectronAPI {
   workspaceAiRules?: (root: string) => Promise<WorkspaceAiRulesResult>;
   workspaceCodeSearch?: (root: string, query: string, semantic?: boolean) => Promise<WorkspaceCodeSearchResult>;
   workspaceCodeComplete?: (root: string, prefix: string, suffix: string) => Promise<WorkspaceCodeCompletionResult>;
-  workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; error?: string }>;
+  workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; runs?: WorkspaceCheckpointRun[]; error?: string }>;
   workspaceCheckpointCompare?: (root: string, id: string) => Promise<WorkspaceCheckpointCompareResult>;
   workspaceCheckpointRestore?: (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => Promise<WorkspaceCheckpointRestoreResult>;
+  workspaceCheckpointCompareRun?: (root: string, id: string) => Promise<WorkspaceCheckpointRunComparison>;
+  workspaceCheckpointRestoreRun?: (root: string, id: string, options?: WorkspaceCheckpointRunRestoreOptions) => Promise<WorkspaceCheckpointRunRestoreResult>;
+  workspaceTrustedFolders?: () => Promise<WorkspaceTrustedFoldersResult>;
+  workspaceRevokeFolder?: (root: string) => Promise<WorkspaceTrustedFoldersResult>;
   workspaceAiMcpStatus?: () => Promise<WorkspaceAiMcpStatusResult>;
   /** IDE-9: search across files, and the line-exact replace. */
   workspaceSearch?: (opts: {
@@ -1118,7 +1138,10 @@ export interface ElectronAPI {
   }>;
   /** IDE-11: package scripts and parsed compiler/linter Problems. */
   workspaceTaskList?: (args: { projectDir: string }) => Promise<WorkspaceTaskListResult>;
-  workspaceTaskRun?: (args: { projectDir: string; scriptName: string }) => Promise<WorkspaceTaskRunResult>;
+  workspaceTaskRun?: (args: WorkspaceTaskRequest) => Promise<WorkspaceTaskRunResult>;
+  workspaceTaskStop?: (args: { taskId: string }) => Promise<{ success: boolean; error?: string }>;
+  workspaceTaskStatus?: (args: { projectDir: string }) => Promise<{ success: boolean; task?: WorkspaceTaskEvent | null; error?: string }>;
+  onWorkspaceTaskEvent?: (callback: (event: WorkspaceTaskEvent) => void) => () => void;
   // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
   workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
     staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;
