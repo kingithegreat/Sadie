@@ -74,9 +74,14 @@ describe('IDE request authority, review and recovery effects', () => {
   test('registry handler guard covers direct dispatch, while normal chat still dispatches', async () => {
     const effect = path.join(rootA, 'danger.txt');
     registerTool('run_terminal_command', { name: 'run_terminal_command' } as any, async () => { fs.writeFileSync(effect, 'effect'); return { success: true }; });
+    // Even a handler captured before request scope begins must enforce the
+    // authority active at invocation, rather than exposing an unguarded copy.
+    const capturedHandler = getTool('run_terminal_command')!.handler;
     await runWorkspaceRequest(request(approved(rootA)), 1, async () => {
       expect(workspaceToolError('run_terminal_command')).toBeDefined();
       expect(await getTool('run_terminal_command')!.handler({}, {} as any)).toMatchObject({ success: false });
+      expect(await capturedHandler({}, {} as any)).toMatchObject({ success: false });
+      expect(fs.existsSync(effect)).toBe(false);
     });
     expect(fs.existsSync(effect)).toBe(false);
     expect(await getTool('run_terminal_command')!.handler({}, {} as any)).toMatchObject({ success: true });

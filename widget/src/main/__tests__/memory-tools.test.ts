@@ -8,6 +8,10 @@
 
 import * as fs from 'fs';
 
+// Registry authority imports Electron's profile API. Loading Electron's real
+// package with this suite's fake fs would invoke its binary-install fallback.
+jest.mock('electron', () => ({ app: { getPath: () => '/mock-profile' } }));
+
 // ─── Mock fs ──────────────────────────────────────────────────────────────────
 jest.mock('fs', () => ({
   existsSync: jest.fn(),
