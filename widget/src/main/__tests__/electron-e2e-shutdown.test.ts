@@ -56,11 +56,20 @@ test('afterEach closes apps left by an assertion or skip and repeated explicit c
   expect(f.app.close).toHaveBeenCalledTimes(1); expect(f.monitor.cleanup).not.toHaveBeenCalled();
 });
 test('native main exit zero cannot hide an owned descendant that remains alive', async () => {
+  jest.useFakeTimers();
   const f = fixture(); f.monitor.verify.mockResolvedValue(false);
   await prepareElectronShutdown(f.app, '/owned/index.js'); f.finish({ code: 0 });
-  await expect(closeElectronApp(f.app)).rejects.toThrow(/owned processes remain alive/);
+  const failed = expect(closeElectronApp(f.app)).rejects.toThrow(/owned processes remain alive/);
+  await jest.advanceTimersByTimeAsync(CLOSE_BUDGET_MS); await failed;
   expect(f.monitor.cleanup).toHaveBeenCalled();
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(false);
+});
+test('asynchronous captured child exit settles within the unchanged close budget without force cleanup', async () => {
+  jest.useFakeTimers(); const f = fixture(); f.monitor.verify.mockResolvedValueOnce(false).mockResolvedValue(true);
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.finish({ code: 0 });
+  const closed = closeElectronApp(f.app); await jest.advanceTimersByTimeAsync(200); await closed;
+  expect(f.monitor.verify).toHaveBeenCalledTimes(2); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(true); expect(receipt.elapsed).toBeLessThan(CLOSE_BUDGET_MS);
 });
 test('apps using direct close leave no pending cleanup after both actual exit and transport close', async () => {
   const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');

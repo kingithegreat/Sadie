@@ -5,10 +5,12 @@ import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from '../../../mai
 
 export interface NativeAppInfo { pid: number; ppid: number; execPath: string }
 export interface NativeAppExit { code: number | null; signal?: string | null; creation?: string }
+export interface NativeAppObservation { at: number; gone: boolean; live: Array<{ pid: number; parent: number; creation: string; name: string }> }
 export interface NativeAppMonitor {
   info: NativeAppInfo;
   creation?: string;
   exit: Promise<NativeAppExit>;
+  observations?: NativeAppObservation[];
   snapshot(): Promise<WorkspacePtyStopReceipt | undefined>;
   verify(receipt?: WorkspacePtyStopReceipt): Promise<boolean>;
   cleanup(receipt?: WorkspacePtyStopReceipt): Promise<unknown>;
@@ -66,10 +68,12 @@ export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess,
   watcher.once('exit', code => { const error = new Error(`Native Electron observer exited ${code}: ${stderr}`); if (!creation) readyReject(error); if (!exited) exitReject(error); });
   const timer = setTimeout(() => readyReject(new Error('Native Electron observer identity exceeded 8 seconds')), 8000);
   try { await ready; } catch (error) { watcher.kill(); throw error; } finally { clearTimeout(timer); }
+  const observations: NativeAppObservation[] = [];
   return {
     info, creation, exit,
+    observations,
     snapshot: async () => {
-      const tree = `$ErrorActionPreference='Stop';$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);$root=$all|Where-Object{$_.ProcessId -eq ${info.pid} -and $_.ParentProcessId -eq ${info.ppid} -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]${creation}};if(!$root){throw 'Owned native main disappeared before snapshot'};$owned=@($root);for($level=0;$level -lt $owned.Count;$level++){$parent=$owned[$level];$owned+=@($all|Where-Object{$_.ParentProcessId -eq $parent.ProcessId -and $_.CreationDate -ge $parent.CreationDate -and $_.ProcessId -notin $owned.ProcessId});if($owned.Count -gt 128){throw 'Owned process tree exceeds bound'}};$receipt=@($owned|ForEach-Object{@{pid=[int]$_.ProcessId;parent=[int]$_.ParentProcessId;creation=[string]$_.CreationDate.ToUniversalTime().Ticks}});ConvertTo-Json -InputObject @($receipt) -Depth 4 -Compress`;
+      const tree = `$ErrorActionPreference='Stop';$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);$root=$all|Where-Object{$_.ProcessId -eq ${info.pid} -and $_.ParentProcessId -eq ${info.ppid} -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]${creation}};if(!$root){throw 'Owned native main disappeared before snapshot'};$owned=@($root);for($level=0;$level -lt $owned.Count;$level++){$parent=$owned[$level];$owned+=@($all|Where-Object{$_.ParentProcessId -eq $parent.ProcessId -and $_.CreationDate -ge $parent.CreationDate -and $_.ProcessId -notin $owned.ProcessId});if($owned.Count -gt 128){throw 'Owned process tree exceeds bound'}};$receipt=@($owned|ForEach-Object{@{pid=[int]$_.ProcessId;parent=[int]$_.ParentProcessId;creation=[string]$_.CreationDate.ToUniversalTime().Ticks;name=[string]$_.Name}});ConvertTo-Json -InputObject @($receipt) -Depth 4 -Compress`;
       const receipt = JSON.parse((await powershell(tree, env)).trim()) as WorkspacePtyStopReceipt;
       if (!Array.isArray(receipt) || !receipt.length || receipt.length > 128 || receipt[0].pid !== info.pid || receipt[0].creation !== creation || receipt[0].parent !== info.ppid) throw new Error('Invalid native owned-tree snapshot');
       return receipt;
@@ -77,8 +81,11 @@ export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess,
     verify: async receipt => {
       if (!receipt) return exited;
       const value = Buffer.from(JSON.stringify(receipt), 'utf8').toString('base64');
-      const source = `$ErrorActionPreference='Stop';$captured=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${value}')));$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);foreach($identity in $captured){if($all|Where-Object{$_.ProcessId -eq $identity.pid -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]$identity.creation}){[Console]::Write('live');exit 0}};[Console]::Write('gone')`;
-      return (await powershell(source, env)).trim() === 'gone';
+      const source = `$ErrorActionPreference='Stop';$captured=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${value}')));$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);$live=@();foreach($identity in $captured){$matching=$all|Where-Object{$_.ProcessId -eq $identity.pid -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]$identity.creation};foreach($match in $matching){$live+=@{pid=[int]$match.ProcessId;parent=[int]$match.ParentProcessId;creation=[string]$match.CreationDate.ToUniversalTime().Ticks;name=[string]$match.Name}}};ConvertTo-Json -InputObject @{gone=($live.Count -eq 0);live=@($live)} -Depth 4 -Compress`;
+      const result = JSON.parse((await powershell(source, env)).trim()) as Omit<NativeAppObservation, 'at'>;
+      if (typeof result.gone !== 'boolean' || !Array.isArray(result.live) || result.live.length > 128 || result.gone !== (result.live.length === 0) || result.live.some(row => !receipt.some(identity => identity.pid === row.pid && identity.creation === row.creation) || typeof row.name !== 'string')) throw new Error('Invalid owned identity disappearance receipt');
+      observations.push({ at: Date.now(), ...result });
+      return result.gone;
     },
     cleanup: receipt => stopWorkspacePtyTree(info.pid, { creation: creation!, parent: info.ppid }, receipt, env),
     dispose: () => { if (watcher.exitCode === null && watcher.signalCode === null) watcher.kill(); },

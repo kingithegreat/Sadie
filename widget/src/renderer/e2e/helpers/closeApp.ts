@@ -42,6 +42,7 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
           args[args.length - 1] = function (this: unknown, error: any, stdout: unknown, stderr: unknown) {
             log.helpers.push({ purpose, pid, duration: Date.now() - started, error: error ? { message: error.message, code: error.code, signal: error.signal, killed: error.killed } : null, stdout: String(stdout).slice(0, 65536), stderr: String(stderr).slice(0, 4096) });
             if (log.helpers.length > 64) log.helpers.shift();
+            console.log('[E2E-PROCESS-DIAGNOSTIC]', JSON.stringify(log.helpers[log.helpers.length - 1]));
             return callback.apply(this, arguments);
           };
         }
@@ -93,14 +94,26 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         catch { throw snapshotError; }
       }
       // app.close disposes transport before a production refusal can be diagnosed.
-      if (!state.nativeExit) await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
+      if (!state.nativeExit) {
+        receipt.productionBeforeQuit = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), deadline - Date.now(), 'Pre-quit process diagnostics unavailable');
+        persist();
+        await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
+      }
     }
     receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit within close budget');
     const nativeExit = receipt.nativeExit as NativeAppExit;
     if (nativeExit.code !== 0 || nativeExit.signal) throw new Error('Actual Electron main exited with a nonzero OS code or termination signal.');
-    receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
     receipt.verificationScope = tree ? 'captured-owned-tree' : 'native-main';
-    if (!receipt.capturedIdentitiesGone) throw new Error('Captured owned processes remain alive after native main exit.');
+    // Child console/process cleanup can complete asynchronously after main exit.
+    // Poll only inside the same original close budget; persistent orphans fail.
+    for (;;) {
+      receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
+      receipt.identityObservations = state.monitor.observations;
+      persist();
+      if (receipt.capturedIdentitiesGone) break;
+      if (deadline - Date.now() <= 200) throw new Error('Captured owned processes remain alive after native main exit within the close budget.');
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
     if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
     receipt.elapsed = Date.now() - started; receipt.graceful = true; persist();
     console.log(`[E2E-CLOSE] ${JSON.stringify({ label, artifact, native: receipt.native, nativeExit: receipt.nativeExit, elapsed: receipt.elapsed, graceful: true })}`);
