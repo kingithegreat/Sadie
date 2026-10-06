@@ -35,7 +35,7 @@ export default function ProblemsPanel({
     }
     setError('');
     setTasks(result.tasks || []);
-    setSelected(current => result.tasks?.some(task => task.name === current) ? current : (result.tasks?.[0]?.name || ''));
+    setSelected(current => result.tasks?.some((task: WorkspacePackageTask) => task.name === current) ? current : (result.tasks?.[0]?.name || ''));
     } catch { if (generation === lifecycle.current) setError('Could not load package scripts. Select Refresh to try again.'); }
   }, [api, root]);
 
