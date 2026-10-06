@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TerminalOutputChunk, TerminalExitEvent } from '../../shared/types';
 import { parseAnsiChunk, applyCarriageReturns, excerptForModel, type AnsiSegment, type AnsiStyle } from '../../shared/ansi';
 
@@ -32,7 +32,13 @@ function styleOf(seg: AnsiSegment): React.CSSProperties {
   return s;
 }
 
-export default function TerminalPanel({ open, onClose, projectPath, onSendToChat }: {
+const InteractiveTerminal = lazy(() => import('./workspace/WorkspaceTerminalPanel'));
+interface TerminalPanelProps { open: boolean; onClose: () => void; projectPath?: string; onSendToChat?: (text: string) => void; interactive?: boolean }
+export default function TerminalPanel(props: TerminalPanelProps) {
+  if (props.interactive && props.projectPath) return <Suspense fallback={<div role="status">Opening terminal…</div>}><InteractiveTerminal projectPath={props.projectPath} onClose={props.onClose} onSendToChat={props.onSendToChat} /></Suspense>;
+  return <LegacyTerminalPanel {...props} />;
+}
+function LegacyTerminalPanel({ open, onClose, projectPath, onSendToChat }: {
   open: boolean;
   onClose: () => void;
   projectPath?: string;

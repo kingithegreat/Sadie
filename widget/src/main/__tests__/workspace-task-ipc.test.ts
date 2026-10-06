@@ -3,7 +3,7 @@ const removeHandler = jest.fn((name: string) => handlers.delete(name));
 const handle = jest.fn((name: string, fn: Function) => handlers.set(name, fn));
 let senderDestroyed = false;
 let windowDestroyed = false;
-const sender = { once: jest.fn(), removeListener: jest.fn(), isDestroyed: () => senderDestroyed };
+const sender = { id: 7, send: jest.fn(), once: jest.fn(), removeListener: jest.fn(), isDestroyed: () => senderDestroyed };
 const mainFrame = {};
 const webContents = { ...sender, mainFrame };
 const requestConfirmationFrom = jest.fn();
@@ -66,5 +66,31 @@ test('approval resolving after the sender is destroyed cannot spawn', async () =
     return true;
   });
   await expect(handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'check' })).resolves.toMatchObject({ success: false, cancelled: true });
+  expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
+});
+
+test('owned Stop aborts a watch task and streamed state survives reopening', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  requestConfirmationFrom.mockResolvedValue(true);
+  executeWorkspacePackageTask.mockImplementation((_snapshot, options) => new Promise(resolve => {
+    options.onProgress({ outputExcerpt: 'server ready', problems: [] });
+    options.signal.addEventListener('abort', () => resolve({ success: false, cancelled: true }));
+  }));
+  const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'watch-1', longRunning: true });
+  await Promise.resolve(); await Promise.resolve();
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ success: true, task: { taskId: 'watch-1', running: true, outputExcerpt: 'server ready' } });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!({ sender: {}, senderFrame: {} }, { taskId: 'watch-1' })).toMatchObject({ success: false });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'watch-1' })).toEqual({ success: true });
+  await expect(run).resolves.toMatchObject({ cancelled: true });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ task: { running: false } });
+});
+
+test('Stop during approval prevents a later approval from spawning', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  let approve!: (value: boolean) => void;
+  requestConfirmationFrom.mockImplementation(() => new Promise(resolve => { approve = resolve; }));
+  const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'pending-1' });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'pending-1' })).toEqual({ success: true });
+  approve(true); await expect(run).resolves.toMatchObject({ cancelled: true });
   expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
 });

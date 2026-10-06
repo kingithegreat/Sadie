@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorkspacePackageTask, WorkspaceProblem } from '../../../shared/types';
 
 export default function ProblemsPanel({
@@ -16,7 +16,9 @@ export default function ProblemsPanel({
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState('');
-  const api = window.electron;
+  const [longRunning, setLongRunning] = useState(false);
+  const taskId = useRef<string | null>(null);
+  const api = window.electron as any;
 
   const refresh = useCallback(async () => {
     const result = await api.workspaceTaskList?.({ projectDir: root });
@@ -32,14 +34,30 @@ export default function ProblemsPanel({
   }, [api, root]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    let alive = true;
+    taskId.current = null; setRunning(false); setOutput(''); setProblems([]);
+    const update = (task: any) => {
+      if (!alive || task.projectDir !== root) return;
+      taskId.current = task.taskId; setRunning(task.running); setSelected(task.scriptName);
+      setOutput(task.outputExcerpt || ''); setProblems(task.problems || []);
+      if (task.result?.error && !task.result.cancelled) setError(task.result.error);
+    };
+    const off = api?.onWorkspaceTaskEvent?.(update);
+    void api?.workspaceTaskStatus?.({ projectDir: root }).then((res: any) => { if (res?.task) update(res.task); });
+    return () => { alive = false; off?.(); };
+  }, [api, root]);
 
   const run = async () => {
     if (!selected || running) return;
     setRunning(true);
     setError('');
     setOutput('');
+    const submittedId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    taskId.current = submittedId;
     try {
-      const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected });
+      const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected, taskId: taskId.current, longRunning });
+      if (taskId.current !== submittedId) return;
       if (!result) { setError('Package tasks are unavailable.'); return; }
       if (result.cancelled) { onStatus?.('Task cancelled.'); return; }
       setProblems(result.problems || []);
@@ -48,9 +66,9 @@ export default function ProblemsPanel({
       const code = result.exitCode == null ? '' : ` (exit ${result.exitCode})`;
       onStatus?.(`${selected}: ${result.problems?.length || 0} problem${result.problems?.length === 1 ? '' : 's'}${code}`);
     } catch {
-      setError('Could not run the package task. Refresh the scripts and try again.');
+      if (taskId.current === submittedId) setError('Could not run the package task. Refresh the scripts and try again.');
     } finally {
-      setRunning(false);
+      if (taskId.current === submittedId) setRunning(false);
     }
   };
 
@@ -63,7 +81,9 @@ export default function ProblemsPanel({
         </select>
         <button type="button" onClick={() => void run()} disabled={!selected || running}>{running ? 'Running…' : 'Run'}</button>
         <button type="button" onClick={() => void refresh()} disabled={running} aria-label="Refresh package scripts">Refresh</button>
+        {running && <button type="button" onClick={() => { void api?.workspaceTaskStop?.({ taskId: taskId.current }).then((res: any) => { if (!res?.success) setError(res?.error || 'Could not stop this task.'); else onStatus?.('Stopping task…'); }); }}>Stop</button>}
       </div>
+      <label><input type="checkbox" checked={longRunning} disabled={running} onChange={e => setLongRunning(e.target.checked)} />Watch or dev server (runs until Stop)</label>
       <div className="ws-problems-consent">HomeBot shows the exact package.json command and npm lifecycle scripts before running anything.</div>
       {error && <div className="ws-problems-error" role="alert">{error}</div>}
       <div className="ws-problems-count">{problems.length} problem{problems.length === 1 ? '' : 's'}</div>
@@ -82,7 +102,7 @@ export default function ProblemsPanel({
           </button>
         ))}
       </div>
-      {output && <details className="ws-problems-output"><summary>Task output</summary><pre>{output}</pre></details>}
+      {output && <details className="ws-problems-output" open={running}><summary>Task output{running ? ' (live)' : ''}</summary><pre aria-label="Task output">{output}</pre></details>}
     </div>
   );
 }

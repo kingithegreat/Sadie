@@ -179,6 +179,21 @@ test('timeout terminates the process tree and does not report success', async ()
   jest.useRealTimers();
 });
 
+test('watch mode streams diagnostics beyond two minutes and Stop cancels its owned process tree', async () => {
+  jest.useFakeTimers();
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, { pid: 4244, stdout: new PassThrough(), stderr: new PassThrough() });
+  const controller = new AbortController(); const progress = jest.fn();
+  const terminate = jest.fn(() => { child.emit('close', null); return true; });
+  const run = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { longRunning: true, runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child, signal: controller.signal, onProgress: progress, terminateProcessTree: terminate });
+  (child.stdout as PassThrough).write('broken.ts(1,7): error TS2322: Live error\n');
+  expect(progress).toHaveBeenCalledWith(expect.objectContaining({ outputExcerpt: expect.stringContaining('Live error'), problems: [expect.objectContaining({ line: 1 })] }));
+  await jest.advanceTimersByTimeAsync(180000); expect(terminate).not.toHaveBeenCalled();
+  controller.abort('user'); await expect(run).resolves.toMatchObject({ success: false, cancelled: true, error: 'Task stopped by user.' });
+  expect(terminate).toHaveBeenCalledWith(child, process.platform);
+  jest.useRealTimers();
+});
+
 test('timeout settles even when termination never produces close', async () => {
   jest.useFakeTimers();
   const child = new EventEmitter() as ChildProcess;

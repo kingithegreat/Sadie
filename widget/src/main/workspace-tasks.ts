@@ -63,6 +63,9 @@ export interface WorkspaceTaskExecutionOptions {
   terminateProcessTree?: (child: ChildProcess, platform: NodeJS.Platform) => boolean | void | Promise<boolean | void>;
   /** Renderer-supplied projectDir before canonicalisation; diagnostic click paths are returned in this raw form. */
   rawProjectDir?: string;
+  /** User-selected dev server/watch mode; still aborts on Stop/window close. */
+  longRunning?: boolean;
+  onProgress?: (progress: { outputExcerpt: string; problems: WorkspaceProblem[] }) => void;
 }
 
 const activeTasks = new Map<string, ChildProcess>();
@@ -258,6 +261,7 @@ export class WorkspaceTaskDiagnosticParser {
   private readonly seen = new Set<string>();
 
   constructor(private readonly projectDir: string, private readonly rawProjectDir = projectDir) {}
+  snapshot(): WorkspaceProblem[] { return [...this.found]; }
 
   push(stream: DiagnosticStream, chunk: string): void {
     let combined = this.buffers[stream] + chunk;
@@ -393,11 +397,12 @@ export async function executeWorkspacePackageTask(
 
   const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
   const platform = options.platform || process.platform;
-  const timeoutMs = Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
+  const timeoutMs = options.longRunning ? 0 : Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
   const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
   let output = '';
   let timedOut = false;
   let aborted = false;
+  const cancellationMessage = () => options.signal?.reason === 'user' ? 'Task stopped by user.' : 'Task stopped because the HomeBot window closed.';
   const startedAt = Date.now();
 
   return await new Promise<WorkspaceTaskRunResult>((resolve) => {
@@ -436,7 +441,7 @@ export async function executeWorkspacePackageTask(
       aborted = true;
       if (timer) clearTimeout(timer);
       void stopTree().then(proven => {
-        scheduleForcedFinish({ success: false, cancelled: true, error: proven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' });
+        scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
       });
     };
 
@@ -455,24 +460,26 @@ export async function executeWorkspacePackageTask(
     }
     activeTasks.set(current.projectDir, child);
 
-    timer = setTimeout(() => {
+    if (timeoutMs) timer = setTimeout(() => {
       timedOut = true;
       void stopTree().then(proven => {
         scheduleForcedFinish({ success: false, timedOut: true, error: proven ? `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` : 'Task timed out, but HomeBot could not prove its process tree stopped.' });
       });
     }, timeoutMs);
-    timer.unref?.();
+    timer?.unref?.();
     options.signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdout?.on('data', (value: Buffer | string) => {
       const chunk = value.toString();
       parser.push('stdout', chunk);
       output = appendTail(output, chunk);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
     });
     child.stderr?.on('data', (value: Buffer | string) => {
       const chunk = value.toString();
       parser.push('stderr', chunk);
       output = appendTail(output, chunk);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
     });
     child.once('error', async error => {
       if (termination) await termination;
@@ -488,7 +495,7 @@ export async function executeWorkspacePackageTask(
       const problems = parser.finish();
       finish({
         success: !aborted && !timedOut,
-        ...(aborted ? { cancelled: true, error: terminationProven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' } : {}),
+        ...(aborted ? { cancelled: true, error: terminationProven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' } : {}),
         timedOut,
         exitCode: code,
         durationMs: Date.now() - startedAt,

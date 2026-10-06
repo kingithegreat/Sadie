@@ -18,6 +18,8 @@ const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
 const SearchPanel = lazy(() => import('./SearchPanel'));
 const ProblemsPanel = lazy(() => import('./ProblemsPanel'));
 const WorkspaceNavigator = lazy(() => import('./WorkspaceNavigator'));
+const DebuggerPanel = lazy(() => import('./DebuggerPanel'));
+const WorkspaceTestsPanel = lazy(() => import('./WorkspaceTestsPanel'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -43,7 +45,7 @@ interface OpenFile {
   missing?: boolean;
 }
 
-type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
+type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | 'debug' | 'tests' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const parentPath = (p: string) => p.replace(/[\\/][^\\/]+$/, '');
@@ -489,6 +491,8 @@ export default function WorkspaceShell({
     { id: 'changes', label: 'Review assistant changes', run: () => setSideView('changes') },
     { id: 'source-control', label: 'Show source control', run: () => setSideView('scm') },
     { id: 'problems', label: 'Run tasks and view problems', run: () => setSideView('problems') },
+    { id: 'debug', label: 'Debug a JavaScript program', run: () => setSideView('debug') },
+    { id: 'tests', label: 'Discover and run project tests', run: () => setSideView('tests') },
     { id: 'hidden', label: 'Toggle hidden project files', run: () => setShowHidden(t => !t) },
     { id: 'refresh', label: 'Refresh project and reconcile open files', run: async () => { await syncFiles(); setRefreshToken(t => t + 1); } },
   ];
@@ -558,6 +562,8 @@ export default function WorkspaceShell({
           aria-pressed={sideView === 'problems'}
           onClick={() => setSideView(v => (v === 'problems' ? null : 'problems'))}
         ><Icon name="tools" size={20} /></button>
+        <button type="button" className={`ws-activity-btn${sideView === 'debug' ? ' active' : ''}`} aria-label="Debugger" title="Debug JavaScript" aria-pressed={sideView === 'debug'} onClick={() => setSideView(v => v === 'debug' ? null : 'debug')}><Icon name="code" size={20} /></button>
+        <button type="button" className={`ws-activity-btn${sideView === 'tests' ? ' active' : ''}`} aria-label="Project tests" title="Project tests" aria-pressed={sideView === 'tests'} onClick={() => setSideView(v => v === 'tests' ? null : 'tests')}><Icon name="tools" size={20} /></button>
         <button
           type="button"
           className={`ws-activity-btn${terminalOpen ? ' active' : ''}`}
@@ -614,7 +620,7 @@ export default function WorkspaceShell({
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
             <Suspense fallback={<div className="tree-hint">Loading…</div>}>
-              {root && <SourceControlPanel folder={root} onOpenFile={openFile} />}
+              {root && <SourceControlPanel folder={root} onOpenFile={openFile} onFilesChanged={() => { void syncFiles(); setRefreshToken(t => t + 1); }} />}
             </Suspense>
           </div>
         </aside>
@@ -648,6 +654,8 @@ export default function WorkspaceShell({
           </div>
         </aside>
       )}
+      {sideView === 'debug' && <aside className="ws-sidebar" aria-label="Debugger" style={{ width: sidebarWidth }}><div className="ws-sidebar-title">Debugger</div><div className="ws-sidebar-body"><Suspense fallback={<div className="tree-hint">Loading debugger…</div>}>{root && <DebuggerPanel root={root} activePath={activePath ?? undefined} onOpenFile={openFile} />}</Suspense></div></aside>}
+      {sideView === 'tests' && <aside className="ws-sidebar" aria-label="Project tests" style={{ width: sidebarWidth }}><div className="ws-sidebar-title">Project tests</div><div className="ws-sidebar-body"><Suspense fallback={<div className="tree-hint">Loading tests…</div>}>{root && <WorkspaceTestsPanel root={root} onOpenFile={openFile} />}</Suspense></div></aside>}
       {/* Sidebar */}
       {sideView === 'changes' && (
         <aside className="ws-sidebar" aria-label="Changes" style={{ width: sidebarWidth }}>
@@ -791,7 +799,7 @@ export default function WorkspaceShell({
         {terminalOpen && root && (
           <div className="ws-panel" aria-label="Panel" style={{ height: panelHeight }}>
             <Suspense fallback={<div className="tree-hint">Loading terminal…</div>}>
-              <TerminalPanel key={root} open onClose={() => setTerminalOpen(false)} projectPath={root} onSendToChat={text => { setTerminalOutput(text); setAssistantOpen(true); }} />
+              <TerminalPanel key={root} open interactive onClose={() => setTerminalOpen(false)} projectPath={root} onSendToChat={text => { setTerminalOutput(text); setAssistantOpen(true); }} />
             </Suspense>
           </div>
         )}
