@@ -12,3 +12,8 @@ export interface WorkspaceCheckpointCompareResult { success: boolean; path?: str
 export interface WorkspaceAiRulesResult { success: boolean; rules?: Array<{ path: string; text: string }>; error?: string }
 export interface WorkspaceAiMcpStatusResult { success: boolean; servers?: Array<{ name: string; type: string; connected: boolean; toolCount: number }>; error?: string }
 export interface WorkspaceCodeCompletionResult { success: boolean; text?: string; model?: string; latencyMs?: number; reason?: string; error?: string }
+export interface WorkspaceCheckpointRun { id: string; at: number; paths: string[] }
+export interface WorkspaceCheckpointRunComparison { success: boolean; runId?: string; files?: Array<{ path: string; before: string | null; current: string | null; currentHash: string; conflict: boolean }>; error?: string }
+export interface WorkspaceCheckpointRunRestoreOptions { confirmedHashes?: Record<string, string> }
+export interface WorkspaceCheckpointRunRestoreResult { success: boolean; restored?: string[]; recoveryRunId?: string; conflict?: boolean; conflicts?: Array<{ path: string; currentHash: string }>; error?: string }
+export interface WorkspaceTrustedFoldersResult { success: boolean; roots?: string[]; error?: string }

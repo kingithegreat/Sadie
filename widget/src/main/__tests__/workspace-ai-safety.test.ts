@@ -20,7 +20,7 @@ import { approveWorkspacePlan, createWorkspaceBridgeToken, currentWorkspace, pre
 import { startAssistantBridge, stopAssistantBridge } from '../assistant-bridge';
 import { writeFileHandler, validatePath } from '../tools/filesystem';
 import { applyProposal, listProposals, __clearProposals } from '../workspace-proposals';
-import { listWorkspaceCheckpoints, recordWorkspaceCheckpoint, restoreWorkspaceCheckpoint } from '../workspace-checkpoints';
+import { compareWorkspaceCheckpointRun, listWorkspaceCheckpointRuns, listWorkspaceCheckpoints, recordWorkspaceCheckpoint, restoreWorkspaceCheckpoint, restoreWorkspaceCheckpointRun } from '../workspace-checkpoints';
 import { registerTool, getTool } from '../tools/registry';
 import { readWorkspaceRules, searchWorkspaceCode } from '../workspace-code-context';
 
@@ -152,6 +152,39 @@ describe('IDE request authority, review and recovery effects', () => {
     expect(fs.existsSync(file)).toBe(false); expect(fs.readFileSync(other, 'utf8')).toBe('human');
     expect(restoreWorkspaceCheckpoint(rootA, listWorkspaceCheckpoints(rootA)[0].id).success).toBe(true);
     expect(fs.readFileSync(file, 'utf8')).toBe('agent');
+  });
+  test('whole-run restore preflights every touched file, preserves conflicts and retains a reversible recovery run', () => {
+    const a = path.join(rootA, 'a.ts'), b = path.join(rootA, 'b.ts'), created = path.join(rootA, 'created.ts'), untouched = path.join(rootA, 'human.ts');
+    const beforeA = Buffer.from('\ufeffA original\r\n'), beforeB = Buffer.from('B original\r\n');
+    fs.writeFileSync(a, 'A agent'); fs.writeFileSync(b, 'B agent'); fs.writeFileSync(created, 'created agent'); fs.writeFileSync(untouched, 'never touch');
+    recordWorkspaceCheckpoint(rootA, a, beforeA, Buffer.from('A agent'), 'edit_file', 'multi-file-run');
+    recordWorkspaceCheckpoint(rootA, b, beforeB, Buffer.from('B agent'), 'edit_file', 'multi-file-run');
+    recordWorkspaceCheckpoint(rootA, created, null, Buffer.from('created agent'), 'write_file', 'multi-file-run');
+    fs.writeFileSync(b, 'B human later');
+    expect(restoreWorkspaceCheckpointRun(rootA, 'multi-file-run')).toMatchObject({ success: false, conflict: true });
+    expect(fs.readFileSync(a, 'utf8')).toBe('A agent'); expect(fs.readFileSync(b, 'utf8')).toBe('B human later'); expect(fs.existsSync(created)).toBe(true);
+    const compared = compareWorkspaceCheckpointRun(rootA, 'multi-file-run');
+    const staleHashes = Object.fromEntries(compared.files.map(file => [file.path, file.currentHash]));
+    fs.writeFileSync(b, 'B human newest');
+    expect(restoreWorkspaceCheckpointRun(rootA, 'multi-file-run', { confirmedHashes: staleHashes })).toMatchObject({ success: false, conflict: true });
+    expect(fs.readFileSync(a, 'utf8')).toBe('A agent');
+    const freshHashes = Object.fromEntries(compareWorkspaceCheckpointRun(rootA, 'multi-file-run').files.map(file => [file.path, file.currentHash]));
+    const restored = restoreWorkspaceCheckpointRun(rootA, 'multi-file-run', { confirmedHashes: freshHashes });
+    expect(restored.success).toBe(true); expect(restored.restored).toHaveLength(3);
+    expect(fs.readFileSync(a)).toEqual(beforeA); expect(fs.readFileSync(b)).toEqual(beforeB); expect(fs.existsSync(created)).toBe(false);
+    expect(fs.readFileSync(untouched, 'utf8')).toBe('never touch');
+    expect(listWorkspaceCheckpointRuns(rootA).some(run => run.id === restored.recoveryRunId)).toBe(true);
+    expect(restoreWorkspaceCheckpointRun(rootA, restored.recoveryRunId).success).toBe(true);
+    expect(fs.readFileSync(a, 'utf8')).toBe('A agent'); expect(fs.readFileSync(b, 'utf8')).toBe('B human newest'); expect(fs.readFileSync(created, 'utf8')).toBe('created agent');
+  });
+  test('human edits made between two accepted edits in one run require explicit restore confirmation', () => {
+    const file = path.join(rootA, 'sequence.ts'); fs.writeFileSync(file, 'agent first');
+    recordWorkspaceCheckpoint(rootA, file, Buffer.from('original'), Buffer.from('agent first'), 'edit_file', 'sequence-run');
+    fs.writeFileSync(file, 'human edit then agent second');
+    recordWorkspaceCheckpoint(rootA, file, Buffer.from('human edit'), Buffer.from('human edit then agent second'), 'edit_file', 'sequence-run');
+    expect(restoreWorkspaceCheckpointRun(rootA, 'sequence-run')).toMatchObject({ success: false, conflict: true });
+    expect(fs.readFileSync(file, 'utf8')).toBe('human edit then agent second');
+    const compare = compareWorkspaceCheckpointRun(rootA, 'sequence-run'); expect(compare.files[0]).toMatchObject({ before: 'original', conflict: true });
   });
   test('rules and code context refresh after save/delete and semantic mode uses embeddings', async () => {
     fs.writeFileSync(path.join(rootA, 'AGENTS.md'), 'Project instruction'); fs.writeFileSync(path.join(rootA, 'vehicle.ts'), 'const automobile = 1;');

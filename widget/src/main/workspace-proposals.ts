@@ -183,7 +183,7 @@ export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   if (next === proposal.before) return { success: false, error: 'Those hunks leave the file unchanged.' };
 
   try {
-    if (proposal.root) recordWorkspaceCheckpoint(proposal.root, proposal.path, exists ? fs.readFileSync(proposal.path) : null, Buffer.from(next, 'utf-8'), proposal.tool);
+    if (proposal.root) recordWorkspaceCheckpoint(proposal.root, proposal.path, exists ? fs.readFileSync(proposal.path) : null, Buffer.from(next, 'utf-8'), proposal.tool, proposal.streamId);
     fs.mkdirSync(path.dirname(proposal.path), { recursive: true });
     fs.writeFileSync(proposal.path, next, 'utf-8');
   } catch (err) {

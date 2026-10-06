@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import type { WorkspaceCheckpointRun, WorkspaceCheckpointRunComparison } from '../../../shared/workspace-ai-types';
 
 interface ChangeRow {
   id: string;
@@ -75,6 +76,8 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
   const [note, setNote] = useState<string | null>(null);
   const [checkpoints, setCheckpoints] = useState<Array<{ id: string; path: string; at: number; tool: string }>>([]);
   const [comparison, setComparison] = useState<{ id: string; path: string; current: string | null; before: string | null; currentHash: string } | null>(null);
+  const [runs, setRuns] = useState<WorkspaceCheckpointRun[]>([]);
+  const [runComparison, setRunComparison] = useState<WorkspaceCheckpointRunComparison | null>(null);
 
   const api = (window as any).electron;
 
@@ -100,7 +103,7 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
       }
       if (root && api?.workspaceCheckpointList) {
         const result = await api.workspaceCheckpointList(root);
-        if (result?.success) setCheckpoints(result.checkpoints || []);
+        if (result?.success) { setCheckpoints(result.checkpoints || []); setRuns(result.runs || []); }
       }
     } catch (e: any) {
       setError(e?.message || 'Could not read the change log.');
@@ -181,12 +184,43 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
     } catch (error) { setNote((error as Error).message); }
     finally { setBusy(false); }
   };
+  const compareRun = async (id: string) => {
+    try {
+      const result = await api.workspaceCheckpointCompareRun(root, id);
+      if (!result?.success) throw new Error(result?.error || 'Could not compare this run.');
+      setRunComparison(result);
+    } catch (error) { setNote((error as Error).message); }
+  };
+  const restoreRun = async (id: string, confirm = false) => {
+    setBusy(true);
+    try {
+      const confirmedHashes = confirm && runComparison?.files ? Object.fromEntries(runComparison.files.map(file => [file.path, file.currentHash])) : undefined;
+      const result = await api.workspaceCheckpointRestoreRun(root, id, confirmedHashes ? { confirmedHashes } : undefined);
+      if (result?.success) { setRunComparison(null); setNote(`Restored ${result.restored?.length || 0} files. Their later versions were retained as a recovery run.`); }
+      else { setNote(result?.error || 'Could not restore this run.'); if (result?.conflict) await compareRun(id); }
+      for (const file of result?.restored || []) onOpenFile?.(file);
+      await refresh();
+    } catch (error) { setNote((error as Error).message); }
+    finally { setBusy(false); }
+  };
 
   return (
     <div className="changes-panel">
       {note && <p className="changes-note" role="status">{note}</p>}
       {root && <details><summary>Recovery checkpoints ({checkpoints.length})</summary>
         <p>Only files changed by accepted IDE proposals are restored. Later edits are preserved unless you explicitly choose the version shown below.</p>
+        {runs.map(run => <div key={run.id}>
+          <span>AI run · {clockTime(run.at)} · {run.paths.length} file(s)</span>
+          <button type="button" disabled={busy} onClick={() => void compareRun(run.id)}>Compare entire run</button>
+          <button type="button" disabled={busy} onClick={() => void restoreRun(run.id)}>Restore entire run</button>
+        </div>)}
+        {runComparison && <section aria-label="Run checkpoint comparison">
+          {runComparison.files?.map(file => <details key={file.path}><summary>{file.path}{file.conflict ? ' — later edits' : ''}</summary>
+            <h4>Current version</h4><pre>{file.current ?? '(file is absent)'}</pre><h4>Version to restore</h4><pre>{file.before ?? '(file will be removed)'}</pre>
+          </details>)}
+          <button type="button" disabled={busy} onClick={() => void restoreRun(runComparison.runId!, true)}>Restore the entire run over these displayed versions</button>
+          <button type="button" onClick={() => setRunComparison(null)}>Keep all current versions</button>
+        </section>}
         {checkpoints.map(checkpoint => <div key={checkpoint.id}>
           <span>{baseName(checkpoint.path)} · {clockTime(checkpoint.at)} · {checkpoint.tool}</span>
           <button type="button" disabled={busy} onClick={() => void compareCheckpoint(checkpoint.id)}>Compare checkpoint</button>

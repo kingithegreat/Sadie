@@ -64,6 +64,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const [rules, setRules] = useState<Array<{ path: string; text: string }>>([]);
   const [servers, setServers] = useState<Array<{ name: string; connected: boolean; toolCount: number }>>([]);
   const [activity, setActivity] = useState<string[]>([]);
+  const [trustedFolders, setTrustedFolders] = useState<string[]>([]);
   const unsubscribe = useRef<(() => void) | null>(null);
   const cancelActive = useRef<(() => void) | null>(null);
   const busy = useRef(false);
@@ -79,6 +80,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     const refreshMcp = () => api?.workspaceAiMcpStatus?.().then((res: any) => { if (active && res?.success) setServers(res.servers || []); }).catch(() => {});
     refreshMcp();
     const timer = setInterval(refreshMcp, 15_000);
+    api?.workspaceTrustedFolders?.().then((res: any) => { if (active && res?.success) setTrustedFolders(res.roots || []); }).catch(() => {});
     const removeActivity = api?.onAssistantToolActivity?.((info: any) => {
       if (active && info.root === root && info.streamId === activeStreamId.current) setActivity(previous => [...previous, `${info.tool}: ${info.allowed ? 'allowed' : 'blocked'}${info.error ? ` — ${info.error}` : ''}`].slice(-30));
     });
@@ -173,6 +175,15 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       setPlan(previous => previous ? { ...previous, approved: true } : null); setNote('Plan approved for this project for 30 minutes. File changes still require review in Changes.');
     } catch (error) { setNote((error as Error).message); }
   };
+  const revokeFolder = async (folder: string) => {
+    try {
+      cancelActive.current?.();
+      const result = await api?.workspaceRevokeFolder?.(folder);
+      if (!result?.success) throw new Error(result?.error || 'Could not remove this project access.');
+      setTrustedFolders(result.roots || []); setPlan(null);
+      setNote('Project access removed. Its files are untouched. Choose it again through Open project to grant access.');
+    } catch (error) { setNote((error as Error).message); }
+  };
 
   const active = files.find(f => f.path === activePath);
 
@@ -212,6 +223,10 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         <details><summary>Connected tools and activity</summary>
           {servers.length ? servers.map(server => <p key={server.name}>{server.name}: {server.connected ? `connected (${server.toolCount} tools)` : 'disconnected'}</p>) : <p>No external tool servers configured.</p>}
           <ul aria-label="IDE tool activity">{activity.map((item, i) => <li key={i}>{item}</li>)}</ul>
+        </details>
+        <details><summary>Trusted project folders</summary>
+          <p>Your home folder is available by default. Other folders require the native Open project picker.</p>
+          {trustedFolders.length ? trustedFolders.map(folder => <div key={folder}><span>{folder}</span><button type="button" onClick={() => void revokeFolder(folder)}>Remove project access</button></div>) : <p>No project folders outside your home have been granted access.</p>}
         </details>
         <button type="button" disabled={!!streamingId} onClick={() => changeTurns(() => [])}>Clear conversation history</button>
         <p>History is saved on this PC when HomeBot conversation history saving is enabled. Closing the assistant stops its active response.</p>

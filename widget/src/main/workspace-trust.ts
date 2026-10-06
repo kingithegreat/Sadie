@@ -25,6 +25,19 @@ function grants(): string[] {
     return Array.isArray(data.roots) ? data.roots.filter((item: unknown) => typeof item === 'string').slice(0, 100) : [];
   } catch { return []; }
 }
+function trustedPickerSender(event: any) {
+  const window = require('./window-manager').getMainWindow();
+  return !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
+}
+export function listTrustedWorkspaceFolders(): string[] { return activeGrants(); }
+export function revokeTrustedWorkspaceFolder(event: any, input: unknown) {
+  if (!trustedPickerSender(event)) throw new Error('Manage project access from the HomeBot IDE.');
+  if (typeof input !== 'string' || !path.isAbsolute(input)) throw new Error('Choose a trusted project to remove.');
+  const roots = grants().filter(root => root !== path.resolve(input)), file = trustFile();
+  fs.mkdirSync(path.dirname(file), { recursive: true }); const temporary = `${file}.${randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify({ roots }), { mode: 0o600 }); fs.renameSync(temporary, file);
+  return { roots: activeGrants() };
+}
 function activeGrants(): string[] {
   return grants().filter(root => {
     try { return fs.statSync(root).isDirectory() && canonicalTrustedWorkspacePath(root) === root && !protectedPath(root); }
