@@ -3,7 +3,7 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createHash, randomUUID } from 'crypto';
-import { canonicalWorkspacePath, validateWorkspaceRoot, withinRoot } from './workspace-context';
+import { validateWorkspaceRoot, withinRoot } from './workspace-context';
 import { checkedTrustedWorkspacePath } from './workspace-trust';
 import type { WorkspaceCheckpointRunRestoreResult } from '../shared/workspace-ai-types';
 import { atomicProjectWrite, removeProjectFile } from './workspace-atomic';
