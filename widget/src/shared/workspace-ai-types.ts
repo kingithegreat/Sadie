@@ -1,4 +1,4 @@
-export interface WorkspaceAiRequestScope { root: string; planId?: string }
+export interface WorkspaceAiRequestScope { root: string; planId?: string; mode?: 'inline-draft' }
 export interface WorkspaceAiTurn { id: string; role: 'user' | 'assistant'; text: string; context?: string[]; error?: boolean }
 export interface WorkspaceAiSelection { path: string; text: string; from?: number; to?: number }
 export interface WorkspaceAiPlan { success: boolean; id?: string; root?: string; text?: string; expires?: number; error?: string }

@@ -1224,8 +1224,9 @@ export const editFileDef: ToolDefinition = {
 export const editFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
   const authorityError = workspaceToolError('edit_file');
   if (authorityError) return { success: false, error: authorityError };
-  const filePath = expandPath(String(args.path || ''));
-  const validation = validatePath(filePath);
+  // validatePath owns relative resolution for both IDE authority and chat.
+  // Pre-expanding here would retarget project-relative edits to Desktop.
+  const validation = validatePath(String(args.path || ''));
   if (!validation.valid) return { success: false, error: validation.error };
 
   const oldString = String(args.old_string || '');

@@ -17,6 +17,7 @@ import {
 } from '../workspace-proposals';
 import { editFileHandler, writeFileHandler } from '../tools/filesystem';
 import { recordChange } from '../file-change-log';
+import { approveWorkspacePlan, prepareWorkspacePlan, runWorkspaceRequest } from '../workspace-context';
 
 /**
  * IDE-3. The feature is only worth having if two things are exactly true:
@@ -175,5 +176,58 @@ describe('the write tools inside a Workspace folder', () => {
     } finally {
       fs.rmSync(outside, { force: true });
     }
+  });
+
+  it('approved edit_file resolves the raw relative path in the request project and holds exact BOM/CRLF bytes for review', async () => {
+    const nested = path.join(root, 'src', 'app.ts');
+    fs.mkdirSync(path.dirname(nested));
+    const before = Buffer.from('\ufeffexport const VALUE = 1;\r\n');
+    const after = Buffer.from('\ufeffexport const VALUE = 2;\r\n');
+    fs.writeFileSync(nested, before);
+    mockProjectPath = path.join(root, 'different-settings-project');
+    fs.mkdirSync(mockProjectPath);
+    const plan = prepareWorkspacePlan(root, 'Review a relative incremental edit.', 1);
+    approveWorkspacePlan(root, plan.id, 1);
+    await runWorkspaceRequest({ workspace: { root, planId: plan.id }, streamId: 'relative-edit', conversation_id: `workspace:${root}` }, 1, async () => {
+      const result = await editFileHandler({ path: 'src/app.ts', old_string: 'VALUE = 1', new_string: 'VALUE = 2' }, {} as any);
+      expect(result.success).toBe(true);
+      expect(result.result).toMatchObject({ path: fs.realpathSync(nested), proposed: true });
+      expect(fs.readFileSync(nested)).toEqual(before);
+      const [waiting] = listProposals(root);
+      expect(waiting.tool).toBe('edit_file');
+      expect(applyProposal(waiting.id, [0])).toMatchObject({ success: true });
+      expect(fs.readFileSync(nested)).toEqual(after);
+    });
+    expect(fs.readdirSync(mockProjectPath)).toEqual([]);
+  });
+
+  it('relative edit_file still rejects unapproved and outside-project requests without byte effects', async () => {
+    const before = fs.readFileSync(file);
+    await runWorkspaceRequest({ workspace: { root }, streamId: 'unapproved-edit' }, 1, async () => {
+      expect((await editFileHandler({ path: 'app.ts', old_string: 'a = 1', new_string: 'a = 9' }, {} as any)).success).toBe(false);
+    });
+    const outside = path.join(path.dirname(root), path.basename(root) + '-outside.ts');
+    fs.writeFileSync(outside, before, { flag: 'wx' });
+    try {
+      const plan = prepareWorkspacePlan(root, 'Review only this project.', 1); approveWorkspacePlan(root, plan.id, 1);
+      await runWorkspaceRequest({ workspace: { root, planId: plan.id }, streamId: 'outside-edit' }, 1, async () => {
+        for (const target of [path.relative(root, outside), outside]) {
+          const result = await editFileHandler({ path: target, old_string: 'a = 1', new_string: 'a = 9' }, {} as any);
+          expect(result).toMatchObject({ success: false, error: expect.stringMatching(/outside the active IDE project/) });
+        }
+      });
+      expect(fs.readFileSync(outside)).toEqual(before);
+      expect(fs.readFileSync(file)).toEqual(before);
+      expect(listProposals(root)).toEqual([]);
+    } finally { fs.rmSync(outside); }
+  });
+
+  it('normal chat retains Desktop-relative expansion for an owned existing file', async () => {
+    mockProjectPath = undefined;
+    const relativeFromDesktop = path.relative(path.join(os.homedir(), 'Desktop'), file);
+    const result = await editFileHandler({ path: relativeFromDesktop, old_string: 'a = 1', new_string: 'a = 9' }, {} as any);
+    expect(result.success).toBe(true);
+    expect(result.result.proposed).toBeUndefined();
+    expect(fs.readFileSync(file, 'utf8')).toBe('const a = 9;\nconst b = 2;\n');
   });
 });
