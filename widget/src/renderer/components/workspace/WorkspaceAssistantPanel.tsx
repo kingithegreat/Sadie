@@ -57,6 +57,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const [attached, setAttached] = useState<Attachment[]>([]);
   const [turns, setTurns] = useState<WorkspaceAiTurn[]>(() => assistantTurns(root));
   const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [clearing, setClearing] = useState(false);
   const [plan, setPlan] = useState<{ id: string; text: string; approved: boolean } | null>(null);
   const [planText, setPlanText] = useState('');
   const [note, setNote] = useState<string | null>(null);
@@ -69,10 +70,12 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const cancelActive = useRef<(() => void) | null>(null);
   const busy = useRef(false);
   const activeStreamId = useRef<string | null>(null);
+  const viewIdentity = useRef(0);
   const conversationId = useMemo(() => `workspace:${root}`, [root]);
 
   const changeTurns = (update: (previous: WorkspaceAiTurn[]) => WorkspaceAiTurn[]) => updateAssistantTurns(root, update, api);
   useEffect(() => {
+    viewIdentity.current += 1;
     setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]);
     let active = true;
     const remove = subscribeAssistantTurns(root, setTurns, api, message => { if (active) setNote(message); });
@@ -84,7 +87,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     const removeActivity = api?.onAssistantToolActivity?.((info: any) => {
       if (active && info.root === root && info.streamId === activeStreamId.current) setActivity(previous => [...previous, `${info.tool}: ${info.allowed ? 'allowed' : 'blocked'}${info.error ? ` — ${info.error}` : ''}`].slice(-30));
     });
-    return () => { active = false; cancelActive.current?.(); remove(); removeActivity?.(); clearInterval(timer); };
+    return () => { viewIdentity.current += 1; active = false; cancelActive.current?.(); remove(); removeActivity?.(); clearInterval(timer); };
   }, [root, api]);
 
   const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
@@ -184,6 +187,23 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       setNote('Project access removed. Its files are untouched. Choose it again through Open project to grant access.');
     } catch (error) { setNote((error as Error).message); }
   };
+  const clearConversation = async () => {
+    if (busy.current || activeStreamId.current) return;
+    const identity = viewIdentity.current;
+    busy.current = true; setClearing(true); setNote(null);
+    try {
+      if (!api?.deleteConversation || !api?.workspaceAiSaveSession) throw new Error('Conversation deletion is unavailable. Your history was retained.');
+      const result = await api.deleteConversation(conversationId);
+      if (!result?.success) throw new Error(result?.error || 'Conversation history could not be deleted. Your transcript was retained.');
+      updateAssistantTurns(root, () => [], api);
+      const saved = await flushAssistantTurns(root, api);
+      if (viewIdentity.current === identity) {
+        setPlan(null);
+        setNote(saved ? 'Conversation history and model context cleared.' : 'Model context cleared, but transcript deletion could not be saved. Retry to remove its saved history.');
+      }
+    } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
+    finally { busy.current = false; setClearing(false); }
+  };
 
   const active = files.find(f => f.path === activePath);
 
@@ -228,7 +248,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
           <p>Your home folder is available by default. Other folders require the native Open project picker.</p>
           {trustedFolders.length ? trustedFolders.map(folder => <div key={folder}><span>{folder}</span><button type="button" onClick={() => void revokeFolder(folder)}>Remove project access</button></div>) : <p>No project folders outside your home have been granted access.</p>}
         </details>
-        <button type="button" disabled={!!streamingId} onClick={() => changeTurns(() => [])}>Clear conversation history</button>
+        <button type="button" disabled={!!streamingId || clearing} onClick={() => void clearConversation()}>Clear conversation history</button>
         <p>History is saved on this PC when HomeBot conversation history saving is enabled. Closing the assistant stops its active response.</p>
         {attached.length > 0 && (
           <ul className="ws-assistant-chips" aria-label="Attached context">
@@ -256,7 +276,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         <div className="ws-assistant-actions">
           {streamingId
             ? <button type="button" className="sp-btn" onClick={() => cancelActive.current?.()}>Stop</button>
-            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim()}>Send</button>}
+            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim() || clearing}>Send</button>}
         </div>
       </div>
     </section>

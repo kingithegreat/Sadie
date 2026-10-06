@@ -11,6 +11,7 @@ describe('IDE assistant lifecycle and approval controls', () => {
       sendStreamMessage: jest.fn(async () => undefined), cancelStream: jest.fn(),
       workspaceAiSession: jest.fn(async () => ({ success: true, turns: [] })),
       workspaceAiSaveSession: jest.fn(async () => ({ success: true })),
+      deleteConversation: jest.fn(async () => ({ success: true })),
       workspaceAiPreparePlan: jest.fn(async (_root, text) => ({ success: true, id: 'approved-plan', text })),
       workspaceAiApprovePlan: jest.fn(async () => ({ success: true, id: 'approved-plan' })),
       workspaceAiRules: jest.fn(async () => ({ success: true, rules: [{ path: `${root}/AGENTS.md`, text: 'Use project conventions.' }] })),
@@ -64,5 +65,36 @@ describe('IDE assistant lifecycle and approval controls', () => {
   test('persisted restart history is loaded through the real session API contract', async () => {
     api.workspaceAiSession.mockResolvedValue({ success: true, turns: [{ id: 'recovered', role: 'assistant', text: 'Recovered answer' }] });
     render(panel()); await waitFor(() => expect(screen.getByRole('log')).toHaveTextContent('Recovered answer'));
+  });
+  test('clear deletes this project model context and persisted transcript, while preserving other chat IDs', async () => {
+    const modelContext = new Map([[`workspace:${root}`, ['old project context']], ['chat-unrelated', ['other context']]]);
+    api.deleteConversation.mockImplementation(async (id: string) => { modelContext.delete(id); return { success: true }; });
+    render(panel()); await send('private question'); act(() => handlers.onStreamEnd());
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history' })); });
+    expect(api.deleteConversation).toHaveBeenCalledWith(`workspace:${root}`);
+    expect(modelContext.has(`workspace:${root}`)).toBe(false); expect(modelContext.get('chat-unrelated')).toEqual(['other context']);
+    expect(screen.getByRole('log')).not.toHaveTextContent('private question');
+    expect(api.workspaceAiSaveSession).toHaveBeenLastCalledWith(root, []);
+    expect(screen.getByRole('status')).toHaveTextContent('Conversation history and model context cleared.');
+  });
+  test('clear is unavailable while streaming and deletion failure retains the transcript', async () => {
+    render(panel()); await send('keep my history');
+    const clear = screen.getByRole('button', { name: 'Clear conversation history' });
+    expect(clear).toBeDisabled(); fireEvent.click(clear); expect(api.deleteConversation).not.toHaveBeenCalled();
+    act(() => handlers.onStreamEnd()); api.deleteConversation.mockResolvedValue({ success: false, error: 'Storage unavailable' });
+    await act(async () => { fireEvent.click(clear); });
+    expect(screen.getByRole('log')).toHaveTextContent('keep my history'); expect(screen.getByRole('status')).toHaveTextContent('Storage unavailable');
+  });
+  test('a pending old-project deletion cannot clear or annotate the newly selected project', async () => {
+    let release!: (value: any) => void;
+    api.deleteConversation.mockReturnValue(new Promise(resolve => { release = resolve; }));
+    api.workspaceAiSession.mockImplementation(async (project: string) => ({ success: true, turns: project === root ? [] : [{ id: 'other', role: 'assistant', text: 'Other project context' }] }));
+    const view = render(panel()); await send('old project private history'); act(() => handlers.onStreamEnd());
+    fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history' }));
+    await act(async () => { view.rerender(panel('C:/other-cleared-project')); });
+    await act(async () => { release({ success: true }); });
+    expect(api.deleteConversation).toHaveBeenCalledTimes(1); expect(api.deleteConversation).toHaveBeenCalledWith(`workspace:${root}`);
+    expect(screen.getByRole('log')).toHaveTextContent('Other project context'); expect(screen.queryByText('Conversation history and model context cleared.')).not.toBeInTheDocument();
+    expect(api.workspaceAiSaveSession).toHaveBeenLastCalledWith(root, []);
   });
 });
