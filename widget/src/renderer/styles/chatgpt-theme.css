@@ -14722,6 +14722,7 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 .workspace-shell :where(section[aria-label='Debugger'], section[aria-label='Tests'], section[aria-label='Language result'], section[aria-label='Git details']) pre { padding: 8px; border: 1px solid var(--hairline); border-radius: 4px; font-size: 11.5px; font-family: var(--font-mono, Consolas, monospace); overflow: auto; background: var(--ws-bg); }
 .workspace-shell :where([role='alert']) { color: var(--ws-control-error); line-height: 1.5; overflow-wrap: anywhere; }
 .workspace-shell :where([role='status']) { font-size: 11.5px; line-height: 1.5; }
+.workspace-shell .changes-note { color: var(--ws-fg); }
 .workspace-shell .terminal-panel > :is(header, div):has(> [aria-label='Shell profile']) { align-items: center; border-bottom: 1px solid var(--hairline); background: var(--ws-control-surface); }
 .workspace-shell [aria-label='Terminal sessions'] { flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--hairline); }
 .workspace-shell [aria-label='Terminal sessions'] > div { display: flex; gap: 3px; }
