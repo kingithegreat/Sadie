@@ -24,8 +24,10 @@ import * as path from 'path';
 import { applyHunks, diffText, toHunks, type Hunk } from '../../../src/diff/line-diff';
 import { getSettings } from './config-manager';
 import { recordChange } from './file-change-log';
-import { currentWorkspace, withinRoot } from './workspace-context';
-import { recordWorkspaceCheckpoint } from './workspace-checkpoints';
+import { currentWorkspace, validateWorkspaceRoot, withinRoot } from './workspace-context';
+import { checkpointFailureRollback, recordWorkspaceCheckpoint } from './workspace-checkpoints';
+import { atomicProjectWrite } from './workspace-atomic';
+import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath } from './workspace-trust';
 
 /** The context width the panel renders with; hunk numbering depends on it. */
 export const PROPOSAL_CONTEXT = 3;
@@ -33,6 +35,7 @@ export const PROPOSAL_CONTEXT = 3;
 export interface EditProposal {
   root?: string;
   streamId?: string;
+  reviewRoot?: string;
   id: string;
   path: string;
   tool: string;
@@ -59,8 +62,9 @@ const proposals = new Map<string, EditProposal>();
 
 /** Newest first, so the panel shows the edit that just arrived at the top. */
 export function listProposals(root?: string): ProposalSummary[] {
+  const canonicalRoot = root ? validateWorkspaceRoot(root) : undefined;
   return [...proposals.values()]
-    .filter(proposal => !root || withinRoot(path.resolve(root), proposal.path))
+    .filter(proposal => !canonicalRoot || withinRoot(canonicalRoot, proposal.path))
     .sort((a, b) => b.at - a.at)
     .map(proposal => {
       const diff = diffText(proposal.before, proposal.after);
@@ -130,7 +134,7 @@ export function proposeEdit(args: { path: string; nextContent: string; tool: str
   for (const [id, existing] of proposals) if (path.resolve(existing.path) === target && existing.streamId === currentWorkspace()?.streamId) proposals.delete(id);
 
   const id = randomUUID();
-  proposals.set(id, { id, root: currentWorkspace()?.root, streamId: currentWorkspace()?.streamId, path: target, tool: args.tool, at: Date.now(), created, before, after: args.nextContent });
+  proposals.set(id, { id, root: currentWorkspace()?.root, reviewRoot: currentWorkspace()?.root || workspaceRoot() || undefined, streamId: currentWorkspace()?.streamId, path: target, tool: args.tool, at: Date.now(), created, before, after: args.nextContent });
   return { id, path: target, created, hunkCount: hunks.length, stats: diff.stats, identical: false };
 }
 
@@ -157,6 +161,13 @@ export interface ApplyResult {
 export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   const proposal = proposals.get(String(id));
   if (!proposal) return { success: false, error: 'That proposed change is no longer waiting.' };
+  let target = '';
+  const validate = () => {
+    const checked = proposal.reviewRoot ? checkedTrustedWorkspacePath(proposal.reviewRoot, proposal.path) : checkedAnyTrustedWorkspacePath(proposal.path);
+    if (target && checked !== target) throw new Error('This file moved since the edit was proposed. Its current version was preserved.');
+    return checked;
+  };
+  try { target = validate(); } catch (error) { return { success: false, error: (error as Error).message }; }
   const accepted = [...new Set((Array.isArray(hunkIndexes) ? hunkIndexes : [])
     .map(Number).filter(index => Number.isInteger(index) && index >= 0))];
   if (!accepted.length) return { success: false, error: 'Choose at least one change to accept.' };
@@ -164,7 +175,7 @@ export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   let onDisk = '';
   let exists = true;
   try {
-    onDisk = fs.readFileSync(proposal.path, 'utf-8');
+    onDisk = fs.readFileSync(target, 'utf-8');
   } catch {
     exists = false;
   }
@@ -182,11 +193,18 @@ export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   if (accepted.length !== totalHunks && proposal.before.includes('\r\n')) next = next.replace(/\r?\n/g, '\r\n');
   if (next === proposal.before) return { success: false, error: 'Those hunks leave the file unchanged.' };
 
+  let rollbackCheckpoint: (() => void) | undefined;
   try {
-    if (proposal.root) recordWorkspaceCheckpoint(proposal.root, proposal.path, exists ? fs.readFileSync(proposal.path) : null, Buffer.from(next, 'utf-8'), proposal.tool, proposal.streamId);
-    fs.mkdirSync(path.dirname(proposal.path), { recursive: true });
-    fs.writeFileSync(proposal.path, next, 'utf-8');
+    const originalBytes = exists ? fs.readFileSync(target) : null;
+    if (originalBytes && createHash('sha256').update(originalBytes).digest('hex') !== digest(proposal.before)) throw new Error('This file changed before acceptance. Its newer version was preserved.');
+    if (proposal.root) {
+      rollbackCheckpoint = checkpointFailureRollback(proposal.root);
+      recordWorkspaceCheckpoint(proposal.root, target, originalBytes, Buffer.from(next, 'utf-8'), proposal.tool, proposal.streamId);
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    atomicProjectWrite(target, Buffer.from(next, 'utf-8'), { expectedExists: exists, expectedHash: exists ? digest(proposal.before) : undefined, validate });
   } catch (err) {
+    try { rollbackCheckpoint?.(); } catch { /* the original document is still preserved; keep the recovery receipt */ }
     return { success: false, error: `Could not write the file: ${(err as Error).message}` };
   }
   // The applied edit belongs in the change log like any other write, so the

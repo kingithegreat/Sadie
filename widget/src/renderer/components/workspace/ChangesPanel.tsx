@@ -16,7 +16,7 @@
  * already tracks would be worse than none. The Explorer is right there.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorkspaceCheckpointRun, WorkspaceCheckpointRunComparison } from '../../../shared/workspace-ai-types';
 
 interface ChangeRow {
@@ -80,13 +80,24 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
   const [runComparison, setRunComparison] = useState<WorkspaceCheckpointRunComparison | null>(null);
 
   const api = (window as any).electron;
+  const mounted = useRef(false);
+  const currentRoot = useRef(root);
+  currentRoot.current = root;
+  const refreshSequence = useRef(0);
+  const activeRefresh = useRef<{ root?: string; id: number } | null>(null);
 
   const refresh = useCallback(async () => {
+    if (activeRefresh.current && activeRefresh.current.root === root) return;
+    const id = ++refreshSequence.current;
+    activeRefresh.current = { root, id };
+    const current = () => mounted.current && currentRoot.current === root && refreshSequence.current === id;
     try {
       const res = await api?.changesList?.();
+      if (!current()) return;
       if (res?.success) { setRows(res.changes || []); setError(null); }
       else setError(res?.error || 'Could not read the change log.');
       const waiting = await api?.workspaceProposals?.(root);
+      if (!current()) return;
       if (waiting?.success) {
         const list: Proposal[] = waiting.proposals || [];
         setProposals(list);
@@ -103,10 +114,13 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
       }
       if (root && api?.workspaceCheckpointList) {
         const result = await api.workspaceCheckpointList(root);
+        if (!current()) return;
         if (result?.success) { setCheckpoints(result.checkpoints || []); setRuns(result.runs || []); }
       }
     } catch (e: any) {
-      setError(e?.message || 'Could not read the change log.');
+      if (current()) setError(e?.message || 'Could not read the change log.');
+    } finally {
+      if (activeRefresh.current?.id === id) activeRefresh.current = null;
     }
   }, [api, root]);
 
@@ -142,7 +156,11 @@ export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOp
     }
   }, [api, chosen, onOpenFile, refresh]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    mounted.current = true; setRows([]); setProposals([]); setCheckpoints([]); setRuns([]); setComparison(null); setRunComparison(null); setDiff(null); setSelected(null); setNote(null); setError(null);
+    void refresh();
+    return () => { mounted.current = false; ++refreshSequence.current; activeRefresh.current = null; };
+  }, [refresh]);
 
   // Poll while the panel is open: changes arrive from tool calls, not from
   // anything this component does, so there is no event to hang off yet.

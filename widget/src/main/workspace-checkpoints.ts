@@ -6,19 +6,28 @@ import { createHash, randomUUID } from 'crypto';
 import { canonicalWorkspacePath, validateWorkspaceRoot, withinRoot } from './workspace-context';
 import { checkedTrustedWorkspacePath } from './workspace-trust';
 import type { WorkspaceCheckpointRunRestoreResult } from '../shared/workspace-ai-types';
+import { atomicProjectWrite, removeProjectFile } from './workspace-atomic';
 export const byteHash = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 interface Checkpoint { id: string; root: string; path: string; at: number; tool: string; before: string | null; afterHash: string; runId?: string; interleaved?: boolean }
 const directory = () => path.join(app.getPath('userData'), 'ide-checkpoints');
 const store = (root: string) => path.join(directory(), `${byteHash(Buffer.from(root))}.json`);
 function read(root: string): Checkpoint[] {
-  try { const bytes = fs.readFileSync(store(root)); if (bytes.length > 32 * 1024 * 1024) return []; const value = JSON.parse(bytes.toString()); return Array.isArray(value) ? value : []; }
-  catch { return []; }
+  const file = store(root);
+  if (!fs.existsSync(file)) return [];
+  if (fs.statSync(file).size > 32 * 1024 * 1024) throw new Error('Recovery history exceeds the storage limit. Its original file was preserved.');
+  const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!Array.isArray(value) || value.length > 30 || value.some(row => !row || typeof row.id !== 'string' || typeof row.path !== 'string' || typeof row.root !== 'string' || typeof row.afterHash !== 'string' || !(row.before === null || typeof row.before === 'string'))) throw new Error('Recovery history is invalid. Its original file was preserved.');
+  return value;
 }
 function write(root: string, rows: Checkpoint[]) {
   fs.mkdirSync(directory(), { recursive: true });
-  const file = store(root), temporary = `${file}.${randomUUID()}.tmp`;
-  fs.writeFileSync(temporary, JSON.stringify(rows), { mode: 0o600 });
-  fs.renameSync(temporary, file);
+  atomicProjectWrite(store(root), Buffer.from(JSON.stringify(rows)), { mode: 0o600 });
+}
+/** Main apply is synchronous, so failure can restore its prior metadata receipt. */
+export function checkpointFailureRollback(rootInput: string): () => void {
+  const root = validateWorkspaceRoot(rootInput), file = store(root); read(root);
+  const previous = fs.existsSync(file) ? fs.readFileSync(file) : null;
+  return () => { if (previous) atomicProjectWrite(file, previous, { mode: 0o600 }); else if (fs.existsSync(file)) fs.unlinkSync(file); };
 }
 export function recordWorkspaceCheckpoint(rootInput: string, file: string, before: Buffer | null, after: Buffer | null, tool: string, runId?: string) {
   const root = validateWorkspaceRoot(rootInput), target = checkedTrustedWorkspacePath(root, file);
@@ -89,12 +98,11 @@ export function restoreWorkspaceCheckpointRun(rootInput: unknown, id: unknown, o
     const latest = fs.existsSync(item.row.path) ? fs.readFileSync(item.row.path) : null;
     if ((latest ? byteHash(latest) : 'missing') !== item.hash) return { success: false, conflict: true, restored, recoveryRunId, error: 'A file changed during restoration. Remaining files were preserved; restored versions have a recovery run.' };
     try {
-      if (item.before === null) { if (latest) fs.unlinkSync(item.row.path); }
+      const validate = () => { if (checkedTrustedWorkspacePath(root, item.row.path) !== item.row.path) throw new Error('This checkpoint path moved.'); };
+      if (item.before === null) { if (latest) removeProjectFile(item.row.path, item.hash, validate); }
       else {
         fs.mkdirSync(path.dirname(item.row.path), { recursive: true });
-        const temporary = `${item.row.path}.${randomUUID()}.restore`;
-        try { fs.writeFileSync(temporary, item.before); fs.renameSync(temporary, item.row.path); }
-        finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+        atomicProjectWrite(item.row.path, item.before, { expectedExists: !!latest, expectedHash: latest ? item.hash : undefined, validate });
       }
       restored.push(item.row.path);
     } catch (error) { return { success: false, restored, recoveryRunId, error: `Could not restore all files: ${(error as Error).message}. Recovery copies were retained.` }; }
@@ -125,7 +133,8 @@ export function restoreWorkspaceCheckpoint(rootInput: unknown, id: unknown, opti
   const before = row.before === null ? null : Buffer.from(row.before, 'base64');
   // Preserve the overwritten current version as a new recovery checkpoint first.
   recordWorkspaceCheckpoint(root, target, current, before, 'checkpoint restore');
-  if (before === null) { if (current) fs.unlinkSync(target); }
-  else { const temporary = `${target}.${randomUUID()}.restore`; fs.writeFileSync(temporary, before); fs.renameSync(temporary, target); }
+  const validate = () => { if (checkedTrustedWorkspacePath(root, target) !== target) throw new Error('This checkpoint path moved.'); };
+  if (before === null) { if (current) removeProjectFile(target, hash, validate); }
+  else atomicProjectWrite(target, before, { expectedExists: !!current, expectedHash: current ? hash : undefined, validate });
   return { success: true, path: target, removed: before === null };
 }
