@@ -7,8 +7,8 @@ jest.mock('@xterm/xterm', () => ({ Terminal: class {
   onData(fn: (data: string) => void) { this.input = fn; return { dispose: jest.fn() }; }
   resize!: (size: { cols: number; rows: number }) => void;
   onResize(fn: (size: { cols: number; rows: number }) => void) { this.resize = fn; return { dispose: jest.fn() }; }
-} }), { virtual: true });
-jest.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = jest.fn(); } }), { virtual: true });
+} }));
+jest.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = jest.fn(); } }));
 import WorkspaceTerminalPanel from '../components/workspace/WorkspaceTerminalPanel';
 beforeEach(() => { emulators.length = 0; (global as any).ResizeObserver = class { observe() {} disconnect() {} }; });
 test('interactive tabs route stdin/interrupt, avoid replaying startup output, and close all owned sessions', async () => {
