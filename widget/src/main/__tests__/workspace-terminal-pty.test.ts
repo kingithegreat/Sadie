@@ -5,10 +5,11 @@ import * as os from 'os';
 import * as path from 'path';
 import { WorkspacePtySessions } from '../workspace-terminal-pty';
 import type { WorkspacePtyStopResult } from '../workspace-pty-force-stop';
+import type { WorkspacePtyIdentity } from '../workspace-pty-identity';
 let folder: string;
 beforeEach(() => { folder = fs.mkdtempSync(path.join(os.homedir(), 'homebot-pty-')); });
 afterEach(() => { fs.rmSync(folder, { recursive: true, force: true }); });
-function setup(autoExit = true, confirmed = true) {
+function setup(autoExit = true, confirmed = true, captured?: { original: WorkspacePtyIdentity | null | undefined }) {
   let data!: (text: string) => void; let exit!: (event: { exitCode: number }) => void;
   const disposeData = jest.fn(); const disposeExit = jest.fn();
   let hasExited = false;
@@ -20,9 +21,10 @@ function setup(autoExit = true, confirmed = true) {
   });
   const stopped = jest.fn(async () => confirmed);
   const force = jest.fn(async (_pid: number, _identity: unknown, _receipt?: unknown): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: true, receipt: [{ pid: 12345, creation: '638953000000000000', parent: process.pid }] }));
-  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped }, force);
+  const capture = jest.fn(async () => captured ? captured.original : { creation: '638953000000000000', parent: process.pid });
+  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force);
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
-  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force };
+  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force, capture };
 }
 test('stdin, resize and interrupt route only to the owned real PTY interface', async () => {
   const app = setup();
@@ -64,6 +66,35 @@ test('unproven force Stop keeps the live session and never reports successful Cl
   app.manager.write(7, app.session.sessionId, 'still available');
   expect(app.pty.write).toHaveBeenCalledWith('still available');
   app.force.mockResolvedValue({ stopped: true, attempted: false }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
+});
+
+test('unknown startup identity guides manual exit, stays writable and never recaptures a PID on Retry', async () => {
+  if (process.platform !== 'win32') return;
+  const app = setup(false, false, { original: undefined });
+  app.force.mockResolvedValue({ stopped: false, attempted: false });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/identity could not be verified at startup.*Nothing was stopped.*type exit/i);
+  }
+  expect(app.capture).toHaveBeenCalledTimes(1);
+  expect(app.force).toHaveBeenLastCalledWith(12345, undefined, undefined);
+  expect(app.pty.kill).not.toHaveBeenCalled();
+  app.manager.write(7, app.session.sessionId, 'exit\r');
+  expect(app.pty.write).toHaveBeenCalledWith('exit\r');
+  app.exit({ exitCode: 0 }); app.stopped.mockResolvedValue(true);
+  const forceCalls = app.force.mock.calls.length;
+  await app.manager.close(7, app.session.sessionId);
+  expect(app.force).toHaveBeenCalledTimes(forceCalls);
+  expect(app.capture).toHaveBeenCalledTimes(1);
+  expect(app.pty.kill).toHaveBeenCalledTimes(1); // Release only the exited PTY/worker.
+  expect(() => app.manager.write(7, app.session.sessionId, 'after close')).toThrow(/has closed/);
+});
+
+test('initially missing process can close after disappearance without unknown-capture guidance', async () => {
+  const app = setup(true, true, { original: null });
+  app.force.mockResolvedValue({ stopped: false, attempted: false });
+  await app.manager.close(7, app.session.sessionId);
+  expect(app.capture).toHaveBeenCalledTimes(1);
+  expect(() => app.manager.write(7, app.session.sessionId, 'after close')).toThrow(/has closed/);
 });
 
 test('captured descendants remain recoverable after root exits during a partial Stop', async () => {

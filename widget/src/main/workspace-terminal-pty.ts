@@ -130,7 +130,12 @@ export class WorkspacePtySessions {
         const result = await this.forceStop(session.pty.pid, original, session.stopReceipt);
         if (result.receipt) session.stopReceipt = result.receipt;
         if (result.attempted && !session.stopReceipt) session.stopReceiptLost = true;
-        if (!result.stopped && (session.stopReceipt || result.attempted || !await this.lifecycle.stopped(session.pty.pid, original))) throw new Error('Terminal process-tree exit could not be confirmed. Its captured identities are retained; try Close again.');
+        if (!result.stopped && (session.stopReceipt || result.attempted || !await this.lifecycle.stopped(session.pty.pid, original))) {
+          if (original === undefined && !session.stopReceipt && !result.attempted) throw new Error('The terminal process identity could not be verified at startup. Nothing was stopped. Stop any running program, type exit in this terminal, then retry Close.');
+          if (session.stopReceipt) throw new Error('Terminal process-tree exit could not be confirmed. Its captured identities are retained; try Close again.');
+          if (session.stopReceiptLost) throw new Error('Terminal Stop evidence was corrupted or lost after a force attempt. Process-tree exit cannot safely be confirmed.');
+          throw new Error('Terminal process-tree exit could not be confirmed. No verified Stop receipt is available; its session is retained. Try Close again.');
+        }
       }
       const exited = this.waitForExit(session, 5500);
       if (!session.exited) this.kill(session);
