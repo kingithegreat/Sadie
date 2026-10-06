@@ -19,7 +19,7 @@ function setup(autoExit = true, confirmed = true) {
     return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
   });
   const stopped = jest.fn(async () => confirmed);
-  const force = jest.fn(async (_pid: number, _identity: unknown, _receipt?: unknown): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: true }));
+  const force = jest.fn(async (_pid: number, _identity: unknown, _receipt?: unknown): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: true, receipt: [{ pid: 12345, creation: '638953000000000000', parent: process.pid }] }));
   const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped }, force);
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
   return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force };
@@ -63,7 +63,7 @@ test('unproven force Stop keeps the live session and never reports successful Cl
   expect(app.pty.kill).not.toHaveBeenCalled();
   app.manager.write(7, app.session.sessionId, 'still available');
   expect(app.pty.write).toHaveBeenCalledWith('still available');
-  app.force.mockResolvedValue({ stopped: true, attempted: true }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
+  app.force.mockResolvedValue({ stopped: true, attempted: false }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
 });
 
 test('captured descendants remain recoverable after root exits during a partial Stop', async () => {
@@ -82,6 +82,13 @@ test('natural root exit before any force effect does not create a permanent Clos
   app.force.mockImplementationOnce(async () => { app.exit({ exitCode: 0 }); return { stopped: false, attempted: false }; });
   await app.manager.close(7, app.session.sessionId);
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
+});
+
+test('corrupted force evidence cannot forget uncertainty after a later root exit', async () => {
+  const app = setup(); app.force.mockResolvedValue({ stopped: false, attempted: true });
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/could not be confirmed/);
+  app.exit({ exitCode: 1 });
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/evidence was corrupted or lost/);
 });
 test('natural exit releases listeners/ConPTY exactly once; Close does not kill a reused PID', async () => {
   const app = setup(); app.data('ready'); app.exit({ exitCode: 0 });

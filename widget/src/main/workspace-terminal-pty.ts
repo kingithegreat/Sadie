@@ -16,7 +16,7 @@ interface PtyProcess {
   onExit(callback: (event: { exitCode: number }) => void): { dispose(): void };
 }
 type PtyFactory = (file: string, args: string[], options: { name: string; cols: number; rows: number; cwd: string; env: NodeJS.ProcessEnv; useConpty?: boolean; useConptyDll?: boolean }) => PtyProcess;
-interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; stopReceipt?: WorkspacePtyStopReceipt }
+interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; stopReceipt?: WorkspacePtyStopReceipt; stopReceiptLost?: boolean }
 const MAX_SESSIONS = 4;
 const MAX_OUTPUT = 256 * 1024;
 
@@ -125,9 +125,11 @@ export class WorkspacePtySessions {
     if (session.closing) return session.closing;
     session.closing = (async () => {
       const original = await session.identity;
+      if (session.stopReceiptLost) throw new Error('Terminal Stop evidence was corrupted or lost after a force attempt. Process-tree exit cannot safely be confirmed.');
       if (process.platform === 'win32' && (!session.exited || session.stopReceipt)) {
         const result = await this.forceStop(session.pty.pid, original, session.stopReceipt);
         if (result.receipt) session.stopReceipt = result.receipt;
+        if (result.attempted && !session.stopReceipt) session.stopReceiptLost = true;
         if (!result.stopped && (session.stopReceipt || result.attempted || !await this.lifecycle.stopped(session.pty.pid, original))) throw new Error('Terminal process-tree exit could not be confirmed. Its captured identities are retained; try Close again.');
       }
       const exited = this.waitForExit(session, 5500);
