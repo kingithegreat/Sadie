@@ -3,7 +3,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, Prec, StateEffect, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
-import { StreamLanguage, indentUnit } from '@codemirror/language';
+import { StreamLanguage, indentUnit, type StringStream } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -27,7 +27,7 @@ import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
 import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
-import { ghostCompletionExtension } from './GhostCompletion';
+import { ghostCompletionExtension, setGhostSuggestion } from './GhostCompletion';
 
 /**
  * Code editor pane, on CodeMirror 6.
@@ -83,7 +83,7 @@ export function languageExtension(language: string): Extension {
     case 'ruby': return StreamLanguage.define(ruby);
     case 'dockerfile': return StreamLanguage.define(dockerFile);
     case 'toml': return StreamLanguage.define(toml);
-    case 'php': return StreamLanguage.define(clike({ name: 'PHP basic syntax', keywords: Object.fromEntries('class function return public private protected static const namespace use new extends implements if else elseif while for foreach switch case break continue try catch finally throw true false null echo print include require yield match'.split(' ').map(word => [word, true])), types: Object.fromEntries('int float string bool array object mixed void never callable'.split(' ').map(word => [word, true])), hooks: { '$': stream => { stream.eatWhile(/[\w]/); return 'variable-2'; } } }));
+    case 'php': return StreamLanguage.define(clike({ name: 'PHP basic syntax', keywords: Object.fromEntries('class function return public private protected static const namespace use new extends implements if else elseif while for foreach switch case break continue try catch finally throw true false null echo print include require yield match'.split(' ').map(word => [word, true])), types: Object.fromEntries('int float string bool array object mixed void never callable'.split(' ').map(word => [word, true])), hooks: { '$': (stream: StringStream) => { stream.eatWhile(/[\w]/); return 'variable-2'; } } }));
     case 'makefile': return StreamLanguage.define({ token(stream) { if (stream.eatSpace()) return null; if (stream.match(/^#.*/)) return 'comment'; if (stream.match(/^\$\([^)]+\)|^\$\{[^}]+\}|^\$[@<^?*%+]/)) return 'variable-2'; if (stream.sol() && stream.match(/^[\w./%-]+(?=:)/)) return 'def'; if (stream.match(/^[\w.-]+(?=\s*(?::|\+|\?)?=)/)) return 'variable'; stream.next(); return null; } });
     case 'lua':
     case 'luau': return StreamLanguage.define(lua);
@@ -423,6 +423,9 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       view.scrollDOM.scrollLeft = saved.scrollLeft;
     }
     viewRef.current = view;
+    // Suggestions are ephemeral; restored undo/scroll history must not restore
+    // a model preview after opting out or leaving the Code view.
+    view.dispatch({ effects: setGhostSuggestion.of(null) });
     const head = state.selection.main.head;
     const line = state.doc.lineAt(head);
     setCursor({ line: line.number, col: head - line.from + 1 });

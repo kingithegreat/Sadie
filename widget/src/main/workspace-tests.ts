@@ -91,7 +91,7 @@ export function prepareWorkspaceTestCommand(request: WorkspaceTestRequest): { ro
   if (!fs.statSync(file).isFile() || !TEST_FILE.test(file)) throw new Error('Choose a discovered test file inside this project.');
   const tests = discoverWorkspaceTests(root).filter(test => test.path === file);
   if (!tests.length) throw new Error('This test file is unavailable.');
-  const selected = request.testName && tests.find(test => test.name === request.testName);
+  const selected = request.testName ? tests.find(test => test.name === request.testName) : undefined;
   if (request.testName && !selected) throw new Error('Choose one of this file\'s discovered tests.');
   if (selected?.skipped) throw new Error('This test is marked skip/todo. Enable it in the source before running it individually.');
   const runner = tests[0].runner; const { directory } = nearestPackage(root, file);
