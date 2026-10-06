@@ -1,4 +1,5 @@
 let mockProjectPath: string | undefined;
+jest.mock('electron', () => ({ app: { getPath: () => require('path').join(require('os').tmpdir(), 'homebot-proposal-test-profile') } }));
 jest.mock('../config-manager', () => ({ getSettings: () => ({ projectPath: mockProjectPath }) }));
 jest.mock('../file-change-log', () => ({
   recordChange: jest.fn(),
