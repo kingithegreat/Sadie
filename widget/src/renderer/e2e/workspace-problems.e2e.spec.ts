@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
+import { closeElectronApp } from './helpers/closeApp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -44,7 +45,7 @@ test('package task reports a TypeScript problem and opens its exact editor line'
     await expect(page.locator('.code-cursor-pos')).toContainText('Ln 2');
     await page.screenshot({ path: testInfo.outputPath('problem-editor-line.png') });
   } finally {
-    await app.close();
+    await closeElectronApp(app, 'diagnostic task');
     // Best-effort: macOS runners can leave npm cache files under the temp HOME
     // (ENOTEMPTY on rmdir) after the package task. Cleanup must not fail the
     // acceptance assertion that already ran (Problems click opens broken.ts:2).
@@ -89,7 +90,7 @@ test('closing HomeBot stops an approved running watch task and its owned childre
     const taskPid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(taskPid).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath('watch-before-quit.png') });
-    await app.close(); // Strict helper verifies actual-main exit and captured identities; force cleanup fails.
+    await closeElectronApp(app, 'running watch task'); // Actual-main exit and captured identities; force cleanup fails.
     closed = true;
     let alive = true;
     try { process.kill(taskPid, 0); } catch (error) {
@@ -98,6 +99,6 @@ test('closing HomeBot stops an approved running watch task and its owned childre
     }
     expect(alive).toBe(false);
   } finally {
-    if (!closed) await app.close();
+    if (!closed) await closeElectronApp(app, 'watch task failure');
   }
 });
