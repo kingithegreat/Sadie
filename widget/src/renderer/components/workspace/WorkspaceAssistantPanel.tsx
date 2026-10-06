@@ -149,6 +149,10 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       }
     }
     if (!ownsView()) return;
+    if (planRef.current !== plan) {
+      setNote(planRef.current ? 'The plan changed while loading context. Your current plan and question were kept; send again.' : 'The plan changed or expired while loading context. Review the current plan before sending again.');
+      operationOwner.current = null; busy.current = false; cancelActive.current = null; return;
+    }
     // A suspended window or a slow attachment read can cross the approval TTL
     // before its expiry timer runs. Never send the captured expired plan ID.
     if (plan && plan.expires <= Date.now()) { expirePlan(); operationOwner.current = null; busy.current = false; cancelActive.current = null; return; }

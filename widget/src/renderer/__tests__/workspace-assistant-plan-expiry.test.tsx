@@ -81,3 +81,23 @@ test('the panel uses the returned expiry and recovers from a main-process expiry
   expect(screen.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
   expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
 });
+
+test('a fresh approval replaces an earlier plan during context loading without being cleared or sending the earlier ID', async () => {
+  await open(); await review(); await approve();
+  let resolve!: (value: any) => void;
+  api.workspaceList = jest.fn(() => new Promise(done => { resolve = done; }));
+  fireEvent.change(screen.getByLabelText('Add context'), { target: { value: `folder:${root}` } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  advance(TTL - 1000); await review(); await approve();
+  expect(api.workspaceAiApprovePlan).toHaveBeenLastCalledWith(root, 'plan-2');
+  advance(1000); // The captured first approval has expired; the new one is valid.
+  await act(async () => { resolve({ success: true, entries: [] }); });
+  expect(api.sendStreamMessage).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
+  expect(screen.getByLabelText('Ask the assistant')).toHaveValue('Continue with reviewed edits.');
+  api.workspaceList.mockResolvedValue({ success: true, entries: [] });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
+  expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root, planId: 'plan-2' });
+  act(() => { callbacks.onStreamEnd(); });
+});
