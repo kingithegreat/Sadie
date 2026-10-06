@@ -11,11 +11,12 @@ function boundedEvents(events: WorkspaceTerminalEvent[]): WorkspaceTerminalEvent
   while (start > 0 && events.length - start < 512 && chars + (events[start - 1].data?.length || 0) <= 256 * 1024) { start--; chars += events[start].data?.length || 0; }
   return events.slice(start);
 }
-function TerminalPane({ session, visible, onError }: { session: ClientSession; visible: boolean; onError: (text: string) => void }) {
+function TerminalPane({ session, visible, focusRequest, onError }: { session: ClientSession; visible: boolean; focusRequest: number; onError: (text: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const emulator = useRef<Terminal | null>(null);
   const fit = useRef<FitAddon | null>(null);
   const seen = useRef(session.info.seq);
+  const focusedRequest = useRef(0);
   const api = (window as any).electron;
   useEffect(() => {
     if (!host.current) return;
@@ -33,7 +34,15 @@ function TerminalPane({ session, visible, onError }: { session: ClientSession; v
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.info.sessionId]);
   useEffect(() => { for (const event of session.events) { if (event.seq <= seen.current) continue; seen.current = event.seq; emulator.current?.write(event.type === 'data' ? event.data || '' : `\r\n[Shell exited: ${event.exitCode ?? 'unknown'}]\r\n`); } }, [session.events]);
-  useEffect(() => { if (visible) { try { fit.current?.fit(); } catch { /* next resize */ } emulator.current?.focus(); } }, [visible]);
+  useEffect(() => {
+    if (!visible) return;
+    try { fit.current?.fit(); } catch { /* next resize */ }
+    // Automatic bootstrap and visibility changes must preserve the user's focus.
+    if (focusRequest > focusedRequest.current) {
+      focusedRequest.current = focusRequest;
+      emulator.current?.focus();
+    }
+  }, [visible, focusRequest]);
   return <div ref={host} role="region" aria-label={`Interactive ${session.info.profileId} terminal`} style={{ display: visible ? 'block' : 'none', flex: 1, minHeight: 0, padding: 4, overflow: 'hidden' }} />;
 }
 
@@ -42,6 +51,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   const [profileId, setProfileId] = useState('');
   const [sessions, setSessions] = useState<ClientSession[]>([]);
   const [active, setActive] = useState('');
+  const [focusRequest, setFocusRequest] = useState({ sessionId: '', sequence: 0 });
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
   const sessionsRef = useRef(sessions); sessionsRef.current = sessions;
@@ -49,7 +59,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   const alive = useRef(true);
   const creation = useRef(false);
   const api = (window as any).electron;
-  const create = useCallback(async (profile?: string) => {
+  const create = useCallback(async (profile?: string, requestFocus = true) => {
     if (creation.current) return;
     creation.current = true; setCreating(true); setError('');
     try {
@@ -60,6 +70,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       const events = (pending.current.get(info.sessionId) || []).filter(e => e.seq > info.seq); pending.current.delete(info.sessionId);
       const next = { info, events, exited: events.some(e => e.type === 'exit') };
       sessionsRef.current = [...sessionsRef.current, next]; setSessions(sessionsRef.current); setActive(info.sessionId);
+      if (requestFocus) setFocusRequest(prev => ({ sessionId: info.sessionId, sequence: prev.sequence + 1 }));
     } catch (e: any) { if (alive.current) setError(e?.message || 'Could not open an interactive terminal.'); }
     finally { creation.current = false; if (alive.current) setCreating(false); }
   }, [api, projectPath, profileId]);
@@ -75,7 +86,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
     void Promise.resolve(api?.workspaceTerminalProfiles?.()).then((result: any) => {
       if (!alive.current) return;
       if (!result?.success) { setError(result?.error || 'No shell profiles are available.'); return; }
-      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || ''); void create(result.profiles?.[0]?.id);
+      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || ''); void create(result.profiles?.[0]?.id, false);
     }).catch((e: unknown) => { if (alive.current) setError(e instanceof Error ? e.message : 'Could not load shell profiles.'); });
     return () => { alive.current = false; off?.(); for (const session of sessionsRef.current) void Promise.resolve(api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main owns final window/quit cleanup. */ }); };
   // Project remount starts a fresh shell; user-entered cd stays in that shell.
@@ -100,8 +111,8 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       <button aria-label="Close terminal panel" onClick={onClose}>Close panel</button>
       {onUseCommandTerminal && <button onClick={onUseCommandTerminal}>Use command terminal (no interactive stdin)</button>}
     </header>
-    <div role="tablist" aria-label="Terminal sessions" style={{ display: 'flex', gap: 6, padding: 4 }}>{sessions.map((s, index) => <div key={s.info.sessionId}><button role="tab" aria-selected={active === s.info.sessionId} onClick={() => setActive(s.info.sessionId)}>{index + 1}: {s.info.profileId}{s.exited ? ' (exited)' : ''}</button><button aria-label={`Close terminal ${index + 1}`} onClick={() => { void closeSession(s.info.sessionId); }}>×</button></div>)}</div>
+    <div role="tablist" aria-label="Terminal sessions" style={{ display: 'flex', gap: 6, padding: 4 }}>{sessions.map((s, index) => <div key={s.info.sessionId}><button role="tab" aria-selected={active === s.info.sessionId} onClick={() => { setActive(s.info.sessionId); setFocusRequest(prev => ({ sessionId: s.info.sessionId, sequence: prev.sequence + 1 })); }}>{index + 1}: {s.info.profileId}{s.exited ? ' (exited)' : ''}</button><button aria-label={`Close terminal ${index + 1}`} onClick={() => { void closeSession(s.info.sessionId); }}>×</button></div>)}</div>
     {error && <p role="alert">{error}</p>}{!sessions.length && !creating && <p>No terminal open. Choose a shell and select New terminal.</p>}
-    {sessions.map(s => <TerminalPane key={s.info.sessionId} session={s} visible={s.info.sessionId === active} onError={setError} />)}
+    {sessions.map(s => <TerminalPane key={s.info.sessionId} session={s} visible={s.info.sessionId === active} focusRequest={focusRequest.sessionId === s.info.sessionId ? focusRequest.sequence : 0} onError={setError} />)}
   </section>;
 }
