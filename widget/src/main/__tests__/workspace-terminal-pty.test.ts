@@ -12,7 +12,7 @@ function setup(autoExit = true, confirmed = true) {
   const disposeData = jest.fn(); const disposeExit = jest.fn();
   let hasExited = false;
   const pty = { pid: 12345, write: jest.fn(), resize: jest.fn(), kill: jest.fn(() => { if (autoExit && !hasExited) exit({ exitCode: 0 }); }), onData: jest.fn(fn => { data = fn; return { dispose: disposeData }; }), onExit: jest.fn(fn => { exit = event => { hasExited = true; fn(event); }; return { dispose: disposeExit }; }) };
-  const spawn = jest.fn(() => pty).mockImplementationOnce(() => pty);
+  const spawn = jest.fn((_file: string, _args: string[], _options: any) => pty).mockImplementationOnce(() => pty);
   spawn.mockImplementation(() => {
     let ownedExit!: (event: { exitCode: number }) => void;
     return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
@@ -25,7 +25,7 @@ function setup(autoExit = true, confirmed = true) {
 test('stdin, resize and interrupt route only to the owned real PTY interface', async () => {
   const app = setup();
   expect(app.spawn).toHaveBeenCalledWith('cmd.exe', ['/D'], expect.objectContaining({ cwd: folder, cols: 100, rows: 30 }));
-  expect(app.spawn.mock.calls[0][2]).toMatchObject({ useConptyDll: process.platform === 'win32' });
+  expect(app.spawn.mock.calls[0][2]).toMatchObject({ useConptyDll: false });
   app.manager.write(7, app.session.sessionId, 'answer\r'); app.manager.interrupt(7, app.session.sessionId); app.manager.resize(7, app.session.sessionId, 120, 40);
   expect(app.pty.write.mock.calls).toEqual([['answer\r'], ['\x03']]); expect(app.pty.resize).toHaveBeenCalledWith(120, 40);
   expect(() => app.manager.write(8, app.session.sessionId, 'bad')).toThrow(/different window/);
@@ -35,13 +35,13 @@ test('stdin, resize and interrupt route only to the owned real PTY interface', a
 
 test('a delayed exit callback cannot claim Close succeeded or trigger a raw PID kill', async () => {
   jest.useFakeTimers();
-  const app = setup(false);
+  const app = setup(false, false);
   const refusal = expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/retained/);
   await jest.advanceTimersByTimeAsync(5500); await refusal;
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
   expect(require('child_process').execFile).not.toHaveBeenCalledWith('taskkill.exe', expect.anything(), expect.anything(), expect.anything());
   expect(app.disposeExit).not.toHaveBeenCalled();
-  app.exit({ exitCode: 0 }); await app.manager.close(7, app.session.sessionId);
+  app.stopped.mockResolvedValue(true); app.exit({ exitCode: 0 }); await app.manager.close(7, app.session.sessionId);
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
   jest.useRealTimers();
 });

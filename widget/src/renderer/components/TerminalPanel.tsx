@@ -35,7 +35,8 @@ function styleOf(seg: AnsiSegment): React.CSSProperties {
 const InteractiveTerminal = lazy(() => import('./workspace/WorkspaceTerminalPanel'));
 interface TerminalPanelProps { open: boolean; onClose: () => void; projectPath?: string; onSendToChat?: (text: string) => void; interactive?: boolean }
 export default function TerminalPanel(props: TerminalPanelProps) {
-  if (props.interactive && props.projectPath) return <Suspense fallback={<div role="status">Opening terminal…</div>}><InteractiveTerminal projectPath={props.projectPath} onClose={props.onClose} onSendToChat={props.onSendToChat} /></Suspense>;
+  const [commandMode, setCommandMode] = useState(false);
+  if (props.interactive && props.projectPath && !commandMode) return <Suspense fallback={<div role="status">Opening terminal…</div>}><InteractiveTerminal projectPath={props.projectPath} onClose={props.onClose} onSendToChat={props.onSendToChat} onUseCommandTerminal={() => setCommandMode(true)} /></Suspense>;
   return <LegacyTerminalPanel {...props} />;
 }
 function LegacyTerminalPanel({ open, onClose, projectPath, onSendToChat }: {

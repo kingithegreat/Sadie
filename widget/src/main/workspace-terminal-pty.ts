@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { randomUUID } from 'crypto';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity, type WorkspacePtyLifecycle } from './workspace-pty-identity';
 import { checkedWorkspacePath } from './workspace-files';
@@ -45,17 +46,21 @@ export class WorkspacePtySessions {
   constructor(private readonly spawnPty: PtyFactory = (file, args, options) => {
     // Load on demand; startup can explain an unavailable native package cleanly.
     // node-pty is an external production dependency, not a bundled .node addon.
+    if (process.platform !== 'win32') return require('node-pty').spawn(file, args, options);
+    const binding = require('node-pty/lib/utils').loadNativeModule('conpty').module;
+    if (typeof binding.kill !== 'function') throw new Error('The installed terminal binding does not support owned console cleanup.');
     const native = require('node-pty').spawn(file, args, options);
-    if (process.platform !== 'win32') return native;
-    // node-pty 1.1.0 DLL mode does not reliably dispose its socket worker after
-    // an already-exited shell. This adapter is intentionally tied to the pinned
-    // version and invokes only the owned worker/native console, never a PID.
+    // Pinned 1.1.0 adapter: bypass public kill's ready-data defer and PID-list
+    // branch. System ClosePseudoConsole returns immediately on build >=26100:
+    // https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
     const worker = native._agent?._conoutSocketWorker;
-    if (!worker || typeof worker.dispose !== 'function') { native.kill(); throw new Error('The installed terminal binding does not support owned worker cleanup.'); }
-    return { pid: native.pid, write: native.write.bind(native), resize: native.resize.bind(native), onData: native.onData.bind(native), onExit: native.onExit.bind(native), kill: () => { try { native.kill(); } finally { worker.dispose(); } } };
+    const baton = native._pty;
+    if (!worker || typeof worker.dispose !== 'function' || !Number.isInteger(baton)) { if (Number.isInteger(baton)) binding.kill(baton, false); throw new Error('The installed terminal binding does not support owned worker cleanup.'); }
+    return { pid: native.pid, write: native.write.bind(native), resize: native.resize.bind(native), onData: native.onData.bind(native), onExit: native.onExit.bind(native), kill: () => { try { binding.kill(baton, false); } finally { worker.dispose(); } } };
   }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle) {}
 
   create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void): WorkspaceTerminalSessionInfo {
+    if (process.platform === 'win32' && Number(os.release().split('.')[2]) < 26100) throw new Error('Interactive terminals require Windows 11 24H2 (build 26100) or newer for bounded native cleanup. Use the command terminal on this Windows version.');
     if (this.sessions.size >= MAX_SESSIONS) throw new Error('Close a terminal before opening another (maximum four).');
     const cwd = checkedWorkspacePath(request.projectDir);
     if (!fs.statSync(cwd).isDirectory()) throw new Error('Choose a project folder.');
@@ -66,9 +71,7 @@ export class WorkspacePtySessions {
     const args = profile.id === 'powershell' || profile.id === 'pwsh' ? ['-NoLogo', '-NoProfile'] : profile.id === 'cmd' ? ['/D'] : [];
     const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete env.ELECTRON_RUN_AS_NODE;
-    // DLL mode closes the owned native console/process handle. Default node-pty
-    // mode schedules PID-list kills, including a stale-PID fallback; avoid it.
-    const pty = this.spawnPty(profile.executable, args, { name: 'xterm-256color', ...size, cwd, env, useConpty: process.platform === 'win32', useConptyDll: process.platform === 'win32' });
+    const pty = this.spawnPty(profile.executable, args, { name: 'xterm-256color', ...size, cwd, env, useConpty: process.platform === 'win32', useConptyDll: false });
     const info: WorkspaceTerminalSessionInfo = { sessionId: randomUUID(), profileId: profile.id, cwd, pid: pty.pid, output: '', seq: 0 };
     const session: Session = { owner, info, pty, listeners: [], exited: false, released: false, killed: false, identity: this.lifecycle.capture(pty.pid), exitWaiters: new Set() };
     this.sessions.set(info.sessionId, session);
@@ -122,7 +125,9 @@ export class WorkspacePtySessions {
     session.closing = (async () => {
       const exited = this.waitForExit(session, 5500);
       if (!session.exited) this.kill(session);
-      if (!await exited || !await this.lifecycle.stopped(session.pty.pid, await session.identity)) throw new Error('Terminal exit could not be confirmed. Its session is retained; try Close again before quitting HomeBot.');
+      const notified = await exited;
+      if ((!notified && process.platform !== 'win32') || !await this.lifecycle.stopped(session.pty.pid, await session.identity)) throw new Error('Terminal exit could not be confirmed. Its session is retained; try Close again before quitting HomeBot.');
+      session.exited = true;
       this.release(session, process.platform === 'win32');
       this.sessions.delete(id);
     })();

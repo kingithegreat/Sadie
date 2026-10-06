@@ -37,7 +37,7 @@ function TerminalPane({ session, visible, onError }: { session: ClientSession; v
   return <div ref={host} role="region" aria-label={`Interactive ${session.info.profileId} terminal`} style={{ display: visible ? 'block' : 'none', flex: 1, minHeight: 0, padding: 4, overflow: 'hidden' }} />;
 }
 
-export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToChat }: { projectPath: string; onClose: () => void; onSendToChat?: (text: string) => void }) {
+export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToChat, onUseCommandTerminal }: { projectPath: string; onClose: () => void; onSendToChat?: (text: string) => void; onUseCommandTerminal?: () => void }) {
   const [profiles, setProfiles] = useState<WorkspaceTerminalProfile[]>([]);
   const [profileId, setProfileId] = useState('');
   const [sessions, setSessions] = useState<ClientSession[]>([]);
@@ -98,6 +98,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       <button disabled={!current || current.exited} onClick={() => { void interrupt(); }}>Interrupt (Ctrl+C)</button>
       {onSendToChat && <button disabled={!current} onClick={() => { if (current) onSendToChat(excerptForModel(current.info.output + current.events.map(e => e.data || '').join(''), { maxLines: 100, maxChars: 20000 })); }}>Attach output to assistant</button>}
       <button aria-label="Close terminal panel" onClick={onClose}>Close panel</button>
+      {onUseCommandTerminal && <button onClick={onUseCommandTerminal}>Use command terminal (no interactive stdin)</button>}
     </header>
     <div role="tablist" aria-label="Terminal sessions" style={{ display: 'flex', gap: 6, padding: 4 }}>{sessions.map((s, index) => <div key={s.info.sessionId}><button role="tab" aria-selected={active === s.info.sessionId} onClick={() => setActive(s.info.sessionId)}>{index + 1}: {s.info.profileId}{s.exited ? ' (exited)' : ''}</button><button aria-label={`Close terminal ${index + 1}`} onClick={() => { void closeSession(s.info.sessionId); }}>×</button></div>)}</div>
     {error && <p role="alert">{error}</p>}{!sessions.length && !creating && <p>No terminal open. Choose a shell and select New terminal.</p>}
