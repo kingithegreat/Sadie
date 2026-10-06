@@ -30,6 +30,12 @@ code model or uses the chosen installed chat model. Three external native proof
 spec/helper drafts await root execution against a frozen private compiled runtime.
 Native acceptance, current-head hosted checks/review, merge and delivery remain
 pending. No actual model download, provider-quality or installed-release claim.
+Full-suite checkpoint: 5,088 widget tests passed, 14 failed and 33 existing tests
+were skipped. Seven renderer suites had incomplete conversation IPC fixtures or
+did not load their saved-message fixture before checking retention. After fixing
+the fixtures without relaxing production acknowledgement guards or assertions,
+the seven suites pass all 24 tests with TypeScript. Final full-suite checks remain
+pending; the first full run stopped before root tests and documentation checks.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

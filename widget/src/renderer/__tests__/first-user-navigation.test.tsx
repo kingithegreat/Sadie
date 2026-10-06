@@ -89,6 +89,8 @@ async function expectActive(id: string) {
 
 test('failed explicit New reports the failure and retains the current conversation and draft', async () => {
   await mountReady();
+  await choose('A');
+  await expectActive('A');
   typeDraft('Keep this unfinished A message.');
   bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture store unavailable' });
   fireEvent.keyDown(window, { key: 'n', ctrlKey: true });
@@ -100,6 +102,8 @@ test('failed explicit New reports the failure and retains the current conversati
 
 test('failed selection reports the failure instead of silently discarding the current draft', async () => {
   await mountReady();
+  await choose('A');
+  await expectActive('A');
   typeDraft('Keep this A draft.');
   bridge.getConversation.mockResolvedValueOnce({ success: false, error: 'Fixture load failed' });
   await choose('B');

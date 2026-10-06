@@ -19,7 +19,10 @@ beforeEach(() => {
       return jest.fn();
     }),
     onStreamError: jest.fn(),
-    getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+    getSettings: jest.fn().mockResolvedValue({ firstRun: false, modelRoutingMode: 'off', alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+    loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+    createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'cancel-confirmation-fixture', systemPrompt: '' } }),
+    setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     onMessage: jest.fn(() => jest.fn()),
     sendMessage: jest.fn(),
@@ -41,6 +44,7 @@ describe('cancel-confirmation flow', () => {
     });
 
     render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // send a message to create streaming assistant
     const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
@@ -81,6 +85,7 @@ describe('cancel-confirmation flow', () => {
     (window as any).electron.sendStreamMessage = jest.fn((payload: any) => { capturedStreamId2 = payload.streamId; return Promise.resolve(); });
 
     render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     const textarea2 = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea2, { target: { value: 'Start cancel test 2' } });
