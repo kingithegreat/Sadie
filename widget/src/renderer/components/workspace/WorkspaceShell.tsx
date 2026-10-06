@@ -5,6 +5,8 @@ import Icon from '../Icon';
 import FileTree from './FileTree';
 import CodeEditor, { type CodeEditorSession } from './CodeEditor';
 import type { WorkspaceEntry } from '../../../shared/types';
+import type { WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
+import { stageWorkspaceDraftEdits } from './workspace-draft-edits';
 
 const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // Lazy: the browser panel is off by default, and its first render triggers an
@@ -15,6 +17,7 @@ const WorkspaceAssistantPanel = lazy(() => import('./WorkspaceAssistantPanel'));
 const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
 const SearchPanel = lazy(() => import('./SearchPanel'));
 const ProblemsPanel = lazy(() => import('./ProblemsPanel'));
+const WorkspaceNavigator = lazy(() => import('./WorkspaceNavigator'));
 
 /**
  * VS Code–shaped workspace: activity bar → sidebar → tabbed editor → bottom
@@ -45,7 +48,8 @@ type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const parentPath = (p: string) => p.replace(/[\\/][^\\/]+$/, '');
 const joinPath = (folder: string, name: string) => `${folder.replace(/[\\/]$/, '')}/${name}`;
-const underPath = (file: string, folder: string) => file === folder || file.startsWith(`${folder}/`) || file.startsWith(`${folder}\\`);
+const pathKey = (p: string) => /^[a-z]:/i.test(p) ? p.replace(/\\/g, '/').toLowerCase() : p;
+const underPath = (file: string, folder: string) => pathKey(file) === pathKey(folder) || pathKey(file).startsWith(`${pathKey(folder).replace(/\/$/, '')}/`);
 
 function reconcile(file: OpenFile, result: any): OpenFile {
   if (!result?.success) return result?.error?.match(/ENOENT|no longer exists/i) ? { ...file, missing: true } : file;
@@ -137,6 +141,16 @@ export default function WorkspaceShell({
   const filesRef = useRef(files);
   filesRef.current = files;
   const savingPaths = useRef(new Set<string>());
+  const [navigation, setNavigation] = useState<'files' | 'commands' | 'symbols' | null>(null);
+  const [selection, setSelection] = useState<{ path: string; text: string; from?: number; to?: number } | null>(null);
+  const [terminalOutput, setTerminalOutput] = useState('');
+  const [splitPath, setSplitPath] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [panelHeight, setPanelHeight] = useState(260);
+  const [splitRatio, setSplitRatio] = useState(50);
+  const splitSessions = useRef<Record<string, CodeEditorSession>>({});
+  const rootRef = useRef(root);
+  rootRef.current = root;
 
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
@@ -149,27 +163,29 @@ export default function WorkspaceShell({
 
   const openFile = useCallback(async (path: string, line?: number) => {
     // Existing tabs reconcile disk, preserving dirty drafts and flagging conflicts.
-    if (files.some(f => f.path === path)) {
+    const existing = files.find(f => pathKey(f.path) === pathKey(path));
+    if (existing) {
       const result = await api?.workspaceRead?.(path);
-      setFiles(prev => prev.map(f => f.path === path ? reconcile(f, result) : f));
-      setActivePath(path);
+      setFiles(prev => prev.map(f => f.path === existing.path ? reconcile(f, result) : f));
+      setActivePath(existing.path);
       // A search result landing on an already-open tab still needs its jump.
-      if (line) setReveal({ path, line });
+      if (line) setReveal({ path: existing.path, line });
       return;
     }
     const res = await api?.workspaceRead?.(path);
     if (!res?.success) { setStatus(res?.error || 'Could not open that file.'); return; }
-    setFiles(prev => prev.some(f => f.path === path) ? prev : [...prev, {
-      path,
-      name: baseName(path),
+    const targetPath = res.path || path;
+    setFiles(prev => prev.some(f => pathKey(f.path) === pathKey(targetPath)) ? prev : [...prev, {
+      path: targetPath,
+      name: baseName(targetPath),
       content: res.content ?? '',
       original: res.content ?? '',
       language: res.language || 'plaintext',
       editorSession: { current: null },
       version: res.version, eol: res.eol, bom: res.bom,
     }]);
-    setActivePath(path);
-    if (line) setReveal({ path, line });
+    setActivePath(targetPath);
+    if (line) setReveal({ path: targetPath, line });
     setStatus(null);
   }, [files, api]);
 
@@ -235,6 +251,7 @@ export default function WorkspaceShell({
       const checked = await api?.workspaceList?.(next);
       if (!checked?.success) { setStatus(checked?.error || 'Could not open that project.'); return; }
       setFiles([]); setActivePath(null); setRoot(checked.path || next); setStatus(null);
+      setSplitPath(null); setSelection(null); setTerminalOutput('');
     };
     if (filesRef.current.some(f => f.content !== f.original)) confirm({ title: 'Switch projects and keep drafts?', body: <p>Your unsaved tabs will be stored for this project and restored when you return.</p>, confirmLabel: 'Keep drafts and switch', onConfirm: () => { void change(); } });
     else await change();
@@ -322,29 +339,56 @@ export default function WorkspaceShell({
       setActivePath(cur => (cur === path ? (next[next.length - 1]?.path ?? null) : cur));
       return next;
     });
+    setSplitPath(current => current === path ? null : current);
+    delete splitSessions.current[path];
   }, []);
 
-  const save = useCallback(async (contentOverride?: string, expectedVersion?: string) => {
-    if (!active) return;
-    const content = contentOverride ?? active.content;
-    if (contentOverride !== undefined) setFiles(prev => prev.map(f => f.path === active.path ? { ...f, content } : f));
-    if (savingPaths.current.has(active.path)) { setStatus('Save is still in progress. Your newer edits remain unsaved.'); return; }
-    savingPaths.current.add(active.path);
+  const saveFile = useCallback(async (file: OpenFile, contentOverride?: string, expectedVersion?: string) => {
+    const content = contentOverride ?? file.content;
+    if (contentOverride !== undefined) setFiles(prev => prev.map(f => f.path === file.path ? { ...f, content } : f));
+    if (savingPaths.current.has(file.path)) { setStatus('Save is still in progress. Your newer edits remain unsaved.'); return; }
+    savingPaths.current.add(file.path);
     try {
-    const res = await api?.workspaceSave?.(active.path, content, { expectedVersion: expectedVersion ?? active.version, eol: active.eol, bom: active.bom });
+    const res = await api?.workspaceSave?.(file.path, content, { expectedVersion: expectedVersion ?? file.version, eol: file.eol, bom: file.bom });
     if (res?.success) {
       // The write contains this snapshot. Edits made while its reply is pending
       // still need saving; marking the latest text clean would silently lose them.
-      setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, original: content, version: res.version, eol: res.eol ?? f.eol, bom: res.bom ?? f.bom, disk: undefined, missing: false } : f)));
-      setStatus(`Saved ${active.name}`);
-      window.setTimeout(() => setStatus(s => (s === `Saved ${active.name}` ? null : s)), 2000);
+      setFiles(prev => prev.map(f => (f.path === file.path ? { ...f, original: content, version: res.version, eol: res.eol ?? f.eol, bom: res.bom ?? f.bom, disk: undefined, missing: false } : f)));
+      setStatus(`Saved ${file.name}`);
+      window.setTimeout(() => setStatus(s => (s === `Saved ${file.name}` ? null : s)), 2000);
     } else {
-      if (res?.conflict) setFiles(prev => prev.map(f => f.path === active.path ? { ...f, disk: res.disk, missing: !res.disk } : f));
+      if (res?.conflict) setFiles(prev => prev.map(f => f.path === file.path ? { ...f, disk: res.disk, missing: !res.disk } : f));
       setStatus(res?.error || 'Save failed.');
     }
     } catch (e: any) { setStatus(e?.message || 'Save failed. Your draft is preserved.'); }
-    finally { savingPaths.current.delete(active.path); }
-  }, [active, api]);
+    finally { savingPaths.current.delete(file.path); }
+  }, [api]);
+  const save = useCallback(async (contentOverride?: string, expectedVersion?: string) => {
+    const focusedPath = (document.activeElement?.closest('[data-workspace-editor]') as HTMLElement | null)?.dataset.workspaceEditor;
+    const target = filesRef.current.find(f => f.path === focusedPath) || active;
+    if (target) await saveFile(target, contentOverride, expectedVersion);
+  }, [active, saveFile]);
+
+  const applyLanguageEdits = useCallback(async (edits: WorkspaceLanguageEdit[]): Promise<boolean> => {
+    try {
+      const loaded: OpenFile[] = [];
+      for (const edit of edits) {
+        if (!underPath(edit.path, root)) throw new Error('Refactor edits must stay inside this project.');
+        if (filesRef.current.some(f => pathKey(f.path) === pathKey(edit.path)) || loaded.some(f => pathKey(f.path) === pathKey(edit.path))) continue;
+        const read = await api?.workspaceRead?.(edit.path);
+        if (!read?.success) throw new Error(read?.error || 'Could not load a refactor target.');
+        loaded.push({ path: edit.path, name: baseName(edit.path), content: read.content ?? '', original: read.content ?? '', language: read.language || 'plaintext', version: read.version, eol: read.eol, bom: read.bom, editorSession: { current: null } });
+      }
+      if (rootRef.current !== root) throw new Error('The project changed. No drafts were modified.');
+      stageWorkspaceDraftEdits([...filesRef.current, ...loaded], edits);
+      setFiles(prev => {
+        try { return stageWorkspaceDraftEdits([...prev, ...loaded.filter(f => !prev.some(p => pathKey(p.path) === pathKey(f.path)))], edits); }
+        catch (error: any) { setStatus(error?.message || 'Refactor targets changed.'); return prev; }
+      });
+      setStatus('Refactor staged in unsaved tabs. Review and save each file.');
+      return true;
+    } catch (error: any) { setStatus(error?.message || 'Refactor could not be applied.'); return false; }
+  }, [root, api]);
 
   const runFileAction = useCallback(async (action: string, entry?: WorkspaceEntry) => {
     const target = entry?.path || activePath || root;
@@ -375,9 +419,11 @@ export default function WorkspaceShell({
         destination: action === 'move' ? destination : undefined, content: current.action === 'save-as' ? (active?.bom ? '\uFEFF' : '') + (active?.eol === 'crlf' ? (active?.content ?? '').replace(/\n/g, '\r\n') : active?.content ?? '') : '' });
       if (!result?.success) { setFileDialog({ ...current, error: result?.error || 'Could not change that file.' }); return; }
       if (action === 'move') {
-        setFiles(prev => prev.map(f => underPath(f.path, current.path) ? { ...f, path: `${destination}${f.path.slice(current.path.length)}`, name: baseName(`${destination}${f.path.slice(current.path.length)}`) } : f));
-        setActivePath(prev => prev && underPath(prev, current.path) ? `${destination}${prev.slice(current.path.length)}` : prev);
-      } else if (action === 'create-file') await openFile(destination);
+        const moved = result.path || destination;
+        setFiles(prev => prev.map(f => underPath(f.path, current.path) ? { ...f, path: `${moved}${f.path.slice(current.path.length)}`, name: baseName(`${moved}${f.path.slice(current.path.length)}`) } : f));
+        setActivePath(prev => prev && underPath(prev, current.path) ? `${moved}${prev.slice(current.path.length)}` : prev);
+        setSplitPath(prev => prev && underPath(prev, current.path) ? `${moved}${prev.slice(current.path.length)}` : prev);
+      } else if (action === 'create-file') await openFile(result.path || destination);
       setRefreshToken(t => t + 1); setFileDialog(null);
     } catch (e: any) { setFileDialog({ ...current, error: e?.message || 'Could not change that file.' }); }
   };
@@ -401,6 +447,8 @@ export default function WorkspaceShell({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void save(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); setNavigation(e.shiftKey ? 'commands' : 'files'); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') { e.preventDefault(); setNavigation('symbols'); }
       if ((e.ctrlKey || e.metaKey) && e.key === '`') { e.preventDefault(); setTerminalOpen(t => !t); }
       // Ctrl+Shift+F opens Search from anywhere and puts the cursor in the box.
       // Owned here rather than in the panel because the panel is unmounted when
@@ -425,10 +473,34 @@ export default function WorkspaceShell({
   // A pending "close without saving?" prompt must not outlive the view: while
   // hidden it would still swallow the next Escape pressed anywhere in the app.
   useEffect(() => {
-    if (!open) confirm(null);
+    if (!open) { confirm(null); setNavigation(null); setComparePath(null); setFileDialog(null); }
   }, [open, confirm]);
 
   if (!open) return null;
+
+  const commands = [
+    { id: 'open-project', label: 'Open project folder', run: chooseProject },
+    { id: 'new-file', label: 'Create new file', run: () => runFileAction('create-file', { path: root, name: baseName(root), isDirectory: true, size: 0 }) },
+    { id: 'new-folder', label: 'Create new folder', run: () => runFileAction('create-folder', { path: root, name: baseName(root), isDirectory: true, size: 0 }) },
+    { id: 'save', label: 'Save active file', run: () => save() },
+    { id: 'search', label: 'Search across project files', run: () => { setSideView('search'); setSearchFocusToken(t => t + 1); } },
+    { id: 'terminal', label: 'Toggle terminal', run: () => setTerminalOpen(t => !t) },
+    { id: 'assistant', label: 'Toggle coding assistant', run: () => setAssistantOpen(t => !t) },
+    { id: 'changes', label: 'Review assistant changes', run: () => setSideView('changes') },
+    { id: 'source-control', label: 'Show source control', run: () => setSideView('scm') },
+    { id: 'problems', label: 'Run tasks and view problems', run: () => setSideView('problems') },
+    { id: 'hidden', label: 'Toggle hidden project files', run: () => setShowHidden(t => !t) },
+    { id: 'refresh', label: 'Refresh project and reconcile open files', run: async () => { await syncFiles(); setRefreshToken(t => t + 1); } },
+  ];
+  const renderEditor = (file: OpenFile, secondary = false) => <div data-workspace-editor={file.path} style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
+    <CodeEditor key={file.path} session={secondary ? (splitSessions.current[file.path] ||= { current: null }) : file.editorSession}
+      root={root} filePath={file.path} buffers={files.map(f => ({ path: f.path, content: f.content }))}
+      onNavigate={openFile} onApplyEdits={applyLanguageEdits} onSelection={setSelection}
+      value={file.content} language={file.language} onSave={content => { void saveFile(file, content); }}
+      focusLine={!secondary && reveal?.path === file.path ? reveal.line : undefined}
+      onFocusLineConsumed={() => setReveal(current => current === reveal ? null : current)}
+      onChange={content => setFiles(prev => prev.map(f => f.path === file.path ? { ...f, content } : f))} />
+  </div>;
 
   // Portalled to document.body. As a direct child of .app-container this was
   // matched by the blanket rule in chatgpt-theme.css:
@@ -443,6 +515,7 @@ export default function WorkspaceShell({
   return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
       {confirmDialog}
+      {navigation && root && <Suspense fallback={<div role="status">Loading project navigation…</div>}><WorkspaceNavigator root={root} activePath={activePath ?? undefined} content={active?.content} buffers={files.map(f => ({ path: f.path, content: f.content }))} onOpen={openFile} commands={commands} mode={navigation} onClose={() => setNavigation(null)} /></Suspense>}
       {fileDialog && <div className="confirm-destructive-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1300 }}>
         <form className="confirm-destructive" role="dialog" aria-modal="true" aria-label="File action" onSubmit={e => { e.preventDefault(); void submitFileDialog(); }}>
           <h2>{fileDialog.action === 'move' ? 'Rename or move' : fileDialog.action === 'save-as' ? 'Save As' : fileDialog.action === 'create-folder' ? 'New folder' : 'New file'}</h2>
@@ -536,7 +609,7 @@ export default function WorkspaceShell({
       </nav>
 
       {sideView === 'scm' && (
-        <aside className="ws-sidebar" aria-label="Source Control">
+        <aside className="ws-sidebar" aria-label="Source Control" style={{ width: sidebarWidth }}>
           <div className="ws-sidebar-title">Source Control</div>
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
@@ -547,7 +620,7 @@ export default function WorkspaceShell({
         </aside>
       )}
       {sideView === 'search' && (
-        <aside className="ws-sidebar ws-sidebar-search" aria-label="Search">
+        <aside className="ws-sidebar ws-sidebar-search" aria-label="Search" style={{ width: sidebarWidth }}>
           <div className="ws-sidebar-title">Search</div>
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
@@ -556,7 +629,7 @@ export default function WorkspaceShell({
                 <SearchPanel
                   root={root}
                   onOpenFile={openFile}
-                  onReplaced={(summary) => setStatus(summary)}
+                  onReplaced={(summary) => { setStatus(summary); void syncFiles(); setRefreshToken(t => t + 1); }}
                   focusToken={searchFocusToken}
                 />
               )}
@@ -565,7 +638,7 @@ export default function WorkspaceShell({
         </aside>
       )}
       {sideView === 'problems' && (
-        <aside className="ws-sidebar ws-sidebar-problems" aria-label="Problems and tasks">
+        <aside className="ws-sidebar ws-sidebar-problems" aria-label="Problems and tasks" style={{ width: sidebarWidth }}>
           <div className="ws-sidebar-title">Problems and tasks</div>
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
@@ -577,19 +650,19 @@ export default function WorkspaceShell({
       )}
       {/* Sidebar */}
       {sideView === 'changes' && (
-        <aside className="ws-sidebar" aria-label="Changes">
+        <aside className="ws-sidebar" aria-label="Changes" style={{ width: sidebarWidth }}>
           <div className="ws-sidebar-title">Changes</div>
           <div className="ws-sidebar-root">What HomeBot edited this session</div>
           <div className="ws-sidebar-body">
             <Suspense fallback={<div className="tree-hint">Loading…</div>}>
-              <ChangesPanel onOpenFile={openFile} />
+              <ChangesPanel root={root} onOpenFile={openFile} />
             </Suspense>
           </div>
         </aside>
       )}
       {/* Sidebar */}
       {sideView === 'explorer' && (
-        <aside className="ws-sidebar" aria-label="Explorer">
+        <aside className="ws-sidebar" aria-label="Explorer" style={{ width: sidebarWidth }}>
           <div className="ws-sidebar-title">Explorer</div>
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
@@ -610,7 +683,7 @@ export default function WorkspaceShell({
             look for it. The status-bar Home and the activity-bar chat icon sit
             along the bottom edge and were not found. Open tabs and unsaved
             edits survive the trip (see `open`). */}
-        <div className="ws-header">
+        <div className="ws-header" style={{ flexWrap: 'wrap', padding: '5px 8px' }}>
           <button
             type="button"
             className="ws-header-back"
@@ -627,6 +700,14 @@ export default function WorkspaceShell({
             <option value="">Recent projects</option>{recentRoots.map(folder => <option key={folder} value={folder}>{folder}</option>)}
           </select>
           {active && <button type="button" onClick={() => setFileDialog({ action: 'save-as', path: active.path, value: '' })}>Save As</button>}
+          <button type="button" onClick={() => setNavigation('files')} title="Quick Open (Ctrl+P)">Quick Open</button>
+          <button type="button" onClick={() => setNavigation('commands')} title="Command palette (Ctrl+Shift+P)">Commands</button>
+          <button type="button" disabled={!active} onClick={() => setSplitPath(current => current ? null : files.find(f => f.path !== activePath)?.path || activePath)}>{splitPath ? 'Close split' : 'Split editor'}</button>
+          <details><summary>Layout</summary><div style={{ position: 'absolute', zIndex: 20, background: 'var(--ws-bg)', padding: 12, border: '1px solid var(--hairline)' }}>
+            <label>Sidebar width<input type="range" aria-label="Sidebar width" min={160} max={600} value={sidebarWidth} onChange={e => setSidebarWidth(Number(e.target.value))} /></label>
+            <label>Terminal height<input type="range" aria-label="Terminal height" min={90} max={500} value={panelHeight} onChange={e => setPanelHeight(Number(e.target.value))} /></label>
+            <label>Split position<input type="range" aria-label="Split position" min={25} max={75} value={splitRatio} onChange={e => setSplitRatio(Number(e.target.value))} /></label>
+          </div></details>
         </div>
         <div className="ws-tabs" role="tablist" aria-label="Open files">
           {files.length === 0 && <div className="ws-tabs-empty">No file open</div>}
@@ -673,7 +754,7 @@ export default function WorkspaceShell({
           ))}
         </div>
 
-        <div className="ws-editor-area">
+        <div className="ws-editor-area" style={{ flexDirection: 'column' }}>
           {active && (active.disk || active.missing) && <div role="alert" style={{ padding: 8, borderBottom: '1px solid var(--border-color)' }}>
             <span>{active.missing ? 'This file was removed on disk. Your draft is preserved.' : 'This file changed on disk. Your draft is preserved.'}</span>
             {active.disk && <>
@@ -686,20 +767,16 @@ export default function WorkspaceShell({
             <button onClick={() => setFileDialog({ action: 'save-as', path: active.path, value: '' })}>Save draft as</button>
           </div>}
           {active ? (
-            <CodeEditor
-              // The DOM view is keyed per file, while the tab owns its editor
-              // state so Back and tab switches preserve only that file's undo.
-              key={active.path}
-              session={active.editorSession}
-              value={active.content}
-              language={active.language}
-              onSave={save}
-              focusLine={reveal && reveal.path === active.path ? reveal.line : undefined}
-              onFocusLineConsumed={() => setReveal(current => current === reveal ? null : current)}
-              onChange={(next) =>
-                setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, content: next } : f)))
-              }
-            />
+            <>
+              <nav aria-label="File breadcrumbs" style={{ padding: '4px 8px', opacity: 0.75, fontSize: 12 }}>{active.path.replace(/\\/g, '/').split('/').join(' › ')}</nav>
+              <div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0 }}>
+                <div style={{ display: 'flex', minHeight: 0, minWidth: 0, flex: splitPath ? `0 0 ${splitRatio}%` : '1' }}>{renderEditor(active)}</div>
+                {splitPath && files.some(f => f.path === splitPath) && <section aria-label="Second editor" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0, borderLeft: '2px solid var(--hairline)' }}>
+                  <select aria-label="File in second editor" value={splitPath} onChange={e => setSplitPath(e.target.value)}>{files.map(f => <option key={f.path} value={f.path}>{f.name}</option>)}</select>
+                  {renderEditor(files.find(f => f.path === splitPath)!, true)}
+                </section>}
+              </div>
+            </>
           ) : (
             <div className="ws-empty">
               <Icon name="document" size={30} />
@@ -712,9 +789,9 @@ export default function WorkspaceShell({
         </div>
 
         {terminalOpen && root && (
-          <div className="ws-panel" aria-label="Panel">
+          <div className="ws-panel" aria-label="Panel" style={{ height: panelHeight }}>
             <Suspense fallback={<div className="tree-hint">Loading terminal…</div>}>
-              <TerminalPanel key={root} open onClose={() => setTerminalOpen(false)} projectPath={root} />
+              <TerminalPanel key={root} open onClose={() => setTerminalOpen(false)} projectPath={root} onSendToChat={text => { setTerminalOutput(text); setAssistantOpen(true); }} />
             </Suspense>
           </div>
         )}
@@ -731,7 +808,7 @@ export default function WorkspaceShell({
 
       {assistantOpen && (
         <Suspense fallback={<div className="tree-hint">Loading assistant…</div>}>
-          <WorkspaceAssistantPanel root={root} files={files} activePath={activePath} onClose={() => setAssistantOpen(false)} />
+          <WorkspaceAssistantPanel root={root} files={files} activePath={activePath} selection={selection ?? undefined} terminalOutput={terminalOutput} onClose={() => setAssistantOpen(false)} />
         </Suspense>
       )}
 
