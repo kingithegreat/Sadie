@@ -505,6 +505,9 @@ const SMALL_MODEL_HISTORY_MSG_CAP = 400;
 
 // Exported for test access
 export function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
+  // The first appended turn must not make ensureHydrated mistake a fresh
+  // process for an already loaded conversation and discard its saved context.
+  ensureHydrated(conversationId);
   if (!conversationHistory.has(conversationId)) {
     conversationHistory.set(conversationId, []);
   }
