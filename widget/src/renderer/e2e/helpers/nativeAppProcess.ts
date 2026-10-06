@@ -25,6 +25,21 @@ function powershell(source: string, env: NodeJS.ProcessEnv): Promise<string> {
 }
 const quote = (value: string) => value.replace(/'/g, "''");
 
+/** Only fixed purpose labels leave the OS observer; command arguments stay local. */
+export function nativePurposeClassifierSource(): string {
+  return `function Get-CapturedPurpose([string]$command){
+    $text=$command
+    if($command -match '(?i)-EncodedCommand\\s+"?([A-Za-z0-9+/=]+)'){
+      try{$text+=' '+[Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1]))}catch{}
+    }
+    if($text.Contains('Outlook.Application')){return 'outlook-com'}
+    if($text.Contains('Win32_VideoController')){return 'gpu-discovery'}
+    if($text.Contains('$taskProcess = Get-CimInstance Win32_Process')){return 'pty-identity'}
+    if($text.Contains('class OwnedPtyStop')){return 'pty-stop'}
+    return 'unclassified'
+  }`;
+}
+
 /** Observe native main through its OS handle; Windows's cmd wrapper is separate. */
 export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess, entry: string): Promise<NativeAppMonitor> {
   if (!Number.isSafeInteger(info.pid) || info.pid <= 0 || (info.pid !== child.pid && info.ppid !== child.pid)) throw new Error('Electron main does not belong to the launched process.');
@@ -73,7 +88,7 @@ export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess,
     info, creation, exit,
     observations,
     snapshot: async () => {
-      const tree = `$ErrorActionPreference='Stop';$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);$root=$all|Where-Object{$_.ProcessId -eq ${info.pid} -and $_.ParentProcessId -eq ${info.ppid} -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]${creation}};if(!$root){throw 'Owned native main disappeared before snapshot'};$owned=@($root);for($level=0;$level -lt $owned.Count;$level++){$parent=$owned[$level];$owned+=@($all|Where-Object{$_.ParentProcessId -eq $parent.ProcessId -and $_.CreationDate -ge $parent.CreationDate -and $_.ProcessId -notin $owned.ProcessId});if($owned.Count -gt 128){throw 'Owned process tree exceeds bound'}};$receipt=@($owned|ForEach-Object{@{pid=[int]$_.ProcessId;parent=[int]$_.ParentProcessId;creation=[string]$_.CreationDate.ToUniversalTime().Ticks;name=[string]$_.Name}});ConvertTo-Json -InputObject @($receipt) -Depth 4 -Compress`;
+      const tree = `$ErrorActionPreference='Stop';${nativePurposeClassifierSource()};$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);$root=$all|Where-Object{$_.ProcessId -eq ${info.pid} -and $_.ParentProcessId -eq ${info.ppid} -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]${creation}};if(!$root){throw 'Owned native main disappeared before snapshot'};$owned=@($root);for($level=0;$level -lt $owned.Count;$level++){$parent=$owned[$level];$owned+=@($all|Where-Object{$_.ParentProcessId -eq $parent.ProcessId -and $_.CreationDate -ge $parent.CreationDate -and $_.ProcessId -notin $owned.ProcessId});if($owned.Count -gt 128){throw 'Owned process tree exceeds bound'}};$receipt=@($owned|ForEach-Object{@{pid=[int]$_.ProcessId;parent=[int]$_.ParentProcessId;creation=[string]$_.CreationDate.ToUniversalTime().Ticks;name=[string]$_.Name;purpose=(Get-CapturedPurpose ([string]$_.CommandLine))}});ConvertTo-Json -InputObject @($receipt) -Depth 4 -Compress`;
       const receipt = JSON.parse((await powershell(tree, env)).trim()) as WorkspacePtyStopReceipt;
       if (!Array.isArray(receipt) || !receipt.length || receipt.length > 128 || receipt[0].pid !== info.pid || receipt[0].creation !== creation || receipt[0].parent !== info.ppid) throw new Error('Invalid native owned-tree snapshot');
       return receipt;
