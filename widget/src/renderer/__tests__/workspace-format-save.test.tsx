@@ -55,7 +55,7 @@ test('a consumed CtrlS on another workspace field is ignored while an unclaimed 
   const f = await openEditor();
   act(() => f.view.dispatch({ changes: { from: 0, insert: '// changed\n' } }));
   const consumed = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, bubbles: true, cancelable: true }); consumed.preventDefault();
-  act(() => window.dispatchEvent(consumed)); expect(f.workspaceSave).not.toHaveBeenCalled();
-  fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+  act(() => screen.getByText('Open example').dispatchEvent(consumed)); expect(f.workspaceSave).not.toHaveBeenCalled();
+  fireEvent.keyDown(screen.getByText('Open example'), { key: 's', ctrlKey: true });
   await waitFor(() => expect(f.workspaceSave).toHaveBeenCalledTimes(1));
 });
