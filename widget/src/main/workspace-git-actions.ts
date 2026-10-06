@@ -3,7 +3,7 @@ import * as path from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { createHash } from 'crypto';
-import { validateTrustedWorkspaceRoot } from './workspace-trust';
+import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './workspace-trust';
 import { workspaceRepositoryRoot, runWorkspaceGit, workspaceGitPaths } from './workspace-git';
 import type { WorkspaceGitActionRequest, WorkspaceGitActionResult } from '../shared/workspace-git-action-types';
 const exec = promisify(execFile);
@@ -97,16 +97,23 @@ export async function performWorkspaceGitAction(request: WorkspaceGitActionReque
       case 'stash': await run(['stash', 'push', '-m', 'HomeBot IDE stash']); return { success: true };
       case 'stash-pop': await run(['stash', 'pop']); return { success: true };
       case 'conflict': case 'resolve-conflict': {
-        const file = filePath(root, request.file); const absolute = path.join(root, file);
+        const file = filePath(root, request.file); const displayed = path.join(root, file);
+        if (fs.existsSync(displayed) && fs.lstatSync(displayed).isSymbolicLink()) throw new Error('Linked conflict files cannot be replaced here. Resolve the link explicitly with Git.');
+        const absolute = checkedTrustedWorkspacePath(root, displayed);
         const stages = await run(['ls-files', '--unmerged', '-z', '--', file]);
         const blobs = new Map<number, string>();
         for (const stage of stages.split('\0')) { const match = stage.match(/^\d+ ([0-9a-f]+) ([123])\t/); if (match) blobs.set(Number(match[2]), match[1]); }
         if (!blobs.size) throw new Error('This file has no unresolved Git conflict.');
         const side = (number: number) => blobs.has(number) ? run(['show', blobs.get(number)!]) : Promise.resolve('');
         const [base, ours, theirs] = await Promise.all([side(1), side(2), side(3)]);
-        const current = fs.existsSync(absolute) ? fs.readFileSync(absolute, 'utf8') : '';
-        if (request.action === 'conflict') return { success: true, conflict: { path: file, base, ours, theirs, current } };
-        if (request.expectedContent !== current) throw new Error('The conflict file changed. Reload the merge comparison before resolving.');
+        const missingSides = (['base', 'ours', 'theirs'] as const).filter((_, index) => !blobs.has(index + 1));
+        const currentExists = fs.existsSync(absolute);
+        if (currentExists && (!fs.lstatSync(absolute).isFile() || fs.statSync(absolute).size > 2 * 1024 * 1024)) throw new Error('The conflict working copy must be a regular text file up to 2 MiB.');
+        const current = currentExists ? fs.readFileSync(absolute, 'utf8') : '';
+        if (request.action === 'conflict') return { success: true, conflict: { path: file, base, ours, theirs, current, currentExists, missingSides } };
+        if (request.expectedContent !== current || (request.expectedExists ?? true) !== currentExists) throw new Error('The conflict file changed. Reload the merge comparison before resolving.');
+        if ((request.resolution === 'ours' || request.resolution === 'theirs') && missingSides.includes(request.resolution)) throw new Error(`The ${request.resolution} side deleted this file. An empty file is not a deletion. To keep the deletion, delete the file in Explorer, then stage the deleted path in Source Control. To keep content, choose the existing side or a manual result.`);
+        if (!currentExists) throw new Error('The working copy is deleted. Stage the deleted path in Source Control to keep deletion, or restore the file before using a content resolution.');
         const content = request.resolution === 'ours' ? ours : request.resolution === 'theirs' ? theirs : request.resolution === 'manual' && typeof request.content === 'string' ? request.content : undefined;
         if (content === undefined || Buffer.byteLength(content) > 2 * 1024 * 1024 || content.includes('\0')) throw new Error('Choose a text resolution up to 2 MiB.');
         // Guarded replacement only. Staging remains a separate visible action.

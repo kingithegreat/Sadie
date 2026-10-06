@@ -154,7 +154,14 @@ export default function SourceControlPanel({ folder, onOpenFile, onFilesChanged 
         {detail.diff !== undefined && <><pre style={{ whiteSpace: 'pre-wrap' }}>{detail.diff || 'No text difference.'}</pre>{detail.hunks?.map(hunk => <div key={hunk.index}><strong>{hunk.header}</strong><button disabled={busy || diffStaged} onClick={() => void gitAction('stage-hunk', { file: diffFile, hunk: hunk.index, expectedDiff: detail.diff })}>Stage this hunk</button></div>)}</>}
         {detail.history?.map(commit => <div key={commit.hash}><code>{commit.hash}</code> {commit.subject}<small> {commit.author} — {commit.date}</small></div>)}
         {detail.text && <pre style={{ whiteSpace: 'pre-wrap' }}>{detail.text}</pre>}
-        {detail.conflict && <><p>Compare all versions. Resolving changes this file; staging remains a separate action.</p>{(['base', 'ours', 'theirs'] as const).map(side => <details key={side} open><summary>{side}</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{detail.conflict![side]}</pre></details>)}<label>Manual result<textarea aria-label="Merged file result" value={mergeText} onChange={event => setMergeText(event.target.value)} rows={10} /></label>{(['ours', 'theirs', 'manual'] as const).map(resolution => <button key={resolution} disabled={busy} onClick={() => void gitAction('resolve-conflict', { file: detail.conflict!.path, resolution, content: mergeText, expectedContent: detail.conflict!.current })}>Use {resolution}</button>)}</>}
+        {detail.conflict && <>
+          <p>Compare all versions. Resolving changes this file; staging remains a separate action.</p>
+          {(['base', 'ours', 'theirs'] as const).map(side => <details key={side} open><summary>{side}{detail.conflict!.missingSides?.includes(side) ? side === 'base' ? ' (absent)' : ' (deleted)' : ''}</summary><pre style={{ whiteSpace: 'pre-wrap' }}>{detail.conflict!.missingSides?.includes(side) ? side === 'base' ? 'No base file.' : 'This side deleted the file.' : detail.conflict![side]}</pre></details>)}
+          {detail.conflict.missingSides?.some(side => side !== 'base') && <p>To keep the deletion, delete the file in Explorer, then stage its deleted path in Source Control. An empty file is not a deletion.</p>}
+          {detail.conflict.currentExists === false && <p>The working copy is deleted. Stage its deleted path to keep deletion, or restore the file before choosing a content resolution.</p>}
+          <label>Manual result<textarea aria-label="Merged file result" disabled={detail.conflict.currentExists === false} value={mergeText} onChange={event => setMergeText(event.target.value)} rows={10} /></label>
+          {(['ours', 'theirs', 'manual'] as const).map(resolution => <button key={resolution} disabled={busy || detail.conflict!.currentExists === false || (resolution !== 'manual' && detail.conflict!.missingSides?.includes(resolution))} onClick={() => void gitAction('resolve-conflict', { file: detail.conflict!.path, resolution, content: mergeText, expectedContent: detail.conflict!.current, expectedExists: detail.conflict!.currentExists })}>Use {resolution}</button>)}
+        </>}
       </section>}
     </div>
   );

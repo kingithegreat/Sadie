@@ -22,6 +22,16 @@ test('Git branch, network and conflict controls route actual explicit actions an
   expect(workspaceGitAction).toHaveBeenCalledWith({ folder: '/project', action: 'create-branch', branch: 'feature/new' }); expect(changed).toHaveBeenCalled();
   await act(async () => fireEvent.click(screen.getByText('push'))); expect(workspaceGitAction).toHaveBeenLastCalledWith({ folder: '/project', action: 'push' });
 });
+test('modify/delete comparison visibly identifies the deleted side and disables unsafe empty-file resolution', async () => {
+  const workspaceGitAction = jest.fn().mockResolvedValue({ success: true, conflict: { path: 'removed.txt', base: 'base', ours: '', theirs: 'modified', current: 'modified', currentExists: true, missingSides: ['ours'] } });
+  (window as any).electron = { workspaceGitStatus: jest.fn().mockResolvedValue({ success: true, isRepo: true, root: '/project', branch: 'main', staged: [], unstaged: [{ path: 'removed.txt', kind: 'conflicted' }] }), workspaceGitBranches: jest.fn().mockResolvedValue({ success: true, branches: ['main'] }), workspaceGitAction };
+  await act(async () => render(<SourceControlPanel folder="/project" onOpenFile={jest.fn()} />));
+  await act(async () => fireEvent.click(screen.getByLabelText('Resolve removed.txt')));
+  expect(screen.getByText('ours (deleted)')).toBeInTheDocument(); expect(screen.getByText('Use ours')).toBeDisabled();
+  expect(screen.getByText(/delete the file in Explorer/)).toBeInTheDocument();
+  await act(async () => fireEvent.click(screen.getByText('Use theirs')));
+  expect(workspaceGitAction).toHaveBeenLastCalledWith({ folder: '/project', action: 'resolve-conflict', file: 'removed.txt', resolution: 'theirs', content: 'modified', expectedContent: 'modified', expectedExists: true });
+});
 test('debug toolbar, breakpoints, call frames, variables and watch expressions reach the backend', async () => {
   const result = { success: true, running: true, paused: true, frames: [{ id: 'frame', name: 'main', path: '/project/main.js', line: 3, column: 1 }], breakpoints: [] };
   const workspaceDebug = jest.fn().mockResolvedValue(result); const open = jest.fn();

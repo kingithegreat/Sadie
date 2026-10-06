@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { performWorkspaceGitAction, gitWorkspaceConfirmation } from '../workspace-git-actions';
+import { gitWorkspaceStage } from '../workspace-git';
 let root: string;
 const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 const action = (action: Parameters<typeof performWorkspaceGitAction>[0]['action'], extra = {}) => performWorkspaceGitAction({ folder: root, action, ...extra });
@@ -50,5 +51,23 @@ test('unsafe paths, invalid branch/clone inputs, and network mutation consent re
   expect((await action('clone', { url: 'ext::sh evil', target: 'new' })).success).toBe(false);
   expect(gitWorkspaceConfirmation({ folder: root, action: 'push' })).toMatch(/publishes/);
   expect(gitWorkspaceConfirmation({ folder: root, action: 'diff' })).toBeNull();
+});
+test('modify/delete conflicts identify missing sides, refuse empty-file substitution and preserve later bytes', async () => {
+  const file = path.join(root, 'removed.txt');
+  fs.writeFileSync(file, 'base\n'); git('add', '.'); git('commit', '-qm', 'base'); git('switch', '-c', 'other');
+  fs.writeFileSync(file, 'theirs modified\n'); git('commit', '-qam', 'modify'); git('switch', 'main'); git('rm', 'removed.txt'); git('commit', '-qm', 'delete');
+  try { git('merge', 'other'); } catch { /* Actual modify/delete conflict. */ }
+  const compared = await action('conflict', { file: 'removed.txt' });
+  expect(compared.conflict).toEqual(expect.objectContaining({ currentExists: true, missingSides: ['ours'], ours: '', theirs: 'theirs modified\n' }));
+  expect((await action('resolve-conflict', { file: 'removed.txt', resolution: 'ours', expectedContent: compared.conflict?.current, expectedExists: true })).error).toMatch(/deleted this file.*empty file/);
+  expect(fs.readFileSync(file, 'utf8')).toBe('theirs modified\n');
+  fs.writeFileSync(file, 'later user bytes\n');
+  expect((await action('resolve-conflict', { file: 'removed.txt', resolution: 'theirs', expectedContent: compared.conflict?.current, expectedExists: true })).error).toMatch(/file changed/);
+  expect(fs.readFileSync(file, 'utf8')).toBe('later user bytes\n');
+  fs.unlinkSync(file);
+  const deleted = await action('conflict', { file: 'removed.txt' }); expect(deleted.conflict?.currentExists).toBe(false);
+  expect((await action('resolve-conflict', { file: 'removed.txt', resolution: 'manual', content: 'recreated', expectedContent: '', expectedExists: false })).error).toMatch(/working copy is deleted/i);
+  expect(fs.existsSync(file)).toBe(false);
+  await gitWorkspaceStage(root, ['removed.txt']); expect(git('ls-files', '--unmerged')).toBe(''); expect(fs.existsSync(file)).toBe(false);
 });
 jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));
