@@ -42,3 +42,19 @@ test('test discovery rows open source and run one named test with coverage, with
   await act(async () => fireEvent.click(screen.getByText('Run test'))); expect(workspaceTests).toHaveBeenCalledWith({ root: '/project', action: 'run', file: '/project/math.test.js', testName: 'adds', coverage: true });
   await act(async () => fireEvent.click(screen.getByText('Stop tests'))); expect(workspaceTests).toHaveBeenCalledWith({ root: '/project', action: 'stop' });
 });
+test('a late watch result from the previous project never appears in the new debugger', async () => {
+  let finish: (value: any) => void = () => {};
+  (window as any).electron = { workspaceDebug: jest.fn(({ action }: { action: string }) => action === 'evaluate' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ success: true, running: true, paused: true, frames: [], breakpoints: [] })) };
+  const page = render(<DebuggerPanel root="/project-a" onOpenFile={jest.fn()} />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText('Watch expression'), { target: { value: 'privateA' } });
+  fireEvent.click(screen.getByText('Evaluate watch'));
+  await act(async () => page.rerender(<DebuggerPanel root="/project-b" onOpenFile={jest.fn()} />));
+  await act(async () => finish({ success: true, running: true, paused: true, value: 'OLD PROJECT RESULT' }));
+  expect(screen.queryByText('OLD PROJECT RESULT')).not.toBeInTheDocument();
+});
+test('test runner transport rejection is visible and controls recover', async () => {
+  (window as any).electron = { workspaceTests: jest.fn().mockRejectedValue(new Error('Test service disconnected')) };
+  await act(async () => render(<WorkspaceTestsPanel root="/project" onOpenFile={jest.fn()} />));
+  expect(screen.getByRole('alert')).toHaveTextContent('Test service disconnected'); expect(screen.getByText('Refresh tests')).not.toBeDisabled();
+});

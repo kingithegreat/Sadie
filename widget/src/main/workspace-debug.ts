@@ -64,7 +64,7 @@ class DebugSession {
       let file = ''; try { file = url.startsWith('file:') ? fileURLToPath(url) : url; } catch { /* internal script */ }
       return { id: frame.callFrameId, name: frame.functionName || '(anonymous)', path: within(this.root, file) ? file : '', line: frame.location.lineNumber + 1, column: frame.location.columnNumber + 1 };
     });
-    return { success: true, running: !!this.child, paused: this.paused, output: this.output, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
+    return { success: true, running: !!this.child, paused: this.paused, output: this.output, pid: this.child?.pid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
   }
   async breakpoint(file: string, line: number, remove: boolean) {
     const key = `${file}:${line}`; const previous = this.points.get(key);
@@ -73,13 +73,13 @@ class DebugSession {
   }
   async evaluate(expression: string, frameId?: string): Promise<string> {
     if (!this.paused) throw new Error('Pause the program before evaluating a watch expression.');
-    const frame = this.frames.find(frame => frame.callFrameId === frameId) || this.frames[0]; if (!frame) throw new Error('Choose a paused call frame.');
+    const frame = frameId ? this.frames.find(frame => frame.callFrameId === frameId) : this.frames[0]; if (!frame) throw new Error('The call stack changed. Choose a paused call frame again.');
     const result = await this.command('Debugger.evaluateOnCallFrame', { callFrameId: frame.callFrameId, expression, silent: true, returnByValue: true });
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'The watch expression failed.');
     return String(result.result?.description ?? JSON.stringify(result.result?.value) ?? result.result?.type);
   }
   async scopes(frameId?: string): Promise<Array<{ name: string; value: string }>> {
-    const frame = this.frames.find(frame => frame.callFrameId === frameId) || this.frames[0]; if (!this.paused || !frame) throw new Error('Pause the program to inspect variables.');
+    const frame = frameId ? this.frames.find(frame => frame.callFrameId === frameId) : this.frames[0]; if (!this.paused || !frame) throw new Error('Pause the program and choose the current call frame to inspect variables.');
     const result: Array<{ name: string; value: string }> = [];
     for (const scope of frame.scopeChain.slice(0, 3)) {
       if (!scope.object.objectId || scope.type === 'global') continue;

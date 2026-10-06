@@ -8,7 +8,7 @@ const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encodi
 const action = (action: Parameters<typeof performWorkspaceGitAction>[0]['action'], extra = {}) => performWorkspaceGitAction({ folder: root, action, ...extra });
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.homedir(), 'hb-git-actions-'));
-  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'HomeBot Test'); git('config', 'user.email', 'test@example.invalid'); git('config', 'commit.gpgsign', 'false');
+  git('init', '-q', '-b', 'main'); git('config', 'user.name', 'HomeBot Test'); git('config', 'user.email', 'test@example.invalid'); git('config', 'commit.gpgsign', 'false'); git('config', 'core.autocrlf', 'false');
 });
 afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
 test('ordinary diff and selected hunk stage update only the index and reject stale patches', async () => {

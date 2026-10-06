@@ -35,7 +35,7 @@ export interface GitStatus {
 }
 
 async function git(args: string[], cwd: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, timeout: 20_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+  const { stdout } = await execFileAsync('git', args, { cwd, env: process.env, timeout: 20_000, windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
   return stdout;
 }
 

@@ -18,6 +18,7 @@ test('AST discovery excludes commented tests and identifies suite names, runners
 test('runs one selected actual Node test, reports a nonzero pass count and collects coverage output', async () => {
   expect((await performWorkspaceTests({ root, action: 'run', file, testName: 'math adds correctly', coverage: true })).running).toBe(true);
   const result = await finishRun(); expect(result.exitCode).toBe(0); expect(result.summary?.passed).toBeGreaterThan(0); expect(result.output).toMatch(/coverage|file.*line/i);
+  console.info(JSON.stringify({ selectedTestProof: { selected: 'math adds correctly', exitCode: result.exitCode, ...result.summary, coverageOutput: /coverage|file.*line/i.test(result.output || '') } }));
 });
 test('Stop terminates an owned long-running test and reports user cancellation', async () => {
   fs.writeFileSync(file, 'const { test } = require("node:test"); test("waits", async () => { await new Promise(resolve => setTimeout(resolve, 30000)); });');

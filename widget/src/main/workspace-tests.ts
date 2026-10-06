@@ -45,8 +45,12 @@ export function discoverWorkspaceTests(rootInput: string): WorkspaceDiscoveredTe
     }
   };
   walk(root, 0);
+  let sourceBytes = 0;
   for (const file of files) {
-    if (fs.statSync(file).size > 512 * 1024) continue;
+    const size = fs.statSync(file).size;
+    if (size > 512 * 1024) continue;
+    if (sourceBytes + size > 16 * 1024 * 1024 || result.length >= 2000) break;
+    sourceBytes += size;
     const content = fs.readFileSync(file, 'utf8'); const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true); const runner = runnerFor(root, file, content);
     const startCount = result.length;
     const visit = (node: ts.Node, suites: string[]) => {
@@ -90,6 +94,7 @@ export function prepareWorkspaceTestCommand(request: WorkspaceTestRequest): { ro
   if (request.testName && !selected) throw new Error('Choose one of this file\'s discovered tests.');
   if (selected?.skipped) throw new Error('This test is marked skip/todo. Enable it in the source before running it individually.');
   const runner = tests[0].runner; const { directory } = nearestPackage(root, file);
+  if (runner === 'node' && /\.[jt]sx$/i.test(file)) throw new Error('JSX/TSX tests need a configured Jest or Vitest transpiler. Use the project package task if this test uses another runner.');
   const pattern = selected && !selected.name.startsWith('(all tests') ? '^' + selected.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$' : undefined;
   let args: string[];
   if (runner === 'node') args = ['--test', ...(pattern ? ['--test-name-pattern', pattern] : []), ...(request.coverage ? ['--experimental-test-coverage'] : []), file];

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { WorkspaceDebugRequest, WorkspaceDebugResult } from '../../../shared/workspace-debug-types';
 interface Props { root: string; activePath?: string; onOpenFile: (path: string, line?: number) => void }
 export default function DebuggerPanel({ root, activePath, onOpenFile }: Props) {
@@ -7,17 +7,22 @@ export default function DebuggerPanel({ root, activePath, onOpenFile }: Props) {
   const [line, setLine] = useState(1); const [frame, setFrame] = useState(''); const [watch, setWatch] = useState(''); const [value, setValue] = useState('');
   const [variables, setVariables] = useState<Array<{ name: string; value: string }>>([]);
   const api = window.electron as any;
+  const currentRoot = useRef(root); currentRoot.current = root;
   const request = async (action: WorkspaceDebugRequest['action'], extra: Partial<WorkspaceDebugRequest> = {}) => {
     setBusy(true); setError('');
-    try { const result: WorkspaceDebugResult = await api?.workspaceDebug?.({ root, action, ...extra }) || { success: false, error: 'Debugging is unavailable in this build.' }; if (!result.success) setError(result.error || 'The debugger action failed.'); else { setState(result); if (result.value !== undefined) setValue(result.value); if (result.variables) setVariables(result.variables); } }
-    catch (error) { setError(String(error)); } finally { setBusy(false); }
+    try { const result: WorkspaceDebugResult = await api?.workspaceDebug?.({ root, action, ...extra }) || { success: false, error: 'Debugging is unavailable in this build.' }; if (currentRoot.current !== root) return; if (!result.success) setError(result.error || 'The debugger action failed.'); else { setState(result); if (result.value !== undefined) setValue(result.value); if (result.variables) setVariables(result.variables); } }
+    catch (error) { if (currentRoot.current === root) setError(String(error)); } finally { if (currentRoot.current === root) setBusy(false); }
   };
   useEffect(() => {
     let mounted = true;
+    setState(null); setError(''); setBusy(false); setFrame(''); setVariables([]); setValue(''); setFile(activePath || '');
     const refresh = async () => { try { const result = await api?.workspaceDebug?.({ root, action: 'state' }); if (mounted && result?.success) setState(result); } catch { /* An explicit action provides error recovery. */ } };
     void refresh(); const timer = setInterval(() => void refresh(), 700);
     return () => { mounted = false; clearInterval(timer); };
+  // The active path seeds the program only when the project changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, root]);
+  useEffect(() => { if (!state?.paused) { setVariables([]); setValue(''); setFrame(''); } }, [state?.paused]);
   return <section aria-label="Debugger" className="workspace-debugger" style={{ padding: 8, overflow: 'auto' }}>
     <p>Debug a JavaScript Node program. TypeScript needs compiled JavaScript; other runtimes need a separate debug adapter. The program runs only after confirmation.</p>
     <label>Program<input aria-label="Debug program path" value={file} onChange={event => setFile(event.target.value)} /></label>

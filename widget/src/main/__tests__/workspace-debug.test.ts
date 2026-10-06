@@ -10,6 +10,7 @@ const call = (action: Parameters<typeof performWorkspaceDebug>[0]['action'], ext
 async function waitForPaused() { for (let attempts = 0; attempts < 50; attempts++) { const state = await call('state'); if (state.paused) return state; await new Promise(resolve => setTimeout(resolve, 30)); } throw new Error('The actual program never paused.'); }
 test('real Node inspector pauses, steps, watches, shows variables and executes output', async () => {
   const started = await call('start', { file }); expect(started.success).toBe(true);
+  const childPid = started.pid!; expect(Number.isInteger(childPid)).toBe(true); expect(childPid).not.toBe(process.pid);
   let state = await waitForPaused(); expect(state.frames?.some(frame => frame.path === file)).toBe(true);
   expect((await call('breakpoint', { file, line: 3 })).success).toBe(true);
   expect((await call('resume')).success).toBe(true);
@@ -20,6 +21,8 @@ test('real Node inspector pauses, steps, watches, shows variables and executes o
   for (let index = 0; index < 50; index++) { state = await call('state'); if (state.output?.includes('RESULT 3')) break; await new Promise(resolve => setTimeout(resolve, 30)); }
   expect(state.output).toContain('RESULT 3');
   expect((await call('stop')).running).toBe(false);
+  expect(() => process.kill(childPid, 0)).toThrow();
+  console.info(JSON.stringify({ debuggerProof: { childPid, pausedAt: 3, watchValue: 3, output: 'RESULT 3', stopProcessGone: true } }));
 });
 test('refuses unrelated scripts, unsupported runtimes, invalid breakpoints, and evaluation while running', async () => {
   expect((await call('start', { file: path.join(root, '..', 'other.js') })).success).toBe(false);
