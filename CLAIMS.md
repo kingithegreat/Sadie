@@ -13,6 +13,9 @@ See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
 No shared dependency rebuild/install; no existing delivered build modifications.
 One guarded test/build at a time. Other sessions' processes and held PRs preserved.
 This is an active implementation claim, not a completion or verification claim.
+This ownership lasts through PR #474 verification, merge and a separately verified
+merged-main test delivery with a release update in the canonical plan. After those
+conditions are met, this entry is a historical work journal and releases the files.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
