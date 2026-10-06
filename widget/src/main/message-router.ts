@@ -6,6 +6,7 @@ import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
+import { workspaceStreamHandler, currentWorkspace, releaseWorkspaceStream } from './workspace-context';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { getSkillCatalogue, matchSkills } from './skills';
@@ -339,6 +340,13 @@ export function shouldInjectMorningBriefingForRequest(
 
 // Track active streams (Node Readable) by streamId so we can cancel them
 const activeStreams: Map<string, { destroy?: () => void; stream?: NodeJS.ReadableStream }> = new Map();
+function setActiveStream(id: string, entry: { destroy?: () => void; stream?: NodeJS.ReadableStream }): void {
+  if (currentWorkspace()?.cancelled) {
+    try { entry.destroy?.(); (entry.stream as any)?.destroy?.(); } catch (error) { safeCatch(error); }
+    return;
+  }
+  activeStreams.set(id, entry);
+}
 
 // ============================================
 // Conversation History Management
@@ -356,6 +364,7 @@ const PROJECT_MARKERS = ['package.json', 'Cargo.toml', 'pyproject.toml', 'go.mod
   'composer.json', 'Gemfile', 'pubspec.yaml', '*.sln', 'deno.json'];
 
 function getProjectPath(): string | undefined {
+  if (currentWorkspace()) return currentWorkspace()!.root;
   try {
     const settings = getSettings();
     if (settings.projectPath && typeof settings.projectPath === 'string') {
@@ -3286,7 +3295,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
     
     // Streaming responses via HTTP chunked response (POST -> stream)
-    ipcMain.on('homebot:stream-message', async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
+    ipcMain.on('homebot:stream-message', workspaceStreamHandler(async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
       const streamStartMs = Date.now();
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received homebot:stream-message', { request });
       try { pushRouter(`Received homebot:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
@@ -3324,7 +3333,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping
       // release builds protected via `isReleaseBuild` in the env helper.
-      const useDirectOllama = isE2E;
+      // IDE calls must use the in-process tool dispatcher: a remote webhook
+      // cannot inherit request-local filesystem authority/review guards.
+      const useDirectOllama = isE2E || !!currentWorkspace();
       if (process.env.NODE_ENV !== 'production') {
         console.log('[DIAG] useDirectOllama calculation:', { isE2E, HOMEBOT_DIRECT_OLLAMA: process.env.HOMEBOT_DIRECT_OLLAMA, useDirectOllama });
         try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.HOMEBOT_DIRECT_OLLAMA}`); } catch (e) { safeCatch(e); }
@@ -3443,7 +3454,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           };
           
           // Start emitting chunks
-          activeStreams.set(streamId, { 
+          setActiveStream(streamId, { 
             destroy: () => {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled via destroy, streamId:', streamId);
               try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) { safeCatch(e); }
@@ -3536,7 +3547,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
-                activeStreams.set(streamId, { destroy: () => {} });
+                setActiveStream(streamId, { destroy: () => {} });
               }
 
               // Stream a brief tool-activity indicator so the user sees what's happening
@@ -3757,7 +3768,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
-                activeStreams.set(streamId, { destroy: handler.cancel });
+                setActiveStream(streamId, { destroy: handler.cancel });
                 return;
               }
 
@@ -3879,7 +3890,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 undefined, requestConfirmation,
                 (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
               );
-              activeStreams.set(streamId, { destroy: handler.cancel });
+              setActiveStream(streamId, { destroy: handler.cancel });
               return;
             }
             // ── END WEB SEARCH SYNTHESIS ──
@@ -4065,7 +4076,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         undefined, requestConfirmation,
                         (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                       );
-                      activeStreams.set(streamId, { destroy: handler.cancel });
+                      setActiveStream(streamId, { destroy: handler.cancel });
                       return;
                     }
                   }
@@ -4147,7 +4158,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       undefined, requestConfirmation,
                       (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                     );
-                    activeStreams.set(streamId, { destroy: handler.cancel });
+                    setActiveStream(streamId, { destroy: handler.cancel });
                     return;
                   }
                   responseText += `📰 No articles found for that topic. Try rephrasing or asking me to search the web.\n`;
@@ -4424,7 +4435,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
-                activeStreams.set(streamId, { destroy: handler.cancel });
+                setActiveStream(streamId, { destroy: handler.cancel });
                 return;
               }
 
@@ -4528,7 +4539,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             (meta) => { directModel = meta.model; }
           );
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
           return;
         }
 
@@ -4597,7 +4608,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }, proxyOpts);
 
           // store cancellation function
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
         } else {
           // Diagnostic: record that we are about to POST to n8n
           if (process.env.NODE_ENV !== 'production') {
@@ -4955,7 +4966,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             if (shouldUseDirectTools && toolResults) {
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
-                activeStreams.set(streamId, { destroy: () => {} });
+                setActiveStream(streamId, { destroy: () => {} });
               }
 
               // Format tool results into a nice response
@@ -5027,7 +5038,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         undefined, requestConfirmation,
                         (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                       );
-                      activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                      setActiveStream(streamId, { destroy: synthHandler.cancel });
                       return;
                     }
                   }
@@ -5103,7 +5114,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     undefined, requestConfirmation,
                     (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                   );
-                  activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                  setActiveStream(streamId, { destroy: synthHandler.cancel });
                   return;
                 }
 
@@ -5169,7 +5180,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               (meta) => { resolvedModel = meta.model; }
             );
 
-            activeStreams.set(streamId, { destroy: handler.cancel });
+            setActiveStream(streamId, { destroy: handler.cancel });
           } catch (err: any) {
             logError('[Router] direct stream error', err?.message || err);
             try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) { safeCatch(e); }
@@ -5293,7 +5304,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             { modelOverride: reqAny.modelOverride },
             (meta) => { fallbackModel = meta.model; }
           );
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {
             const hint = classifyError('Both n8n and Ollama unavailable', ollamaError?.message || String(ollamaError));
             event.sender.send('homebot:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId, recoveryHint: hint });
@@ -5315,7 +5326,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }
         }
       }
-    });
+    }));
 
     // Cancel a running stream by id (or all if no id provided)
     ipcMain.on('homebot:stream-cancel', (_event: IpcMainEvent, payload: { streamId?: string }) => {
@@ -5323,6 +5334,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       if (!streamId) {
           // cancel all
           for (const [id, entry] of activeStreams.entries()) {
+            if (!releaseWorkspaceStream(id, _event.sender.id)) continue;
             try { entry.destroy?.(); } catch (e) { safeCatch(e); }
             try { (entry.stream as any)?.destroy?.(); } catch (e) { safeCatch(e); }
             activeStreams.delete(id);
@@ -5330,6 +5342,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           return;
         }
 
+      if (!releaseWorkspaceStream(streamId, _event.sender.id)) return;
       const entry = activeStreams.get(streamId);
       if (entry) {
         // If we're running in an E2E environment, send a best-effort cancel

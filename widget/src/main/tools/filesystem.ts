@@ -14,6 +14,7 @@ import PDFDocument from 'pdfkit';
 import { captureBefore, recordChange } from '../file-change-log';
 import { proposeEdit, shouldReviewEdit } from '../workspace-proposals';
 import { homeDir } from '../user-paths';
+import { canonicalWorkspacePath, currentWorkspace, withinRoot, workspaceToolError } from '../workspace-context';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -99,8 +100,16 @@ export function validatePath(targetPath: string): { valid: boolean; resolved: st
   }
   
   // Expand shortcuts like ~, desktop, etc.
-  const expanded = expandPath(targetPath);
+  const workspace = currentWorkspace();
+  const expanded = workspace && !path.isAbsolute(targetPath) && !targetPath.startsWith('~')
+    ? path.resolve(workspace.root, targetPath) : expandPath(targetPath);
   const resolved = path.resolve(expanded);
+  if (workspace) {
+    try {
+      const canonical = canonicalWorkspacePath(resolved);
+      if (!withinRoot(workspace.root, canonical)) return { valid: false, resolved, error: 'This path is outside the active IDE project.' };
+    } catch (error) { return { valid: false, resolved, error: (error as Error).message }; }
+  }
   
   if (!isPathAllowed(resolved)) {
     return { valid: false, resolved, error: `Access denied: Path must be within your home directory (${HOME_DIR})` };
@@ -837,6 +846,8 @@ export const deleteFileHandler: ToolHandler = async (args, _context): Promise<To
 };
 
 export const writeFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const authorityError = workspaceToolError('write_file');
+  if (authorityError) return { success: false, error: authorityError };
   const validation = validatePath(args.path);
   if (!validation.valid) {
     return { success: false, error: validation.error };
@@ -849,8 +860,8 @@ export const writeFileHandler: ToolHandler = async (args, _context): Promise<Too
 
   // IDE-3: inside the Workspace folder the write waits for a human. Appending
   // is not a reviewable diff of a whole file, so it is left alone.
-  if (!args.append && shouldReviewEdit(validation.resolved)) {
-    const proposed = proposeEdit({ path: validation.resolved, nextContent: String(args.content ?? ''), tool: 'write_file' });
+  if (shouldReviewEdit(validation.resolved)) {
+    const proposed = proposeEdit({ path: validation.resolved, nextContent: (args.append ? prior.text : '') + String(args.content ?? ''), tool: 'write_file' });
     if (proposed.identical) {
       return { success: true, result: { path: validation.resolved, proposed: false, message: 'No change: the file already has this content.' } };
     }
@@ -1206,6 +1217,8 @@ export const editFileDef: ToolDefinition = {
 };
 
 export const editFileHandler: ToolHandler = async (args, _context): Promise<ToolResult> => {
+  const authorityError = workspaceToolError('edit_file');
+  if (authorityError) return { success: false, error: authorityError };
   const filePath = expandPath(String(args.path || ''));
   const validation = validatePath(filePath);
   if (!validation.valid) return { success: false, error: validation.error };

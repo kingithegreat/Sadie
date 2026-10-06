@@ -1,0 +1,114 @@
+/** Request-local IDE authority. Prompt text and Settings never establish it. */
+import { AsyncLocalStorage } from 'async_hooks';
+import * as fs from 'fs';
+import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { homeDir } from './user-paths';
+
+export interface WorkspaceAuthority { root: string; senderId: number; streamId: string; approved: boolean; cancelled?: boolean }
+const scope = new AsyncLocalStorage<WorkspaceAuthority>();
+const plans = new Map<string, { root: string; senderId: number; text: string; expires: number; approved: boolean }>();
+const TTL = 30 * 60_000;
+const liveStreams = new Map<string, number>();
+const streamScopes = new Map<string, WorkspaceAuthority>();
+export const currentWorkspace = () => scope.getStore();
+export function withinRoot(root: string, target: string): boolean {
+  const rel = path.relative(root, target);
+  return rel === '' || (!rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel));
+}
+/** Canonicalize even missing children, rejecting junction/symlink escapes. */
+export function canonicalWorkspacePath(target: string): string {
+  let ancestor = path.resolve(target);
+  const missing: string[] = [];
+  while (!fs.existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) throw new Error('The project path is unavailable.');
+    missing.unshift(path.basename(ancestor)); ancestor = parent;
+  }
+  return path.join(fs.realpathSync(ancestor), ...missing);
+}
+export function validateWorkspaceRoot(input: unknown): string {
+  if (typeof input !== 'string' || !input.trim() || !path.isAbsolute(input)) throw new Error('Choose an absolute project folder first.');
+  const root = canonicalWorkspacePath(input);
+  if (!withinRoot(canonicalWorkspacePath(homeDir()), root)) throw new Error('The project must be inside your home folder.');
+  if (!fs.statSync(root).isDirectory()) throw new Error('The project must be a folder.');
+  return root;
+}
+export function prepareWorkspacePlan(rootInput: unknown, text: unknown, senderId: number) {
+  const root = validateWorkspaceRoot(rootInput);
+  if (typeof text !== 'string' || !text.trim() || text.length > 20_000) throw new Error('Provide a plan of up to 20,000 characters.');
+  for (const [id, plan] of plans) if (plan.expires < Date.now()) plans.delete(id);
+  if (plans.size >= 100) throw new Error('Too many pending plans. Wait for older plans to expire.');
+  const id = randomUUID();
+  plans.set(id, { root, text: text.trim(), senderId, expires: Date.now() + TTL, approved: false });
+  return { id, root, text: text.trim(), expires: Date.now() + TTL };
+}
+export function approveWorkspacePlan(rootInput: unknown, id: unknown, senderId: number) {
+  const root = validateWorkspaceRoot(rootInput), plan = plans.get(String(id));
+  if (!plan || plan.root !== root || plan.senderId !== senderId || plan.expires < Date.now()) throw new Error('This plan expired or belongs to another project/window. Prepare it again.');
+  plan.approved = true;
+  return { id: String(id), text: plan.text };
+}
+export function runWorkspaceRequest<T>(request: any, senderId: number, run: () => T): T {
+  if (!request?.workspace) {
+    if (String(request?.conversation_id || '').startsWith('workspace:')) throw new Error('This IDE request has no authoritative project folder.');
+    return run();
+  }
+  const root = validateWorkspaceRoot(request.workspace.root);
+  if (typeof request.streamId !== 'string' || !request.streamId) throw new Error('An IDE stream identifier is required.');
+  const plan = plans.get(String(request.workspace.planId || ''));
+  const approved = !!(plan && plan.approved && plan.root === root && plan.senderId === senderId && plan.expires > Date.now());
+  if (request.workspace.planId && !approved) throw new Error('Approve a current plan for this project before continuing.');
+  // Server-generated instruction cannot substitute for the separate approval record.
+  request.conversationPrompt = [request.conversationPrompt, `You are in the IDE project ${root}. Relative file paths resolve here. ${approved ? `The user approved this plan: ${plan!.text}. Propose file changes for review; do not execute shell commands.` : 'Read-only planning. Explain a concrete plan first; no edits until the user separately approves a plan.'}`].filter(Boolean).join('\n\n');
+  const authority: WorkspaceAuthority = { root, senderId, streamId: request.streamId, approved };
+  if (liveStreams.has(request.streamId)) streamScopes.set(request.streamId, authority);
+  return scope.run(authority, run);
+}
+export function releaseWorkspaceStream(id: string, senderId: number): boolean {
+  const owner = liveStreams.get(id);
+  if (owner !== undefined && owner !== senderId) return false;
+  const authority = streamScopes.get(id); if (authority) authority.cancelled = true;
+  liveStreams.delete(id); streamScopes.delete(id); return true;
+}
+export function workspaceStreamHandler(handler: (event: any, request: any) => Promise<void>) {
+  return async (event: any, request: any) => {
+    let reserved = false;
+    try {
+      if (request && typeof request === 'object') {
+        request.streamId ||= `stream-${randomUUID()}`;
+        if (typeof request.streamId !== 'string' || request.streamId.length > 160) throw new Error('Invalid stream identifier.');
+        if (liveStreams.has(request.streamId)) throw new Error('This stream identifier is already running.');
+        liveStreams.set(request.streamId, event.sender.id); reserved = true;
+      }
+      const release = () => { if (reserved) { releaseWorkspaceStream(request.streamId, event.sender.id); reserved = false; } };
+      const sender = new Proxy(event.sender, {
+        get(target, key) {
+          if (key === 'send') return (channel: string, ...args: any[]) => {
+            if ((channel === 'homebot:stream-end' || channel === 'homebot:stream-error') && args[0]?.streamId === request?.streamId) release();
+            return target.send(channel, ...args);
+          };
+          const value = Reflect.get(target, key, target); return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      const scopedEvent = new Proxy(event, { get(target, key) { return key === 'sender' ? sender : Reflect.get(target, key, target); } });
+      await runWorkspaceRequest(request, event.sender.id, () => handler(scopedEvent, request));
+    }
+    catch (error) {
+      if (reserved) releaseWorkspaceStream(request.streamId, event.sender.id);
+      event.sender.send('homebot:stream-error', { streamId: request?.streamId, error: true, message: (error as Error).message });
+      event.sender.send('homebot:stream-end', { streamId: request?.streamId });
+    }
+  };
+}
+const READ_TOOLS = new Set(['list_directory', 'read_file', 'get_file_info', 'search_files', 'grep_code', 'project_tree', 'analyze_file', 'search_code', 'codebase_search', 'git_status', 'git_diff', 'git_log', 'git_branches', 'web_search', 'fetch_url', 'rag_query', 'memory_search', 'memory_recall', 'recall_memory']);
+/** The registry calls this for single, batch, and bridge tool dispatch. */
+export function workspaceToolError(name: string): string | undefined {
+  const context = currentWorkspace();
+  if (!context) return;
+  if (context.cancelled) return 'This IDE request was stopped. No further tools can run.';
+  if (READ_TOOLS.has(name)) return;
+  if (name === 'write_file' || name === 'edit_file') return context.approved ? undefined : 'Approve a plan in the IDE assistant before proposing edits. No file was changed.';
+  if (name.startsWith('mcp_')) return context.approved ? undefined : 'Approve a plan before calling an external tool from the IDE.';
+  return 'This tool cannot run from the IDE assistant because its writes cannot be reviewed here. Use the human terminal or HomeBot chat with its own confirmation.';
+}

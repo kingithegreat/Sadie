@@ -1,5 +1,25 @@
 import { ModuleContractError } from '../../shared/modules/contracts';
 import { RegisteredTool, ToolDefinition, ToolHandler } from './types';
+import { canonicalWorkspacePath, currentWorkspace, withinRoot, workspaceToolError } from '../workspace-context';
+import * as path from 'path';
+
+function scopedHandler(name: string, handler: ToolHandler): ToolHandler {
+  return async (args, context) => {
+    const error = workspaceToolError(name);
+    if (error) return { success: false, error };
+    const workspace = currentWorkspace();
+    if (workspace && ['grep_code', 'project_tree', 'analyze_file', 'git_status', 'git_diff', 'git_log', 'git_branches'].includes(name)) {
+      const key = name.startsWith('git_') ? 'repo_path' : name === 'analyze_file' ? 'file_path' : 'directory';
+      const target = args[key] ? path.resolve(workspace.root, String(args[key])) : workspace.root;
+      try {
+        const canonical = canonicalWorkspacePath(target);
+        if (!withinRoot(workspace.root, canonical)) return { success: false, error: 'This tool path is outside the active IDE project.' };
+        return handler({ ...args, [key]: canonical }, context);
+      } catch (failure) { return { success: false, error: (failure as Error).message }; }
+    }
+    return handler(args, context);
+  };
+}
 
 /** The existing desktop tool Map, extracted so the trusted host can own entries. */
 const entries = new Map<string, RegisteredTool>();
@@ -16,7 +36,7 @@ export function registerTool(name: string, definition: ToolDefinition, handler: 
   if (owners.has(name)) {
     throw new ModuleContractError('DUPLICATE_CONTRIBUTION', `Tool ${name} belongs to ${owners.get(name)!.moduleId}.`);
   }
-  entries.set(name, { definition, handler });
+  entries.set(name, { definition, handler: scopedHandler(name, handler) });
   console.log(`[HomeBot Tools] Registered tool: ${name}`);
 }
 
@@ -25,7 +45,7 @@ export function registerOwnedTool(owner: ModuleToolOwner, definition: ToolDefini
   if (entries.has(name)) {
     throw new ModuleContractError('DUPLICATE_CONTRIBUTION', `Tool ${name} is already registered by ${owners.get(name)?.moduleId || 'Core'}.`);
   }
-  const entry = { definition, handler };
+  const entry = { definition, handler: scopedHandler(name, handler) };
   const identity = Object.freeze({ ...owner });
   entries.set(name, entry);
   owners.set(name, identity);
