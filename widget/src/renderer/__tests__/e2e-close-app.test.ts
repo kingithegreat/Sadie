@@ -1,33 +1,84 @@
-import { closeElectronApp, CLOSE_BUDGET_MS } from '../e2e/helpers/closeApp';
+import { EventEmitter } from 'events';
+import fs from 'fs';
+import { closeElectronApp, prepareElectronShutdown, CLOSE_BUDGET_MS } from '../e2e/helpers/closeApp';
+import { monitorNativeApp, type NativeAppExit } from '../e2e/helpers/nativeAppProcess';
 
-/**
- * The teardown budget that stopped a hung quit from failing tests that had
- * already passed (overlay.e2e's right-click test, four unrelated PRs).
- */
+jest.mock('../e2e/helpers/nativeAppProcess', () => ({ monitorNativeApp: jest.fn() }));
+jest.mock('fs', () => ({ ...jest.requireActual('fs'), mkdirSync: jest.fn(), writeFileSync: jest.fn() }));
+
+/** These fixture controls exercise the helper contract, not native Electron. */
 describe('closeElectronApp', () => {
-  const app = (close: () => Promise<void>, kill = jest.fn()) =>
-    ({ close, process: () => ({ kill }) }) as unknown as Parameters<typeof closeElectronApp>[0];
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+  afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
 
-  it('returns as soon as the app closes, and does not kill it', async () => {
-    const kill = jest.fn();
-    const elapsed = await closeElectronApp(app(async () => { await new Promise(r => setTimeout(r, 20)); }, kill));
-    expect(kill).not.toHaveBeenCalled();
+  function fixture() {
+    let finish!: (result: NativeAppExit) => void;
+    const exit = new Promise<NativeAppExit>(resolve => { finish = resolve; });
+    const child = Object.assign(new EventEmitter(), {
+      pid: 200, kill: jest.fn(), stderr: new EventEmitter(), stdout: new EventEmitter(),
+    });
+    const tree = [{ pid: 100, parent: 200, creation: '639269214771582930' }];
+    const monitor = {
+      info: { pid: 100, ppid: 200, execPath: 'electron.exe' }, creation: tree[0].creation, exit,
+      snapshot: jest.fn(async () => tree), verify: jest.fn(async () => true),
+      cleanup: jest.fn(async () => { finish({ code: 1 }); return { stopped: true, receipt: tree }; }),
+      dispose: jest.fn(),
+    };
+    (monitorNativeApp as jest.Mock).mockResolvedValue(monitor);
+    const app = Object.assign(new EventEmitter(), {
+      process: () => child,
+      evaluate: jest.fn().mockResolvedValueOnce(monitor.info).mockResolvedValue({ helpers: [], refusals: [] }),
+      close: jest.fn(async () => {}),
+    }) as unknown as Parameters<typeof closeElectronApp>[0];
+    return { app, child, monitor, tree, finish };
+  }
+
+  function finalReceipt(): Record<string, unknown> {
+    return JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  }
+
+  it('waits for prepared actual-main exit, verifies identities, then closes transport without force cleanup', async () => {
+    const f = fixture();
+    await prepareElectronShutdown(f.app, '/owned/index.js');
+    const closing = closeElectronApp(f.app);
+    await Promise.resolve(); await Promise.resolve();
+    expect(f.app.close).not.toHaveBeenCalled();
+    f.finish({ code: 0 });
+    const elapsed = await closing;
     expect(elapsed).toBeLessThan(CLOSE_BUDGET_MS);
+    expect(f.monitor.verify).toHaveBeenCalledTimes(1);
+    expect(f.monitor.cleanup).not.toHaveBeenCalled();
+    expect(f.child.kill).not.toHaveBeenCalled();
+    expect(f.app.close).toHaveBeenCalledTimes(1);
+    expect(f.monitor.dispose).toHaveBeenCalledTimes(1);
+    expect(finalReceipt()).toMatchObject({ graceful: true, native: { pid: 100 }, launcherPid: 200, nativeExit: { code: 0 } });
   });
 
-  it('kills an app that never exits, instead of hanging until the test times out', async () => {
+  it('rejects an actual-main timeout even when owned cleanup succeeds, without killing the launcher', async () => {
     jest.useFakeTimers();
-    try {
-      const kill = jest.fn();
-      const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
-      const pending = closeElectronApp(app(() => new Promise<void>(() => {}), kill), 'stuck app');
-      jest.advanceTimersByTime(CLOSE_BUDGET_MS);
-      await pending;
-      expect(kill).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]![0]).toMatch(/stuck app did not exit within 20000ms/);
-      warn.mockRestore();
-    } finally {
-      jest.useRealTimers();
-    }
+    const f = fixture();
+    await prepareElectronShutdown(f.app, '/owned/index.js');
+    const rejected = expect(closeElectronApp(f.app, 'stuck app')).rejects.toThrow(/graceful shutdown failed.*did not exit within close budget/);
+    await jest.advanceTimersByTimeAsync(CLOSE_BUDGET_MS);
+    await rejected;
+    expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
+    expect(f.child.kill).not.toHaveBeenCalled();
+    expect(f.monitor.dispose).toHaveBeenCalledTimes(1);
+    expect(finalReceipt()).toMatchObject({ graceful: false, forcedOwnedCleanup: { stopped: true }, cleanupExit: { code: 1 } });
+  });
+
+  it('rejects missing launch authority and requests only normal quit and transport close', async () => {
+    const f = fixture();
+    await expect(closeElectronApp(f.app, 'unprepared app')).rejects.toThrow(/identity was not prepared at launch/);
+    expect(monitorNativeApp).not.toHaveBeenCalled();
+    expect(f.monitor.cleanup).not.toHaveBeenCalled();
+    expect(f.child.kill).not.toHaveBeenCalled();
+    expect(f.app.evaluate).toHaveBeenCalledTimes(1);
+    expect(f.app.close).toHaveBeenCalledTimes(1);
+    expect(finalReceipt()).toMatchObject({ graceful: false, failure: 'Electron shutdown identity was not prepared at launch.' });
   });
 });
