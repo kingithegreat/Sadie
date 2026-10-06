@@ -387,7 +387,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       keymap.of([indentWithTab]),
       // Ctrl+S saves; Ctrl+K opens inline edit bar.
       Prec.high(keymap.of([
-        { key: 'Mod-s', preventDefault: true, run: () => { void saveEditorRef.current(); return true; } },
+        { key: 'Mod-s', preventDefault: true, stopPropagation: true, run: () => { void saveEditorRef.current(); return true; } },
         { key: 'Mod-k', preventDefault: true, run: () => { onInlineEditRef.current(); return true; } },
       ])),
       languageSlot.current.of(languageExtension(language)),
