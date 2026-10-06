@@ -556,6 +556,16 @@ function getHistory(conversationId: string): ConversationMessage[] {
   return conversationHistory.get(conversationId) || [];
 }
 
+function historyBeforeCurrentTurn(conversationId: string, message: string): ConversationMessage[] {
+  ensureHydrated(conversationId);
+  const history = getHistory(conversationId);
+  const last = history[history.length - 1];
+  // The router records the user turn before streaming. Providers append the
+  // current message themselves, so omit only that matching trailing entry.
+  // An earlier identical prompt followed by a reply remains valid history.
+  return last?.role === 'user' && last.content === message ? history.slice(0, -1) : history;
+}
+
 // Exported for potential future use and testing
 export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
@@ -2046,7 +2056,7 @@ async function recoverWithoutStreaming(opts: {
   message: string;
   modelOverride?: string;
 }): Promise<string | null> {
-  const history = getHistory(opts.conversationId).slice(-10).map(h => ({ role: h.role, content: h.content }));
+  const history = historyBeforeCurrentTurn(opts.conversationId, opts.message).slice(-10).map(h => ({ role: h.role, content: h.content }));
   const model = (typeof opts.modelOverride === 'string' && opts.modelOverride.trim())
     || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
   const small = isSmallModel(model);
@@ -2214,7 +2224,7 @@ export async function streamFromLLM(
       }
 
       const controller = new AbortController();
-      const history = getHistory(conversationId);
+      const history = historyBeforeCurrentTurn(conversationId, message);
       const customConfig = perConvModel
         ? { ...hydratedCloud, model: perConvModel }
         : hydratedCloud;
@@ -2402,7 +2412,7 @@ export async function streamFromLLM(
     if (codeValidation.valid) {
       console.log(`[HomeBot] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
-      const history = getHistory(conversationId);
+      const history = historyBeforeCurrentTurn(conversationId, message);
       // Build system prompt for the actual code model (may differ in size from chatModel)
       const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines);
 
@@ -2472,7 +2482,7 @@ export async function streamFromLLM(
     shouldUseMoA(message)
   ) {
     console.log(`[HomeBot] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
-    const history = getHistory(conversationId);
+    const history = historyBeforeCurrentTurn(conversationId, message);
     const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, settings.chatGuidelines);
 
     // Memory recall for proposers
@@ -2637,7 +2647,7 @@ export async function streamFromOllamaWithTools(
   // Build messages array for chat API - include conversation history
   // Hydrate from persistent store on first access this session (restores context after restart/switch)
   ensureHydrated(conversationId);
-  const history = getHistory(conversationId);
+  const history = historyBeforeCurrentTurn(conversationId, message);
 
   // If this conversation has a custom system prompt, prepend it to the default.
   // Prefer the prompt passed inline via options (from renderer state) to avoid

@@ -85,7 +85,8 @@ jest.mock('../tools', () => ({
 }));
 
 // ── Import after all mocks ──────────────────────────────────────────────────
-import { streamFromLLM } from '../message-router';
+import { addToHistory, clearHistory, streamFromLLM, streamFromOllamaWithTools } from '../message-router';
+import axios from 'axios';
 
 function callbacks() {
   return {
@@ -120,6 +121,33 @@ beforeEach(() => {
 });
 
 describe('streamFromLLM', () => {
+  test('Ollama sends the current appended turn once, preserving an earlier identical completed exchange', async () => {
+    const id = 'current-turn-ollama'; const prompt = 'Explain this repeated prompt';
+    clearHistory(id);
+    addToHistory(id, 'user', prompt); addToHistory(id, 'assistant', 'Earlier answer'); addToHistory(id, 'user', prompt);
+    (axios.post as jest.Mock).mockRejectedValueOnce(new Error('fixture transport stops after capturing the request'));
+    const cbs = callbacks();
+    await streamFromOllamaWithTools(prompt, undefined, id, cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+    const messages = (axios.post as jest.Mock).mock.calls.find(call => String(call[0]).endsWith('/api/chat'))?.[1].messages;
+    expect(messages.filter((message: any) => message.role !== 'system')).toEqual([
+      { role: 'user', content: prompt }, { role: 'assistant', content: 'Earlier answer' }, { role: 'user', content: prompt },
+    ]);
+    clearHistory(id);
+  });
+
+  test('cloud receives only prior history when the current turn is already appended', async () => {
+    const id = 'current-turn-cloud'; const prompt = 'Explain this repeated prompt'; clearHistory(id);
+    mockSettings.customLLM = { apiUrl: 'https://api.example.com/v1', apiKey: 'fixture', provider: 'openai', model: 'fixture', enabled: true };
+    mockValidateCustomLLMConfig.mockReturnValue({ valid: true });
+    addToHistory(id, 'user', prompt); addToHistory(id, 'assistant', 'Earlier answer'); addToHistory(id, 'user', prompt);
+    const cbs = callbacks();
+    await streamFromLLM(prompt, undefined, id, cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+    expect(mockStreamFromCustomLLM.mock.calls[0][0]).toBe(prompt);
+    expect(mockStreamFromCustomLLM.mock.calls[0][1]).toEqual([
+      { role: 'user', content: prompt }, { role: 'assistant', content: 'Earlier answer' },
+    ]);
+    clearHistory(id);
+  });
   // ── Default → Ollama ─────────────────────────────────────────────────────
   describe('default Ollama path', () => {
     test('returns a cancel handle', async () => {
