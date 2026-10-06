@@ -18,8 +18,7 @@ import type {
   WorkspaceTaskListResult,
   WorkspaceTaskRunResult,
 } from '../shared/types';
-import { isWithinHomeDir } from './utils/home-boundary';
-import { homeDir } from './user-paths';
+import { validateTrustedWorkspaceRoot } from './workspace-trust';
 
 const MAX_PACKAGE_BYTES = 1024 * 1024;
 const MAX_SCRIPT_COUNT = 500;
@@ -86,18 +85,7 @@ function isWithin(parent: string, candidate: string): boolean {
 /** Canonical project root; lexical in-home junctions cannot escape the sandbox. */
 export function resolveWorkspaceTaskProject(projectDir: unknown): { projectDir: string; packageJsonPath: string } {
   if (typeof projectDir !== 'string' || !projectDir.trim()) throw new Error('Choose a project folder first.');
-  const requested = path.resolve(projectDir.trim());
-  let project: string;
-  let home: string;
-  try {
-    project = canonicalExistingPath(requested);
-    home = canonicalExistingPath(homeDir());
-  } catch {
-    throw new Error('The selected project folder no longer exists.');
-  }
-  if (!isWithinHomeDir(project, home)) {
-    throw new Error(`Project folder must be within your home directory (${home}).`);
-  }
+  const project = validateTrustedWorkspaceRoot(projectDir.trim());
   const stat = fs.statSync(project);
   if (!stat.isDirectory()) throw new Error('The selected project path is not a folder.');
 

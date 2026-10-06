@@ -68,8 +68,8 @@ test('lossy non-UTF8 files are rejected before editing', () => {
 test('project containment rejects traversal and a sibling prefix', () => {
   const root = path.join(folder, 'project');
   fs.mkdirSync(root);
-  expect(() => checkedWorkspacePath(path.join(folder, 'project-other', 'new.txt'), root)).toThrow(/inside the current project/);
-  expect(() => checkedWorkspacePath(path.join(root, '..', 'new.txt'), root)).toThrow(/inside the current project/);
+  expect(() => checkedWorkspacePath(path.join(folder, 'project-other', 'new.txt'), root)).toThrow(/outside the trusted project/);
+  expect(() => checkedWorkspacePath(path.join(root, '..', 'new.txt'), root)).toThrow(/outside the trusted project/);
   expect(checkedWorkspacePath(path.join(root, 'new.txt'), root)).toBe(path.join(root, 'new.txt'));
 });
 
@@ -83,5 +83,15 @@ test('recovery survives a new store instance and is isolated per project and pro
   expect(new WorkspaceRecoveryStore(profile).load(root)).toMatchObject(draft);
   expect(new WorkspaceRecoveryStore(profile).load(other)).toBeNull();
   expect(new WorkspaceRecoveryStore(path.join(folder, 'other-profile')).load(root)).toBeNull();
-  expect(() => new WorkspaceRecoveryStore(profile).save(root, { files: [{ path: path.join(other, 'x'), content: 'x', original: '' }] })).toThrow(/current project/);
+  expect(() => new WorkspaceRecoveryStore(profile).save(root, { files: [{ path: path.join(other, 'x'), content: 'x', original: '' }] })).toThrow(/trusted project/);
+});
+
+test('an external edit during the durable temporary write is rechecked before replacement', () => {
+  const file = path.join(folder, 'race.txt'); fs.writeFileSync(file, 'original');
+  const opened = readWorkspaceSnapshot(file);
+  const sync = jest.spyOn(require('fs'), 'fsyncSync').mockImplementationOnce(() => { fs.writeFileSync(file, 'external during write'); });
+  try { expect(() => saveWorkspaceSnapshot(file, 'draft', { expectedVersion: opened.version })).toThrow(/changed/); }
+  finally { sync.mockRestore(); }
+  expect(fs.readFileSync(file, 'utf8')).toBe('external during write');
+  expect(fs.readdirSync(folder)).toEqual(['race.txt']);
 });

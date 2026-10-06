@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 
 jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_TASK_TEST_HOME! }));
+jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_TASK_TEST_PROFILE! } }));
 
 import {
   WorkspaceTaskDiagnosticParser,
@@ -25,6 +26,7 @@ function manifest(scripts: Record<string, unknown>) {
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-task-home-'));
   process.env.HOMEBOT_TASK_TEST_HOME = home;
+  process.env.HOMEBOT_TASK_TEST_PROFILE = path.join(home, 'profile');
   project = path.join(home, 'fixture');
   fs.mkdirSync(project);
   fs.writeFileSync(path.join(project, 'broken.ts'), 'const answer: string = 42;\n');
@@ -74,7 +76,7 @@ test('canonical project validation rejects a junction that escapes home', () => 
   fs.writeFileSync(path.join(outside, 'package.json'), JSON.stringify({ scripts: { check: 'echo no' } }));
   const link = path.join(home, 'escape');
   fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
-  expect(listWorkspacePackageTasks(link)).toMatchObject({ success: false, error: expect.stringContaining('home') });
+  expect(listWorkspacePackageTasks(link)).toMatchObject({ success: false, error: expect.stringContaining('folder picker') });
   fs.rmSync(outside, { recursive: true, force: true });
 });
 

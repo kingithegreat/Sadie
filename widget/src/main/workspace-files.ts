@@ -1,7 +1,7 @@
 import * as fs from 'fs';
-import * as path from 'path';
-import { createHash, randomUUID } from 'crypto';
-import { validatePath } from './tools/filesystem';
+import { createHash } from 'crypto';
+import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath } from './workspace-trust';
+import { atomicProjectWrite } from './workspace-atomic';
 import type { WorkspaceDiskSnapshot, WorkspaceSaveOptions, WorkspaceSaveResult } from '../shared/workspace-file-types';
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -9,25 +9,7 @@ const versionOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('
 
 /** Check the existing ancestor as well: a junction must not escape the sandbox. */
 export function checkedWorkspacePath(input: string, root?: string): string {
-  const checked = validatePath(input);
-  if (!checked.valid) throw new Error(checked.error);
-  let ancestor = checked.resolved;
-  while (!fs.existsSync(ancestor)) {
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) throw new Error('The parent folder does not exist.');
-    ancestor = parent;
-  }
-  const real = fs.realpathSync(ancestor);
-  const actual = path.resolve(real, path.relative(ancestor, checked.resolved));
-  const realCheck = validatePath(actual);
-  if (!realCheck.valid) throw new Error('This link points outside your home directory.');
-  if (root) {
-    const project = checkedWorkspacePath(root);
-    const realRoot = fs.realpathSync(project);
-    const relative = path.relative(realRoot, actual);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Choose a path inside the current project.');
-  }
-  return checked.resolved;
+  return root ? checkedTrustedWorkspacePath(root, input) : checkedAnyTrustedWorkspacePath(input);
 }
 
 export function readWorkspaceSnapshot(file: string): WorkspaceDiskSnapshot {
@@ -46,20 +28,7 @@ export function readWorkspaceSnapshot(file: string): WorkspaceDiskSnapshot {
 
 /** Durable sibling write. Failed writes never truncate the previous file. */
 export function atomicWorkspaceWrite(file: string, bytes: Buffer, mode?: number): void {
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.homebot-${randomUUID()}.tmp`);
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(temporary, 'wx', mode ?? 0o600);
-    fs.writeFileSync(fd, bytes);
-    fs.fsyncSync(fd);
-    fs.closeSync(fd);
-    fd = undefined;
-    if (mode !== undefined) fs.chmodSync(temporary, mode);
-    fs.renameSync(temporary, file);
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
-  }
+  atomicProjectWrite(file, bytes, { mode });
 }
 
 export function saveWorkspaceSnapshot(file: string, content: string, options: Partial<WorkspaceSaveOptions> = {}): WorkspaceSaveResult {
@@ -81,6 +50,6 @@ export function saveWorkspaceSnapshot(file: string, content: string, options: Pa
   // These operations are synchronous, so another IPC save cannot interleave.
   // Recheck immediately before replacing; no unguarded force-write path exists.
   if (versionOf(fs.readFileSync(file)) !== disk.version) return { success: false, conflict: true, disk: readWorkspaceSnapshot(file), error: 'The file changed again. Review the latest disk version.' };
-  atomicWorkspaceWrite(file, bytes, fs.statSync(file).mode);
+  atomicProjectWrite(file, bytes, { expectedExists: true, expectedHash: disk.version, validate: () => { checkedWorkspacePath(file); } });
   return { success: true, version: versionOf(bytes), eol, bom };
 }

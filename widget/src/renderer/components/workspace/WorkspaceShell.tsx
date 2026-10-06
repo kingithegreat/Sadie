@@ -655,7 +655,7 @@ export default function WorkspaceShell({
         </aside>
       )}
       {sideView === 'debug' && <aside className="ws-sidebar" aria-label="Debugger" style={{ width: sidebarWidth }}><div className="ws-sidebar-title">Debugger</div><div className="ws-sidebar-body"><Suspense fallback={<div className="tree-hint">Loading debugger…</div>}>{root && <DebuggerPanel root={root} activePath={activePath ?? undefined} onOpenFile={openFile} />}</Suspense></div></aside>}
-      {sideView === 'tests' && <aside className="ws-sidebar" aria-label="Project tests" style={{ width: sidebarWidth }}><div className="ws-sidebar-title">Project tests</div><div className="ws-sidebar-body"><Suspense fallback={<div className="tree-hint">Loading tests…</div>}>{root && <WorkspaceTestsPanel root={root} onOpenFile={openFile} />}</Suspense></div></aside>}
+      {sideView === 'tests' && <aside className="ws-sidebar" aria-label="Project tests" style={{ width: sidebarWidth }}><div className="ws-sidebar-title">Project tests</div><div className="ws-sidebar-body"><Suspense fallback={<div className="tree-hint">Loading tests…</div>}>{root && <WorkspaceTestsPanel root={root} onOpenFile={openFile} onDebugFile={async path => { await openFile(path); setSideView('debug'); }} />}</Suspense></div></aside>}
       {/* Sidebar */}
       {sideView === 'changes' && (
         <aside className="ws-sidebar" aria-label="Changes" style={{ width: sidebarWidth }}>

@@ -57,7 +57,7 @@ describe('sandbox', () => {
   ])('refuses to list outside the home directory: %s', async (bad) => {
     const r = await invoke(WORKSPACE_CHANNELS.LIST, bad);
     expect(r.success).toBe(false);
-    expect(r.error).toMatch(/home directory/i);
+    expect(r.error).toMatch(/home|protected|project/i);
   });
 
   test('refuses to read outside the home directory', async () => {
@@ -156,6 +156,39 @@ describe('root', () => {
   });
 });
 
+test('native-approved outside-home projects support safe file, search, recovery and task paths', async () => {
+  const outside = fs.mkdtempSync(path.join(path.dirname(HOME), 'hb-approved-workspace-'));
+  const file = path.join(outside, 'source.txt');
+  fs.writeFileSync(file, '\uFEFFhello\r\n');
+  try {
+    expect(await invoke(WORKSPACE_CHANNELS.READ, file)).toMatchObject({ success: false });
+    (dialog.showOpenDialog as jest.Mock).mockResolvedValueOnce({ canceled: false, filePaths: [outside] });
+    expect(await invoke(WORKSPACE_CHANNELS.CHOOSE_PROJECT)).toMatchObject({ success: true, path: fs.realpathSync(outside) });
+    const opened = await invoke(WORKSPACE_CHANNELS.READ, file);
+    expect(opened).toMatchObject({ success: true, content: 'hello\n', bom: true, eol: 'crlf' });
+    expect(await invoke(WORKSPACE_CHANNELS.SAVE, file, 'updated\n', { expectedVersion: opened.version })).toMatchObject({ success: true });
+    expect(fs.readFileSync(file, 'utf8')).toBe('\uFEFFupdated\r\n');
+    const searched = await invoke(WORKSPACE_CHANNELS.SEARCH, { directory: outside, pattern: 'updated' });
+    expect(searched).toMatchObject({ success: true, matches: [expect.objectContaining({ path: file })] });
+    const draft = { files: [{ path: file, content: 'draft', original: 'updated\n' }], activePath: file };
+    expect(await invoke(WORKSPACE_CHANNELS.RECOVERY_SAVE, outside, draft)).toMatchObject({ success: true });
+    expect(await invoke(WORKSPACE_CHANNELS.RECOVERY_LOAD, outside)).toMatchObject({ success: true, state: draft });
+    fs.writeFileSync(path.join(outside, 'package.json'), JSON.stringify({ scripts: { check: 'node --check source.js' } }));
+    expect(require('../workspace-tasks').listWorkspacePackageTasks(outside)).toMatchObject({ success: true, tasks: [{ name: 'check' }] });
+    expect(await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: outside, path: path.join(outside, '..', 'outside.txt'), action: 'create-file', content: 'bad' })).toMatchObject({ success: false });
+    const grantFile = path.join((global as any).__workspaceProfile, 'ide-trusted-folders.json');
+    fs.writeFileSync(grantFile, JSON.stringify({ roots: [] }));
+    expect(await invoke(WORKSPACE_CHANNELS.READ, file)).toMatchObject({ success: false });
+    expect(await invoke(WORKSPACE_CHANNELS.SAVE, file, 'erase', { expectedVersion: opened.version })).toMatchObject({ success: false });
+    expect(fs.readFileSync(file, 'utf8')).toBe('\uFEFFupdated\r\n');
+  } finally { fs.rmSync(outside, { recursive: true, force: true }); }
+});
+
+test.each(Object.values(WORKSPACE_CHANNELS))('every workspace route rejects an untrusted frame: %s', async channel => {
+  const handler = (global as any).__handlers.get(channel);
+  expect(await handler({ sender: (global as any).__workspaceContents, senderFrame: {} }, tmpDir, 'draft')).toMatchObject({ success: false });
+});
+
 describe('human project and file actions', () => {
   test('hidden config is reachable while dependencies stay excluded', async () => {
     fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret');
@@ -205,6 +238,7 @@ describe('languageForPath', () => {
   test.each([
     ['a.tsx', 'typescript'], ['a.mjs', 'javascript'], ['a.py', 'python'],
     ['a.yml', 'yaml'], ['Dockerfile', 'dockerfile'], ['.env.local', 'ini'],
+    ['game.lua', 'lua'], ['game.luau', 'luau'], ['project.toml', 'toml'],
     ['a.unknownext', 'plaintext'],
   ])('%s -> %s', (file, lang) => {
     expect(languageForPath(file)).toBe(lang);

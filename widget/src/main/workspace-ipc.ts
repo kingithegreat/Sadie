@@ -5,17 +5,18 @@
  * -gated, one call per action). This is the human-facing surface: directory
  * listings for a tree, file reads for an editor tab, and saves.
  *
- * The sandbox is SHARED, not reimplemented — `validatePath` comes from
- * tools/filesystem.ts, so the Explorer can never reach anywhere the tools
- * cannot. Everything degrades to { success: false } rather than throwing
+ * Home access and native-approved project roots are validated in main.
+ * These routes require the trusted main window/frame. Everything degrades
+ * to { success: false } rather than throwing
  * across the IPC boundary.
  */
 
-import { app, dialog, ipcMain, shell } from 'electron';
+import { app, ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { validatePath } from './tools/filesystem';
+import { chooseTrustedWorkspaceFolder, validateTrustedWorkspaceRoot } from './workspace-trust';
+import { atomicProjectWrite } from './workspace-atomic';
 import { runCodeSearch } from './tools/codebase';
 import { gitWorkspaceBranches, gitWorkspaceCheckout, gitWorkspaceCommit, gitWorkspaceStage, gitWorkspaceStatus, gitWorkspaceUnstage } from './workspace-git';
 import { applyProposal, listProposals, rejectProposal } from './workspace-proposals';
@@ -122,12 +123,12 @@ export function languageForPath(filePath: string): string {
     '.css': 'css', '.scss': 'scss', '.less': 'less',
     '.html': 'xml', '.htm': 'xml', '.xml': 'xml', '.svg': 'xml', '.vue': 'xml',
     '.md': 'markdown', '.markdown': 'markdown',
-    '.py': 'python', '.rb': 'ruby', '.go': 'go', '.rs': 'rust',
+    '.py': 'python', '.rb': 'ruby', '.go': 'go', '.rs': 'rust', '.lua': 'lua', '.luau': 'luau',
     '.java': 'java', '.kt': 'kotlin', '.cs': 'csharp',
     '.c': 'c', '.h': 'c', '.cpp': 'cpp', '.hpp': 'cpp',
     '.php': 'php', '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
     '.ps1': 'powershell', '.psm1': 'powershell',
-    '.yml': 'yaml', '.yaml': 'yaml', '.toml': 'ini', '.ini': 'ini',
+    '.yml': 'yaml', '.yaml': 'yaml', '.toml': 'toml', '.ini': 'ini',
     '.sql': 'sql', '.dockerfile': 'dockerfile', '.env': 'ini',
   };
   if (map[ext]) return map[ext];
@@ -155,10 +156,9 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
   ipcMain.handle(WORKSPACE_CHANNELS.CHOOSE_PROJECT, async (event) => {
     if (!trusted(event)) return denied();
     try {
-      const chosen = await dialog.showOpenDialog({ title: 'Open a project folder', properties: ['openDirectory'] });
-      if (chosen.canceled || !chosen.filePaths[0]) return { success: false, cancelled: true };
-      const folder = checkedWorkspacePath(chosen.filePaths[0]);
-      if (!fs.statSync(folder).isDirectory()) throw new Error('Choose a folder.');
+      const chosen = await chooseTrustedWorkspaceFolder(event);
+      if (chosen.cancelled || !chosen.root) return { success: false, cancelled: true };
+      const folder = chosen.root;
       recovery().recent(folder);
       return { success: true, path: folder };
     } catch (e) { return { success: false, error: fail(e) }; }
@@ -183,13 +183,13 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
     try {
       const a = (input || {}) as Record<string, unknown>;
       if (typeof a.root !== 'string' || typeof a.path !== 'string') throw new Error('No project or file path given.');
-      const root = checkedWorkspacePath(a.root);
+      const root = validateTrustedWorkspaceRoot(a.root);
       const target = checkedWorkspacePath(a.path, root);
       if (path.relative(root, target) === '' || (fs.existsSync(target) && fs.realpathSync(root) === fs.realpathSync(target))) throw new Error('The project folder itself cannot be moved or deleted here.');
       if (a.action === 'create-file') {
         if (typeof a.content !== 'string') throw new Error('No content to create.');
         if (Buffer.byteLength(a.content) > MAX_EDITABLE_BYTES) throw new Error('File is too large (maximum 2 MB).');
-        fs.writeFileSync(target, a.content, { encoding: 'utf8', flag: 'wx' });
+        atomicProjectWrite(target, Buffer.from(a.content, 'utf8'), { expectedExists: false, validate: () => { checkedWorkspacePath(a.path as string, root); } });
       } else if (a.action === 'create-folder') {
         fs.mkdirSync(target);
       } else if (a.action === 'move') {
@@ -212,37 +212,37 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
   const gitCall = async <T extends object>(run: () => Promise<T | void>) => {
     try { return { success: true, ...((await run()) || {}) }; } catch (e) { return { success: false, error: fail(e) }; }
   };
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STATUS, (_e, folder: unknown) => gitCall(() => gitWorkspaceStatus(String(folder || ''))));
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STAGE, (_e, folder: unknown, files: unknown) => gitCall(() => gitWorkspaceStage(String(folder || ''), files)));
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_UNSTAGE, (_e, folder: unknown, files: unknown) => gitCall(() => gitWorkspaceUnstage(String(folder || ''), files)));
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_COMMIT, (_e, folder: unknown, message: unknown) => gitCall(() => gitWorkspaceCommit(String(folder || ''), message)));
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_BRANCHES, (_e, folder: unknown) => gitCall(() => gitWorkspaceBranches(String(folder || ''))));
-  ipcMain.handle(WORKSPACE_CHANNELS.GIT_CHECKOUT, (_e, folder: unknown, branch: unknown) => gitCall(() => gitWorkspaceCheckout(String(folder || ''), branch)));
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STATUS, (e, folder: unknown) => trusted(e) ? gitCall(() => gitWorkspaceStatus(String(folder || ''))) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_STAGE, (e, folder: unknown, files: unknown) => trusted(e) ? gitCall(() => gitWorkspaceStage(String(folder || ''), files)) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_UNSTAGE, (e, folder: unknown, files: unknown) => trusted(e) ? gitCall(() => gitWorkspaceUnstage(String(folder || ''), files)) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_COMMIT, (e, folder: unknown, message: unknown) => trusted(e) ? gitCall(() => gitWorkspaceCommit(String(folder || ''), message)) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_BRANCHES, (e, folder: unknown) => trusted(e) ? gitCall(() => gitWorkspaceBranches(String(folder || ''))) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.GIT_CHECKOUT, (e, folder: unknown, branch: unknown) => trusted(e) ? gitCall(() => gitWorkspaceCheckout(String(folder || ''), branch)) : denied());
 
   // IDE-3: edits the assistant proposed to this folder, waiting for review.
-  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSALS, (_event, root?: unknown) => {
-    try { return { success: true, proposals: listProposals(typeof root === 'string' ? root : undefined) }; }
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSALS, (event, root?: string) => {
+    if (!trusted(event)) return denied();
+    try { return { success: true, proposals: listProposals(root ? validateTrustedWorkspaceRoot(root) : undefined) }; }
     catch (err: any) { return { success: false, error: err?.message || 'Could not read the proposed changes.' }; }
   });
-  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_ACCEPT, (_e, id: unknown, hunkIndexes: unknown) =>
-    applyProposal(String(id || ''), Array.isArray(hunkIndexes) ? hunkIndexes.map(Number) : []));
-  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_REJECT, (_e, id: unknown) => rejectProposal(String(id || '')));
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_ACCEPT, (e, id: unknown, hunkIndexes: unknown) => trusted(e) ?
+    applyProposal(String(id || ''), Array.isArray(hunkIndexes) ? hunkIndexes.map(Number) : []) : denied());
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_REJECT, (e, id: unknown) => trusted(e) ? rejectProposal(String(id || '')) : denied());
 
-  ipcMain.handle(WORKSPACE_CHANNELS.ROOT, async (): Promise<{ success: boolean; path: string }> => {
+  ipcMain.handle(WORKSPACE_CHANNELS.ROOT, async (event) => {
+    if (!trusted(event)) return denied();
     const configured = (getProjectPath() || '').trim();
     if (configured) {
-      const v = validatePath(configured);
-      if (v.valid && fs.existsSync(v.resolved)) return { success: true, path: v.resolved };
+      try { return { success: true, path: validateTrustedWorkspaceRoot(configured) }; } catch { /* Fall back to home when an old project is unavailable. */ }
     }
     return { success: true, path: os.homedir() };
   });
 
-  ipcMain.handle(WORKSPACE_CHANNELS.LIST, async (_e, dirPath?: unknown, options?: { showHidden?: boolean }): Promise<WorkspaceListResult> => {
+  ipcMain.handle(WORKSPACE_CHANNELS.LIST, async (event, dirPath?: unknown, options?: { showHidden?: boolean }): Promise<WorkspaceListResult> => {
+    if (!trusted(event)) return denied();
     try {
       if (typeof dirPath !== 'string' || !dirPath) return { success: false, error: 'No directory given.' };
-      const v = validatePath(dirPath);
-      if (!v.valid) return { success: false, error: v.error };
-      checkedWorkspacePath(dirPath);
+      const v = { resolved: checkedWorkspacePath(dirPath) };
 
       const dirents = fs.readdirSync(v.resolved, { withFileTypes: true });
       const entries: WorkspaceEntry[] = [];
@@ -261,12 +261,11 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
     }
   });
 
-  ipcMain.handle(WORKSPACE_CHANNELS.READ, async (_e, filePath?: unknown): Promise<WorkspaceReadResult> => {
+  ipcMain.handle(WORKSPACE_CHANNELS.READ, async (event, filePath?: unknown): Promise<WorkspaceReadResult> => {
+    if (!trusted(event)) return denied();
     try {
       if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
-      const v = validatePath(filePath);
-      if (!v.valid) return { success: false, error: v.error };
-      checkedWorkspacePath(filePath);
+      const v = { resolved: checkedWorkspacePath(filePath) };
       return {
         success: true,
         path: v.resolved,
@@ -280,13 +279,12 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
 
   ipcMain.handle(
     WORKSPACE_CHANNELS.SAVE,
-    async (_e, filePath?: unknown, content?: unknown, options?: { expectedVersion?: string; eol?: 'lf' | 'crlf'; bom?: boolean }): Promise<WorkspaceSaveResult> => {
+    async (event, filePath?: unknown, content?: unknown, options?: { expectedVersion?: string; eol?: 'lf' | 'crlf'; bom?: boolean }): Promise<WorkspaceSaveResult> => {
+      if (!trusted(event)) return denied();
       try {
         if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
         if (typeof content !== 'string') return { success: false, error: 'No content to save.' };
-        const v = validatePath(filePath);
-        if (!v.valid) return { success: false, error: v.error };
-        checkedWorkspacePath(filePath);
+        const v = { resolved: checkedWorkspacePath(filePath) };
         return saveWorkspaceSnapshot(v.resolved, content, options);
     } catch (e) {
       return { success: false, error: fail(e) };
@@ -298,7 +296,8 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
   // answers for the same query, and the sandbox is not reimplemented here.
   ipcMain.handle(
     WORKSPACE_CHANNELS.SEARCH,
-    async (_e, opts?: unknown): Promise<WorkspaceSearchResult> => {
+    async (event, opts?: unknown): Promise<WorkspaceSearchResult> => {
+      if (!trusted(event)) return denied();
       try {
         const o = (opts || {}) as Record<string, unknown>;
         const pattern = String(o.pattern || '').trim();
@@ -313,7 +312,7 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
           // for something a click already reveals by opening the file.
           contextLines: 0,
           maxResults: 200,
-        });
+        }, checkedWorkspacePath);
         if (!res.success || !res.matches) return { success: false, error: res.error };
 
         const directory = res.resolvedDirectory as string;
@@ -340,16 +339,15 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
   // matches — so a file edited since the search is reported, not clobbered.
   ipcMain.handle(
     WORKSPACE_CHANNELS.REPLACE,
-    async (_e, filePath?: unknown, edits?: unknown): Promise<WorkspaceReplaceResult> => {
+    async (event, filePath?: unknown, edits?: unknown): Promise<WorkspaceReplaceResult> => {
+      if (!trusted(event)) return denied();
       try {
         if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
         if (!Array.isArray(edits) || edits.length === 0) return { success: false, error: 'Nothing to replace.' };
 
-        const v = validatePath(filePath);
-        if (!v.valid) return { success: false, error: v.error };
+        const v = { resolved: checkedWorkspacePath(filePath) };
         if (!fs.existsSync(v.resolved)) return { success: false, error: 'File no longer exists.' };
 
-        checkedWorkspacePath(filePath);
         const snapshot = readWorkspaceSnapshot(v.resolved);
         const content = snapshot.content;
         // Keep the file's own line-ending style on the way back out.
