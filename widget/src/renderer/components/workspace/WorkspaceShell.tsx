@@ -807,7 +807,7 @@ export default function WorkspaceShell({
               <Icon name="document" size={30} />
               <p>Pick a file in the Explorer to start editing.</p>
               <p className="ws-empty-sub">
-                Ctrl+S saves · Ctrl+` toggles the terminal · Ctrl+Shift+F searches · edits stay inside your home folder
+                Ctrl+S saves · Ctrl+` toggles the terminal · Ctrl+Shift+F searches · Open project selects a folder
               </p>
             </div>
           )}
