@@ -1,5 +1,19 @@
 # Work Claims
 
+## 2026-10-07 NZ — IDE completion team (Codex root)
+
+User explicitly requested agents finish the IDE audit gaps. Root integrates on
+`claude/ide-finish-20261007`, private `ide-finish-20261007`, fresh main79ffc386.
+Agents: `ide_files_safety` owns WorkspaceShell/FileTree/workspace-ipc and new
+filesystem/recovery modules; `ide_editor_language` owns CodeEditor and language
+modules; `ide_ai_workflows` owns assistant/Changes/proposals/context and scoped
+router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
+main registrations, generated docs, publication and resource-gated verification.
+See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
+No shared dependency rebuild/install; no existing delivered build modifications.
+One guarded test/build at a time. Other sessions' processes and held PRs preserved.
+This is an active implementation claim, not a completion or verification claim.
+
 ## 2026-10-03 NZ — final finishing documentation checkpoint (Codex media agent)
 
 Codex `/root/media_finish` completed only CLAIMS.md and docs/FINISHING_HANDOVER.md
