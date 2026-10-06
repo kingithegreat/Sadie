@@ -45,6 +45,12 @@ export function registerWorkspaceAiHandlers() {
   }));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.SAVE_SESSION, safe((_event, root, turns) => {
     const file = sessionFile(root);
+    // Explicit empty history removes an earlier saved transcript even when
+    // persistence is disabled, so enabling history cannot recover cleared data.
+    if (Array.isArray(turns) && turns.length === 0) {
+      try { fs.unlinkSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      return {};
+    }
     if (getSettings().saveConversationHistory === false) return { persistent: false };
     if (!Array.isArray(turns) || turns.length > 100 || Buffer.byteLength(JSON.stringify(turns)) > 1_000_000) throw new Error('Conversation limit reached. Clear older history before continuing.');
     const clean = turns.map((turn: any) => {

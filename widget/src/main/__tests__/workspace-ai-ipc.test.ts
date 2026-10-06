@@ -44,4 +44,25 @@ describe('AI IPC trust and persistent history effects', () => {
     mockSaveHistory = true;
     expect(await mockHandlers.get(channels.SESSION)!(event, rootA)).toMatchObject({ turns: [expect.objectContaining({ text: 'Persisted answer' })] });
   });
+  test('clear removes only this root saved bytes even while history saving is disabled', async () => {
+    const privateTurns = [{ id: 'private', role: 'user', text: 'A private transcript' }], otherTurns = [{ id: 'other', role: 'user', text: 'Other project transcript' }];
+    await mockHandlers.get(channels.SAVE_SESSION)!(event, rootA, privateTurns);
+    await mockHandlers.get(channels.SAVE_SESSION)!(event, rootB, otherTurns);
+    const folder = path.join(mockUserData, 'ide-conversations'); expect(fs.readdirSync(folder)).toHaveLength(2);
+    mockSaveHistory = false;
+    expect(await mockHandlers.get(channels.SAVE_SESSION)!(event, rootA, [])).toMatchObject({ success: true });
+    expect(fs.readdirSync(folder)).toHaveLength(1);
+    expect(fs.readFileSync(path.join(folder, fs.readdirSync(folder)[0]), 'utf8')).not.toContain('A private transcript');
+    mockSaveHistory = true; registerWorkspaceAiHandlers();
+    expect(await mockHandlers.get(channels.SESSION)!(event, rootA)).toMatchObject({ turns: [] });
+    expect(await mockHandlers.get(channels.SESSION)!(event, rootB)).toMatchObject({ turns: [expect.objectContaining({ text: 'Other project transcript' })] });
+  });
+  test('failed transcript removal is reported and preserves its recovery bytes', async () => {
+    await mockHandlers.get(channels.SAVE_SESSION)!(event, rootA, [{ id: 'saved', role: 'user', text: 'retain until deletion succeeds' }]);
+    const folder = path.join(mockUserData, 'ide-conversations'), file = path.join(folder, fs.readdirSync(folder)[0]), before = fs.readFileSync(file);
+    const unlink = jest.spyOn(require('node:fs'), 'unlinkSync').mockImplementation(() => { throw new Error('Deletion locked'); });
+    try { expect(await mockHandlers.get(channels.SAVE_SESSION)!(event, rootA, [])).toMatchObject({ success: false, error: 'Deletion locked' }); }
+    finally { unlink.mockRestore(); }
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
 });
