@@ -16,7 +16,7 @@ function validReceipt(value: unknown): value is WorkspacePtyStopReceipt {
 }
 
 /** Persist the captured identities before effects; retries touch only that set. */
-export function stopWorkspacePtyTree(pid: number, original: WorkspacePtyIdentity | null | undefined, receipt?: WorkspacePtyStopReceipt): Promise<WorkspacePtyStopResult> {
+export function stopWorkspacePtyTree(pid: number, original: WorkspacePtyIdentity | null | undefined, receipt?: WorkspacePtyStopReceipt, env?: NodeJS.ProcessEnv): Promise<WorkspacePtyStopResult> {
   if (!Number.isSafeInteger(pid) || pid <= 0 || !original || !/^\d{1,19}$/.test(original.creation) || !Number.isSafeInteger(original.parent) || original.parent <= 0 || (receipt && (!validReceipt(receipt) || receipt[0].pid !== pid || receipt[0].creation !== original.creation || receipt[0].parent !== original.parent))) return Promise.resolve({ stopped: false, attempted: false });
   const captured = receipt ? Buffer.from(JSON.stringify(receipt), 'utf8').toString('base64') : undefined;
   const source = `
@@ -75,7 +75,7 @@ try {
 } finally { foreach($taskHandle in $taskHandles) { [OwnedPtyStop]::CloseHandle($taskHandle) | Out-Null } }
 `;
   return new Promise(resolve => {
-    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], { windowsHide: true, timeout: 4500, maxBuffer: 64 * 1024 }, (error, output) => {
+    execFile('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], { windowsHide: true, timeout: 4500, maxBuffer: 64 * 1024, ...(env ? { env } : {}) }, (error, output) => {
       const lines = String(output).split(/\r?\n/).map(line => line.trim());
       let capturedReceipt = receipt;
       try { const line = lines.find(value => value.startsWith('receipt:')); if (line) { const value: unknown = JSON.parse(line.slice(8)); if (validReceipt(value) && value[0].pid === pid && value[0].creation === original.creation && value[0].parent === original.parent) capturedReceipt = value; } } catch { /* Unknown partial output stays fail closed. */ }

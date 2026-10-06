@@ -6,6 +6,14 @@ const receipt = [{ pid: 1234, ...identity }, { pid: 2345, creation: '63895300000
 const run = execFile as unknown as jest.Mock;
 beforeEach(() => run.mockReset());
 
+test('owned cleanup helper uses the supplied isolated stores without mutating the runner environment', async () => {
+  const previousHome = process.env.HOME;
+  const env = { ...process.env, HOME: 'owned-home', TEMP: 'owned-temp', APPDATA: 'owned-appdata' };
+  run.mockImplementation((_file, _args, options, callback) => { expect(options.env).toBe(env); callback(null, `receipt:${JSON.stringify(receipt)}\r\nattempted\r\nstopped\r\n`); });
+  expect((await stopWorkspacePtyTree(1234, identity, receipt, env)).stopped).toBe(true);
+  expect(process.env.HOME).toBe(previousHome);
+});
+
 test('a timed-out force helper preserves the flushed owned identities for retry', async () => {
   run.mockImplementation((_file, _args, options, callback) => { expect(options).toMatchObject({ timeout: 4500, maxBuffer: 65536 }); callback(Error('helper timeout'), `receipt:${JSON.stringify(receipt)}\r\nattempted\r\n`); });
   expect(await stopWorkspacePtyTree(1234, identity)).toEqual({ stopped: false, attempted: true, receipt });
