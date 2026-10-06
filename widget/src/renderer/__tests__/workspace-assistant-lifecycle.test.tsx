@@ -118,9 +118,9 @@ describe('IDE assistant lifecycle and approval controls', () => {
     await act(async () => { view.rerender(panel('C:/new-live-project')); }); await send('new live response');
     const newStream = api.sendStreamMessage.mock.calls[1][0].streamId;
     await act(async () => { rejectSend(new Error('Old rejected transport')); });
-    expect(screen.getByRole('button', { name: 'Stop', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     expect(screen.getByRole('log')).not.toHaveTextContent('Old rejected transport');
-    fireEvent.click(screen.getByRole('button', { name: 'Stop', exact: true })); expect(api.cancelStream).toHaveBeenLastCalledWith(newStream);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' })); expect(api.cancelStream).toHaveBeenLastCalledWith(newStream);
   });
   test.each(['prepare', 'approve', 'revoke'])('a deferred %s result cannot modify the next project', async operation => {
     let release!: (value: any) => void;
@@ -138,8 +138,8 @@ describe('IDE assistant lifecycle and approval controls', () => {
     }
     await act(async () => { view.rerender(panel('C:/later-plan-project')); });
     await act(async () => { release({ success: true, id: 'old-result-plan', text: 'Old plan actions', roots: [] }); });
-    expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve plan', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approved' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve plan' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Plan approved for this project|Project access removed/)).not.toBeInTheDocument();
   });
 });
