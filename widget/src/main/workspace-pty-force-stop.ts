@@ -42,7 +42,7 @@ public static class OwnedPtyStop {
 '@
 $taskHandles=New-Object 'System.Collections.Generic.List[IntPtr]'
 try {
- ${captured ? `$taskReceipt=@(ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${captured}'))))` : `
+ ${captured ? `$taskReceipt=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${captured}')))` : `
  $taskRoot=[IntPtr]::Zero
  $taskRootStatus=[OwnedPtyStop]::OpenIdentity(${pid},[long]${original.creation},[ref]$taskRoot)
  if($taskRootStatus -ne 1) { [Console]::WriteLine('uncertain'); exit 0 }
