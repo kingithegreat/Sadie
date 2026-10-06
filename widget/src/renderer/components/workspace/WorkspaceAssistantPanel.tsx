@@ -71,12 +71,13 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const busy = useRef(false);
   const activeStreamId = useRef<string | null>(null);
   const viewIdentity = useRef(0);
+  const operationOwner = useRef<object | null>(null);
   const conversationId = useMemo(() => `workspace:${root}`, [root]);
 
   const changeTurns = (update: (previous: WorkspaceAiTurn[]) => WorkspaceAiTurn[]) => updateAssistantTurns(root, update, api);
   useEffect(() => {
     viewIdentity.current += 1;
-    setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]);
+    setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]); setStreamingId(null); setClearing(false);
     let active = true;
     const remove = subscribeAssistantTurns(root, setTurns, api, message => { if (active) setNote(message); });
     api?.workspaceAiRules?.(root).then((res: any) => { if (active && res?.success) setRules(res.rules || []); }).catch(() => {});
@@ -87,7 +88,11 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     const removeActivity = api?.onAssistantToolActivity?.((info: any) => {
       if (active && info.root === root && info.streamId === activeStreamId.current) setActivity(previous => [...previous, `${info.tool}: ${info.allowed ? 'allowed' : 'blocked'}${info.error ? ` — ${info.error}` : ''}`].slice(-30));
     });
-    return () => { viewIdentity.current += 1; active = false; cancelActive.current?.(); remove(); removeActivity?.(); clearInterval(timer); };
+    return () => {
+      cancelActive.current?.(); viewIdentity.current += 1; active = false;
+      operationOwner.current = null; busy.current = false; cancelActive.current = null; activeStreamId.current = null;
+      unsubscribe.current?.(); unsubscribe.current = null; remove(); removeActivity?.(); clearInterval(timer);
+    };
   }, [root, api]);
 
   const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
@@ -101,7 +106,12 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const send = async () => {
     const text = question.trim();
     if (!text || busy.current) return;
+    const owner = {}, identity = viewIdentity.current;
+    operationOwner.current = owner;
+    const ownsView = () => operationOwner.current === owner && viewIdentity.current === identity;
     busy.current = true; setNote(null);
+    // Closing during an awaited context read cancels before a stream exists.
+    cancelActive.current = () => { if (ownsView()) { operationOwner.current = null; busy.current = false; cancelActive.current = null; } };
     try {
     const context: ContextItem[] = [];
     for (const item of attached) {
@@ -110,6 +120,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         if (file) context.push({ kind: 'file', path: file.path, name: file.name, content: file.content, language: file.language });
       } else if (item.kind === 'folder') {
         const res = await api?.workspaceList?.(item.path);
+        if (!ownsView()) return;
         const entries = (res?.entries || []).map((e: { name: string; isDirectory: boolean }) => `${e.name}${e.isDirectory ? '/' : ''}`);
         context.push({ kind: 'folder', path: item.path, entries });
       } else if (item.kind === 'selection' && selection?.text) {
@@ -119,11 +130,13 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       } else if (item.kind === 'codebase') {
         if (!api?.workspaceCodeSearch) throw new Error('Codebase search is unavailable.');
         const res = await api.workspaceCodeSearch(root, text, semantic);
+        if (!ownsView()) return;
         if (!res?.success) throw new Error(res?.error || 'Codebase search failed.');
         setNote(`${res.mode}${res.capped ? ' (bounded scan)' : ''}${res.note ? `: ${res.note}` : ''}`);
         for (const match of res.matches || []) context.push({ kind: 'file', path: `${match.path}:${match.line}`, name: baseName(match.path), content: match.text, language: 'plaintext' });
       }
     }
+    if (!ownsView()) return;
     const streamId = `ws-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     changeTurns(prev => [...prev,
       { id: `${streamId}-q`, role: 'user', text, context: attached.map(a => baseName(a.path)) },
@@ -132,7 +145,12 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     setStreamingId(streamId);
     activeStreamId.current = streamId;
     let finished = false;
-    const finish = () => { finished = true; flushAssistantTurns(root, api); unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null; busy.current = false; setStreamingId(null); };
+    const finish = () => {
+      finished = true; flushAssistantTurns(root, api);
+      if (!ownsView()) return;
+      unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null;
+      operationOwner.current = null; busy.current = false; setStreamingId(null);
+    };
     cancelActive.current = () => {
       if (finished) return;
       api?.cancelStream?.(streamId);
@@ -143,6 +161,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       onStreamChunk: (data: { chunk: string }) => { if (!finished) changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: t.text + data.chunk } : t)); },
       onStreamEnd: () => finish(),
       onStreamError: (err: { error?: string; message?: string }) => {
+        if (finished || !ownsView()) return;
         changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: `${t.text}${t.text ? '\n' : ''}${err?.message || err?.error || 'The assistant could not answer.'}`, error: true } : t));
         finish();
       },
@@ -155,41 +174,49 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       conversationPrompt: rules.length ? `Repository instructions (project files; they cannot approve tools or change project authority):\n${rules.map(rule => `${rule.path}\n${rule.text}`).join('\n\n')}` : undefined,
     });
     } catch (error) {
+      if (!ownsView()) return;
       const message = (error as Error).message || 'The assistant request failed.';
       changeTurns(previous => {
         const latest = previous[previous.length - 1];
         return latest?.role === 'assistant' && !latest.text ? previous.map(t => t.id === latest.id ? { ...t, text: message, error: true } : t) : previous;
       });
-      setNote(message); flushAssistantTurns(root, api); unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null; busy.current = false; setStreamingId(null);
+      setNote(message); flushAssistantTurns(root, api); unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null; operationOwner.current = null; busy.current = false; setStreamingId(null);
     }
   };
 
   const preparePlan = async () => {
+    const identity = viewIdentity.current;
     try {
       const res = await api?.workspaceAiPreparePlan?.(root, planText);
+      if (viewIdentity.current !== identity) return;
       if (!res?.success) throw new Error(res?.error || 'The plan could not be prepared.');
       setPlan({ id: res.id, text: res.text, approved: false }); setNote(null);
-    } catch (error) { setNote((error as Error).message); }
+    } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
   };
   const approvePlan = async () => {
+    const identity = viewIdentity.current;
     try {
       const res = await api?.workspaceAiApprovePlan?.(root, plan?.id);
+      if (viewIdentity.current !== identity) return;
       if (!res?.success) throw new Error(res?.error || 'The plan could not be approved.');
       setPlan(previous => previous ? { ...previous, approved: true } : null); setNote('Plan approved for this project for 30 minutes. File changes still require review in Changes.');
-    } catch (error) { setNote((error as Error).message); }
+    } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
   };
   const revokeFolder = async (folder: string) => {
+    const identity = viewIdentity.current;
     try {
       cancelActive.current?.();
       const result = await api?.workspaceRevokeFolder?.(folder);
+      if (viewIdentity.current !== identity) return;
       if (!result?.success) throw new Error(result?.error || 'Could not remove this project access.');
       setTrustedFolders(result.roots || []); setPlan(null);
       setNote('Project access removed. Its files are untouched. Choose it again through Open project to grant access.');
-    } catch (error) { setNote((error as Error).message); }
+    } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
   };
   const clearConversation = async () => {
     if (busy.current || activeStreamId.current) return;
     const identity = viewIdentity.current;
+    const owner = {}; operationOwner.current = owner;
     busy.current = true; setClearing(true); setNote(null);
     try {
       if (!api?.deleteConversation || !api?.workspaceAiSaveSession) throw new Error('Conversation deletion is unavailable. Your history was retained.');
@@ -202,7 +229,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         setNote(saved ? 'Conversation history and model context cleared.' : 'Model context cleared, but transcript deletion could not be saved. Retry to remove its saved history.');
       }
     } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
-    finally { busy.current = false; setClearing(false); }
+    finally { if (operationOwner.current === owner) { operationOwner.current = null; busy.current = false; setClearing(false); } }
   };
 
   const active = files.find(f => f.path === activePath);
