@@ -70,6 +70,8 @@ function TreeNode({ entry, depth, root, activePath, onOpenFile, showHidden, refr
         style={{ paddingLeft: 6 + depth * 12 }}
         onClick={toggle}
         role="treeitem"
+        aria-label={entry.name}
+        aria-level={depth + 1}
         aria-expanded={entry.isDirectory ? expanded : undefined}
         aria-selected={isActive}
         tabIndex={0}
