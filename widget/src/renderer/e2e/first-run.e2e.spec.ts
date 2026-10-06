@@ -194,7 +194,7 @@ test.describe('First-run onboarding and config persistence', () => {
       await modal.getByRole('button', { name: 'Online' }).click();
       const key = modal.getByPlaceholder('Paste the key from your account page');
       await key.fill('fixture-key-A');
-      await modal.getByRole('button', { name: 'Test Connection', exact: true }).click();
+      await modal.getByRole('button', { name: 'Prepare service', exact: true }).click();
       await expect.poll(() => app.evaluate(() => (globalThis as any).firstRunRaceFixture.requests.length)).toBe(1);
       await modal.getByRole('button', { name: 'OpenAI', exact: true }).click();
       await key.fill('fixture-key-B');
@@ -217,7 +217,7 @@ test.describe('First-run onboarding and config persistence', () => {
       await modal.screenshot({ path: pendingScreenshot });
       await testInfo.attach('old-reply-current-check-pending', { path: pendingScreenshot, contentType: 'image/png' });
       await app.evaluate(() => (globalThis as any).firstRunRaceFixture.requests[1].resolve({ success: true, models: [{ id: 'fixture-current-model' }] }));
-      await expect(modal.getByText('Connected! Ready to chat.', { exact: true })).toBeVisible();
+      await expect(modal.getByText('Service choice prepared', { exact: true })).toBeVisible();
       const connectedScreenshot = testInfo.outputPath('current-check-connected.png');
       await modal.screenshot({ path: connectedScreenshot });
       await testInfo.attach('current-check-connected', { path: connectedScreenshot, contentType: 'image/png' });

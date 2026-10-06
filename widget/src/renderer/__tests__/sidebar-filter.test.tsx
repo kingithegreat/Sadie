@@ -9,6 +9,7 @@ jest.mock('../components/ConversationSearch', () => {
 });
 
 const noop = () => {};
+const acknowledgeDelete = () => ({ success: true });
 
 // Mock electron API
 const mockConversations = [
@@ -38,7 +39,7 @@ describe('ConversationSidebar quick filter', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await waitFor(() => expect(screen.getByPlaceholderText('Filter by title…')).toBeInTheDocument());
@@ -52,7 +53,7 @@ describe('ConversationSidebar quick filter', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await waitFor(() => expect(screen.getByText('React Discussion')).toBeInTheDocument());
@@ -73,7 +74,7 @@ describe('ConversationSidebar quick filter', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await waitFor(() => expect(screen.getByText('React Discussion')).toBeInTheDocument());
@@ -90,7 +91,7 @@ describe('ConversationSidebar quick filter', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await waitFor(() => expect(screen.getByText('React Discussion')).toBeInTheDocument());
@@ -114,7 +115,7 @@ describe('ConversationSidebar quick filter', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await waitFor(() => expect(screen.getByText('Recipe Ideas')).toBeInTheDocument());

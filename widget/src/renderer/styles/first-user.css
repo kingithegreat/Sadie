@@ -1,0 +1,23 @@
+.widget-first-task {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-color, #ddd);
+  font-size: 13px;
+}
+.widget-first-task button {
+  padding: 7px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  background: var(--bg-secondary, #fff);
+  color: var(--text-primary, #222);
+  cursor: pointer;
+}
+.widget-first-task button:focus-visible {
+  outline: 2px solid var(--accent-color, #5b7350);
+  outline-offset: 2px;
+}
+.widget-first-task span { color: var(--text-secondary, #555); }

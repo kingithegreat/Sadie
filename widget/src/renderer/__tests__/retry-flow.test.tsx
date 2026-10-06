@@ -122,7 +122,7 @@ describe('retry flow (renderer)', () => {
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('This request included a document attachment. Please reattach the document and send it again.')).toBeInTheDocument();
+      expect(screen.getByText('Reattach the original document and send your request again.')).toBeInTheDocument();
     });
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();

@@ -44,6 +44,21 @@ beforeEach(() => {
   (window as any).electron = makeMockElectron();
 });
 
+test.each([
+  { codeModel: 'missing:14b', expected: 'qwen2.5:3b' },
+  { codeModel: 'qwen2.5-coder:7b', expected: 'qwen2.5-coder:7b' },
+])('local setup uses an installed coding choice instead of $codeModel when unavailable', async ({ codeModel, expected }) => {
+  (window as any).electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'qwen2.5-coder:7b' }] });
+  const onSave = jest.fn();
+  render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:3b', codeModel }} onSave={onSave} onClose={jest.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /On this PC/ }));
+  await screen.findByText('Ollama is ready!');
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'qwen2.5:3b', codeModel: expected, uncensoredMode: false }));
+  expect((window as any).electron.pullModelStream).not.toHaveBeenCalled();
+});
+
 afterEach(() => {
   delete (window as any).electron;
 });
@@ -92,6 +107,8 @@ describe('FirstRunModal — local path', () => {
     const onClose = jest.fn();
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={onClose} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
     await act(async () => { fireEvent.click(screen.getByText('Next')); });
     await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
@@ -137,6 +154,8 @@ describe('FirstRunModal — local path', () => {
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={onSave} onClose={jest.fn()} />);
     await waitFor(() => expect(electron.detectGpuVram).toHaveBeenCalled());
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     await waitFor(() => expect(screen.getByText('Ollama is ready!')).toBeInTheDocument());
     expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
     expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
@@ -159,6 +178,7 @@ describe('FirstRunModal — local path', () => {
     window.electron = electron as any;
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    if (failure !== 'inventory failure') await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     expect(screen.queryByText('Ollama is ready!')).toBeNull();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByText('Continue anyway')); });
@@ -179,18 +199,15 @@ describe('FirstRunModal — local path', () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'llama3.2:3b' }));
   });
 
-  test('downloads the exact recommended tag and accepts an installed latest embedding alias', async () => {
+  test('reuses an installed chat model instead of downloading a recommended replacement or embeddings', async () => {
     const electron = makeMockElectron();
     electron.detectGpuVram.mockResolvedValue({ success: true, vramGB: 4, gpuName: 'Test GPU' });
-    electron.listOllamaModels
-      .mockResolvedValueOnce({ success: true, models: [{ name: 'qwen2.5:0.5b' }, { name: 'nomic-embed-text:latest' }] })
-      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'nomic-embed-text:latest' }] });
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:0.5b' }] });
     window.electron = electron as any;
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:7b' }} onSave={jest.fn()} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
-    expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
-    expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
-    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:0.5b');
   });
 
   test('embedding-only inventory cannot make local chat ready', async () => {
@@ -200,8 +217,10 @@ describe('FirstRunModal — local path', () => {
     window.electron = electron as any;
     render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     expect(screen.queryByText('Ollama is ready!')).toBeNull();
-    expect(screen.getByText(/No chat model is installed yet/)).toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
   test('retry verifies an installed model and saves it after a failed download', async () => {
@@ -212,6 +231,8 @@ describe('FirstRunModal — local path', () => {
     const onSave = jest.fn(async payload => { await electron.saveSettings(payload); });
     render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }, { name: 'nomic-embed-text' }] });
     await act(async () => { fireEvent.click(screen.getByText('Retry')); });
     expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
@@ -234,6 +255,9 @@ describe('FirstRunModal — local path', () => {
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
     expect(electron.pullModelStream).not.toHaveBeenCalled();
     await act(async () => { resolveHardware({ success: true, vramGB: 4, gpuName: 'Test GPU' }); });
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(screen.getByText(/approximately 2.0 GB/)).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
     expect(electron.pullModelStream).toHaveBeenCalledWith('qwen2.5:3b');
   });
 
@@ -284,7 +308,7 @@ describe('FirstRunModal — local path', () => {
     expect(screen.getByText(/Test GPU/)).toBeInTheDocument();
   });
 
-  test('Next advances to done and celebrates when the local AI actually came up', async () => {
+  test('Next describes the verified installed local setup', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
@@ -295,10 +319,9 @@ describe('FirstRunModal — local path', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Next'));
     });
-    // In this mocked run the local check genuinely succeeds, so the
-    // celebration is earned. The dishonest branch is tested below, where the
-    // cloud path reaches done with nothing configured at all.
-    expect(screen.getByText("You're all set!")).toBeInTheDocument();
+    // Installed-model verification earns a local setup claim. It does not
+    // prove optional tools or that a future generation request will succeed.
+    expect(screen.getByText('Ready to chat on this PC')).toBeInTheDocument();
   });
 
   test('done is HONEST when nothing was actually configured', async () => {
@@ -319,7 +342,7 @@ describe('FirstRunModal — local path', () => {
     expect(screen.getByText(/finish setting up any time from Settings/i)).toBeInTheDocument();
   });
 
-  test('done DOES celebrate when the cloud key actually tested OK', async () => {
+  test('done stays honest when an API catalogue was prepared', async () => {
     const electron = makeMockElectron();
     (window as any).electron = electron;
     render(
@@ -329,10 +352,11 @@ describe('FirstRunModal — local path', () => {
     fireEvent.change(screen.getByPlaceholderText('Paste the key from your account page'), {
       target: { value: 'sk-test-123' },
     });
-    await act(async () => { fireEvent.click(screen.getByText('Test Connection')); });
+    await act(async () => { fireEvent.click(screen.getByText('Prepare service')); });
     await act(async () => { fireEvent.click(screen.getByText('Next')); });
-    // A tested, working key is a real success and gets said as one.
-    expect(screen.getByText("You're all set!")).toBeInTheDocument();
+    expect(screen.queryByText("You're all set!")).toBeNull();
+    expect(screen.getByText('Ready to try a message')).toBeInTheDocument();
+    expect(screen.getByText(/Your key has not been verified/)).toBeInTheDocument();
   });
 });
 
@@ -457,7 +481,7 @@ describe('FirstRunModal — cloud path', () => {
     expect(after).toContain('openai.com');
   });
 
-  test('Test Connection calls listCustomLLMModels', async () => {
+  test('Preparing the default service retrieves a model choice without claiming validation', async () => {
     const electron = makeMockElectron();
     (window as any).electron = electron;
     render(
@@ -469,14 +493,14 @@ describe('FirstRunModal — cloud path', () => {
     const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
     await act(async () => {
-      fireEvent.click(screen.getByText('Test Connection'));
+      fireEvent.click(screen.getByText('Prepare service'));
     });
     expect(electron.listCustomLLMModels).toHaveBeenCalledWith(
       expect.objectContaining({ apiKey: 'sk-test-123', provider: 'groq' })
     );
   });
 
-  test('successful test shows connected status', async () => {
+  test('successful catalogue retrieval shows an unverified service choice', async () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
@@ -486,10 +510,10 @@ describe('FirstRunModal — cloud path', () => {
     const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-123' } });
     await act(async () => {
-      fireEvent.click(screen.getByText('Test Connection'));
+      fireEvent.click(screen.getByText('Prepare service'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
-    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+    expect(screen.getByText('Service choice prepared. Your key and ability to chat have not been verified.')).toBeInTheDocument();
   });
 });
 
@@ -583,7 +607,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'sk-test-key' } });
     await act(async () => {
-      fireEvent.click(screen.getByText('Test Connection'));
+      fireEvent.click(screen.getByText('Prepare service'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
     await act(async () => {
@@ -594,7 +618,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     });
     expect(onSave.mock.calls[0][0].useCustomLLM).toBe(true);
     expect(onSave.mock.calls[0][0].customLLM).toMatchObject({ provider: 'groq', apiKey: 'sk-test-key' });
-    // Model should be set from the test-connection response or provider default
+    // Model should be set from the model-catalogue response or provider default
     expect(onSave.mock.calls[0][0].customLLM.model).toBe('test-model');
   });
 
@@ -611,7 +635,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
     fireEvent.change(input, { target: { value: 'sk-test-key' } });
 
     await act(async () => {
-      fireEvent.click(screen.getByText('Test Connection'));
+      fireEvent.click(screen.getByText('Prepare service'));
     });
     await act(async () => { await new Promise(r => setTimeout(r, 10)); });
 
@@ -619,7 +643,7 @@ describe('FirstRunModal — Get Started (final step)', () => {
       fireEvent.click(screen.getByText('OpenAI'));
     });
 
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 });
@@ -639,7 +663,7 @@ describe('FirstRunModal — pending Online validation', () => {
     await act(async () => { fireEvent.click(screen.getByText('Online')); });
     const input = screen.getByPlaceholderText('Paste the key from your account page');
     fireEvent.change(input, { target: { value: 'fixture-old-key' } });
-    await act(async () => { fireEvent.click(screen.getByText('Test Connection')); });
+    await act(async () => { fireEvent.click(screen.getByText('Prepare service')); });
     return input;
   }
 
@@ -649,7 +673,7 @@ describe('FirstRunModal — pending Online validation', () => {
     await startApiCheck();
     fireEvent.click(screen.getByText('OpenAI'));
     await act(async () => { old.resolve(success('old-provider-model')); });
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 
@@ -659,7 +683,7 @@ describe('FirstRunModal — pending Online validation', () => {
     const input = await startApiCheck();
     fireEvent.change(input, { target: { value: 'fixture-new-key' } });
     await act(async () => { old.resolve(success('old-key-model')); });
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 
@@ -670,7 +694,7 @@ describe('FirstRunModal — pending Online validation', () => {
     fireEvent.click(screen.getByText('OpenAI'));
     fireEvent.click(screen.getByRole('button', { name: /^Groq/ }));
     await act(async () => { old.resolve(success('expired-groq-model')); });
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 
@@ -694,7 +718,7 @@ describe('FirstRunModal — pending Online validation', () => {
     fireEvent.click(screen.getByText('Back'));
     fireEvent.click(screen.getByText('Online'));
     await act(async () => { old.resolve(success('expired-path-model')); });
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 
@@ -707,9 +731,9 @@ describe('FirstRunModal — pending Online validation', () => {
     expect((window as any).electron.listCustomLLMModels).toHaveBeenCalledTimes(2);
     await act(async () => { old.resolve(success('old-model')); });
     expect(screen.getByText('Checking...')).toBeDisabled();
-    expect(screen.queryByText('Connected! Ready to chat.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Service choice prepared. Your key and ability to chat have not been verified.')).not.toBeInTheDocument();
     await act(async () => { current.resolve(success('current-model')); });
-    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+    expect(screen.getByText('Service choice prepared. Your key and ability to chat have not been verified.')).toBeInTheDocument();
   });
 
   test('an old rejection does not overwrite a newer successful check', async () => {
@@ -720,8 +744,8 @@ describe('FirstRunModal — pending Online validation', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     await act(async () => { current.resolve(success('current-model')); });
     await act(async () => { old.reject(new Error('expired fixture failure')); });
-    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
-    expect(screen.queryByText('Connection failed. Check your API key and try again.')).not.toBeInTheDocument();
+    expect(screen.getByText('Service choice prepared. Your key and ability to chat have not been verified.')).toBeInTheDocument();
+    expect(screen.queryByText('current fixture failure')).not.toBeInTheDocument();
   });
 
   test('Enter does not start a duplicate check for unchanged pending input', async () => {
@@ -738,7 +762,7 @@ describe('FirstRunModal — pending Online validation', () => {
     (window as any).electron.listCustomLLMModels.mockReturnValueOnce(pending.promise);
     await startApiCheck(onSave);
     await act(async () => { pending.resolve(success('current-model')); });
-    expect(screen.getByText('Connected! Ready to chat.')).toBeInTheDocument();
+    expect(screen.getByText('Service choice prepared. Your key and ability to chat have not been verified.')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Next'));
     await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
@@ -747,12 +771,12 @@ describe('FirstRunModal — pending Online validation', () => {
     }));
   });
 
-  test('the current failure remains visible and blocks unverified API setup', async () => {
+  test('the current failure remains visible and blocks unfinished API setup', async () => {
     const pending = deferred<ReturnType<typeof success>>();
     (window as any).electron.listCustomLLMModels.mockReturnValueOnce(pending.promise);
     await startApiCheck();
     await act(async () => { pending.reject(new Error('current fixture failure')); });
-    expect(screen.getByText('Connection failed. Check your API key and try again.')).toBeInTheDocument();
+    expect(screen.getByText('current fixture failure')).toBeInTheDocument();
     expect(screen.getByText('Next')).toBeDisabled();
   });
 });
@@ -927,6 +951,226 @@ describe('FirstRunModal — free-setup guidance (Track D)', () => {
     render(
       <FirstRunModal open={true} settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />
     );
-    expect(screen.getByText(/Several providers have genuinely free tiers/i)).toBeInTheDocument();
+    expect(screen.getByText(/account limits and charges depend on the service/i)).toBeInTheDocument();
+  });
+});
+
+describe('FirstRunModal — first-user consent, routing and focus', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>(yes => { resolve = yes; });
+    return { promise, resolve };
+  }
+
+  test('checking this PC offers size and internet requirements without starting a download', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByText(/approximately 4.4 GB/)).toBeInTheDocument();
+    expect(screen.getByText(/needs an internet connection and free disk space/)).toBeInTheDocument();
+    expect(screen.getByText(/Free disk space could not be checked/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download AI' })).toBeEnabled();
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
+  });
+
+  test('known insufficient disk space blocks the explicit download', async () => {
+    const electron = { ...makeMockElectron(), runDiagnostics: jest.fn().mockResolvedValue({ disk: { ok: true, freeGB: 1 } }) };
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    const download = screen.getByRole('button', { name: 'Download AI' });
+    expect(download).toBeDisabled();
+    fireEvent.click(download);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(screen.getByText(/Not enough disk space/)).toBeInTheDocument();
+  });
+
+  test('installation consent is separate from consent to download a chat model', async () => {
+    const electron = makeMockElectron();
+    electron.checkConnection.mockResolvedValue({ ollama: 'offline' });
+    electron.checkOllamaInstalled.mockResolvedValue({ installed: false, path: '' });
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Install Ollama automatically' })); });
+    expect(electron.downloadOllama).toHaveBeenCalledTimes(1);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Download AI' })).toBeEnabled();
+  });
+
+  test('local Finish disables inherited cloud and uncensored routing while saving the installed choice', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }] });
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'missing', uncensoredMode: true, useCustomLLM: true,
+      customLLM: { name: 'Previous', provider: 'groq', apiUrl: 'https://api.groq.com/openai/v1', apiKey: 'fixture', model: 'previous', enabled: true },
+    }} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    fireEvent.click(screen.getByText('Next'));
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    const saved = onSave.mock.calls[0][0];
+    expect(saved).toMatchObject({ chatModel: 'qwen2.5:3b', uncensoredMode: false, useCustomLLM: false });
+    expect(saved.customLLM.enabled).toBe(false);
+    expect(resolveCloudLLM(saved).intended).toBe(false);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
+  test('local completion copy stays local after visiting a subscription choice', async () => {
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText('Online'));
+    fireEvent.click(screen.getByText('ChatGPT subscription'));
+    fireEvent.click(screen.getByText('Back'));
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    fireEvent.click(screen.getByText('Next'));
+    expect(screen.getByText(/Your installed AI is selected for chat/)).toBeInTheDocument();
+    expect(screen.queryByText(/Your subscription is selected for chat/)).toBeNull();
+  });
+
+  test('Back rejects an old inventory reply after choosing a different path', async () => {
+    const electron = makeMockElectron();
+    const inventory = deferred<{ success: boolean; models: { name: string }[] }>();
+    electron.listOllamaModels.mockReturnValueOnce(inventory.promise);
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'original' }} onSave={onSave} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByText('Setting up...')).toBeDisabled();
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Online'));
+    await act(async () => { inventory.resolve({ success: true, models: [{ name: 'expired-model' }] }); });
+    fireEvent.click(screen.getByText('Next'));
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'original' }));
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
+  test('an old local check cannot overwrite a newer local choice', async () => {
+    const electron = makeMockElectron();
+    const old = deferred<{ success: boolean; models: { name: string }[] }>();
+    electron.listOllamaModels.mockReturnValueOnce(old.promise).mockResolvedValue({ success: true, models: [{ name: 'current-model' }] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    fireEvent.click(screen.getByText('Back'));
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { old.resolve({ success: true, models: [{ name: 'expired-model' }] }); });
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('current-model');
+    expect(screen.queryByRole('option', { name: 'expired-model' })).toBeNull();
+  });
+
+  test('an authorized download continues after Back without starting another pull or changing the new path', async () => {
+    const electron = makeMockElectron();
+    const pull = deferred<{ success: boolean }>();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    electron.pullModelStream.mockReturnValueOnce(pull.promise);
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+    fireEvent.click(screen.getByText('Back'));
+    expect(screen.getByText(/continues in the background/)).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByRole('button', { name: 'Download AI' })).toBeDisabled();
+    fireEvent.click(screen.getByText('Back'));
+    fireEvent.click(screen.getByText('Online'));
+    await act(async () => { pull.resolve({ success: true }); });
+    expect(screen.getByRole('dialog', { name: 'Connect an AI service' })).toBeInTheDocument();
+    expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  });
+
+  test('Skip invalidates a pending local download and prevents its verification follow-up', async () => {
+    const electron = makeMockElectron();
+    const pull = deferred<{ success: boolean }>();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    electron.pullModelStream.mockReturnValueOnce(pull.promise);
+    window.electron = electron as any;
+    const onSave = jest.fn(), onClose = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'original' }} onSave={onSave} onClose={onClose} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+    await act(async () => { fireEvent.click(screen.getByText('Skip setup')); });
+    await act(async () => { pull.resolve({ success: true }); });
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'original', firstRun: false }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('fake-key catalogue success never claims a validated connection', async () => {
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText('Online'));
+    fireEvent.change(screen.getByLabelText('AI service key'), { target: { value: 'not-a-real-key' } });
+    await act(async () => { fireEvent.click(screen.getByText('Prepare service')); });
+    expect(screen.queryByText('Connected! Ready to chat.')).toBeNull();
+    expect(screen.getByText(/Your key and ability to chat have not been verified/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Next'));
+    expect(screen.queryByText("You're all set!")).toBeNull();
+    expect(screen.getByText('Ready to try a message')).toBeInTheDocument();
+  });
+
+  test.each(['DeepSeek', 'Google AI Studio', 'Google Gemini Native'])('%s configures a default without a saved-consent-gated discovery call', async label => {
+    const electron = makeMockElectron();
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText('Online'));
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+    fireEvent.change(screen.getByLabelText('AI service key'), { target: { value: 'fixture-key' } });
+    await act(async () => { fireEvent.click(screen.getByText('Prepare service')); });
+    expect(electron.listCustomLLMModels).not.toHaveBeenCalled();
+    expect(screen.getByText(/have not been verified/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Next'));
+    await act(async () => { fireEvent.click(screen.getByText('Get Started')); });
+    expect(onSave.mock.calls[0][0]).toMatchObject({ useCustomLLM: true, uncensoredMode: false, customLLM: { enabled: true, apiKey: 'fixture-key' } });
+    expect(onSave.mock.calls[0][0].customLLM.model).toBeTruthy();
+  });
+
+  test('returned preparation errors remain actionable instead of being replaced by a guessed key error', async () => {
+    (window as any).electron.listCustomLLMModels.mockResolvedValue({ success: false, error: 'Online access is disabled. Open Settings to enable it.' });
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByText('Online'));
+    fireEvent.change(screen.getByLabelText('AI service key'), { target: { value: 'fixture' } });
+    await act(async () => { fireEvent.click(screen.getByText('Prepare service')); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Online access is disabled. Open Settings to enable it.');
+    expect(screen.getByText('Next')).toBeDisabled();
+  });
+
+  test('focus enters the labelled dialog, wraps at both keyboard boundaries and follows the step', async () => {
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    const heading = screen.getByRole('heading', { name: 'Welcome to HomeBot' });
+    expect(screen.getByRole('dialog', { name: 'Welcome to HomeBot' })).toHaveAttribute('aria-modal', 'true');
+    expect(heading).toHaveFocus();
+    fireEvent.keyDown(heading, { key: 'Tab', shiftKey: true });
+    const skip = screen.getByText('Skip setup');
+    expect(skip).toHaveFocus();
+    fireEvent.keyDown(skip, { key: 'Tab' });
+    const local = screen.getByText('On this PC').closest('button')!;
+    expect(local).toHaveFocus();
+    fireEvent.keyDown(local, { key: 'Tab', shiftKey: true });
+    expect(skip).toHaveFocus();
+    await act(async () => { fireEvent.click(screen.getByText('Online')); });
+    expect(screen.getByRole('heading', { name: 'Connect an AI service' })).toHaveFocus();
+    expect(screen.getByRole('img', { name: 'Setup step 2 of 3' })).toBeInTheDocument();
+    expect(screen.getByLabelText('AI service key')).toBeInTheDocument();
+  });
+
+  test('closing restores focus to the control that opened setup', () => {
+    const opener = document.createElement('button');
+    opener.textContent = 'Open setup';
+    document.body.appendChild(opener);
+    opener.focus();
+    const view = render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    view.unmount();
+    expect(opener).toHaveFocus();
+    opener.remove();
   });
 });

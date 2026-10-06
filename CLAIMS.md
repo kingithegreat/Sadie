@@ -1,5 +1,36 @@
 # Work Claims
 
+## 2026-10-07 — FIRST-USER-EASE
+
+Aden requested agents find the best ways to give users what they want and make
+HomeBot easy for a first-time user. Codex root coordinates an isolated branch
+`claude/first-user-ease-20261007`, worktree `.homebot/first-user-20261007`, from
+fresh main `d6635590` after Studio #475. Three read-only audits cover first-run
+setup, task discovery/navigation and request/error recovery. Root owns evidence
+selection, App integration, serial guarded verification, publication and delivery.
+Implementation: first_run_audit owns FirstRunModal and its focused tests/styles;
+discovery_audit owns DashboardPanel/SuggestedPrompts and focused tests;
+intent_recovery_audit owns ChatInterface/InputBox/MessageList/MessageBubble and
+focused tests. Root owns App.tsx wiring, ConversationSidebar acknowledgement,
+renderer attachment-retry guidance and native acceptance. Current #474 diff has
+no overlaps with these renderer files. Audit reports are retained under
+`.homebot/first-user-*-audit.md`; reachable defects include Settings/Studio misrouting, automatic starter
+submission, false connection status and draft/attachment loss. Source corrections
+are underway; no tests/builds have been delegated or counted as run.
+The IDE #474 team retains main/router/preload/workspace and its active claim.
+No actual provider generation/model downloads, credentials or owner profile writes
+are part of this UI audit. Existing accepted test copies remain preserved.
+Checkpoint: local widget TypeScript and scoped lint passed (zero errors, four
+existing warnings). The affected run executed and passed 236 tests in 22 suites;
+the subsequent explicit New/Select failure guards and two new negative tests
+still need the final full check. App navigation/recovery guards include live
+conversation identity, serialized acknowledged activation and a bounded visible
+held-request recovery action. First-run local coding also keeps an installed
+code model or uses the chosen installed chat model. Three external native proof
+spec/helper drafts await root execution against a frozen private compiled runtime.
+Native acceptance, current-head hosted checks/review, merge and delivery remain
+pending. No actual model download, provider-quality or installed-release claim.
+
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
 Codex root owns a focused Media Studio workflow/UI pass requested by Aden after

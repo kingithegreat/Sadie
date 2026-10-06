@@ -63,17 +63,13 @@ const PROVIDER_URLS: Record<string, string> = {
   together: 'https://api.together.xyz/v1',
 };
 
-const ESSENTIAL_MODELS = [
-  { name: 'qwen2.5:7b', desc: 'Chat model', sizeHint: '4.7 GB', sizeGB: 4.7 },
-  { name: 'nomic-embed-text', desc: 'Embeddings for RAG', sizeHint: '274 MB', sizeGB: 0.3 },
-];
-
 type LocalSetupPhase =
   | 'checking'
   | 'ollama-missing'
   | 'downloading-ollama'
   | 'starting-ollama'
   | 'checking-models'
+  | 'download-offered'
   | 'pulling-models'
   | 'models-missing'
   | 'ready';
@@ -123,6 +119,20 @@ export default function FirstRunModal({
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [saveError, setSaveError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const localGeneration = useRef(0);
+  const localCheckInFlight = useRef<number | null>(null);
+  const downloadInFlight = useRef(false);
+  const downloadGeneration = useRef<number | null>(null);
+  const [backgroundDownload, setBackgroundDownload] = useState(false);
+  const [downloadActive, setDownloadActive] = useState(false);
+  const [plannedDownload, setPlannedDownload] = useState<{ name: string; sizeGB: number } | null>(null);
+  const invalidateLocalCheck = useCallback(() => {
+    localGeneration.current += 1;
+    localCheckInFlight.current = null;
+    if (downloadInFlight.current) setBackgroundDownload(true);
+  }, []);
   const [saving, setSaving] = useState(false);
   const saveInFlight = useRef(false);
 
@@ -135,7 +145,7 @@ export default function FirstRunModal({
       await onSave(payload);
       onClose();
     } catch (error: any) {
-      setSaveError(`Could not save setup: ${error?.message || 'Please try again.'} Your choices are kept here; try again.`);
+      setSaveError(`Could not finish setup: ${error?.message || 'Please try again.'} Your choices are kept here; try again.`);
     } finally {
       saveInFlight.current = false;
       setSaving(false);
@@ -152,7 +162,6 @@ export default function FirstRunModal({
   const [models, setModels] = useState<string[]>([]);
   const [modelPullProgress, setModelPullProgress] = useState<ModelPullProgress | null>(null);
   const [modelsPulled, setModelsPulled] = useState<string[]>([]);
-  const [modelPullIndex, setModelPullIndex] = useState(0);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
   const [diskWarning, setDiskWarning] = useState<string | null>(null);
   // Which path to badge. Recomputed as detection lands; before that it returns
@@ -165,7 +174,6 @@ export default function FirstRunModal({
   const showRecommendation = !!gpuInfo && !pathAdvice.uncertain;
   const [diskOk, setDiskOk] = useState<boolean>(true);
   const [modelDiskFit, setModelDiskFit] = useState<ModelDownloadFit | null>(null);
-  const pullCancelledRef = useRef(false);
   const gpuInfoRef = useRef<{ vramGB: number | null; gpuName: string | null } | null>(null);
   const freeDiskGBRef = useRef<number | null>(null);
 
@@ -175,10 +183,11 @@ export default function FirstRunModal({
   const [cloudApiKey, setCloudApiKey] = useState('');
   const [cloudTesting, setCloudTesting] = useState(false);
   const [cloudOk, setCloudOk] = useState<boolean | null>(null);
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionCliStatus['status'] | null>(null);
   const isSubscriptionCli = cloudProvider === 'codex' || cloudProvider === 'claude-code';
-  // What the "done" step is allowed to claim. Cloud counts only when the key
-  // actually tested OK; local counts only when the local AI came up.
+  // Cloud means a service choice is prepared, never that its key was verified.
+  // Local means a chat model was found in the service's installed inventory.
   const setupComplete =
     (setupPath === 'cloud' && cloudOk === true) ||
     (setupPath === 'local' && localPhase === 'ready');
@@ -195,24 +204,38 @@ export default function FirstRunModal({
       setCloudOk(null);
       setCloudModel('');
       setSubscriptionStatus(null);
+      setCloudError(null);
     }
   }, []);
 
   useEffect(() => {
-    if (!open) invalidateCloudCheck();
+    if (!open) { invalidateCloudCheck(); invalidateLocalCheck(); }
     return () => {
       // Late IPC replies must not update a closed or unmounted wizard.
       cloudCheckGeneration.current += 1;
       cloudCheckInFlight.current = null;
+      localGeneration.current += 1;
     };
-  }, [open, invalidateCloudCheck]);
+  }, [open, invalidateCloudCheck, invalidateLocalCheck]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    headingRef.current?.focus();
+    return () => {
+      if (previous?.isConnected && previous !== document.body) previous.focus();
+      else document.querySelector<HTMLElement>('textarea:not([disabled]), [data-testid="chat-input"]')?.focus();
+    };
+  }, [open]);
+
+  useEffect(() => { if (open) headingRef.current?.focus(); }, [open, step, setupPath]);
 
   useEffect(() => { setDraft(settings); }, [settings]);
 
   // Subscribe to pull progress events
   useEffect(() => {
     const unsub = (window as any).electron.onPullModelProgress?.((data: ModelPullProgress) => {
-      setModelPullProgress(data);
+      if (downloadGeneration.current === localGeneration.current) setModelPullProgress(data);
     });
     return () => { unsub?.(); };
   }, []);
@@ -220,7 +243,7 @@ export default function FirstRunModal({
   // Subscribe to Ollama download progress events
   useEffect(() => {
     const unsub = (window as any).electron.onOllamaDownloadProgress?.((data: OllamaDownloadProgress) => {
-      setDownloadProgress(data);
+      if (downloadGeneration.current === localGeneration.current) setDownloadProgress(data);
     });
     return () => { unsub?.(); };
   }, []);
@@ -231,10 +254,6 @@ export default function FirstRunModal({
       if (res?.success) {
         setGpuInfo({ vramGB: res.vramGB, gpuName: res.gpuName });
         gpuInfoRef.current = { vramGB: res.vramGB, gpuName: res.gpuName };
-        if (res.vramGB) {
-          const profile = res.vramGB >= 12 ? '16gb+' : res.vramGB >= 6 ? '8gb' : '4gb';
-          setDraft(d => ({ ...d, hardwareProfile: profile as any }));
-        }
       }
     } catch { /* non-critical */ }
   }, []);
@@ -256,173 +275,146 @@ export default function FirstRunModal({
     detectHardware();
   }, [detectHardware]);
 
-  const checkModelsAndPull = useCallback(async () => {
+  const assessInstalledModels = useCallback(async (generation: number) => {
+    const current = () => localGeneration.current === generation;
+    if (!current()) return;
     setLocalPhase('checking-models');
-    setModelsPulled([]);
-    setOllamaError(null);
-    try {
-      const modelList = await (window as any).electron.listOllamaModels?.();
-      if (!modelList?.success) throw new Error(modelList?.error || 'Could not check the installed AI models.');
-      const installed: string[] = (modelList?.models || []).map((m: any) => m.name || m);
-      const installedChat = chatModelNames(modelList.models || []);
-      setModels(installedChat);
-
-      // Pick a chat model that fits the detected GPU instead of a fixed default.
-      // Falls back to the balanced default (qwen2.5:7b) when VRAM is unknown.
-      const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
-      const chosen = installedChat.find(name => sameModel(name, draftRef.current.chatModel || ''));
-      const essentialModels = [
-        { name: chosen || rec.chat.id, desc: 'Chat model', sizeHint: `~${rec.chat.sizeGB} GB`, sizeGB: rec.chat.sizeGB },
-        ...ESSENTIAL_MODELS.filter(m => m.name !== 'qwen2.5:7b'),
-      ];
-
-      const selectInstalledChat = (inventory: any[]) => {
-        const chat = chatModelNames(inventory);
-        setModels(chat);
-        const selected = chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
-          || chat.find(name => sameModel(name, rec.chat.id))
-          || chat[0];
-        if (!selected) throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
-        setDraft(d => ({ ...d, chatModel: selected }));
-        setLocalPhase('ready');
-      };
-      const missing = essentialModels.filter(m => !installed.some(i => sameModel(i, m.name)));
-      if (missing.length === 0) {
-        selectInstalledChat(modelList.models);
-        return;
-      }
-
-      // Model-size-aware disk guard. The disk.ok check in runLocalSetup is a flat
-      // threshold; this compares the *actual* recommended chat model size against
-      // free disk space so we never kick off a multi-GB pull that can't finish.
-      const freeGB = freeDiskGBRef.current;
-      const chatFit = assessModelDownloadFit({ sizeGB: rec.chat.sizeGB, freeGB });
-      setModelDiskFit(chatFit.severity === 'ok' ? null : chatFit);
-
-      setLocalPhase('pulling-models');
-      pullCancelledRef.current = false;
-      const pulled: string[] = [];
-      const pullErrors: string[] = [];
-      for (let i = 0; i < missing.length; i++) {
-        if (pullCancelledRef.current) break;
-        // Skip any model that definitively won't fit instead of starting a doomed
-        // download. unknown/tight/ok all proceed (the guard fails open).
-        const fit = assessModelDownloadFit({ sizeGB: missing[i].sizeGB, freeGB });
-        if (!fit.fits) {
-          pullErrors.push(fit.message || 'There is not enough free disk space for the chat model.');
-          continue;
-        }
-        setModelPullIndex(i);
-        setModelPullProgress({ model: missing[i].name, status: 'starting pull...', percent: 0, completedMB: null, totalMB: null });
-        try {
-          const result = await (window as any).electron.pullModelStream?.(missing[i].name);
-          if (!result?.success) throw new Error(result?.error || 'The model download did not complete.');
-          pulled.push(missing[i].name);
-          setModelsPulled([...pulled]);
-        } catch (e: any) {
-          pullErrors.push(e?.message || 'The model download did not complete.');
-        }
-      }
-      setModelPullProgress(null);
-
-      const updatedList = await (window as any).electron.listOllamaModels?.();
-      if (!updatedList?.success) throw new Error(updatedList?.error || 'Could not verify the installed AI models.');
-      if (pullCancelledRef.current) return;
-      selectInstalledChat(updatedList.models || []);
-      if (pullErrors.length) setOllamaError(`Chat is available, but some setup downloads failed: ${pullErrors.join(' ')}`);
-    } catch (e: any) {
-      setModelPullProgress(null);
-      setOllamaError(e?.message || 'Local AI setup did not finish. Please retry.');
-      setLocalPhase('models-missing');
+    const result = await (window as any).electron.listOllamaModels?.();
+    if (!current()) return;
+    if (!result?.success) throw new Error(result?.error || 'Could not check the installed AI models.');
+    const chat = chatModelNames(result.models || []);
+    setModels(chat);
+    const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
+    const selected = chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
+      || chat.find(name => sameModel(name, rec.chat.id)) || chat[0];
+    if (selected) {
+      setDraft(d => ({ ...d, chatModel: selected, ...(rec.profile !== 'unknown' ? { hardwareProfile: rec.profile } : {}) }));
+      setPlannedDownload(null);
+      setModelDiskFit(null);
+      setLocalPhase('ready');
+      return true;
     }
+    setPlannedDownload({ name: rec.chat.id, sizeGB: rec.chat.sizeGB });
+    setModelDiskFit(assessModelDownloadFit({ sizeGB: rec.chat.sizeGB, freeGB: freeDiskGBRef.current }));
+    setLocalPhase('download-offered');
+    return false;
   }, []);
 
   const runLocalSetup = useCallback(async () => {
+    if (localCheckInFlight.current !== null) return;
+    const generation = ++localGeneration.current;
+    localCheckInFlight.current = generation;
+    const current = () => localGeneration.current === generation;
     setLocalPhase('checking');
     setOllamaError(null);
     setDiskWarning(null);
     setDiskOk(true);
     setModelDiskFit(null);
-    // E2E: skip the real Ollama detection. With no Ollama present,
-    // checkConnection / checkOllamaInstalled / startOllama each run their full
-    // network/spawn timeouts, which left the footer button stuck on "Setting
-    // up…" well past the test's click timeout and flaked the first-run specs.
-    // Jump straight to a deterministic terminal phase so "Continue anyway" is
-    // immediately available. (diskOk stays true from above so the button isn't
-    // gated on disk.)
+    setPlannedDownload(null);
+    freeDiskGBRef.current = null;
     try {
+      // The opt-in E2E mode retains its deterministic unavailable-service path.
       const env = await (window as any).electron?.getEnv?.();
-      if (env?.isE2E) {
-        setLocalPhase('ollama-missing');
-        return;
-      }
-    } catch { /* fall through to real detection */ }
-
-    // Keep the welcome screen immediate, but resolve the hardware reading
-    // before choosing a multi-GB model to download.
-    await detectHardware();
-
-    // Check disk space before potentially pulling large models
-    try {
-      const diagResult = await (window as any).electron.runDiagnostics?.();
-      if (diagResult?.disk) {
-        setDiskOk(diagResult.disk.ok);
-        setDiskWarning(diagResult.disk.warning ?? null);
-        freeDiskGBRef.current =
-          typeof diagResult.disk.freeGB === 'number' ? diagResult.disk.freeGB : null;
-      }
-    } catch { /* non-critical — don't block setup */ }
-
-    // 1. Check if Ollama is running
-    try {
-      const status = await (window as any).electron.checkConnection?.();
-      if (status?.ollama === 'online') {
-        await checkModelsAndPull();
-        return;
-      }
-    } catch { /* not running */ }
-
-    // 2. Check if Ollama is installed
-    const installCheck = await (window as any).electron.checkOllamaInstalled?.();
-    if (installCheck?.installed) {
-      // Installed but not running — start it
-      setLocalPhase('starting-ollama');
+      if (!current()) return;
+      if (env?.isE2E) { setLocalPhase('ollama-missing'); return; }
+      await detectHardware();
+      if (!current()) return;
       try {
-        const startRes = await (window as any).electron.startOllama?.();
-        if (startRes?.success) {
-          await checkModelsAndPull();
-          return;
+        const diagnostics = await (window as any).electron.runDiagnostics?.();
+        if (!current()) return;
+        if (diagnostics?.disk) {
+          setDiskOk(diagnostics.disk.ok);
+          setDiskWarning(diagnostics.disk.warning ?? null);
+          freeDiskGBRef.current = typeof diagnostics.disk.freeGB === 'number' ? diagnostics.disk.freeGB : null;
         }
-        setOllamaError(startRes?.error || 'Could not start Ollama');
-        setLocalPhase('ollama-missing');
-      } catch (e: any) {
-        setOllamaError(e?.message || 'Failed to start Ollama');
-        setLocalPhase('ollama-missing');
+      } catch { /* A missing disk reading is explained before downloading. */ }
+      if (!current()) return;
+      let running = false;
+      try {
+        const status = await (window as any).electron.checkConnection?.();
+        if (!current()) return;
+        running = status?.ollama === 'online';
+      } catch { /* Offer installation or retry if the local service is unavailable. */ }
+      if (!current()) return;
+      if (!running) {
+        const installation = await (window as any).electron.checkOllamaInstalled?.();
+        if (!current()) return;
+        if (!installation?.installed) { setLocalPhase('ollama-missing'); return; }
+        setLocalPhase('starting-ollama');
+        const start = await (window as any).electron.startOllama?.();
+        if (!current()) return;
+        if (!start?.success) throw new Error(start?.error || 'Could not start local AI. Retry or finish setup later.');
       }
-      return;
+      await assessInstalledModels(generation);
+    } catch (error: any) {
+      if (!current()) return;
+      setOllamaError(error?.message || 'Could not check local AI. Please retry.');
+      setLocalPhase('models-missing');
+    } finally {
+      if (localCheckInFlight.current === generation) localCheckInFlight.current = null;
     }
-
-    // 3. Not installed
-    setLocalPhase('ollama-missing');
-  }, [detectHardware, checkModelsAndPull]);
+  }, [detectHardware, assessInstalledModels]);
 
   const handleDownloadOllama = async () => {
+    if (downloadInFlight.current) return;
+    const generation = ++localGeneration.current;
+    downloadGeneration.current = generation;
+    downloadInFlight.current = true;
+    setDownloadActive(true);
+    setBackgroundDownload(false);
     setLocalPhase('downloading-ollama');
     setOllamaError(null);
     setDownloadProgress({ stage: 'downloading', percent: 0 });
     try {
-      const res = await (window as any).electron.downloadOllama?.();
-      if (res?.success) {
-        await checkModelsAndPull();
-      } else {
-        setOllamaError(res?.error || 'Installation failed');
-        setLocalPhase('ollama-missing');
-      }
-    } catch (e: any) {
-      setOllamaError(e?.message || 'Download failed');
+      const result = await (window as any).electron.downloadOllama?.();
+      if (localGeneration.current !== generation) return;
+      if (!result?.success) throw new Error(result?.error || 'Installation failed. Please retry.');
+      // Installing the service does not consent to a separate model download.
+      await assessInstalledModels(generation);
+    } catch (error: any) {
+      if (localGeneration.current !== generation) return;
+      setOllamaError(error?.message || 'Installation failed. Please retry.');
       setLocalPhase('ollama-missing');
+    } finally {
+      downloadInFlight.current = false;
+      downloadGeneration.current = null;
+      setDownloadActive(false);
+      setBackgroundDownload(false);
+      if (localGeneration.current === generation) setDownloadProgress(null);
     }
-    setDownloadProgress(null);
+  };
+
+  const handleDownloadAI = async () => {
+    if (downloadInFlight.current || !plannedDownload || modelDiskFit?.fits === false || !diskOk) return;
+    const generation = ++localGeneration.current;
+    downloadGeneration.current = generation;
+    downloadInFlight.current = true;
+    setDownloadActive(true);
+    setBackgroundDownload(false);
+    setLocalPhase('pulling-models');
+    setOllamaError(null);
+    setModelsPulled([]);
+    setModelPullProgress({ model: plannedDownload.name, status: 'Starting download...', percent: 0, completedMB: null, totalMB: null });
+    try {
+      const result = await (window as any).electron.pullModelStream?.(plannedDownload.name);
+      if (localGeneration.current !== generation) return;
+      if (!result?.success) throw new Error(result?.error || 'The AI download did not complete. Please retry.');
+      setModelsPulled([plannedDownload.name]);
+      const ready = await assessInstalledModels(generation);
+      if (localGeneration.current === generation && !ready) {
+        throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
+      }
+    } catch (error: any) {
+      if (localGeneration.current !== generation) return;
+      setOllamaError(error?.message || 'The AI download did not complete. Please retry.');
+      setLocalPhase('models-missing');
+    } finally {
+      downloadInFlight.current = false;
+      downloadGeneration.current = null;
+      setDownloadActive(false);
+      setBackgroundDownload(false);
+      if (localGeneration.current === generation) setModelPullProgress(null);
+    }
   };
 
   const testCloudConnection = async () => {
@@ -434,6 +426,7 @@ export default function FirstRunModal({
     setCloudOk(null);
     setCloudModel('');
     setSubscriptionStatus(null);
+    setCloudError(null);
     try {
       if (isSubscriptionCli) {
         const result = await (window as any).electron.checkSubscriptionCli?.(cloudProvider);
@@ -442,6 +435,13 @@ export default function FirstRunModal({
         setSubscriptionStatus(status);
         setCloudOk(status === 'ready');
         if (status === 'ready') setCloudModel(knownModelsFor(cloudProvider)[0]?.id || '');
+        return;
+      }
+      // These discovery paths need saved Online consent. Configure their known
+      // default here; setup does not claim to have contacted or validated it.
+      if (cloudProvider === 'deepseek' || cloudProvider === 'google-ai-studio' || cloudProvider === 'google-gemini') {
+        setCloudModel(PROVIDER_DEFAULT_MODELS[cloudProvider]);
+        setCloudOk(true);
         return;
       }
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
@@ -453,13 +453,15 @@ export default function FirstRunModal({
       if (!isCurrent()) return;
       const ok = res?.success && res.models?.length > 0;
       setCloudOk(ok);
+      if (!ok) setCloudError(res?.error || 'Could not load a model choice. Try again or choose another service.');
       if (ok && res.models?.[0]?.id) {
         setCloudModel(res.models[0].id);
       }
-    } catch {
+    } catch (error: any) {
       if (!isCurrent()) return;
       if (isSubscriptionCli) setSubscriptionStatus('unknown');
       setCloudOk(false);
+      setCloudError(error?.message || 'Could not prepare this service. Please try again.');
     } finally {
       if (isCurrent()) {
         cloudCheckInFlight.current = null;
@@ -470,6 +472,7 @@ export default function FirstRunModal({
 
   const enterSetupStep = (path: SetupPath) => {
     invalidateCloudCheck();
+    invalidateLocalCheck();
     setSetupPath(path);
     setStep('setup');
     if (path === 'local') {
@@ -479,8 +482,20 @@ export default function FirstRunModal({
 
   const handleFinish = async () => {
     invalidateCloudCheck(false);
+    invalidateLocalCheck();
     const payload: any = { ...draft, firstRun: false, telemetryEnabled: telemetryConsent };
     if (telemetryConsent) payload.telemetryConsentTimestamp = new Date().toISOString();
+
+    if (setupPath === 'local' && localPhase === 'ready') {
+      payload.uncensoredMode = false;
+      payload.useCustomLLM = false;
+      // A first coding request must also use an installed model, rather than
+      // falling through to a default larger model that setup never downloaded.
+      if (!models.some(name => sameModel(name, payload.codeModel || ''))) {
+        payload.codeModel = payload.chatModel;
+      }
+      if (payload.customLLM) payload.customLLM = { ...payload.customLLM, enabled: false };
+    }
 
     if (setupPath === 'cloud' && cloudOk === true && (isSubscriptionCli || cloudApiKey.trim())) {
       const apiUrl = PROVIDER_URLS[cloudProvider] || '';
@@ -507,6 +522,7 @@ export default function FirstRunModal({
 
   const handleSkip = async () => {
     invalidateCloudCheck(false);
+    invalidateLocalCheck();
     const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
     await persistSetup(payload);
   };
@@ -514,13 +530,24 @@ export default function FirstRunModal({
   if (!open) return null;
 
   const stepIndex = STEPS.indexOf(step);
-  const localBusy = localPhase === 'checking' || localPhase === 'downloading-ollama' || localPhase === 'starting-ollama' || localPhase === 'pulling-models';
+  const localBusy = localPhase === 'checking' || localPhase === 'checking-models' || localPhase === 'downloading-ollama' || localPhase === 'starting-ollama' || localPhase === 'pulling-models';
 
   return (
     <div className="first-run-overlay">
-      <div className="first-run-modal">
+      <div className="first-run-modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="first-run-step-title"
+        onKeyDown={event => {
+          if (event.key !== 'Tab') return;
+          const controls = Array.from(modalRef.current?.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), [tabindex="0"]') || []);
+          const first = controls[0], last = controls[controls.length - 1];
+          if (!first) { event.preventDefault(); headingRef.current?.focus(); return; }
+          if (event.shiftKey && (document.activeElement === first || document.activeElement === headingRef.current)) {
+            event.preventDefault(); last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+          }
+        }}>
         {/* Progress dots */}
-        <div className="wizard-progress">
+        <div className="wizard-progress" role="img" aria-label={`Setup step ${stepIndex + 1} of ${STEPS.length}`}>
           {STEPS.map((s, i) => (
             <div key={s} className={`wizard-dot${i <= stepIndex ? ' active' : ''}${s === step ? ' current' : ''}`} />
           ))}
@@ -528,10 +555,11 @@ export default function FirstRunModal({
 
         <div className="first-run-content">
           {saveError && <p role="alert" className="wizard-error-detail">{saveError}</p>}
+          {backgroundDownload && <p role="status" className="wizard-error-detail">The download you started continues in the background. It cannot be stopped here. Wait for it to finish before starting another download.</p>}
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>
-              <h1 className="first-run-title">Welcome to HomeBot</h1>
+              <h1 id="first-run-step-title" ref={headingRef} tabIndex={-1} className="first-run-title">Welcome to HomeBot</h1>
               <p className="first-run-subtitle">
                 Your private AI desktop assistant. Where should it think?
               </p>
@@ -547,7 +575,7 @@ export default function FirstRunModal({
                   <span className="wizard-path-icon">🖥️</span>
                   <strong>On this PC</strong>
                   <span className="wizard-path-desc">
-                    Private — nothing leaves your computer. Free forever, no account needed.
+                    Chat is processed on this PC. No AI account needed. Initial downloads and optional internet tools use the internet.
                   </span>
                 </button>
                 <button
@@ -561,7 +589,7 @@ export default function FirstRunModal({
                   <span className="wizard-path-icon">☁️</span>
                   <strong>Online</strong>
                   <span className="wizard-path-desc">
-                    Faster and smarter, works on any computer. Several providers have genuinely free tiers — no card needed.
+                    Your messages go to the AI service you choose. Some services offer free tiers; account limits and charges depend on the service.
                   </span>
                 </button>
               </div>
@@ -580,7 +608,7 @@ export default function FirstRunModal({
 
           {step === 'setup' && setupPath === 'local' && (
             <div className="wizard-step">
-              <h2 className="wizard-step-title">Local Setup</h2>
+              <h2 id="first-run-step-title" ref={headingRef} tabIndex={-1} className="wizard-step-title">Local Setup</h2>
 
               {/* GPU info */}
               {gpuInfo && gpuInfo.vramGB && (
@@ -591,7 +619,7 @@ export default function FirstRunModal({
 
               {/* Phase: Checking */}
               {localPhase === 'checking' && (
-                <div className="wizard-status checking">
+                <div className="wizard-status checking" role="status">
                   <span className="wizard-spinner" />Checking your system...
                 </div>
               )}
@@ -604,7 +632,7 @@ export default function FirstRunModal({
                   </div>
                   {ollamaError && <p className="wizard-error-detail">{ollamaError}</p>}
                   <div className="wizard-btn-row">
-                    <button type="button" className="first-run-btn first-run-btn-primary" onClick={handleDownloadOllama}>
+                    <button type="button" className="first-run-btn first-run-btn-primary" disabled={downloadActive} onClick={handleDownloadOllama}>
                       Install Ollama automatically
                     </button>
                     <button type="button" className="first-run-btn first-run-btn-secondary" onClick={runLocalSetup}>
@@ -612,6 +640,7 @@ export default function FirstRunModal({
                     </button>
                   </div>
                   <p className="wizard-step-desc wizard-install-hint">
+                    This downloads and installs the local AI service using the internet. You will choose whether to download a chat model afterwards.{' '}
                     Or <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">install manually</a>, then click Retry.
                   </p>
                 </div>
@@ -620,7 +649,7 @@ export default function FirstRunModal({
               {/* Phase: Downloading Ollama */}
               {localPhase === 'downloading-ollama' && (
                 <div className="wizard-setup-section">
-                  <div className="wizard-status checking">
+                  <div className="wizard-status checking" role="status">
                     <span className="wizard-spinner" />
                     {downloadProgress?.stage === 'downloading'
                       ? `Downloading Ollama... ${downloadProgress.percent}%${downloadProgress.totalMB ? ` (${downloadProgress.downloadedMB || 0} / ${downloadProgress.totalMB} MB)` : ''}`
@@ -640,7 +669,7 @@ export default function FirstRunModal({
 
               {/* Phase: Starting Ollama */}
               {localPhase === 'starting-ollama' && (
-                <div className="wizard-status checking">
+                <div className="wizard-status checking" role="status">
                   <span className="wizard-spinner" />Starting Ollama...
                 </div>
               )}
@@ -656,23 +685,31 @@ export default function FirstRunModal({
               {modelDiskFit && modelDiskFit.message && (
                 <div className={`wizard-status ${modelDiskFit.severity === 'insufficient' ? 'error' : 'warning'}`}>
                   💾 {modelDiskFit.message}
-                  {modelDiskFit.severity === 'insufficient' && ' The chat model download was skipped.'}
+                  {modelDiskFit.severity === 'insufficient' && ' Free up space before downloading AI.'}
                 </div>
               )}
 
               {/* Phase: Checking models */}
               {localPhase === 'checking-models' && (
-                <div className="wizard-status checking">
+                <div className="wizard-status checking" role="status">
                   <span className="wizard-spinner" />Checking installed models...
                 </div>
               )}
 
               {/* Phase: Pulling models */}
+              {localPhase === 'download-offered' && plannedDownload && (
+                <div className="wizard-setup-section">
+                  <p className="wizard-step-desc">No chat AI is installed yet. Recommended: <strong>{plannedDownload.name}</strong> — approximately {plannedDownload.sizeGB.toFixed(1)} GB. Downloading needs an internet connection and free disk space. Chat runs on this PC afterwards.</p>
+                  {freeDiskGBRef.current !== null && <p className="wizard-step-desc">Disk check reports {freeDiskGBRef.current.toFixed(1)} GB free.</p>}
+                  {freeDiskGBRef.current === null && <p className="wizard-step-desc">Free disk space could not be checked. Make sure there is room for this download.</p>}
+                  <button type="button" className="first-run-btn first-run-btn-primary" disabled={downloadActive || !diskOk || modelDiskFit?.fits === false} onClick={handleDownloadAI}>Download AI</button>
+                </div>
+              )}
               {localPhase === 'pulling-models' && (
                 <div className="wizard-setup-section">
-                  <div className="wizard-status checking">
+                  <div className="wizard-status checking" role="status">
                     <span className="wizard-spinner" />
-                    Downloading AI models ({modelPullIndex + 1} of {ESSENTIAL_MODELS.length})
+                    Downloading chat AI
                   </div>
                   {modelPullProgress && (
                     <div className="wizard-model-pull-info">
@@ -737,14 +774,13 @@ export default function FirstRunModal({
                   to get the thing being asked for. Say what these companies are,
                   what a key is in ordinary words, and link straight to the page
                   that issues one. */}
-              <h2 className="wizard-step-title">Connect an AI service</h2>
+              <h2 id="first-run-step-title" ref={headingRef} tabIndex={-1} className="wizard-step-title">Connect an AI service</h2>
               {isSubscriptionCli ? (
                 <p className="wizard-step-desc">Use your subscription already signed in on this PC. No API key is needed.</p>
               ) : (
               <p className="wizard-step-desc">
                 These companies run the AI for you. Pick one, make a free account, and it
-                gives you a long password called a key — paste that below. The ones marked
-                “free” don’t ask for a card.
+                gives you a long password called a key — paste that below. Check that service’s current limits and charges before using it. Saving a choice does not check the key or send a chat message.
               </p>
               )}
 
@@ -796,6 +832,7 @@ export default function FirstRunModal({
                 </div>
               ) : (
                 <input
+                  aria-label="AI service key"
                   type="password"
                   className="first-run-input"
                   placeholder="Paste the key from your account page"
@@ -813,12 +850,12 @@ export default function FirstRunModal({
                   onClick={testCloudConnection}
                   disabled={cloudTesting || (!isSubscriptionCli && !cloudApiKey.trim())}
                 >
-                  {cloudTesting ? 'Checking...' : isSubscriptionCli ? 'Check sign-in' : 'Test Connection'}
+                  {cloudTesting ? 'Checking...' : isSubscriptionCli ? 'Check sign-in' : 'Prepare service'}
                 </button>
               </div>
 
               {cloudOk === true && (
-                <div className="wizard-status success">{isSubscriptionCli ? 'Subscription sign-in found. Ready to try a chat.' : 'Connected! Ready to chat.'}</div>
+                <div className="wizard-status success" role="status">{isSubscriptionCli ? 'Subscription sign-in found. Ready to try a chat.' : 'Service choice prepared. Your key and ability to chat have not been verified.'}</div>
               )}
               {isSubscriptionCli && subscriptionStatus && subscriptionStatus !== 'ready' && (
                 <div className="wizard-status warning">
@@ -832,7 +869,7 @@ export default function FirstRunModal({
                 </div>
               )}
               {!isSubscriptionCli && cloudOk === false && (
-                <div className="wizard-status error">Connection failed. Check your API key and try again.</div>
+                <div className="wizard-status error" role="alert">{cloudError || 'Could not prepare this service. Please try again.'}</div>
               )}
             </div>
           )}
@@ -844,21 +881,21 @@ export default function FirstRunModal({
                   nothing entered. A claim of success when nothing was set up
                   costs the app the user's trust in the first minute; say what
                   is actually true instead. */}
-              <div className="wizard-icon">{setupComplete ? '🎉' : '👋'}</div>
-              <h2 className="wizard-step-title">
-                {setupComplete ? "You're all set!" : 'Ready when you are'}
+              <div className="wizard-icon">{setupComplete && setupPath === 'local' ? '✓' : '👋'}</div>
+              <h2 id="first-run-step-title" ref={headingRef} tabIndex={-1} className="wizard-step-title">
+                {setupComplete ? setupPath === 'cloud' ? 'Ready to try a message' : 'Ready to chat on this PC' : 'Ready when you are'}
               </h2>
               <p className="wizard-step-desc">
                 {setupComplete
-                  ? isSubscriptionCli
+                  ? setupPath === 'cloud' && isSubscriptionCli
                     ? 'Your subscription is selected for chat. Send a message to confirm it can answer on this PC.'
-                    : 'Try asking HomeBot anything — check the weather, search the web, read files, or just chat.'
-                  : 'Nothing was set up yet — that’s fine. HomeBot will use whatever it can find on this PC, and you can finish setting up any time from Settings.'}
+                    : setupPath === 'cloud'
+                      ? 'Your service choice will be saved. Your key has not been verified. Send a first message to find out whether this account can answer.'
+                      : 'Your installed AI is selected for chat. After saving, type a message such as “Hello” in the chat box.'
+                  : 'AI is not configured yet. You can finish setting up any time from Settings.'}
               </p>
               <div className="wizard-suggestions">
-                <span className="wizard-suggestion-chip">What's the weather?</span>
-                <span className="wizard-suggestion-chip">Summarize my clipboard</span>
-                <span className="wizard-suggestion-chip">What's in the news?</span>
+                <p>Start with a simple chat: “Hello, what can you help me with?”</p>
               </div>
               <label className="wizard-telemetry-consent">
                 <input
@@ -880,16 +917,16 @@ export default function FirstRunModal({
           <button type="button" onClick={handleSkip} disabled={saving} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
-              <button type="button" onClick={() => { invalidateCloudCheck(); setStep('welcome'); setSetupPath(null); pullCancelledRef.current = true; }} className="first-run-btn first-run-btn-secondary">Back</button>
+              <button type="button" onClick={() => { invalidateCloudCheck(); invalidateLocalCheck(); setStep('welcome'); setSetupPath(null); }} className="first-run-btn first-run-btn-secondary">Back</button>
             )}
             {step === 'setup' && (
               <button
                 type="button"
-                onClick={() => { invalidateCloudCheck(false); setStep('done'); }}
+                onClick={() => { invalidateCloudCheck(false); invalidateLocalCheck(); setStep('done'); }}
                 className="first-run-btn first-run-btn-primary"
-                disabled={(setupPath === 'local' && (localBusy || !diskOk)) || (setupPath === 'cloud' && !isSubscriptionCli && cloudOk !== true && cloudApiKey.trim().length > 0)}
+                disabled={(setupPath === 'local' && (localBusy || (!diskOk && localPhase !== 'ready'))) || (setupPath === 'cloud' && !isSubscriptionCli && cloudOk !== true && cloudApiKey.trim().length > 0)}
               >
-                {setupPath === 'local' && !diskOk ? 'Free up disk space first' : setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' || (isSubscriptionCli && cloudOk !== true) ? 'Continue anyway' : 'Next'}
+                {setupPath === 'local' && !diskOk && localPhase !== 'ready' ? 'Free up disk space first' : setupPath === 'local' && localPhase === 'ready' ? 'Next' : setupPath === 'local' && localBusy ? 'Setting up...' : setupPath === 'local' || (isSubscriptionCli && cloudOk !== true) ? 'Continue anyway' : 'Next'}
               </button>
             )}
             {step === 'done' && (

@@ -106,6 +106,7 @@ describe('Track F — Code Mode Reachability', () => {
         );
       });
 
+      fireEvent.click(screen.getByText('Explore workspaces'));
       const codeWorkspaceBtn = screen.getByRole('button', { name: /Code Workspace/i });
       expect(codeWorkspaceBtn).toBeInTheDocument();
 

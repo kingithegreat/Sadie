@@ -54,9 +54,24 @@ declare global {
 // Offline speech recognition uses Windows SAPI via PowerShell (fully offline,
 // no external dependencies). Web Speech API is the fallback for non-Windows.
 
+export type ComposerImage = ImageAttachment & { id: string };
+export type ComposerDocument = DocumentAttachment & { id: string };
+/** A conversation's unfinished message. Kept in memory by the parent only. */
+export type ComposerDraft = {
+  text: string;
+  images: ComposerImage[];
+  documents: ComposerDocument[];
+};
+
+export const createEmptyComposerDraft = (): ComposerDraft => ({ text: '', images: [], documents: [] });
+
 export type InputBoxProps = {
   onSendMessage: (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   disabled?: boolean;
+  draft?: ComposerDraft;
+  onDraftChange?: (draft: ComposerDraft) => void;
+  draftKey?: string;
+  suggestion?: { id: number; text: string } | null;
 };
 
 const PLACEHOLDER_HINTS = [
@@ -69,55 +84,116 @@ const PLACEHOLDER_HINTS = [
   'Drop a PDF here to chat about it',
 ];
 
-export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) {
-  type LocalImage = ImageAttachment & { id: string };
-  type LocalDocument = DocumentAttachment & { id: string };
-  const [inputValue, setInputValue] = useState('');
+export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange, draftKey, suggestion }: InputBoxProps) {
+  const [localDraft, setLocalDraft] = useState<ComposerDraft>(createEmptyComposerDraft);
+  const currentDraft = draft ?? localDraft;
+  const draftRef = useRef(currentDraft);
+  draftRef.current = currentDraft;
+  const controlledRef = useRef(draft !== undefined);
+  controlledRef.current = draft !== undefined;
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const draftKeyRef = useRef(draftKey);
+  draftKeyRef.current = draftKey;
+  const draftRevisionRef = useRef(0);
+  const mountedRef = useRef(true);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { text: inputValue, images: attachedImages, documents: attachedDocuments } = currentDraft;
+
+  const updateDraft = useCallback((update: (previous: ComposerDraft) => ComposerDraft) => {
+    if (!mountedRef.current) return;
+    const next = update(draftRef.current);
+    draftRef.current = next;
+    draftRevisionRef.current += 1;
+    if (!controlledRef.current) setLocalDraft(next);
+    onDraftChangeRef.current?.(next);
+  }, []);
+
+  const setInputValue = useCallback((value: React.SetStateAction<string>) => {
+    updateDraft(previous => ({ ...previous, text: typeof value === 'function' ? value(previous.text) : value }));
+  }, [updateDraft]);
+  const setAttachedImages = useCallback((value: React.SetStateAction<ComposerImage[]>) => {
+    updateDraft(previous => ({ ...previous, images: typeof value === 'function' ? value(previous.images) : value }));
+  }, [updateDraft]);
+  const setAttachedDocuments = useCallback((value: React.SetStateAction<ComposerDocument[]>) => {
+    updateDraft(previous => ({ ...previous, documents: typeof value === 'function' ? value(previous.documents) : value }));
+  }, [updateDraft]);
 
   // Sharpening a draft before sending it. The draft before the rewrite is kept
   // so Undo is one click — replacing what someone typed with no way back is a
   // hostile thing for an app to do, however good the rewrite is.
   const [improving, setImproving] = useState(false);
   const [preImproveDraft, setPreImproveDraft] = useState<string | null>(null);
+  const [rewrittenText, setRewrittenText] = useState<string | null>(null);
   const [improveNote, setImproveNote] = useState<string | null>(null);
+  const [suggestionNote, setSuggestionNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPreImproveDraft(null);
+    setRewrittenText(null);
+    setImproveNote(null);
+    setSuggestionNote(null);
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!suggestion) return;
+    const existing = draftRef.current;
+    if (existing.text || existing.images.length || existing.documents.length) {
+      setSuggestionNote('Your draft is still here. Send or clear it before choosing a starter.');
+    } else {
+      setInputValue(suggestion.text);
+      setSuggestionNote('Edit this starter to say what you need, then choose Send.');
+    }
+    textareaRef.current?.focus();
+  }, [suggestion, setInputValue]);
 
   const handleImprovePrompt = useCallback(async () => {
     if (improving) return;
-    const draft = inputValue;
+    const capturedDraft = draftRef.current;
+    const revision = draftRevisionRef.current;
+    const scope = draftKeyRef.current;
     setImproving(true);
     setImproveNote(null);
     try {
-      const res = await window.electron?.improvePrompt?.(draft);
+      const res = await window.electron?.improvePrompt?.(capturedDraft.text);
+      if (!mountedRef.current || scope !== draftKeyRef.current) return;
+      if (revision !== draftRevisionRef.current || draftRef.current !== capturedDraft) {
+        setImproveNote('Your draft changed while the rewrite was running. Your latest wording and attachments are kept.');
+        return;
+      }
       if (!res?.success || !res.improved) {
         // Says why rather than doing nothing — a button that silently no-ops
         // reads as broken.
         setImproveNote(res?.error || 'Could not rewrite that just now.');
         return;
       }
-      setPreImproveDraft(draft);
+      setPreImproveDraft(capturedDraft.text);
+      setRewrittenText(res.improved);
       setInputValue(res.improved);
     } catch {
-      setImproveNote('Could not rewrite that just now.');
+      if (mountedRef.current && scope === draftKeyRef.current) setImproveNote('Could not rewrite that just now.');
     } finally {
-      setImproving(false);
+      if (mountedRef.current) setImproving(false);
     }
-  }, [inputValue, improving]);
+  }, [improving, setInputValue]);
 
   const handleUndoImprove = useCallback(() => {
     if (preImproveDraft === null) return;
     setInputValue(preImproveDraft);
     setPreImproveDraft(null);
+    setRewrittenText(null);
     setImproveNote(null);
-  }, [preImproveDraft]);
+  }, [preImproveDraft, setInputValue]);
 
   // Typing after a rewrite means the user has taken it from here, so the undo
   // offer stops applying — restoring at that point would discard their edits.
   useEffect(() => {
-    if (preImproveDraft !== null && inputValue !== '' && improveNote) setImproveNote(null);
-  }, [inputValue, preImproveDraft, improveNote]);
+    if (preImproveDraft !== null && inputValue !== rewrittenText) {
+      setPreImproveDraft(null);
+      setRewrittenText(null);
+    }
+  }, [inputValue, preImproveDraft, rewrittenText]);
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const [attachedImages, setAttachedImages] = useState<LocalImage[]>([]);
-  const [attachedDocuments, setAttachedDocuments] = useState<LocalDocument[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
@@ -313,7 +389,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
 
     recognitionRef.current = recognition;
     recognition.start();
-  }, [voiceAutoSend]);
+  }, [voiceAutoSend, setInputValue]);
 
   const stopListening = useCallback(() => {
     // Whisper: stop the recording early — transcription of what was captured
@@ -370,13 +446,20 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   };
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      // cleanup object URLs
-      attachedImages.forEach((img) => { if (img.url) URL.revokeObjectURL(img.url); });
+      mountedRef.current = false;
+      // A parent-retained draft still owns its previews after mode navigation.
+      if (!controlledRef.current) {
+        draftRef.current.images.forEach(img => {
+          if (img.url?.startsWith('blob:')) URL.revokeObjectURL(img.url);
+        });
+      }
     };
-  }, [attachedImages]);
+  }, []);
 
   const handleSend = useCallback(() => {
+    if (disabled) return;
     const trimmed = inputValue.trim();
     if (!trimmed && attachedImages.length === 0 && attachedDocuments.length === 0) return;
 
@@ -398,13 +481,12 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       attachedDocuments.length ? attachedDocuments : undefined
     );
 
-    // reset
-    attachedImages.forEach((img) => { if (img.url) URL.revokeObjectURL(img.url); });
-    setAttachedImages([]);
-    setAttachedDocuments([]);
-    setInputValue('');
+    updateDraft(createEmptyComposerDraft);
+    setPreImproveDraft(null);
+    setRewrittenText(null);
+    setSuggestionNote(null);
     setErrorMessage(null);
-  }, [inputValue, attachedImages, attachedDocuments, onSendMessage]);
+  }, [inputValue, attachedImages, attachedDocuments, onSendMessage, disabled, updateDraft]);
 
   // Voice auto-send: trigger handleSend once the input value updates after voice recognition
   useEffect(() => {
@@ -437,11 +519,12 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
 
   const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
+    const scope = draftKeyRef.current;
     const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (incoming.length === 0) return;
 
     let total = attachedImages.reduce((s, img) => s + (img.size || 0), 0);
-    const newImages: LocalImage[] = [];
+    const newImages: ComposerImage[] = [];
 
     for (const file of incoming) {
       if (attachedImages.length + newImages.length >= MAX_IMAGES) {
@@ -459,8 +542,8 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
         if (total + size > MAX_TOTAL) { setErrorMessage(`Adding ${file.name} would exceed total size limit.`); break; }
         total += size;
         const id = `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-        const url = resized.url || URL.createObjectURL(file);
-        newImages.push({ ...resized, filename: resized.filename ?? file.name, mimeType: resized.mimeType ?? file.type, size, url, id } as LocalImage);
+        const url = resized.url;
+        newImages.push({ ...resized, filename: resized.filename ?? file.name, mimeType: resized.mimeType ?? file.type, size, url, id } as ComposerImage);
       } catch {
         // fallback -> make a dataURL
         try {
@@ -474,12 +557,15 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           const [prefix, base64Part] = readerResult.split(',');
           const data = base64Part || '';
           const mimeType = prefix?.match(/data:(.*);base64/)?.[1] || file.type;
-          newImages.push({ filename: file.name, mimeType, data, url: readerResult, size, id } as LocalImage);
+          newImages.push({ filename: file.name, mimeType, data, url: readerResult, size, id } as ComposerImage);
         } catch { continue; }
       }
     }
 
-    if (newImages.length) { setAttachedImages((prev) => [...prev, ...newImages]); setErrorMessage(null); }
+    if (newImages.length && mountedRef.current && scope === draftKeyRef.current) {
+      setAttachedImages((prev) => [...prev, ...newImages]);
+      setErrorMessage(null);
+    }
   };
 
   // Supported document types
@@ -501,7 +587,8 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   };
 
   const processDocuments = async (files: File[]) => {
-    const newDocs: LocalDocument[] = [];
+    const scope = draftKeyRef.current;
+    const newDocs: ComposerDocument[] = [];
 
     for (const file of files) {
       if (attachedDocuments.length + newDocs.length >= MAX_DOCUMENTS) {
@@ -542,7 +629,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
       }
     }
 
-    if (newDocs.length) {
+    if (newDocs.length && mountedRef.current && scope === draftKeyRef.current) {
       setAttachedDocuments((prev) => [...prev, ...newDocs]);
       setErrorMessage(null);
     }
@@ -622,7 +709,11 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
   };
 
   const removeAttachment = (id: string) => {
-    setAttachedImages((prev) => { const target = prev.find((img) => img.id === id); if (target?.url) URL.revokeObjectURL(target.url); return prev.filter((img) => img.id !== id); });
+    setAttachedImages((prev) => {
+      const target = prev.find(img => img.id === id);
+      if (target?.url?.startsWith('blob:')) URL.revokeObjectURL(target.url);
+      return prev.filter(img => img.id !== id);
+    });
     setErrorMessage(null);
   };
 
@@ -654,9 +745,10 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
           {improveNote}
         </div>
       )}
+      {suggestionNote && <div role="status" className="improve-note">{suggestionNote}</div>}
 
       <div className="input-top">
-        <textarea className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} />
+        <textarea ref={textareaRef} className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} disabled={disabled} />
         <div className={`char-counter${inputValue.length > 3000 ? (inputValue.length > 3800 ? ' danger' : ' warning') : ''}`}>{inputValue.length} / 4000</div>
 
         <div className="input-actions">
@@ -725,7 +817,7 @@ export function InputBox({ onSendMessage, disabled: _disabled }: InputBoxProps) 
               </button>
             </>
           )}
-          <button className="send-button" onClick={handleSend} disabled={!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0}>
+          <button className="send-button" onClick={handleSend} disabled={disabled || (!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0)}>
             <Icon name="send" />
             <span>Send</span>
           </button>
