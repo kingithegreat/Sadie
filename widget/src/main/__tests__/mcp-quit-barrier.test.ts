@@ -43,7 +43,9 @@ function harness(keepExistingWindow = false) {
   createMainWindow.mockClear();
   return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
-async function settle() { for (let n = 0; n < 10; n++) await Promise.resolve(); }
+// Flush the native and VM promise queues through a real event-loop turn.
+// Cleanup phases may add microtasks without changing the quit contract.
+async function settle() { await new Promise<void>(resolve => setImmediate(resolve)); }
 
 test('native window close retains its owning renderer through a refusal, then permits close after retry cleanup', async () => {
   const h = harness(true);
