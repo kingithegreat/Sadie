@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { acquireStudioPlayback, releaseStudioPlayback } from './studioPlaybackCoordinator';
 
 interface TimelinePlaybackOptions {
   active: boolean;
@@ -22,6 +23,15 @@ export function useTimelinePlayback(options: TimelinePlaybackOptions) {
   const { active, source, playing, duration, loop, inPoint, outPoint,
     volume, muted, rate, onTime, onPlaying, onDuration, onError } = options;
   const mediaRef = useRef<HTMLMediaElement | null>(null);
+  const playbackOwner = useRef({});
+  const interrupted = useRef(false);
+  const playAttempt = useRef(0);
+  const stopPlayback = useCallback(() => {
+    playAttempt.current += 1;
+    interrupted.current = true;
+    mediaRef.current?.pause();
+    onPlaying(false);
+  }, [onPlaying]);
   const pendingSeek = useRef(0);
   const start = inPoint !== null && inPoint >= 0 && inPoint < duration ? inPoint : 0;
   const end = outPoint !== null && outPoint > start ? Math.min(outPoint, duration) : duration;
@@ -29,9 +39,21 @@ export function useTimelinePlayback(options: TimelinePlaybackOptions) {
   boundsRef.current = { start, end };
 
   const reportError = useCallback(() => {
+    playAttempt.current += 1;
+    releaseStudioPlayback(playbackOwner.current);
+    mediaRef.current?.pause();
     onPlaying(false);
     onError('Timeline playback failed. The media file may be missing or unreadable. Open its preview or generate it again.');
   }, [onPlaying, onError]);
+
+  // Own the entire timeline session, including silent storyboard playback.
+  useEffect(() => {
+    const owner = playbackOwner.current;
+    if (!active || !playing) return;
+    interrupted.current = false;
+    acquireStudioPlayback(owner, stopPlayback);
+    return () => releaseStudioPlayback(owner);
+  }, [active, playing, source, stopPlayback]);
 
   useEffect(() => {
     onPlaying(false);
@@ -63,10 +85,11 @@ export function useTimelinePlayback(options: TimelinePlaybackOptions) {
       media.currentTime = bounds.start;
       onTime(bounds.start);
     }
+    const attempt = ++playAttempt.current;
     Promise.resolve(media.play()).catch(() => {
-      if (!cancelled && mediaRef.current === media) reportError();
+      if (!cancelled && attempt === playAttempt.current && !interrupted.current && mediaRef.current === media) reportError();
     });
-    return () => { cancelled = true; media.pause(); };
+    return () => { cancelled = true; playAttempt.current += 1; media.pause(); };
   }, [active, source, playing, onPlaying, onTime, reportError]);
 
   useEffect(() => {
@@ -95,8 +118,9 @@ export function useTimelinePlayback(options: TimelinePlaybackOptions) {
       if (loop) {
         media.currentTime = start;
         onTime(start);
+        const attempt = ++playAttempt.current;
         Promise.resolve(media.play()).catch(() => {
-          if (mediaRef.current === media && media.getAttribute('src')) reportError();
+          if (attempt === playAttempt.current && !interrupted.current && mediaRef.current === media && media.getAttribute('src')) reportError();
         });
       } else {
         media.pause();
@@ -130,8 +154,17 @@ export function useTimelinePlayback(options: TimelinePlaybackOptions) {
       onLoadedMetadata: loadedMetadata,
       onTimeUpdate: updateClock,
       onEnded: updateClock,
+      onPlay: () => {
+        if (!active || !playing || interrupted.current) { mediaRef.current?.pause(); return; }
+        acquireStudioPlayback(playbackOwner.current, stopPlayback);
+        onPlaying(true);
+      },
       onPause: (event: { currentTarget: HTMLMediaElement }) => {
-        if (mediaRef.current === event.currentTarget && !event.currentTarget.ended) onPlaying(false);
+        if (mediaRef.current === event.currentTarget && event.currentTarget.paused && !event.currentTarget.ended) {
+          playAttempt.current += 1;
+          releaseStudioPlayback(playbackOwner.current);
+          onPlaying(false);
+        }
       },
       onError: () => { if (mediaRef.current?.getAttribute('src')) reportError(); },
     },
