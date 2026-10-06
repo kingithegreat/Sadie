@@ -82,7 +82,7 @@ export class WorkspacePtySessions {
       notify({ sessionId: info.sessionId, seq: ++info.seq, type: 'exit', exitCode: event.exitCode });
       // ConPTY retains a worker even after the child exits. Release it now;
       // later closing its transcript must never kill a potentially reused PID.
-      this.release(session, process.platform === 'win32');
+      try { this.release(session, process.platform === 'win32'); } catch (error) { console.error('[HomeBot-CATCH]', error); }
     }));
     return { ...info };
   }
@@ -104,7 +104,8 @@ export class WorkspacePtySessions {
     if (session.released) return;
     session.released = true;
     for (const listener of session.listeners) listener.dispose();
-    if (kill) this.kill(session);
+    session.listeners = [];
+    try { if (kill) this.kill(session); } catch (error) { session.released = false; throw error; }
   }
   private kill(session: Session): void { if (session.killed) return; session.killed = true; try { session.pty.kill(); } catch (error) { session.killed = false; throw error; } }
   private waitForExit(session: Session, timeout: number): Promise<boolean> {
