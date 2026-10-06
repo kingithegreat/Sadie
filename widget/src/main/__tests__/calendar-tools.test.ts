@@ -16,9 +16,9 @@ jest.mock('axios', () => ({
   post: jest.fn().mockRejectedValue(new Error('n8n unavailable in tests')),
 }));
 
-// Mock child_process – Outlook always unavailable in CI
-const mockExecImpl = jest.fn();
-jest.mock('child_process', () => ({ exec: mockExecImpl }));
+// Mock the owned helper boundary; native lifecycle has separate tests.
+const mockCalendarPowerShell = jest.fn();
+jest.mock('../calendar-helpers', () => ({ runCalendarPowerShell: mockCalendarPowerShell }));
 
 // Mock fs to avoid writing real files
 const mockFsExistsSync = jest.fn();
@@ -52,13 +52,9 @@ import {
   calendarToolDefs,
 } from '../tools/calendar';
 
-// Helper: make exec always throw (Outlook unavailable)
+// Helper: make the owned PowerShell operation reject (Outlook unavailable).
 function mockOutlookUnavailable() {
-  mockExecImpl.mockImplementation((_cmd: string, _opts: any, cb?: Function) => {
-    const callback = typeof _opts === 'function' ? _opts : cb;
-    if (callback) callback(new Error('Outlook not available'), { stdout: '' });
-    return { on: jest.fn() };
-  });
+  mockCalendarPowerShell.mockRejectedValue(new Error('Outlook not available'));
 }
 
 // Helper: mock an empty local calendar store
@@ -86,6 +82,14 @@ beforeEach(() => {
 // ── listCalendarEventsHandler ──────────────────────────────────────────────
 
 describe('listCalendarEventsHandler', () => {
+  test('Outlook listing uses the owned helper and parses its successful output', async () => {
+    const future = new Date(Date.now() + 86400000).toISOString();
+    mockCalendarPowerShell.mockResolvedValueOnce({ stdout: JSON.stringify({ id: 'outlook1', title: 'Owned listing', start: future, end: future }) });
+    const res = await listCalendarEventsHandler({ days_ahead: 3 }, {} as any);
+    expect(mockCalendarPowerShell).toHaveBeenCalledWith(expect.stringContaining('Outlook.Application'));
+    expect(mockCalendarPowerShell.mock.calls[0][0]).toContain('$start.AddDays(3)');
+    expect(res.result).toMatchObject({ source: 'outlook', events: [expect.objectContaining({ id: 'outlook1', title: 'Owned listing' })] });
+  });
   test('returns empty events when store is empty', async () => {
     const res = await listCalendarEventsHandler({}, {} as any);
     expect(res.success).toBe(true);
@@ -141,6 +145,13 @@ describe('listCalendarEventsHandler', () => {
 // ── addCalendarEventHandler ────────────────────────────────────────────────
 
 describe('addCalendarEventHandler', () => {
+  test('Outlook creation uses the owned helper result and still stores its local backup', async () => {
+    mockCalendarPowerShell.mockResolvedValueOnce({ stdout: 'outlook-owned-id\r\n' });
+    const res = await addCalendarEventHandler({ title: 'Owned create', start: '2026-10-08T09:00:00', end: '2026-10-08T09:30:00' }, {} as any);
+    expect(mockCalendarPowerShell).toHaveBeenCalledWith(expect.stringContaining('$appt.Save()'));
+    expect(res.result).toMatchObject({ savedToOutlook: true, added: { id: 'outlook-owned-id', title: 'Owned create' } });
+    expect(JSON.parse(mockFsWriteFileSync.mock.calls[0][1])).toEqual([expect.objectContaining({ id: 'outlook-owned-id' })]);
+  });
   test('returns failure when title is missing', async () => {
     const res = await addCalendarEventHandler({
       start: '2026-04-01T09:00:00',
