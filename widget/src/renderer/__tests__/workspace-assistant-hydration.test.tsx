@@ -76,7 +76,7 @@ test('expired hydration can Retry and its late original response cannot replace 
   jest.useFakeTimers(); const old = deferred<any>();
   api.workspaceAiSession.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ success: true, turns: [{ id: 'current', role: 'assistant', text: 'latest durable transcript' }] });
   render(panel());
-  await act(async () => { await jest.advanceTimersByTimeAsync(ASSISTANT_HISTORY_LOAD_TIMEOUT_MS); });
+  await act(async () => { await Promise.resolve(); jest.advanceTimersByTime(ASSISTANT_HISTORY_LOAD_TIMEOUT_MS); });
   expect(screen.getByRole('alert')).toHaveTextContent('timed out'); expect(api.workspaceAiSaveSession).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry history recovery' })); });
   await act(async () => { old.resolve({ success: true, turns: [{ id: 'stale', role: 'assistant', text: 'expired old response' }] }); });
