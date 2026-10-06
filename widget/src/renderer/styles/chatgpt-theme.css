@@ -14620,5 +14620,141 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
   accent-color: #00f0ff;
 }
 
+/* IDE controls share the workspace palette. Keep this baseline low-specificity
+   so existing icon, tree, search, tab and primary-action treatments survive. */
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) {
+  --ws-fg: #d8dee7;
+  --ws-control-bg: #252930;
+  --ws-control-hover: #333a43;
+  --ws-control-border: #49515c;
+  --ws-control-muted: #aab3bf;
+  --ws-control-surface: #1c2026;
+  --ws-control-error: #fca5a5;
+  color-scheme: dark;
+}
+[data-theme='light'] :where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) {
+  --ws-fg: #3b3b3b;
+  --ws-control-bg: #ffffff;
+  --ws-control-hover: #e9eef3;
+  --ws-control-border: #b7c0cb;
+  --ws-control-muted: #596574;
+  --ws-control-surface: #f3f5f7;
+  --ws-control-error: #a9232c;
+  color-scheme: light;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button, select, input, textarea) {
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 12px;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 28px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--ws-control-border);
+  border-radius: 5px;
+  background: var(--ws-control-bg);
+  color: var(--ws-fg, var(--text-primary, #d8dee7));
+  line-height: 1.25;
+  cursor: pointer;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button:hover:not(:disabled)) {
+  background: var(--ws-control-hover);
+  border-color: var(--accent, #8b9aff);
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button:disabled, input:disabled, select:disabled, textarea:disabled) {
+  opacity: .5;
+  cursor: not-allowed;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) {
+  min-height: 28px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--ws-control-border);
+  border-radius: 5px;
+  background: var(--ws-control-bg);
+  color: var(--ws-fg, var(--text-primary, #d8dee7));
+  line-height: 1.35;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(input::placeholder, textarea::placeholder) {
+  color: var(--ws-control-muted);
+  opacity: 1;
+}
+:where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [role='option']:focus-visible) {
+  outline: 2px solid var(--accent, #8b9aff);
+  outline-offset: 1px;
+}
+.workspace-shell :where(input[type='checkbox'], input[type='radio'], input[type='range']) { accent-color: var(--accent); }
+.workspace-shell :where(label:has(input[type='checkbox'])) { display: inline-flex; align-items: center; gap: 5px; line-height: 1.4; cursor: pointer; }
+.workspace-shell :where(label input[type='checkbox']) { margin: 0; }
+.workspace-shell .ws-header :where(button, select, summary) { flex-shrink: 0; white-space: nowrap; }
+.workspace-shell .ws-header select { max-width: 200px; }
+.workspace-shell .ws-header details { position: relative; }
+.workspace-shell .ws-header summary { padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.workspace-shell .ws-header summary:hover { background: var(--ws-control-hover); }
+.workspace-shell .ws-header details > div { right: 0; min-width: 240px; border-radius: 7px; box-shadow: 0 8px 24px #0003; }
+.workspace-shell .ws-header details label { display: grid; gap: 6px; margin: 5px 0 12px; }
+.workspace-shell .ws-sidebar-body > div:has(> label > input[type='checkbox']) { align-items: center; border-bottom: 1px solid var(--hairline); margin-bottom: 4px; }
+.workspace-shell [aria-label='Language tools'] { align-items: center; border-top: 1px solid var(--hairline); background: var(--ws-control-surface); }
+.workspace-shell [aria-label='Language tools'] > button { min-height: 26px; font-size: 11.5px; }
+.workspace-shell .code-editor > div:has([aria-label='Editor indentation']) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; border-top: 1px solid var(--hairline); background: var(--ws-control-surface); }
+.workspace-shell .code-editor > div:has([aria-label='Editor indentation']) label { display: inline-flex; align-items: center; gap: 6px; }
+.workspace-shell [aria-label='Editor font size'] { width: 64px; }
+.workspace-shell .code-editor > div:has([aria-label='Editor indentation']) p { flex-basis: 100%; margin: 0; color: var(--ws-control-muted); line-height: 1.5; }
+.workspace-shell :where(section[aria-label='Language result'], section[aria-label='Git details']) { border-top: 1px solid var(--hairline); background: var(--ws-control-surface); border-radius: 5px; }
+.workspace-shell :where(section[aria-label='Language result'], section[aria-label='Git details'], section[aria-label='Debugger'], section[aria-label='Tests']) :where(p, small) { line-height: 1.5; overflow-wrap: anywhere; }
+.workspace-shell :where(section[aria-label='Debugger'], section[aria-label='Tests']) { color: var(--ws-fg); }
+.workspace-shell :where(section[aria-label='Debugger'], .scm-panel) > label { display: grid; gap: 5px; margin: 5px 0; }
+.workspace-shell :where(section[aria-label='Debugger'], .scm-panel) > label :where(input, textarea) { width: 100%; }
+.workspace-shell [aria-label='Debug controls'] { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.workspace-shell :where(section[aria-label='Debugger'], section[aria-label='Tests']) > div:not([role]) { margin: 8px 0; }
+.workspace-shell section[aria-label='Tests'] > div > small { display: block; margin: 4px 0; color: var(--ws-control-muted); font-size: 10.5px; }
+.workspace-shell section[aria-label='Tests'] > div > button + button { margin: 3px 4px 3px 0; }
+.workspace-shell :where(section[aria-label='Debugger'], section[aria-label='Tests'], section[aria-label='Language result'], section[aria-label='Git details']) pre { padding: 8px; border: 1px solid var(--hairline); border-radius: 4px; font-size: 11.5px; font-family: var(--font-mono, Consolas, monospace); overflow: auto; background: var(--ws-bg); }
+.workspace-shell :where([role='alert']) { color: var(--ws-control-error); line-height: 1.5; overflow-wrap: anywhere; }
+.workspace-shell :where([role='status']) { font-size: 11.5px; line-height: 1.5; }
+.workspace-shell .terminal-panel > :is(header, div):has(> [aria-label='Shell profile']) { align-items: center; border-bottom: 1px solid var(--hairline); background: var(--ws-control-surface); }
+.workspace-shell [aria-label='Terminal sessions'] { flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--hairline); }
+.workspace-shell [aria-label='Terminal sessions'] > div { display: flex; gap: 3px; }
+.workspace-shell [aria-label='Terminal sessions'] button[aria-selected='true'] { background: var(--accent-quiet, #426d5533); border-color: var(--accent); }
+.workspace-shell [aria-label='Terminal sessions'] button[aria-label] { padding: 3px 7px; }
+.workspace-shell .tree-row > button { flex: 0 0 auto; min-height: 22px; padding: 0 5px; margin-left: auto; font-size: 11px; }
+.workspace-shell .code-inline-edit-bar { background: var(--ws-control-surface); border-color: var(--ws-control-border); color: var(--ws-fg); }
+.workspace-shell .code-inline-edit-title { color: var(--ws-fg); }
+.workspace-shell .code-inline-edit-input { background: var(--ws-control-bg); color: var(--ws-fg); border-color: var(--ws-control-border); }
+[data-theme='light'] .workspace-shell .code-inline-edit-header { border-bottom-color: var(--hairline); color: #596574; }
+[data-theme='light'] .workspace-shell .code-inline-edit-badge { background: #dce3eb; }
+[data-theme='light'] .workspace-shell .code-inline-diff-preview { background: #f7f9fb; }
+[data-theme='light'] .workspace-shell .code-diff-line.add { background: #d8f0df; color: #176334; }
+[data-theme='light'] .workspace-shell .code-diff-line.remove { background: #fbe2e3; color: #a9232c; }
+[data-theme='light'] .workspace-shell .code-diff-line.equal { color: #596574; }
+[data-theme='light'] .workspace-shell .code-inline-edit-error { color: #a9232c; }
+[data-theme='light'] .workspace-shell .code-inline-btn-secondary { color: #364454; background: #e9eef3; }
+[role='dialog']:is([aria-label='Quick Open'], [aria-label='Command palette'], [aria-label='Project symbols'], [aria-label='Rename symbol']) > div {
+  color: var(--text-primary, #d8dee7);
+  /* Existing dialog markup uses a dark inline fallback; the named IDE surface
+     must follow the selected theme in both modes. */
+  background: var(--ws-control-surface) !important;
+  border: 1px solid var(--ws-control-border);
+  border-radius: 9px;
+  box-shadow: 0 14px 40px #0005;
+}
+[role='dialog']:is([aria-label='Quick Open'], [aria-label='Command palette'], [aria-label='Project symbols']) [role='combobox'] { min-height: 36px; margin-bottom: 8px; font-size: 13px; }
+[role='dialog']:is([aria-label='Quick Open'], [aria-label='Command palette'], [aria-label='Project symbols']) [role='option'] { border-radius: 5px; margin: 2px 0; line-height: 1.4; overflow-wrap: anywhere; }
+[role='dialog']:is([aria-label='Quick Open'], [aria-label='Command palette'], [aria-label='Project symbols']) small { display: block; margin-top: 8px; color: var(--ws-control-muted); line-height: 1.5; }
+[role='dialog'][aria-label='Rename symbol'] label { display: grid; gap: 8px; margin-bottom: 12px; }
+[role='dialog'][aria-label='Rename symbol'] button + button { margin-left: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  :where(.workspace-shell) :where(button, input, select, textarea) { transition: none; }
+}
+
 
 
