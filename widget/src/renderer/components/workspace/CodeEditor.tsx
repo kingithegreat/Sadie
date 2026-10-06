@@ -23,6 +23,7 @@ import { csharp } from '@codemirror/legacy-modes/mode/clike';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
 import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
+import { ghostCompletionExtension } from './GhostCompletion';
 
 /**
  * Code editor pane, on CodeMirror 6.
@@ -378,6 +379,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       readOnlySlot.current.of(readOnlyExtensions(!!readOnly)),
       preferencesSlot.current.of(preferenceExtensions(preferences)),
       semanticSlot.current.of(semanticExtensions(() => semanticContext.current)),
+      ghostCompletionExtension,
       EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());

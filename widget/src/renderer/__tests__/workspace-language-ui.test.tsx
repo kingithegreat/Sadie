@@ -71,3 +71,25 @@ test('command palette invokes actual provided command and Escape closes symbols'
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' }); expect(run).toHaveBeenCalled();
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' }); expect(onClose).toHaveBeenCalledTimes(2);
 });
+test('AI ghost suggestions are opt-in and Tab accepts only the captured document and cursor', async () => {
+  let finish: (result: any) => void = () => {};
+  const workspaceCodeComplete = jest.fn(() => new Promise(resolve => { finish = resolve; }));
+  (window as any).electron = { workspaceCodeComplete };
+  const { container } = render(<CodeEditor root={ROOT} filePath={FILE} value="const x = " language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+  const view = viewOf(container);
+  expect(screen.getByText('Suggest code')).toBeDisabled(); expect(workspaceCodeComplete).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('Editor settings'));
+  fireEvent.click(screen.getByLabelText(/Local AI suggestions/));
+  act(() => view.dispatch({ selection: { anchor: view.state.doc.length } }));
+  fireEvent.click(screen.getByText('Suggest code'));
+  await act(async () => finish({ success: true, text: '42;' }));
+  expect(workspaceCodeComplete).toHaveBeenCalledWith(ROOT, 'const x = ', '');
+  expect(container.querySelector('.code-ghost-completion')).toHaveTextContent('42;');
+  act(() => view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true, cancelable: true })));
+  expect(view.state.doc.toString()).toBe('const x = 42;');
+  fireEvent.click(screen.getByText('Suggest code'));
+  act(() => view.dispatch({ changes: { from: 0, insert: '// typed\n' } }));
+  const expected = view.state.doc.toString();
+  await act(async () => finish({ success: true, text: 'unrelated' }));
+  expect(container.querySelector('.code-ghost-completion')).toBeNull(); expect(view.state.doc.toString()).toBe(expected);
+});

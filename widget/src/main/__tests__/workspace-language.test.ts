@@ -54,6 +54,21 @@ test('format and diagnostics operate on unsaved text, preserving disk', () => {
   const result = query('format', content, 0); expect(result.success).toBe(true); expect(result.edits?.[0].changes.length).toBeGreaterThan(0);
   expect(result.edits?.[0].expectedContent).toBe(content); expect(fs.readFileSync(entry, 'utf8')).toBe(originalEntry);
 });
+test('unopened CRLF/BOM refactoring targets use the same normalized offsets as the editor reader', () => {
+  const disk = '\uFEFF' + originalLibrary.replace(/\n/g, '\r\n');
+  const entryDisk = '\uFEFF' + originalEntry.replace(/\n/g, '\r\n');
+  fs.writeFileSync(library, disk);
+  fs.writeFileSync(entry, entryDisk);
+  try {
+    // Renaming the declaration, as opposed to a local import alias, spans files.
+    const exported = queryWorkspaceLanguage({ root, path: library, content: originalLibrary, action: 'rename', position: originalLibrary.indexOf('greet') + 2, newName: 'welcome' });
+    expect(exported.success).toBe(true);
+    expect(exported.edits?.find(edit => edit.path === library)?.expectedContent).toBe(originalLibrary);
+    expect(exported.edits?.find(edit => edit.path === entry)?.expectedContent).toBe(originalEntry);
+    expect(fs.readFileSync(library, 'utf8')).toBe(disk);
+    expect(fs.readFileSync(entry, 'utf8')).toBe(entryDisk);
+  } finally { fs.writeFileSync(library, originalLibrary); fs.writeFileSync(entry, originalEntry); }
+});
 test('compiler quick fixes are returned with exact source guards', () => {
   const content = 'const count = 1;\ncount = 2;\n';
   const result = query('fixes', content, content.indexOf('count = 2') + 2);

@@ -1,15 +1,16 @@
-import { useEffect, useState, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { autocompletion, completeAnyWord, type CompletionContext } from '@codemirror/autocomplete';
 import { hoverTooltip, type EditorView } from '@codemirror/view';
 import { linter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
 import type { WorkspaceLanguageAction, WorkspaceLanguageBuffer, WorkspaceLanguageEdit, WorkspaceLanguageResult } from '../../../shared/workspace-language-types';
+import { setGhostSuggestion } from './GhostCompletion';
 
-export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean }
+export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean; aiSuggestions?: boolean }
 const STORAGE_KEY = 'homebot.code.editor.preferences.v1';
 export function readEditorPreferences(): EditorPreferences {
-  try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return { tabSize: value.tabSize === 4 ? 4 : 2, fontSize: Number.isFinite(value.fontSize) ? Math.max(10, Math.min(30, value.fontSize)) : 14, formatOnSave: value.formatOnSave === true }; }
+  try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return { tabSize: value.tabSize === 4 ? 4 : 2, fontSize: Number.isFinite(value.fontSize) ? Math.max(10, Math.min(30, value.fontSize)) : 14, formatOnSave: value.formatOnSave === true, aiSuggestions: value.aiSuggestions === true }; }
   catch { return { tabSize: 2, fontSize: 14, formatOnSave: false }; }
 }
 interface SemanticContext { root?: string; filePath?: string; buffers?: WorkspaceLanguageBuffer[] }
@@ -64,6 +65,33 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [rename, setRename] = useState(false);
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
+  const suggestionRequest = useRef(0);
+  const suggest = async () => {
+    const view = viewRef.current; const api = window.electron as any;
+    if (!preferences.aiSuggestions || !view || readOnly || !view.state.selection.main.empty) return;
+    if (!api?.workspaceCodeComplete) { setNotice('Local code completion is unavailable in this build.'); return; }
+    const source = view.state.doc; const position = view.state.selection.main.head;
+    const request = ++suggestionRequest.current;
+    try {
+      const result = await api.workspaceCodeComplete(root, source.sliceString(Math.max(0, position - 8000), position), source.sliceString(position, Math.min(source.length, position + 4000)));
+      if (request !== suggestionRequest.current || viewRef.current !== view || !view.state.doc.eq(source) || !view.state.selection.main.empty || view.state.selection.main.head !== position) return;
+      if (!result.success || !result.text) { setNotice(result.reason || result.error || 'No local completion is available. Choose a supported installed code-completion model in AI settings.'); return; }
+      view.dispatch({ effects: setGhostSuggestion.of({ position, text: result.text, source }) });
+      setNotice('Local suggestion ready. Tab accepts; Escape dismisses.');
+    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+  };
+  useEffect(() => {
+    if (!preferences.aiSuggestions || readOnly) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = (event: Event) => {
+      const view = viewRef.current;
+      if (view?.dom.contains(event.target as Node)) { clearTimeout(timer); timer = setTimeout(() => void suggest(), 1000); }
+    };
+    window.addEventListener('keyup', schedule);
+    return () => { suggestionRequest.current++; clearTimeout(timer); window.removeEventListener('keyup', schedule); };
+  // Capture the current root and buffers; each result validates its full snapshot.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, filePath, preferences.aiSuggestions, readOnly]);
   const query = async (action: WorkspaceLanguageAction, extra = {}) => {
     const view = viewRef.current; if (!view || busy) return;
     setBusy(true); setNotice('');
@@ -109,6 +137,7 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       <button disabled={busy || readOnly} onClick={() => setRename(true)}>Rename symbol (F2)</button>
       <button disabled={busy || readOnly} onClick={() => void query('fixes')}>Quick fixes</button>
       <button disabled={busy || readOnly} onClick={() => void query('format', { tabSize: preferences.tabSize })}>Format</button>
+      <button disabled={!preferences.aiSuggestions || readOnly} onClick={() => void suggest()}>Suggest code</button>
       <button onClick={() => setSettings(!settings)}>Editor settings</button>
       {busy && <span role="status">Checking project…</span>}
     </div>
@@ -116,6 +145,7 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       <label>Indentation <select aria-label="Editor indentation" value={preferences.tabSize} onChange={event => updatePreference({ ...preferences, tabSize: event.target.value === '4' ? 4 : 2 })}><option value="2">2 spaces</option><option value="4">4 spaces</option></select></label>
       <label> Font size <input aria-label="Editor font size" type="number" min={10} max={30} value={preferences.fontSize} onChange={event => updatePreference({ ...preferences, fontSize: Math.max(10, Math.min(30, Number(event.target.value) || 14)) })} /></label>
       <label><input type="checkbox" checked={preferences.formatOnSave} onChange={event => updatePreference({ ...preferences, formatOnSave: event.target.checked })} />Format JS/TS on save</label>
+      <label><input type="checkbox" checked={preferences.aiSuggestions === true} onChange={event => { updatePreference({ ...preferences, aiSuggestions: event.target.checked }); if (!event.target.checked) { suggestionRequest.current++; viewRef.current?.dispatch({ effects: setGhostSuggestion.of(null) }); } }} />Local AI suggestions (requires a supported installed completion model; no download)</label>
       <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
     </div>}
     {notice && <div role="status" style={{ padding: 8 }}>{notice}</div>}

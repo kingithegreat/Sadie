@@ -120,7 +120,8 @@ class LanguageProject {
       const size = fs.statSync(file).size;
       if (!this.readable(file) || size > MAX_BYTES) return undefined;
       if (!this.counted.has(key(file))) { if (this.readBytes + size > 32 * 1024 * 1024) return undefined; this.readBytes += size; this.counted.add(key(file)); }
-      return fs.readFileSync(file, 'utf8');
+      const text = fs.readFileSync(file, 'utf8');
+      return within(this.root, fs.realpathSync(file)) ? text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n') : text;
     } catch { return undefined; }
   }
   walk(directory = this.root): string[] {
