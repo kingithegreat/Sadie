@@ -94,3 +94,24 @@ test('Stop during approval prevents a later approval from spawning', async () =>
   approve(true); await expect(run).resolves.toMatchObject({ cancelled: true });
   expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
 });
+
+test('a quiet watch publishes its last rapid output chunk without needing exit or another chunk', async () => {
+  jest.useFakeTimers();
+  try {
+    prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'watch', lifecycle: [] });
+    requestConfirmationFrom.mockResolvedValue(true);
+    executeWorkspacePackageTask.mockImplementation((_snapshot, options) => new Promise(resolve => {
+      options.onProgress({ outputExcerpt: '> node watch.cjs', problems: [] });
+      options.onProgress({ outputExcerpt: '> node watch.cjs\nWATCH_READY', problems: [] });
+      options.signal.addEventListener('abort', () => resolve({ success: false, cancelled: true }));
+    }));
+    const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'watch', taskId: 'quiet-watch', longRunning: true });
+    await Promise.resolve(); await Promise.resolve();
+    expect(sender.send.mock.calls.some(([, state]) => state.outputExcerpt?.includes('WATCH_READY'))).toBe(false);
+    jest.advanceTimersByTime(100);
+    expect(sender.send).toHaveBeenLastCalledWith(WORKSPACE_TASK_CHANNELS.EVENT, expect.objectContaining({ running: true, outputExcerpt: '> node watch.cjs\nWATCH_READY' }));
+    await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'quiet-watch' });
+    await expect(run).resolves.toMatchObject({ cancelled: true });
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
+});

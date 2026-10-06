@@ -91,21 +91,37 @@ export function registerWorkspaceTaskIpc(): void {
     const abort = () => controller.abort();
     event.sender.once('destroyed', abort);
     let lastPush = 0;
+    let progressTimer: ReturnType<typeof setTimeout> | undefined;
+    const publishProgress = () => {
+      progressTimer = undefined;
+      lastPush = Date.now();
+      push(record);
+    };
     try {
       push(record);
       const result = await executeWorkspacePackageTask(snapshot, {
         signal: controller.signal,
         longRunning: args.longRunning === true,
-        onProgress: progress => { record.state = { ...record.state, ...progress }; if (Date.now() - lastPush >= 100) { lastPush = Date.now(); push(record); } },
+        onProgress: progress => {
+          record.state = { ...record.state, ...progress };
+          // Publish the final chunk even when a watch task then becomes quiet.
+          // Dropping a throttled chunk otherwise hides its ready signal forever.
+          if (progressTimer) return;
+          const remaining = 100 - (Date.now() - lastPush);
+          if (remaining <= 0) publishProgress();
+          else progressTimer = setTimeout(publishProgress, remaining);
+        },
         // Keep the renderer's raw root: the click path must be returned in a
         // form the renderer's lexical HOME sandbox accepts even when the
         // project canonicalises differently (junction/8.3/symlink homes).
         rawProjectDir: typeof args.projectDir === 'string' ? args.projectDir : undefined,
       });
       record.state = { ...record.state, running: false, result, outputExcerpt: result.outputExcerpt || record.state.outputExcerpt, problems: result.problems || record.state.problems };
+      if (progressTimer) { clearTimeout(progressTimer); progressTimer = undefined; }
       push(record);
       return result;
     } finally {
+      if (progressTimer) clearTimeout(progressTimer);
       event.sender.removeListener('destroyed', abort);
       record.state.running = false;
       // Retain recent results for reopening the panel, with bounded history.
