@@ -6,7 +6,8 @@ import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
-import { workspaceStreamHandler, currentWorkspace, releaseWorkspaceStream } from './workspace-context';
+import { workspaceStreamHandler, currentWorkspace, releaseWorkspaceStream, validateWorkspaceRoot } from './workspace-context';
+import { readWorkspaceTranscript, workspaceTranscriptModelMessages } from './workspace-conversation-store';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { getSkillCatalogue, matchSkills } from './skills';
@@ -582,8 +583,18 @@ export function ensureHydrated(conversationId: string): void {
   if (conversationHistory.has(conversationId) && conversationHistory.get(conversationId)!.length > 0) return;
   try {
     const stored = MemoryManager.getConversation(conversationId);
-    if (!stored || !stored.messages || stored.messages.length === 0) return;
-    const msgs: ConversationMessage[] = stored.messages
+    let savedMessages = stored?.messages;
+    if (!savedMessages?.length && conversationId.startsWith('workspace:')) {
+      const authority = currentWorkspace();
+      // A conversation ID is not filesystem authority. Only the active,
+      // validated request can restore its own IDE transcript into model history.
+      if (authority && !authority.cancelled && validateWorkspaceRoot(conversationId.slice('workspace:'.length)) === authority.root) {
+        const turns = readWorkspaceTranscript(authority.root).turns;
+        savedMessages = workspaceTranscriptModelMessages(turns).map(message => ({ ...message, timestamp: new Date().toISOString(), streamingState: 'finished' as const }));
+      }
+    }
+    if (!savedMessages?.length) return;
+    const msgs: ConversationMessage[] = savedMessages
       .filter(m => {
         if (m.role === 'user') return true;
         if (m.role !== 'assistant') return false;

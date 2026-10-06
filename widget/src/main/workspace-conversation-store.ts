@@ -91,12 +91,24 @@ export function writeWorkspaceTranscript(root: unknown, turns: unknown): { persi
   assertStoreDirectory(file); statTranscript(file);
   fs.mkdirSync(path.dirname(file), { recursive: true }); assertStoreDirectory(file);
   const temporary = `${file}.${randomUUID()}.tmp`;
+  let descriptor: number | undefined, owned: fs.BigIntStats | undefined;
   try {
-    fs.writeFileSync(temporary, serialized, { mode: 0o600, flag: 'wx' });
+    descriptor = fs.openSync(temporary, 'wx', 0o600);
+    owned = fs.fstatSync(descriptor, { bigint: true });
+    fs.writeFileSync(descriptor, serialized);
+    fs.closeSync(descriptor); descriptor = undefined;
     assertStoreDirectory(file); statTranscript(file);
+    const current = fs.lstatSync(temporary, { bigint: true });
+    if (!current.isFile() || current.isSymbolicLink() || current.dev !== owned.dev || current.ino !== owned.ino || current.birthtimeNs !== owned.birthtimeNs) throw invalid();
     fs.renameSync(temporary, file);
   } finally {
-    try { fs.unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (descriptor !== undefined) fs.closeSync(descriptor);
+    // Failed exclusive creation and redirected parents must not remove another
+    // writer's same-named file while cleaning our own temporary artifact.
+    if (owned) try {
+      const current = fs.lstatSync(temporary, { bigint: true });
+      if (current.isFile() && !current.isSymbolicLink() && current.dev === owned.dev && current.ino === owned.ino && current.birthtimeNs === owned.birthtimeNs) fs.unlinkSync(temporary);
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   }
   return {};
 }

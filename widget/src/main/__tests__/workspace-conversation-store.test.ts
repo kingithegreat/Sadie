@@ -25,6 +25,39 @@ describe('one validated IDE transcript for UI recovery and model restart context
   });
   afterEach(() => { jest.restoreAllMocks(); fs.rmSync(directory, { recursive: true, force: true }); });
 
+  test('failed exclusive temporary creation preserves a colliding foreign file and the prior transcript', () => {
+    writeWorkspaceTranscript(rootA, completed);
+    const file = savedFile(), before = fs.readFileSync(file), temporary = `${file}.collision.tmp`;
+    jest.spyOn(require('crypto'), 'randomUUID').mockReturnValue('collision');
+    fs.writeFileSync(temporary, 'foreign temporary bytes');
+    expect(() => writeWorkspaceTranscript(rootA, [{ id: 'new', role: 'user', text: 'new bytes' }])).toThrow();
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(fs.readFileSync(temporary, 'utf8')).toBe('foreign temporary bytes');
+  });
+
+  test('parent replacement after closing our temporary does not rename or remove a foreign same-named file', () => {
+    writeWorkspaceTranscript(rootA, completed);
+    const file = savedFile(), before = fs.readFileSync(file), folder = path.dirname(file), moved = `${folder}-original`;
+    const originalOpen = fs.openSync, originalClose = fs.closeSync;
+    let ownedDescriptor: number | undefined, temporary: string | undefined, redirected = false;
+    jest.spyOn(require('node:fs'), 'openSync').mockImplementation((...args: any[]) => {
+      const descriptor = (originalOpen as any)(...args);
+      if (typeof args[0] === 'string' && args[0].endsWith('.tmp')) { ownedDescriptor = descriptor; temporary = args[0]; }
+      return descriptor;
+    });
+    jest.spyOn(require('node:fs'), 'closeSync').mockImplementation((descriptor: number) => {
+      originalClose(descriptor);
+      if (descriptor === ownedDescriptor && !redirected) {
+        redirected = true; fs.renameSync(folder, moved); fs.mkdirSync(folder); fs.writeFileSync(temporary!, 'foreign redirected bytes');
+      }
+    });
+    expect(() => writeWorkspaceTranscript(rootA, [{ id: 'new', role: 'user', text: 'new bytes' }])).toThrow();
+    expect(redirected).toBe(true);
+    expect(fs.readFileSync(path.join(moved, path.basename(file)))).toEqual(before);
+    expect(fs.readFileSync(temporary!, 'utf8')).toBe('foreign redirected bytes');
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
   test('a fresh module restores genuine stored prompt and answer and isolates canonical project roots', () => {
     writeWorkspaceTranscript(rootA, completed);
     fs.mkdirSync(path.join(rootA, 'child'));
