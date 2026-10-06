@@ -670,7 +670,8 @@ app.on('before-quit', event => {
   // shutdown owns in-flight transports too and bounds each close. Allow the
   // native quit only once cleanup settles; repeated quit requests share it.
   Promise.resolve().then(async () => {
-    const results = await Promise.allSettled([shutdownMcpServers(), stopWorkspaceDebuggers(), stopWorkspaceTestRuns(), workspacePtySessions.closeAll()]);
+    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll()];
+    const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
     for (const result of results) if (result.status === 'rejected') safeCatch(result.reason);
   }).catch(safeCatch).finally(() => {
     mcpQuitReady = true;

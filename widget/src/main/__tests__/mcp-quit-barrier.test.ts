@@ -27,6 +27,8 @@ function harness() {
   };
   const otherCleanup = {
     closeAllWorkspaceTasks: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
+    disposeWorkspaceLanguageServices: jest.fn(), stopWorkspaceDebuggers: jest.fn(async () => {}), stopWorkspaceTestRuns: jest.fn(async () => {}),
+    workspacePtySessions: { closeAll: jest.fn(async () => {}) },
     globalShortcut: { unregisterAll: jest.fn() }, supervisorHandle: { stop: jest.fn() },
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
@@ -51,6 +53,21 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   await settle();
   expect(h.nativeQuits()).toBe(1);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+});
+
+test('one synchronous runtime cleanup failure cannot skip the other owned runtimes', async () => {
+  const h = harness();
+  const error = new Error('controlled debugger cleanup failure');
+  h.otherCleanup.stopWorkspaceDebuggers.mockImplementationOnce(() => { throw error; });
+  h.app.quit();
+  await settle();
+  expect(h.otherCleanup.stopWorkspaceTestRuns).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.workspacePtySessions.closeAll).toHaveBeenCalledTimes(1);
+  expect(h.nativeQuits()).toBe(0);
+  h.resolve();
+  await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(1);
 });
 
 test('a cleanup rejection is reported and still resumes native quit', async () => {
