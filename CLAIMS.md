@@ -1,5 +1,18 @@
 # Work Claims
 
+## 2026-10-07 NZ — IDE feature audit (Codex)
+
+Codex owns documentation-only `claude/ide-feature-audit-20261007`, private
+`C:/Users/adenk/.homebot/ide-audit-source-20261007`, based on main `79ffc386`.
+User explicitly requested an IDE feature audit. See docs/IDE_FEATURE_AUDIT.md
+for the reachable feature inventory, confirmed defects, cleared false positives
+and acceptance criteria. Actual isolated compiled-app audit retained nine
+observations and native exit 0; review-root predicate uses a disclosed settings
+stub and positive control. The planned 16-suite run was resource-refused before
+launch (1.689 GiB available, 2 GiB required), not a pass. Product code, delivered
+build and shared dependencies are unchanged. SAFE-1 conflict-safe Save is the
+recommended next implementation; no implementation claim is taken here.
+
 ## 2026-10-03 NZ — final finishing documentation checkpoint (Codex media agent)
 
 Codex `/root/media_finish` completed only CLAIMS.md and docs/FINISHING_HANDOVER.md
