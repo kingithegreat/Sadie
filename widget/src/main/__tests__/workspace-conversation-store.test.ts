@@ -45,7 +45,8 @@ describe('one validated IDE transcript for UI recovery and model restart context
       if (typeof args[0] === 'string' && args[0].endsWith('.tmp')) { ownedDescriptor = descriptor; temporary = args[0]; }
       return descriptor;
     });
-    jest.spyOn(require('node:fs'), 'closeSync').mockImplementation((descriptor: number) => {
+    jest.spyOn(require('node:fs'), 'closeSync').mockImplementation((...args: unknown[]) => {
+      const descriptor = args[0] as number;
       originalClose(descriptor);
       if (descriptor === ownedDescriptor && !redirected) {
         redirected = true; fs.renameSync(folder, moved); fs.mkdirSync(folder); fs.writeFileSync(temporary!, 'foreign redirected bytes');
