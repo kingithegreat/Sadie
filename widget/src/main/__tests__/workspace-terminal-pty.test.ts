@@ -18,9 +18,10 @@ function setup(autoExit = true, confirmed = true) {
     return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
   });
   const stopped = jest.fn(async () => confirmed);
-  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped }, async () => true);
+  const force = jest.fn(async () => true);
+  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped }, force);
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
-  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped };
+  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force };
 }
 test('stdin, resize and interrupt route only to the owned real PTY interface', async () => {
   const app = setup();
@@ -53,6 +54,15 @@ test('an exit notification without native identity disappearance refuses Close a
   await app.manager.close(7, app.session.sessionId);
   expect(app.stopped).toHaveBeenCalledWith(12345, { creation: 'original', parent: process.pid });
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
+});
+
+test('unproven force Stop keeps the live session and never reports successful Close', async () => {
+  const app = setup(); app.force.mockResolvedValue(false);
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/process-tree exit/);
+  expect(app.pty.kill).not.toHaveBeenCalled();
+  app.manager.write(7, app.session.sessionId, 'still available');
+  expect(app.pty.write).toHaveBeenCalledWith('still available');
+  app.force.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
 });
 test('natural exit releases listeners/ConPTY exactly once; Close does not kill a reused PID', async () => {
   const app = setup(); app.data('ready'); app.exit({ exitCode: 0 });

@@ -3,7 +3,7 @@ import type { WorkspacePtyIdentity } from './workspace-pty-identity';
 
 /** Kill only OS handles whose creation time matches the captured owned tree. */
 export function forceStopWorkspacePty(pid: number, original: WorkspacePtyIdentity | null | undefined): Promise<boolean> {
-  if (!Number.isSafeInteger(pid) || pid <= 0 || !original || !/^\d+$/.test(original.creation)) return Promise.resolve(false);
+  if (!Number.isSafeInteger(pid) || pid <= 0 || !original || !/^\d{1,19}$/.test(original.creation) || !Number.isSafeInteger(original.parent) || original.parent <= 0) return Promise.resolve(false);
   const source = `
 $ErrorActionPreference='Stop'
 Add-Type -TypeDefinition @'
