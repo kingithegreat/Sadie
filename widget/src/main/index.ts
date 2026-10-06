@@ -673,7 +673,6 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (mcpQuitPending) return;
   mcpQuitPending = true;
-  try { closeAllWorkspaceTasks(); } catch (e) { safeCatch(e); }
   try { disposeWorkspaceLanguageServices(); } catch (e) { safeCatch(e); }
   try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
   try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
@@ -684,7 +683,7 @@ app.on('before-quit', event => {
   // native quit only once cleanup settles; repeated quit requests share it.
   let runtimeReady = true;
   Promise.resolve().then(async () => {
-    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll()];
+    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks];
     const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
     results.forEach((result, index) => {
       if (result.status === 'rejected') {

@@ -81,6 +81,27 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
 });
 
+test('native quit waits for package task ownership and keeps the renderer available after an unconfirmed Stop', async () => {
+  const h = harness(true);
+  let failStop!: (error: Error) => void;
+  const stopping = new Promise<void>((_resolve, reject) => { failStop = reject; });
+  h.otherCleanup.closeAllWorkspaceTasks.mockReturnValueOnce(stopping);
+  h.app.quit();
+  h.resolve(); await settle();
+  h.app.quit(); await settle();
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  expect(h.nativeQuits()).toBe(0);
+  const error = new Error('owned package tree stop unconfirmed');
+  failStop(error); await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  h.app.quit(); await settle();
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(2);
+  expect(h.nativeQuits()).toBe(1);
+});
+
 test('unconfirmed owned runtime cleanup runs every other cleanup and keeps the app available for retry', async () => {
   const h = harness();
   const error = new Error('controlled debugger cleanup failure');
