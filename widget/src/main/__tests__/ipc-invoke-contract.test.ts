@@ -47,6 +47,7 @@ function channelConstants(sources: string[]): Record<string, string> {
   const resolved: Record<string, string> = {};
   for (const file of sources) {
     const text = fs.readFileSync(file, 'utf8');
+    for (const decl of text.matchAll(/const\s+([A-Z_][A-Za-z0-9_]*)\s*=\s*['"`]([^'"`]+)['"`]/g)) resolved[decl[1]] = decl[2];
     for (const decl of text.matchAll(/const\s+([A-Z_][A-Za-z0-9_]*)\s*=\s*\{([\s\S]*?)\n\}/g)) {
       for (const pair of decl[2].matchAll(/([A-Za-z0-9_]+)\s*:\s*['"`]([^'"`]+)['"`]/g)) {
         resolved[`${decl[1]}.${pair[1]}`] = pair[2];
@@ -62,7 +63,7 @@ function channelsFor(text: string, call: string, constants: Record<string, strin
   const literal = new RegExp(`${call}\\(\\s*['"\`]([^'"\`]+)['"\`]`, 'g');
   for (const m of text.matchAll(literal)) found.add(m[1]);
 
-  const viaConst = new RegExp(`${call}\\(\\s*([A-Z_][A-Za-z0-9_]*\\.[A-Za-z0-9_]+)`, 'g');
+  const viaConst = new RegExp(`${call}\\(\\s*([A-Z_][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)?)`, 'g');
   for (const m of text.matchAll(viaConst)) {
     const value = constants[m[1]];
     if (value) found.add(value);
@@ -91,6 +92,13 @@ describe('IPC invoke/handle contract', () => {
     // fail loudly here rather than pass by finding zero channels to check.
     expect(invoked.size).toBeGreaterThan(100);
     expect(handled.size).toBeGreaterThan(100);
+    expect(handled.has('homebot:workspace:debug')).toBe(true);
+    expect(invoked.has('homebot:workspace:debug')).toBe(true);
+  });
+
+  it('resolves named scalar channels without treating an unknown name as a registered channel', () => {
+    const constants = { TEST_CHANNEL: 'test:registered' };
+    expect([...channelsFor('ipcMain.handle(TEST_CHANNEL, handler); ipcMain.handle(UNKNOWN_CHANNEL, handler)', 'ipcMain\\.handle', constants)]).toEqual(['test:registered']);
   });
 
   it('never answers an invoked channel with ipcMain.on', () => {

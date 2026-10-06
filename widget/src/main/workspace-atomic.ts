@@ -23,8 +23,10 @@ export function atomicProjectWrite(file: string, bytes: Buffer, options: AtomicP
   const mode = options.mode ?? (fs.existsSync(file) ? fs.statSync(file).mode : 0o600);
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
   let descriptor: number | undefined;
+  let temporaryIdentity: fs.BigIntStats | undefined;
   try {
     descriptor = fs.openSync(temporary, 'wx', 0o600);
+    temporaryIdentity = fs.fstatSync(descriptor, { bigint: true });
     fs.writeFileSync(descriptor, bytes); fs.fchmodSync(descriptor, mode & 0o7777); fs.fsyncSync(descriptor);
     fs.closeSync(descriptor); descriptor = undefined;
     assertSnapshot(file, options);
@@ -36,7 +38,13 @@ export function atomicProjectWrite(file: string, bytes: Buffer, options: AtomicP
     syncDirectory(path.dirname(file));
   } finally {
     if (descriptor !== undefined) { try { fs.closeSync(descriptor); } catch { /* preserve original error */ } }
-    if (fs.existsSync(temporary)) { try { fs.unlinkSync(temporary); } catch { /* preserve original document and original error */ } }
+    // A parent redirect or failed wx open must never make cleanup remove a
+    // same-name file belonging to someone else. Retain an unreachable owned
+    // temporary file rather than following a new path to a different file.
+    if (temporaryIdentity) { try {
+      const current = fs.lstatSync(temporary, { bigint: true });
+      if (current.isFile() && current.dev === temporaryIdentity.dev && current.ino === temporaryIdentity.ino && current.birthtimeNs === temporaryIdentity.birthtimeNs) fs.unlinkSync(temporary);
+    } catch { /* preserve original document and original error */ } }
   }
 }
 export function removeProjectFile(file: string, expectedHash: string, validate?: () => void) {

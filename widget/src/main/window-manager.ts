@@ -1,8 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
-import { isDevelopment } from './env';
-import { is } from '@electron-toolkit/utils';
+import { isDevelopment, isPackagedBuild } from './env';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -75,7 +74,7 @@ export function createMainWindow(): BrowserWindow {
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Setting permission handlers'); } catch (e) { safeCatch(e); }
 
   const htmlPath = path.join(__dirname, '../renderer/index.html');
-  const trustedRendererUrl = is.dev && process.env['ELECTRON_RENDERER_URL']
+  const trustedRendererUrl = !isPackagedBuild && process.env['ELECTRON_RENDERER_URL']
     ? process.env['ELECTRON_RENDERER_URL'] : pathToFileURL(htmlPath).href;
   const isRendererUrl = (candidate: string | undefined) => {
     if (!candidate) return false;
@@ -104,7 +103,7 @@ export function createMainWindow(): BrowserWindow {
 
   // Prevent the renderer from being navigated away from the app (XSS / open-redirect mitigation)
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = is.dev && process.env['ELECTRON_RENDERER_URL']
+    const allowed = !isPackagedBuild && process.env['ELECTRON_RENDERER_URL']
       ? url.startsWith(process.env['ELECTRON_RENDERER_URL'])
       : url.startsWith('file://');
     if (!allowed) {
@@ -117,7 +116,7 @@ export function createMainWindow(): BrowserWindow {
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] [WINDOW] Loading HTML from: ${htmlPath}`); } catch (e) { safeCatch(e); }
 
   // Load the renderer — use Vite dev-server in dev mode for HMR, file in production
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (!isPackagedBuild && process.env['ELECTRON_RENDERER_URL']) {
     const devUrl = process.env['ELECTRON_RENDERER_URL'];
     console.log('[WINDOW] Dev mode: loading from Vite dev server:', devUrl);
     mainWindow.loadURL(devUrl);

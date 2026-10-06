@@ -43,6 +43,18 @@ describe('atomic accepted edits preserve original files on actual I/O failures',
     expect(applyProposal(proposal.id, [0])).toMatchObject({ success: false });
     expect(fs.readFileSync(created, 'utf8')).toBe('other writer'); expect(fs.readdirSync(mockRoot).sort()).toEqual(['code.ts', 'new.ts']);
   });
+  test('a failed exclusive temporary create preserves the colliding file', () => {
+    const originalOpen = nativeFs.openSync;
+    let colliding = '';
+    jest.spyOn(nativeFs, 'openSync').mockImplementation(((target: any, flags: any, mode: any) => {
+      if (flags === 'wx') { colliding = String(target); fs.writeFileSync(colliding, 'other writer temporary'); }
+      return originalOpen(target, flags, mode);
+    }) as any);
+    expect(() => atomicProjectWrite(file, Buffer.from(after))).toThrow();
+    expect(colliding).not.toBe('');
+    expect(fs.readFileSync(colliding, 'utf8')).toBe('other writer temporary');
+    expect(fs.readFileSync(file)).toEqual(before);
+  });
   test('changed disk bytes during staging and a legacy proposal redirected by a junction are refused', () => {
     const originalFsync = nativeFs.fsyncSync;
     jest.spyOn(nativeFs, 'fsyncSync').mockImplementation(descriptor => { fs.writeFileSync(file, 'newer external bytes'); originalFsync(descriptor); });

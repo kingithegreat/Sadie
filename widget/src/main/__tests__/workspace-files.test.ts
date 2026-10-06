@@ -105,16 +105,17 @@ test('redirecting a parent to another allowed folder with identical bytes cannot
   // open. Simulate the external redirect after that exact descriptor closes,
   // immediately before atomicProjectWrite revalidates the canonical parent.
   const nativeFs = require('fs'); const originalOpen = nativeFs.openSync; const originalClose = nativeFs.closeSync;
-  let temporaryDescriptor: number | undefined; let redirected = false;
+  let temporaryDescriptor: number | undefined; let temporaryName = ''; let redirected = false;
   const open = jest.spyOn(nativeFs, 'openSync').mockImplementation((...args: any[]) => {
     const descriptor = originalOpen(...args);
-    if (typeof args[0] === 'string' && path.dirname(args[0]) === project && /^\.same\.txt\..+\.tmp$/.test(path.basename(args[0]))) temporaryDescriptor = descriptor;
+    if (typeof args[0] === 'string' && path.dirname(args[0]) === project && /^\.same\.txt\..+\.tmp$/.test(path.basename(args[0]))) { temporaryDescriptor = descriptor; temporaryName = path.basename(args[0]); }
     return descriptor;
   });
   const close = jest.spyOn(nativeFs, 'closeSync').mockImplementation((...args: any[]) => {
     originalClose(...args);
     if (args[0] === temporaryDescriptor && !redirected) {
       fs.renameSync(project, moved); fs.symlinkSync(other, project, process.platform === 'win32' ? 'junction' : 'dir'); redirected = true;
+      fs.writeFileSync(path.join(other, temporaryName), 'unrelated same-name file');
     }
   });
   try { expect(() => saveWorkspaceSnapshot(file, 'draft', { expectedVersion: opened.version })).toThrow(/path changed/); }
@@ -123,4 +124,6 @@ test('redirecting a parent to another allowed folder with identical bytes cannot
   expect(fs.realpathSync(project)).toBe(fs.realpathSync(other));
   expect(fs.readFileSync(path.join(moved, 'same.txt'), 'utf8')).toBe('original');
   expect(fs.readFileSync(path.join(other, 'same.txt'), 'utf8')).toBe('original');
+  expect(fs.readFileSync(path.join(other, temporaryName), 'utf8')).toBe('unrelated same-name file');
+  expect(fs.readFileSync(path.join(moved, temporaryName), 'utf8')).toBe('draft');
 });
