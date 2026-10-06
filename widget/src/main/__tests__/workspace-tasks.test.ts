@@ -10,6 +10,7 @@ jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_TASK_TE
 
 import {
   WorkspaceTaskDiagnosticParser,
+  closeAllWorkspaceTasks,
   executeWorkspacePackageTask,
   listWorkspacePackageTasks,
   prepareWorkspacePackageTask,
@@ -277,7 +278,7 @@ test('a failed tree termination is visible even if the root process closes', asy
   Object.assign(child, { pid: 6001, stdout: new PassThrough(), stderr: new PassThrough() });
   const promise = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
     runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child,
-    timeoutMs: 1000, terminateProcessTree: () => false,
+    timeoutMs: 1000, terminateProcessTree: jest.fn().mockReturnValueOnce(false).mockReturnValue(true),
   });
   await jest.advanceTimersByTimeAsync(1000);
   child.emit('close', null);
@@ -286,7 +287,70 @@ test('a failed tree termination is visible even if the root process closes', asy
     timedOut: true,
     error: expect.stringContaining('could not prove'),
   });
+  await closeAllWorkspaceTasks(); // Explicit Retry proves this retained fake tree stopped.
   jest.useRealTimers();
+});
+
+function openFakeTask() {
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, { pid: 6501, exitCode: null, signalCode: null, stdout: new PassThrough(), stderr: new PassThrough() });
+  return child;
+}
+
+test('global shutdown waits for the owned task stopper and blocks new tasks while proof is pending', async () => {
+  jest.useFakeTimers();
+  const child = openFakeTask();
+  let confirm!: (value: boolean) => void;
+  const terminate = jest.fn(() => new Promise<boolean>(resolve => { confirm = resolve; }));
+  const run = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { longRunning: true, runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child, terminateProcessTree: terminate });
+  const shutdown = closeAllWorkspaceTasks();
+  let completed = false; void shutdown.then(() => { completed = true; });
+  await Promise.resolve(); await Promise.resolve();
+  expect(completed).toBe(false);
+  expect(closeAllWorkspaceTasks()).toBe(shutdown);
+  const spawnAgain = jest.fn();
+  await expect(executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { spawnProcess: spawnAgain })).resolves.toMatchObject({ success: false, error: expect.stringContaining('stopping') });
+  expect(spawnAgain).not.toHaveBeenCalled();
+  confirm(true); await shutdown;
+  child.emit('close', null); await expect(run).resolves.toMatchObject({ success: false, cancelled: true });
+  expect(terminate).toHaveBeenCalledTimes(1);
+});
+
+test('failed task shutdown rejects and retries the retained stopper after its root closes', async () => {
+  jest.useFakeTimers(); const child = openFakeTask();
+  const terminate = jest.fn().mockRejectedValueOnce(new Error('unconfirmed descendant')).mockResolvedValueOnce(true);
+  const run = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { longRunning: true, runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child, terminateProcessTree: terminate });
+  await expect(closeAllWorkspaceTasks()).rejects.toThrow('did not confirm');
+  child.emit('close', null); await expect(run).resolves.toMatchObject({ success: false, cancelled: true, error: expect.stringContaining('could not prove') });
+  const blocked = jest.fn();
+  await expect(executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { runner: { command: 'node', argsPrefix: [] }, spawnProcess: blocked })).resolves.toMatchObject({ success: false, error: expect.stringContaining('already running') });
+  expect(blocked).not.toHaveBeenCalled();
+  await closeAllWorkspaceTasks();
+  expect(terminate).toHaveBeenCalledTimes(2);
+  await jest.advanceTimersByTimeAsync(500);
+});
+
+test('Windows task Retry uses the original birth and captured descendants after root exit, never recaptures PID', async () => {
+  jest.useFakeTimers(); const child = openFakeTask();
+  const original = { creation: '639269231269085710', parent: process.pid };
+  const receipt = [{ ...original, pid: child.pid! }, { pid: 6502, parent: child.pid!, creation: '639269231279085710' }];
+  const lifecycle = require('../workspace-pty-identity').workspacePtyLifecycle;
+  const force = require('../workspace-pty-force-stop');
+  const capture = jest.spyOn(lifecycle, 'capture').mockResolvedValue(original);
+  const stop = jest.spyOn(force, 'stopWorkspacePtyTree')
+    .mockResolvedValueOnce({ stopped: false, attempted: true, receipt })
+    .mockResolvedValueOnce({ stopped: true, attempted: true, receipt });
+  try {
+    const run = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), { longRunning: true, platform: 'win32', runner: { command: 'node', argsPrefix: [] }, spawnProcess: () => child });
+    await expect(closeAllWorkspaceTasks()).rejects.toThrow('did not confirm');
+    Object.assign(child, { exitCode: 0 }); child.emit('close', 0);
+    await expect(run).resolves.toMatchObject({ success: false, cancelled: true, error: expect.stringContaining('could not prove') });
+    await closeAllWorkspaceTasks();
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenNthCalledWith(1, child.pid, original, undefined);
+    expect(stop).toHaveBeenNthCalledWith(2, child.pid, original, receipt);
+    await jest.advanceTimersByTimeAsync(500);
+  } finally { capture.mockRestore(); stop.mockRestore(); }
 });
 
 const liveTreeTest = process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;

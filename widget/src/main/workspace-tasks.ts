@@ -19,6 +19,8 @@ import type {
   WorkspaceTaskRunResult,
 } from '../shared/types';
 import { validateTrustedWorkspaceRoot } from './workspace-trust';
+import { workspacePtyLifecycle } from './workspace-pty-identity';
+import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 
 const MAX_PACKAGE_BYTES = 1024 * 1024;
 const MAX_SCRIPT_COUNT = 500;
@@ -67,7 +69,9 @@ export interface WorkspaceTaskExecutionOptions {
   onProgress?: (progress: { outputExcerpt: string; problems: WorkspaceProblem[] }) => void;
 }
 
-const activeTasks = new Map<string, ChildProcess>();
+interface ActiveTask { stop(): Promise<boolean> }
+const activeTasks = new Map<string, ActiveTask>();
+let closingTasks: Promise<void> | undefined;
 
 function failMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -326,48 +330,59 @@ function appendTail(current: string, chunk: string): string {
   return next.length > MAX_RETAINED_OUTPUT ? next.slice(-MAX_RETAINED_OUTPUT) : next;
 }
 
-async function terminateTaskTree(child: ChildProcess, platform: NodeJS.Platform): Promise<boolean> {
-  if (!child.pid) return true;
-  try {
-    if (platform === 'win32') {
-      return await new Promise<boolean>(resolve => {
-        const killer = nodeSpawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-        let settled = false;
-        const done = (ok: boolean) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(limit);
-          resolve(ok);
-        };
-        killer.stderr?.on('data', (value: Buffer | string) => {
-          console.warn(`[workspace-task] taskkill: ${value.toString().trim().slice(0, 1000)}`);
-        });
-        killer.once('error', () => done(false));
-        killer.once('close', code => done(code === 0));
-        const limit = setTimeout(() => {
-          try { killer.kill('SIGKILL'); } catch { /* already exited */ }
-          done(false);
-        }, 2000);
-        limit.unref?.();
-      });
-    } else {
-      process.kill(-child.pid, 'SIGTERM');
-      return true;
-    }
-  } catch {
-    try { child.kill('SIGKILL'); } catch { /* already exited */ }
-    return false;
+/** Capture once at spawn; retries retain the exact birth-checked owned receipt. */
+function taskTreeStopper(child: ChildProcess, platform: NodeJS.Platform): () => Promise<boolean> {
+  if (platform === 'win32') {
+    const identity = child.pid ? workspacePtyLifecycle.capture(child.pid) : Promise.resolve(null);
+    let receipt: WorkspacePtyStopReceipt | undefined;
+    let attempted = false;
+    return async () => {
+      if (!child.pid) return true;
+      const original = await identity;
+      const result = await stopWorkspacePtyTree(child.pid, original, receipt);
+      if (result.receipt) receipt = result.receipt;
+      attempted ||= result.attempted;
+      // Natural exit is sufficient only when no tree mutation was attempted.
+      // A partial Stop must verify every retained descendant, even root-gone.
+      return result.stopped || (!attempted && !receipt && (child.exitCode !== null || child.signalCode !== null));
+    };
   }
+  return async () => {
+    if (!child.pid) return true;
+    const gone = () => { try { process.kill(-child.pid!, 0); return false; } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; } };
+    if (gone()) return true;
+    // detached:true established this group while the exact native child lives.
+    // Never signal a possibly reused group after its root has already exited.
+    if (child.exitCode !== null || child.signalCode !== null) return false;
+    try { process.kill(-child.pid, 'SIGTERM'); } catch { return gone(); }
+    const deadline = Date.now() + 4500;
+    while (!gone() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (gone()) return true;
+    if (child.exitCode === null && child.signalCode === null) {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { /* disappearance verified below */ }
+    }
+    const finalDeadline = Date.now() + 1000;
+    while (!gone() && Date.now() < finalDeadline) await new Promise(resolve => setTimeout(resolve, 50));
+    return gone();
+  };
 }
 
-export function closeAllWorkspaceTasks(): void {
-  for (const child of activeTasks.values()) void terminateTaskTree(child, process.platform);
+export function closeAllWorkspaceTasks(): Promise<void> {
+  if (closingTasks) return closingTasks;
+  closingTasks = (async () => {
+    const results = await Promise.allSettled([...activeTasks.values()].map(task => task.stop()));
+    if (results.some(result => result.status === 'rejected' || !result.value)) {
+      throw new Error('A running package task did not confirm its process tree stopped. Its owned identities are retained; retry closing HomeBot to check them again.');
+    }
+  })().finally(() => { closingTasks = undefined; });
+  return closingTasks;
 }
 
 export async function executeWorkspacePackageTask(
   approved: WorkspaceTaskSnapshot,
   options: WorkspaceTaskExecutionOptions = {},
 ): Promise<WorkspaceTaskRunResult> {
+  if (closingTasks) return { success: false, error: 'Package tasks are stopping before HomeBot closes. Try again after shutdown finishes.' };
   let current: WorkspaceTaskSnapshot;
   try {
     current = prepareWorkspacePackageTask(approved.projectDir, approved.scriptName);
@@ -404,6 +419,7 @@ export async function executeWorkspacePackageTask(
     let forcedFinish: NodeJS.Timeout | undefined;
     let termination: Promise<boolean> | undefined;
     let terminationProven = true;
+    let terminateOwnedTree: () => Promise<boolean>;
     let settled = false;
     const finish = (result: WorkspaceTaskRunResult) => {
       if (settled) return;
@@ -411,21 +427,22 @@ export async function executeWorkspacePackageTask(
       if (timer) clearTimeout(timer);
       if (forcedFinish) clearTimeout(forcedFinish);
       options.signal?.removeEventListener('abort', onAbort);
-      if (terminationProven) activeTasks.delete(current.projectDir);
+      if (terminationProven && activeTasks.get(current.projectDir) === activeTask) activeTasks.delete(current.projectDir);
       resolve(result);
     };
-    const stopTree = async () => {
+    const stopTree = () => {
       if (termination) return termination;
-      try {
-        const result = (options.terminateProcessTree || terminateTaskTree)(child!, platform);
-        termination = Promise.resolve(result).then(value => value !== false, () => false);
-      } catch {
-        termination = Promise.resolve(false);
-      }
-      terminationProven = await termination;
-      return terminationProven;
+      terminationProven = false;
+      // Assign before invoking a stopper that may emit close synchronously.
+      termination = Promise.resolve().then(() => terminateOwnedTree()).then(value => {
+        terminationProven = value;
+        if (value && activeTasks.get(current.projectDir) === activeTask) activeTasks.delete(current.projectDir);
+        return value;
+      }, () => false).finally(() => { termination = undefined; });
+      return termination;
     };
     const scheduleForcedFinish = (result: WorkspaceTaskRunResult) => {
+      if (settled) return;
       if (forcedFinish) clearTimeout(forcedFinish);
       forcedFinish = setTimeout(() => finish(result), 500);
       forcedFinish.unref?.();
@@ -437,6 +454,13 @@ export async function executeWorkspacePackageTask(
         scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
       });
     };
+    const activeTask: ActiveTask = { stop: async () => {
+      aborted = true;
+      if (timer) clearTimeout(timer);
+      const proven = await stopTree();
+      scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
+      return proven;
+    } };
 
     try {
       child = spawnProcess(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], {
@@ -451,7 +475,10 @@ export async function executeWorkspacePackageTask(
       resolve({ success: false, error: `Could not start npm: ${failMessage(error)}` });
       return;
     }
-    activeTasks.set(current.projectDir, child);
+    terminateOwnedTree = options.terminateProcessTree
+      ? async () => (await options.terminateProcessTree!(child!, platform)) !== false
+      : taskTreeStopper(child, platform);
+    activeTasks.set(current.projectDir, activeTask);
 
     if (timeoutMs) timer = setTimeout(() => {
       timedOut = true;
