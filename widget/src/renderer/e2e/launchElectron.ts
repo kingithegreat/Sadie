@@ -1,6 +1,7 @@
 import path from 'path';
 import * as fs from 'fs';
 import { _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import { prepareElectronShutdown } from './helpers/closeApp';
 
 async function isHomeBotAppWindow(page: Page): Promise<boolean> {
   try {
@@ -101,6 +102,7 @@ export async function launchElectronApp(env: Record<string, string | undefined>,
     args: [entry, ...launchFlags],
     env: mergedEnv,
   });
+  await prepareElectronShutdown(app, entry);
 
   // Prefer the first app window that contains the visible HomeBot UI
   const startedAt = Date.now();
