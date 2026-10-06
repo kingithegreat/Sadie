@@ -16,6 +16,10 @@ import { startSupervisorService, SupervisorServiceHandle } from './supervisor-se
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
+import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
+import { disposeWorkspaceLanguageServices } from './workspace-language';
+import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
+import { currentWorkspace } from './workspace-context';
 import { registerWorkspaceTaskIpc } from './workspace-task-ipc';
 import { closeAllWorkspaceTasks } from './workspace-tasks';
 import { registerProblemReportIpc } from './problem-report-ipc';
@@ -350,6 +354,8 @@ app.whenReady().then(async () => {
   // Explorer + code editor. Shares the home-directory sandbox with the
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
+  registerWorkspaceLanguageIpc();
+  registerWorkspaceAiHandlers();
   registerWorkspaceTaskIpc();
   // Settings → Report a problem: a local, secret-free text report the tester chooses to share.
   registerProblemReportIpc();
@@ -368,7 +374,8 @@ app.whenReady().then(async () => {
     onToolActivity: (info) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('homebot:assistant-tool-activity', info);
+          const workspace = currentWorkspace();
+          mainWindow.webContents.send('homebot:assistant-tool-activity', { ...info, root: workspace?.root, streamId: workspace?.streamId });
         }
       } catch (e) { safeCatch(e); }
     },
@@ -643,6 +650,7 @@ app.on('before-quit', event => {
   if (mcpQuitPending) return;
   mcpQuitPending = true;
   try { closeAllWorkspaceTasks(); } catch (e) { safeCatch(e); }
+  try { disposeWorkspaceLanguageServices(); } catch (e) { safeCatch(e); }
   try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
   try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
   try { globalShortcut.unregisterAll(); } catch (e) { safeCatch(e); }

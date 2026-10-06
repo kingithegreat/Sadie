@@ -3,6 +3,9 @@ import type { StudioOutputSpec, StudioMovieResult } from './media-output';
 import type { CaptionStyle } from './caption-style';
 import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
 import type { MediaCapabilityRegistry } from './media-capability-registry';
+import type { WorkspaceDiskSnapshot, WorkspaceFileActionRequest, WorkspaceFileActionResult, WorkspaceProjectResult, WorkspaceRecoveryResult, WorkspaceRecoveryState, WorkspaceSaveOptions } from './workspace-file-types';
+import type { WorkspaceLanguageRequest, WorkspaceLanguageResult } from './workspace-language-types';
+import type { WorkspaceAiRequestScope, WorkspaceAiTurn, WorkspaceAiPlan, WorkspaceAiSessionResult, WorkspaceAiRulesResult, WorkspaceAiMcpStatusResult, WorkspaceCodeSearchResult, WorkspaceCodeCompletionResult, WorkspaceCheckpointRow, WorkspaceCheckpointRestoreOptions, WorkspaceCheckpointRestoreResult, WorkspaceCheckpointCompareResult } from './workspace-ai-types';
 
 export type LicenseTier = 'free' | 'pro';
 
@@ -47,6 +50,8 @@ export interface HomeBotRequest {
   timestamp?: string;
   /** Per-conversation system prompt supplied by the renderer (avoids disk read race) */
   conversationPrompt?: string;
+  /** Untrusted renderer context; main validates and binds it to this request. */
+  workspace?: WorkspaceAiRequestScope;
 }
 
 export interface ImageAttachment {
@@ -155,6 +160,8 @@ export interface AssistantToolActivity {
   tool: string;
   allowed: boolean;
   error?: string;
+  root?: string;
+  streamId?: string;
 }
 
 /** A file or folder in the Explorer tree. */
@@ -1066,9 +1073,26 @@ export interface ElectronAPI {
   onTerminalExit?: (callback: (exit: TerminalExitEvent) => void) => () => void;
   // Workspace (Explorer + editor)
   workspaceRoot?: () => Promise<{ success: boolean; path: string }>;
-  workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
-  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
-  workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  workspaceList?: (dirPath: string, options?: { showHidden?: boolean }) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
+  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; version?: string; eol?: 'lf' | 'crlf'; bom?: boolean; error?: string }>;
+  workspaceSave?: (filePath: string, content: string, options?: WorkspaceSaveOptions) => Promise<{ success: boolean; version?: string; eol?: 'lf' | 'crlf'; bom?: boolean; conflict?: boolean; disk?: WorkspaceDiskSnapshot; error?: string }>;
+  workspaceChooseProject?: () => Promise<WorkspaceProjectResult>;
+  workspaceRecentProjects?: (folder?: string) => Promise<{ success: boolean; paths?: string[]; error?: string }>;
+  workspaceFileAction?: (request: WorkspaceFileActionRequest) => Promise<WorkspaceFileActionResult>;
+  workspaceRecoveryLoad?: (root: string) => Promise<WorkspaceRecoveryResult>;
+  workspaceRecoverySave?: (root: string, state: WorkspaceRecoveryState) => Promise<{ success: boolean; error?: string }>;
+  workspaceLanguage?: (request: WorkspaceLanguageRequest) => Promise<WorkspaceLanguageResult>;
+  workspaceAiSession?: (root: string) => Promise<WorkspaceAiSessionResult>;
+  workspaceAiSaveSession?: (root: string, turns: WorkspaceAiTurn[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceAiPreparePlan?: (root: string, text: string) => Promise<WorkspaceAiPlan>;
+  workspaceAiApprovePlan?: (root: string, id: string) => Promise<WorkspaceAiPlan>;
+  workspaceAiRules?: (root: string) => Promise<WorkspaceAiRulesResult>;
+  workspaceCodeSearch?: (root: string, query: string, semantic?: boolean) => Promise<WorkspaceCodeSearchResult>;
+  workspaceCodeComplete?: (root: string, prefix: string, suffix: string) => Promise<WorkspaceCodeCompletionResult>;
+  workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; error?: string }>;
+  workspaceCheckpointCompare?: (root: string, id: string) => Promise<WorkspaceCheckpointCompareResult>;
+  workspaceCheckpointRestore?: (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => Promise<WorkspaceCheckpointRestoreResult>;
+  workspaceAiMcpStatus?: () => Promise<WorkspaceAiMcpStatusResult>;
   /** IDE-9: search across files, and the line-exact replace. */
   workspaceSearch?: (opts: {
     pattern: string;
@@ -1104,7 +1128,7 @@ export interface ElectronAPI {
   workspaceGitBranches?: (folder: string) => Promise<{ success: boolean; error?: string; current?: string; branches?: string[] }>;
   workspaceGitCheckout?: (folder: string, branch: string) => Promise<{ success: boolean; error?: string }>;
   /** IDE-3: assistant edits waiting for review, and the accept/reject decisions. */
-  workspaceProposals?: () => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
+  workspaceProposals?: (root?: string) => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
     stats: { added: number; removed: number; approximate: boolean };
     hunks: Array<{ beforeStart: number; afterStart: number; lines: Array<{ type: 'equal' | 'add' | 'remove'; before: number | null; after: number | null; text: string }> }> }>; error?: string }>;
   workspaceProposalAccept?: (id: string, hunkIndexes: number[]) => Promise<{ success: boolean; path?: string; applied?: number; error?: string }>;

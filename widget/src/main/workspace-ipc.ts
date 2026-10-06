@@ -220,8 +220,8 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
   ipcMain.handle(WORKSPACE_CHANNELS.GIT_CHECKOUT, (_e, folder: unknown, branch: unknown) => gitCall(() => gitWorkspaceCheckout(String(folder || ''), branch)));
 
   // IDE-3: edits the assistant proposed to this folder, waiting for review.
-  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSALS, () => {
-    try { return { success: true, proposals: listProposals() }; }
+  ipcMain.handle(WORKSPACE_CHANNELS.PROPOSALS, (_event, root?: unknown) => {
+    try { return { success: true, proposals: listProposals(typeof root === 'string' ? root : undefined) }; }
     catch (err: any) { return { success: false, error: err?.message || 'Could not read the proposed changes.' }; }
   });
   ipcMain.handle(WORKSPACE_CHANNELS.PROPOSAL_ACCEPT, (_e, id: unknown, hunkIndexes: unknown) =>

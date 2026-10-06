@@ -1027,7 +1027,7 @@ artwork retain their existing behavior.
 > sections above explain the important APIs; this is the complete list, so
 > nothing exists that the reference does not mention.
 
-**Preload methods (251)** — `window.electron`
+**Preload methods (268)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1086,13 +1086,17 @@ stopSpeechRecognition               subscribeToStream                   terminal
 terminalKill                        terminalRun                         testN8nConnection                   toggleWidgetMode
 ttsListVoices                       ttsSampleVoice                      ttsSpeak                            ttsStop
 unhideFeed                          updateAutomation                    updateMessage                       whisperTranscribe
-workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage
-workspaceGitStatus                  workspaceGitUnstage                 workspaceList                       workspaceProposalAccept
-workspaceProposalReject             workspaceProposals                  workspaceRead                       workspaceReplace
-workspaceRoot                       workspaceSave                       workspaceSearch                     workspaceTaskList
-workspaceTaskRun                    writeClipboard                      writeDocument                       youtubeCancel
-youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials
-youtubeRefresh                      youtubeRemove                       youtubeUpload
+workspaceAiApprovePlan              workspaceAiMcpStatus                workspaceAiPreparePlan              workspaceAiRules
+workspaceAiSaveSession              workspaceAiSession                  workspaceCheckpointCompare          workspaceCheckpointList
+workspaceCheckpointRestore          workspaceChooseProject              workspaceCodeComplete               workspaceCodeSearch
+workspaceFileAction                 workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit
+workspaceGitStage                   workspaceGitStatus                  workspaceGitUnstage                 workspaceLanguage
+workspaceList                       workspaceProposalAccept             workspaceProposalReject             workspaceProposals
+workspaceRead                       workspaceRecentProjects             workspaceRecoveryLoad               workspaceRecoverySave
+workspaceReplace                    workspaceRoot                       workspaceSave                       workspaceSearch
+workspaceTaskList                   workspaceTaskRun                    writeClipboard                      writeDocument
+youtubeCancel                       youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus
+youtubeImportCredentials            youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
 **IPC channels, renderer → main (184)**
