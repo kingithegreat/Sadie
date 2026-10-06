@@ -2,7 +2,7 @@
 
 User instruction: **"deploy agents finsh all of this"** after the HomeBot IDE feature audit.
 
-Base: fresh main `79ffc386`, subsequently integrated through main `7951c205` (Studio playback #473). Root integrates on `claude/ide-finish-20261007`; independent agents work from the same merged baseline. The audit is preserved in draft #472 and `C:/Users/adenk/.homebot/ide-audit-source-20261007/docs/IDE_FEATURE_AUDIT.md`. This is implementation work, superseding prior deferral of core Code expansion. It does not reopen unrelated held media PRs.
+Base: fresh main `79ffc386`, subsequently integrated through main `d6635590` (Studio playback #473 and Studio workflow #475). Root integrates on `claude/ide-finish-20261007`; independent agents work from the same merged baseline. The audit is preserved in draft #472 and `C:/Users/adenk/.homebot/ide-audit-source-20261007/docs/IDE_FEATURE_AUDIT.md`. This is implementation work, superseding prior deferral of core Code expansion. It does not reopen unrelated held media PRs.
 
 ## Ownership and delivery
 
