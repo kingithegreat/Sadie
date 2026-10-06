@@ -12,7 +12,11 @@ function setup(autoExit = true, confirmed = true) {
   const disposeData = jest.fn(); const disposeExit = jest.fn();
   let hasExited = false;
   const pty = { pid: 12345, write: jest.fn(), resize: jest.fn(), kill: jest.fn(() => { if (autoExit && !hasExited) exit({ exitCode: 0 }); }), onData: jest.fn(fn => { data = fn; return { dispose: disposeData }; }), onExit: jest.fn(fn => { exit = event => { hasExited = true; fn(event); }; return { dispose: disposeExit }; }) };
-  const spawn = jest.fn(() => pty);
+  const spawn = jest.fn(() => pty).mockImplementationOnce(() => pty);
+  spawn.mockImplementation(() => {
+    let ownedExit!: (event: { exitCode: number }) => void;
+    return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
+  });
   const stopped = jest.fn(async () => confirmed);
   const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped });
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
