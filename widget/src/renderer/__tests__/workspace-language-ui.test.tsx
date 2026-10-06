@@ -57,6 +57,20 @@ test('unsupported semantic requests explain the available language support', asy
   await act(async () => fireEvent.click(screen.getByText('Definition (F12)')));
   expect(screen.getByRole('alert')).toHaveTextContent('JavaScript and TypeScript');
 });
+test('late semantic results are discarded after a project switch or source edit', async () => {
+  let finish: (result: any) => void = () => {};
+  (window as any).electron = { workspaceLanguage: jest.fn(() => new Promise(resolve => { finish = resolve; })) };
+  const props = { filePath: FILE, value: 'const x = 1', language: 'typescript', onChange: jest.fn(), onSave: jest.fn() };
+  const editor = render(<CodeEditor {...props} root={ROOT} />);
+  fireEvent.click(screen.getByText('Definition (F12)'));
+  await act(async () => editor.rerender(<CodeEditor {...props} root="/different-project" />));
+  await act(async () => finish({ success: true, locations: [{ path: '/project/OLD_RESULT.ts', line: 1, column: 1, start: 0, length: 1 }] }));
+  expect(screen.queryByText(/OLD_RESULT/)).not.toBeInTheDocument(); expect(screen.getByText('Definition (F12)')).not.toBeDisabled();
+  fireEvent.click(screen.getByText('Definition (F12)'));
+  act(() => viewOf(editor.container).dispatch({ changes: { from: 0, insert: '// typed\n' } }));
+  await act(async () => finish({ success: true, locations: [{ path: '/different-project/STALE_RESULT.ts', line: 1, column: 1, start: 0, length: 1 }] }));
+  expect(screen.queryByText(/STALE_RESULT/)).not.toBeInTheDocument(); expect(screen.getByRole('status')).toHaveTextContent('source changed');
+});
 test('Quick Open filters project files and keyboard Enter opens the selected actual path', async () => {
   (window as any).electron = { workspaceLanguage: jest.fn().mockResolvedValue({ success: true, files: ['/project/.gitignore', '/project/src/app.ts'] }) };
   const onOpen = jest.fn(); const onClose = jest.fn();

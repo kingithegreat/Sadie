@@ -66,6 +66,13 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
   const suggestionRequest = useRef(0);
+  const languageRequest = useRef(0);
+  const scope = `${root}\0${filePath}`;
+  const currentScope = useRef(scope); currentScope.current = scope;
+  useEffect(() => {
+    languageRequest.current++; setResult(null); setNotice(''); setBusy(false); setRename(false);
+    return () => { languageRequest.current++; };
+  }, [scope]);
   const suggest = async () => {
     const view = viewRef.current; const api = window.electron as any;
     if (!preferences.aiSuggestions || !view || readOnly || !view.state.selection.main.empty) return;
@@ -94,10 +101,16 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   }, [root, filePath, preferences.aiSuggestions, readOnly]);
   const query = async (action: WorkspaceLanguageAction, extra = {}) => {
     const view = viewRef.current; if (!view || busy) return;
+    const request = ++languageRequest.current; const source = view.state.doc;
     setBusy(true); setNotice('');
-    try { setResult(await languageQuery({ root, filePath, buffers }, view, action, extra)); }
-    catch (error) { setResult({ success: false, error: error instanceof Error ? error.message : String(error) }); }
-    finally { setBusy(false); }
+    try {
+      const response = await languageQuery({ root, filePath, buffers }, view, action, extra);
+      if (request !== languageRequest.current || currentScope.current !== scope || viewRef.current !== view) return;
+      if (!view.state.doc.eq(source)) { setNotice('The source changed while reading language information. Run the action again.'); return; }
+      setResult(response);
+    }
+    catch (error) { if (request === languageRequest.current && currentScope.current === scope) setResult({ success: false, error: error instanceof Error ? error.message : String(error) }); }
+    finally { if (request === languageRequest.current && currentScope.current === scope) setBusy(false); }
   };
   const apply = async (edits: WorkspaceLanguageEdit[]) => {
     if (readOnly) return;
