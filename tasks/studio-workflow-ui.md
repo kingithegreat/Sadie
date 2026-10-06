@@ -70,3 +70,28 @@ concurrent IDE completion scope are outside this focused Studio change.
 Source editing is released to root integration. Hosted current-head CI, configured
 review, landing and separate launchable delivery remain pending at this commit;
 final receipts belong in the canonical Drive plan.
+
+## Windows streaming fixture cleanup follow-up
+
+Head `6233914` passed 21 hosted checks, including root 232 tests, widget 5,027
+tests (33 existing skips), and 14 native overlay tests. Windows E2E shard 3 and
+its required aggregate failed. Both whole-shard attempts reproduced a streaming
+test timeout and worker teardown failure; the screenshot shows all five chunks
+and a finished reply, while the retry passed its assertions. The first-attempt
+trace is unavailable, so the exact stalled await is not claimed as proven.
+
+The streaming spec had unbounded `app.close()` before server cleanup and no
+`finally`. Root's focused follow-up uses the existing bounded close helper and
+always closes the mock server, including launch/assertion failures. Mock cleanup
+also closes active HTTP connections after stopping new connections. All streaming
+assertions, request expectations, timeouts and retry settings are unchanged.
+This changes test fixtures only; production streaming and the concurrent IDE
+scope remain unchanged. TypeScript and scoped lint pass. Native streaming and
+document-summary checks pass 5/5 with zero retries and no bounded-close warnings;
+the worker exits successfully. An active HTTP-stream control proves the previous
+mock close remains pending after 100ms until the client is destroyed, while the
+fixed close releases the active connection within that budget. Both ports refuse
+requests after cleanup. Evidence: `workflow-stream-cleanup-junit.xml`,
+`workflow-stream-cleanup.log` and `workflow-mock-close-evidence.json`.
+New-head CI/review and landing remain pending. Prior CI failures are retained in
+`workflow-final-windows3-failed.log` and `workflow-windows3-failure-artifact`.

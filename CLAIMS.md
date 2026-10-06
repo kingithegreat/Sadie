@@ -13,7 +13,11 @@ publication. Source editing is released to root integration. TypeScript, scoped
 lint, fresh build and 201 affected tests pass. Compiled Electron acceptance passes
 1/1 with zero retries, including actual saved creation/recovery and keyboard
 workspace loading; desktop/narrow screenshots inspected. Hosted CI/review,
-landing and separate delivery remain pending. Evidence: tasks/studio-workflow-ui.md.
+landing and separate delivery remain pending. Root additionally owns the focused
+streaming E2E cleanup follow-up after Windows shard 3 passed its streaming/UI
+assertions but leaked a mock server on timeout and failed worker teardown.
+Scope is streaming.e2e.spec.ts/mockUpstream.ts cleanup, no production streaming
+or IDE changes. Evidence: tasks/studio-workflow-ui.md.
 
 ## 2026-10-07 — STUDIO-PLAYBACK
 
