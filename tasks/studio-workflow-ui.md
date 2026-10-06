@@ -30,6 +30,11 @@ wrap long actions and adapt at narrower widths.
   baseline placed creation below the initial viewport; the final build shows it.
 - First recovery acceptance used an incorrect expected button label; this was
   corrected to the missing narration action before the passing complete run.
+- Initial hosted UI checks identified stale expectations for removed vendor
+  badges, old approval wording and the renamed Storyboard tool. The theme and
+  visual specs now check all four real workflow count labels, current approval
+  guidance and the reachable tool disclosure. Final hosted checks must qualify
+  this follow-up head; a rerun of the old assertions is not a resolution.
 
 Evidence: `C:/Users/adenk/.homebot/workflow-ui-tests.json`,
 `workflow-ui-baseline-results`, `workflow-ui-compact-results` (intermediate),

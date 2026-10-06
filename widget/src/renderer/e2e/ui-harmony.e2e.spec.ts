@@ -29,15 +29,15 @@ async function checkStudioPalette(page: Page) {
       headingImage: heading.backgroundImage,
       chrome: style('.app-header').backgroundColor,
       app: style('.app-container').backgroundColor,
-      badges: Array.from(document.querySelectorAll('.ms-dcc-chip')).map(el => getComputedStyle(el).color),
+      countLabels: Array.from(document.querySelectorAll('.ms-workflow-counts dt')).map(el => getComputedStyle(el).color),
     };
   });
   expect(colours.contrast).toBeGreaterThanOrEqual(4.5);
   expect(colours.fill).not.toBe('rgba(0, 0, 0, 0)');
   expect(colours.headingImage).toBe('none');
   expect(colours.chrome).toBe(colours.app);
-  expect(colours.badges.length).toBeGreaterThan(3);
-  expect(new Set(colours.badges).size).toBe(1);
+  expect(colours.countLabels).toHaveLength(4);
+  expect(new Set(colours.countLabels).size).toBe(1);
 }
 
 test('theme remains coherent across reachable chat, settings and Studio', async ({}, testInfo) => {
@@ -72,7 +72,8 @@ test('theme remains coherent across reachable chat, settings and Studio', async 
     await expect(page.locator('[data-testid="homebot-app-root"]')).toHaveAttribute('data-theme', 'light');
     await checkStudioPalette(page);
     await page.screenshot({ path: testInfo.outputPath('studio-light.png') });
-    await page.getByRole('button', { name: /Visual Storyboard Deck/ }).click();
+    await page.getByText('Explore Studio tools', { exact: true }).click();
+    await page.getByRole('region', { name: 'Studio Quick Launch' }).getByRole('button', { name: /^Storyboard/ }).click();
     await expect(page.locator('.ms-storyboard-workspace')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('storyboard-light.png') });
     await page.getByRole('button', { name: 'Chat', exact: true }).click();
