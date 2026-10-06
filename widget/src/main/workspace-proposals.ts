@@ -28,6 +28,7 @@ import { currentWorkspace, validateWorkspaceRoot, withinRoot } from './workspace
 import { checkpointFailureRollback, recordWorkspaceCheckpoint } from './workspace-checkpoints';
 import { atomicProjectWrite } from './workspace-atomic';
 import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath } from './workspace-trust';
+import { TextDecoder } from 'util';
 
 /** The context width the panel renders with; hunk numbering depends on it. */
 export const PROPOSAL_CONTEXT = 3;
@@ -119,11 +120,16 @@ export function proposeEdit(args: { path: string; nextContent: string; tool: str
   let before = '';
   let created = true;
   try {
-    before = fs.readFileSync(target, 'utf-8');
+    const bytes = fs.readFileSync(target);
+    if (bytes.includes(0)) throw new Error('This file is binary text and cannot be edited through an AI text proposal. Its bytes were preserved.');
+    try { before = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch { throw new Error('This file is not valid UTF-8 text. Use its original editor/encoding to edit it; its bytes were preserved.'); }
     created = false;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     created = true;
   }
+  if (Buffer.from(args.nextContent, 'utf8').toString('utf8') !== args.nextContent) throw new Error('The proposed text contains invalid Unicode and was not queued.');
   const diff = diffText(before, args.nextContent);
   const hunks = toHunks(diff, PROPOSAL_CONTEXT);
   if (!hunks.length) {

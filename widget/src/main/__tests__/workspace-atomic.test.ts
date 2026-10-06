@@ -58,4 +58,11 @@ describe('atomic accepted edits preserve original files on actual I/O failures',
       expect(fs.readFileSync(path.join(outside, 'nested.ts'), 'utf8')).toBe('outside human');
     } finally { fs.rmSync(outside, { recursive: true, force: true }); }
   });
+  test('non-UTF-8 and binary existing files are refused without altering a single byte', () => {
+    for (const bytes of [Buffer.from([0xff, 0xfe, 0x41, 0x00]), Buffer.from([0x61, 0x80, 0x62]), Buffer.from([0x61, 0, 0x62])]) {
+      fs.writeFileSync(file, bytes);
+      expect(() => proposeEdit({ path: file, nextContent: 'replacement', tool: 'write_file' })).toThrow(/binary|UTF-8/);
+      expect(fs.readFileSync(file)).toEqual(bytes);
+    }
+  });
 });

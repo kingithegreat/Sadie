@@ -864,7 +864,9 @@ export const writeFileHandler: ToolHandler = async (args, _context): Promise<Too
   // IDE-3: inside the Workspace folder the write waits for a human. Appending
   // is not a reviewable diff of a whole file, so it is left alone.
   if (shouldReviewEdit(validation.resolved)) {
-    const proposed = proposeEdit({ path: validation.resolved, nextContent: (args.append ? prior.text : '') + String(args.content ?? ''), tool: 'write_file' });
+    let proposed: ReturnType<typeof proposeEdit>;
+    try { proposed = proposeEdit({ path: validation.resolved, nextContent: (args.append ? prior.text : '') + String(args.content ?? ''), tool: 'write_file' }); }
+    catch (error) { return { success: false, error: (error as Error).message }; }
     if (proposed.identical) {
       return { success: true, result: { path: validation.resolved, proposed: false, message: 'No change: the file already has this content.' } };
     }
