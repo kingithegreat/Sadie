@@ -1,16 +1,30 @@
 /** Request-local IDE authority. Prompt text and Settings never establish it. */
 import { AsyncLocalStorage } from 'async_hooks';
-import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
-import { homeDir } from './user-paths';
+import { canonicalTrustedWorkspacePath, validateTrustedWorkspaceRoot } from './workspace-trust';
 
-export interface WorkspaceAuthority { root: string; senderId: number; streamId: string; approved: boolean; cancelled?: boolean }
+export interface WorkspaceAuthority { root: string; displayRoot?: string; senderId: number; streamId: string; approved: boolean; cancelled?: boolean }
 const scope = new AsyncLocalStorage<WorkspaceAuthority>();
 const plans = new Map<string, { root: string; senderId: number; text: string; expires: number; approved: boolean }>();
 const TTL = 30 * 60_000;
 const liveStreams = new Map<string, number>();
 const streamScopes = new Map<string, WorkspaceAuthority>();
+const bridgeTokens = new Map<string, { authority: WorkspaceAuthority; expires: number }>();
+export function createWorkspaceBridgeToken(): string | undefined {
+  const authority = currentWorkspace(); if (!authority) return;
+  for (const [token, value] of bridgeTokens) if (value.expires < Date.now() || value.authority.cancelled) bridgeTokens.delete(token);
+  if (authority.cancelled || bridgeTokens.size >= 100) throw new Error('This workspace bridge session is unavailable.');
+  const token = randomUUID().replace(/-/g, ''); bridgeTokens.set(token, { authority, expires: Date.now() + TTL }); return token;
+}
+export function isWorkspaceBridgeToken(token: string): boolean {
+  const binding = bridgeTokens.get(token); return !!binding && !binding.authority.cancelled && binding.expires > Date.now();
+}
+export function runWorkspaceBridgeToken<T>(token: string, run: () => T): T {
+  const binding = bridgeTokens.get(token);
+  if (!binding || binding.authority.cancelled || binding.expires <= Date.now()) throw new Error('The IDE bridge session expired or was stopped.');
+  return scope.run(binding.authority, run);
+}
 export const currentWorkspace = () => scope.getStore();
 export function withinRoot(root: string, target: string): boolean {
   const rel = path.relative(root, target);
@@ -18,21 +32,10 @@ export function withinRoot(root: string, target: string): boolean {
 }
 /** Canonicalize even missing children, rejecting junction/symlink escapes. */
 export function canonicalWorkspacePath(target: string): string {
-  let ancestor = path.resolve(target);
-  const missing: string[] = [];
-  while (!fs.existsSync(ancestor)) {
-    const parent = path.dirname(ancestor);
-    if (parent === ancestor) throw new Error('The project path is unavailable.');
-    missing.unshift(path.basename(ancestor)); ancestor = parent;
-  }
-  return path.join(fs.realpathSync(ancestor), ...missing);
+  return canonicalTrustedWorkspacePath(target);
 }
 export function validateWorkspaceRoot(input: unknown): string {
-  if (typeof input !== 'string' || !input.trim() || !path.isAbsolute(input)) throw new Error('Choose an absolute project folder first.');
-  const root = canonicalWorkspacePath(input);
-  if (!withinRoot(canonicalWorkspacePath(homeDir()), root)) throw new Error('The project must be inside your home folder.');
-  if (!fs.statSync(root).isDirectory()) throw new Error('The project must be a folder.');
-  return root;
+  return validateTrustedWorkspaceRoot(input);
 }
 export function prepareWorkspacePlan(rootInput: unknown, text: unknown, senderId: number) {
   const root = validateWorkspaceRoot(rootInput);
@@ -61,7 +64,7 @@ export function runWorkspaceRequest<T>(request: any, senderId: number, run: () =
   if (request.workspace.planId && !approved) throw new Error('Approve a current plan for this project before continuing.');
   // Server-generated instruction cannot substitute for the separate approval record.
   request.conversationPrompt = [request.conversationPrompt, `You are in the IDE project ${root}. Relative file paths resolve here. ${approved ? `The user approved this plan: ${plan!.text}. Propose file changes for review; do not execute shell commands.` : 'Read-only planning. Explain a concrete plan first; no edits until the user separately approves a plan.'}`].filter(Boolean).join('\n\n');
-  const authority: WorkspaceAuthority = { root, senderId, streamId: request.streamId, approved };
+  const authority: WorkspaceAuthority = { root, displayRoot: request.workspace.root, senderId, streamId: request.streamId, approved };
   if (liveStreams.has(request.streamId)) streamScopes.set(request.streamId, authority);
   return scope.run(authority, run);
 }
@@ -75,6 +78,10 @@ export function workspaceStreamHandler(handler: (event: any, request: any) => Pr
   return async (event: any, request: any) => {
     let reserved = false;
     try {
+      if (request?.workspace) {
+        const window = require('./window-manager').getMainWindow();
+        if (!window || window.isDestroyed() || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) throw new Error('Open the assistant in the HomeBot IDE.');
+      }
       if (request && typeof request === 'object') {
         request.streamId ||= `stream-${randomUUID()}`;
         if (typeof request.streamId !== 'string' || request.streamId.length > 160) throw new Error('Invalid stream identifier.');
@@ -107,6 +114,7 @@ export function workspaceToolError(name: string): string | undefined {
   const context = currentWorkspace();
   if (!context) return;
   if (context.cancelled) return 'This IDE request was stopped. No further tools can run.';
+  try { validateWorkspaceRoot(context.root); } catch { return 'This IDE project is no longer trusted or available. No further tools can run.'; }
   if (READ_TOOLS.has(name)) return;
   if (name === 'write_file' || name === 'edit_file') return context.approved ? undefined : 'Approve a plan in the IDE assistant before proposing edits. No file was changed.';
   if (name.startsWith('mcp_')) return context.approved ? undefined : 'Approve a plan before calling an external tool from the IDE.';

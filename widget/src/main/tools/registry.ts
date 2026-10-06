@@ -2,22 +2,38 @@ import { ModuleContractError } from '../../shared/modules/contracts';
 import { RegisteredTool, ToolDefinition, ToolHandler } from './types';
 import { canonicalWorkspacePath, currentWorkspace, withinRoot, workspaceToolError } from '../workspace-context';
 import * as path from 'path';
+import { checkedTrustedWorkspacePath } from '../workspace-trust';
 
 function scopedHandler(name: string, handler: ToolHandler): ToolHandler {
   return async (args, context) => {
+    const authority = currentWorkspace();
+    const finish = (result: Awaited<ReturnType<ToolHandler>>) => {
+      if (authority) {
+        try {
+          const window = require('../window-manager').getMainWindow();
+          if (window && !window.isDestroyed() && window.webContents.id === authority.senderId) window.webContents.send('homebot:assistant-tool-activity', {
+            tool: name, allowed: !!result.success, error: result.success ? undefined : result.error,
+            root: authority.displayRoot || authority.root, streamId: authority.streamId,
+          });
+        } catch { /* activity never changes tool outcomes */ }
+      }
+      return result;
+    };
     const error = workspaceToolError(name);
-    if (error) return { success: false, error };
+    if (error) return finish({ success: false, error });
     const workspace = currentWorkspace();
     if (workspace && ['grep_code', 'project_tree', 'analyze_file', 'git_status', 'git_diff', 'git_log', 'git_branches'].includes(name)) {
       const key = name.startsWith('git_') ? 'repo_path' : name === 'analyze_file' ? 'file_path' : 'directory';
       const target = args[key] ? path.resolve(workspace.root, String(args[key])) : workspace.root;
       try {
         const canonical = canonicalWorkspacePath(target);
-        if (!withinRoot(workspace.root, canonical)) return { success: false, error: 'This tool path is outside the active IDE project.' };
-        return handler({ ...args, [key]: canonical }, context);
-      } catch (failure) { return { success: false, error: (failure as Error).message }; }
+        if (!withinRoot(workspace.root, canonical)) return finish({ success: false, error: 'This tool path is outside the active IDE project.' });
+        checkedTrustedWorkspacePath(workspace.root, canonical);
+        return finish(await handler({ ...args, [key]: canonical }, context));
+      } catch (failure) { return finish({ success: false, error: (failure as Error).message }); }
     }
-    return handler(args, context);
+    try { return finish(await handler(args, context)); }
+    catch (failure) { finish({ success: false, error: (failure as Error).message }); throw failure; }
   };
 }
 

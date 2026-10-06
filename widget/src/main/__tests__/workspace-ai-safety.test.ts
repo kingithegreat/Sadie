@@ -1,15 +1,23 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import * as http from 'http';
 let mockUserData: string;
 let mockConfiguredRoot: string;
+let mockWindow: any;
 jest.mock('electron', () => ({ app: { getPath: () => mockUserData } }));
 jest.mock('../user-paths', () => ({ homeDir: () => require('os').tmpdir() }));
 jest.mock('../config-manager', () => ({ getSettings: () => ({ projectPath: mockConfiguredRoot, ollamaUrl: 'http://127.0.0.1:11434' }) }));
 jest.mock('../file-change-log', () => ({ recordChange: jest.fn(), captureBefore: (file: string) => { try { return { text: require('fs').readFileSync(file, 'utf8'), existed: true }; } catch { return { text: '', existed: false }; } } }));
 jest.mock('axios', () => ({ __esModule: true, default: { get: jest.fn(), post: jest.fn() } }));
+jest.mock('../window-manager', () => ({ getMainWindow: () => mockWindow }));
+jest.mock('../tools', () => ({
+  executeTool: (call: any, context: any) => require('../tools/registry').getTool(call.name).handler(call.arguments, context),
+  getTool: (name: string) => require('../tools/registry').getTool(name),
+}));
 import axios from 'axios';
-import { approveWorkspacePlan, currentWorkspace, prepareWorkspacePlan, releaseWorkspaceStream, runWorkspaceRequest, workspaceStreamHandler, workspaceToolError } from '../workspace-context';
+import { approveWorkspacePlan, createWorkspaceBridgeToken, currentWorkspace, prepareWorkspacePlan, releaseWorkspaceStream, runWorkspaceRequest, workspaceStreamHandler, workspaceToolError } from '../workspace-context';
+import { startAssistantBridge, stopAssistantBridge } from '../assistant-bridge';
 import { writeFileHandler, validatePath } from '../tools/filesystem';
 import { applyProposal, listProposals, __clearProposals } from '../workspace-proposals';
 import { listWorkspaceCheckpoints, recordWorkspaceCheckpoint, restoreWorkspaceCheckpoint } from '../workspace-checkpoints';
@@ -77,17 +85,48 @@ describe('IDE request authority, review and recovery effects', () => {
   test('Stop belongs to the requesting window and blocks a late confirmed edit', async () => {
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
-    const sender = { id: 1, send: jest.fn() }; let result: any;
+    const sender = { id: 1, send: jest.fn(), mainFrame: {} }; let result: any;
+    mockWindow = { isDestroyed: () => false, webContents: sender };
     const handler = workspaceStreamHandler(async (event, req) => {
       await gate; result = await writeFileHandler({ path: 'late.ts', content: 'late write' }, {} as any);
       event.sender.send('homebot:stream-end', { streamId: req.streamId });
     });
-    const running = handler({ sender }, request(approved(rootA), 'late'));
+    const running = handler({ sender, senderFrame: sender.mainFrame }, request(approved(rootA), 'late'));
     expect(releaseWorkspaceStream('late', 2)).toBe(false);
     expect(releaseWorkspaceStream('late', 1)).toBe(true);
     release(); await running;
     expect(result).toMatchObject({ success: false, error: expect.stringContaining('stopped') });
     expect(fs.existsSync(path.join(rootA, 'late.ts'))).toBe(false); expect(listProposals()).toEqual([]);
+  });
+  test('actual bridge HTTP calls re-enter two independent roots and reject wrong/expired/stopped tokens', async () => {
+    registerTool('write_file', { name: 'write_file' } as any, writeFileHandler);
+    const bridge = await startAssistantBridge({ requestConfirmation: async () => true });
+    const rpc = (token: string, content: string) => new Promise<any>((resolve, reject) => {
+      const url = new URL(bridge.url), body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'write_file', arguments: { path: 'bridge.ts', content } } });
+      const req = http.request({ hostname: url.hostname, port: url.port, path: url.pathname, method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, res => {
+        let text = ''; res.on('data', chunk => { text += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(text) }));
+      }); req.on('error', reject); req.end(body);
+    });
+    try {
+      const tokenA = runWorkspaceRequest(request(approved(rootA), 'bridge-a'), 1, () => createWorkspaceBridgeToken()!);
+      const tokenB = runWorkspaceRequest(request(approved(rootB), 'bridge-b'), 1, () => createWorkspaceBridgeToken()!);
+      const [a, b] = await Promise.all([rpc(tokenA, 'A'), rpc(tokenB, 'B')]);
+      expect(a.body.result.isError).toBe(false); expect(b.body.result.isError).toBe(false);
+      expect(listProposals(rootA)[0].path).toBe(path.join(rootA, 'bridge.ts'));
+      expect(listProposals(rootB)[0].path).toBe(path.join(rootB, 'bridge.ts'));
+      expect(fs.existsSync(path.join(rootA, 'bridge.ts'))).toBe(false); expect(fs.existsSync(path.join(rootB, 'bridge.ts'))).toBe(false);
+      expect((await rpc('invalid', 'BAD')).status).toBe(401);
+      const clock = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 31 * 60_000);
+      try { expect((await rpc(tokenA, 'EXPIRED')).status).toBe(401); } finally { clock.mockRestore(); }
+      let stoppedToken!: string, release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const sender = { id: 1, send: jest.fn(), mainFrame: {} }; mockWindow = { isDestroyed: () => false, webContents: sender };
+      const running = workspaceStreamHandler(async (event, req) => { stoppedToken = createWorkspaceBridgeToken()!; await gate; event.sender.send('homebot:stream-end', { streamId: req.streamId }); })({ sender, senderFrame: sender.mainFrame }, request(approved(rootA), 'bridge-stop'));
+      releaseWorkspaceStream('bridge-stop', 1);
+      expect((await rpc(stoppedToken, 'STOPPED')).status).toBe(401);
+      release(); await running;
+      expect(listProposals()).toHaveLength(2);
+    } finally { stopAssistantBridge(); }
   });
   test('checkpoint restores exact BOM/CRLF bytes, preserves later edits and refuses a stale confirmation', () => {
     const file = path.join(rootA, 'code.ts'), before = Buffer.from('\ufefforiginal\r\n'), after = Buffer.from('agent\n');

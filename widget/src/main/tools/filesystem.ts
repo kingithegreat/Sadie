@@ -15,6 +15,7 @@ import { captureBefore, recordChange } from '../file-change-log';
 import { proposeEdit, shouldReviewEdit } from '../workspace-proposals';
 import { homeDir } from '../user-paths';
 import { canonicalWorkspacePath, currentWorkspace, withinRoot, workspaceToolError } from '../workspace-context';
+import { checkedTrustedWorkspacePath } from '../workspace-trust';
 
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 
@@ -108,6 +109,8 @@ export function validatePath(targetPath: string): { valid: boolean; resolved: st
     try {
       const canonical = canonicalWorkspacePath(resolved);
       if (!withinRoot(workspace.root, canonical)) return { valid: false, resolved, error: 'This path is outside the active IDE project.' };
+      checkedTrustedWorkspacePath(workspace.root, canonical);
+      return { valid: true, resolved: canonical };
     } catch (error) { return { valid: false, resolved, error: (error as Error).message }; }
   }
   

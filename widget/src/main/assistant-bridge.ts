@@ -29,6 +29,7 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { executeTool, getTool } from './tools';
 import type { ToolDefinition } from './tools/types';
+import { isWorkspaceBridgeToken, runWorkspaceBridgeToken } from './workspace-context';
 
 /**
  * Tools the coding/filing assistant may reach. Deliberately narrow: this is a
@@ -114,7 +115,8 @@ export async function startAssistantBridge(options: BridgeOptions): Promise<Brid
     // Bearer token on every request — loopback is not an authorisation boundary.
     const auth = (req.headers['authorization'] || '') as string;
     const provided = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (!provided || !tokenMatches(provided, token)) {
+    const workspaceToken = isWorkspaceBridgeToken(provided);
+    if (!provided || (!tokenMatches(provided, token) && !workspaceToken)) {
       send(401, JSON.stringify({ error: 'unauthorized' }));
       return;
     }
@@ -172,15 +174,16 @@ export async function startAssistantBridge(options: BridgeOptions): Promise<Brid
 
           // The gate: assertPermission + requestConfirmation + per-tool guards
           // all live inside executeTool.
-          const result = await executeTool(
+          const execute = () => executeTool(
             { name, arguments: args },
             {
               executionId: randomUUID(),
               requestConfirmation: options.requestConfirmation,
             },
           );
+          const result = await (workspaceToken ? runWorkspaceBridgeToken(provided, execute) : execute());
 
-          options.onToolActivity?.({
+          if (!workspaceToken) options.onToolActivity?.({
             tool: name,
             allowed: !!result.success,
             error: result.success ? undefined : result.error,
