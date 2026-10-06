@@ -2102,6 +2102,9 @@ async function finishFailedStream(opts: {
 }): Promise<void> {
   const { sender, streamId, err, errorLabel } = opts;
   try {
+    // Generic chat recovery drops the draft authority prompt and may stringify
+    // unsolicited tool calls into replacement code. Keep draft failures explicit.
+    if (currentWorkspace()?.mode === 'inline-draft') throw err;
     // Only recover a stream that delivered NOTHING. The renderer appends
     // chunks, so sending a full answer after a partial one would concatenate
     // the two into a garbled message — the user would read the first half of
@@ -2163,7 +2166,7 @@ export async function streamFromLLM(
   const contextHasUrl = getHistory(conversationId)
     .slice(-6)
     .some(m => /\bhttps?:\/\/\S+/i.test(m.content || ''));
-  const shouldOfferTools = !skipToolsForGreeting
+  const shouldOfferTools = currentWorkspace()?.mode !== 'inline-draft' && !skipToolsForGreeting
     // The phrase gate alone missed whole categories — "make me a short video"
     // is filesystem/terminal/web phrasing to no one. When the intent
     // classifier recognises ANY tool category, that alone opens the gate.
@@ -2243,18 +2246,19 @@ export async function streamFromLLM(
       // Fire-and-forget memorization of any self-disclosures in this message.
       // Cap recall for small models to avoid blowing the context window.
       const cloudModelSmall = isSmallModel(cloudModelName);
-      let cloudSystemPrompt = systemPromptWithGuidelines;
-      const recalled = await recallMemory(message).catch(() => null);
+      const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
+      let cloudSystemPrompt = [systemPromptWithGuidelines, inlineDraft ? options?.conversationPrompt : undefined].filter(Boolean).join('\n\n');
+      const recalled = inlineDraft ? null : await recallMemory(message).catch(() => null);
       if (recalled) {
         const cappedRecall = cloudModelSmall ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
         cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${cappedRecall}`;
       }
-      memorizeIfUseful(message).catch(() => {});
+      if (!inlineDraft) memorizeIfUseful(message).catch(() => {});
 
       // RAG: inject relevant indexed document context
       try {
-        await ragSearchWarmup(message).catch(() => {});
-        const ragHit = ragSearch(message);
+        if (!inlineDraft) await ragSearchWarmup(message).catch(() => {});
+        const ragHit = inlineDraft ? null : ragSearch(message);
         if (ragHit) {
           const ragText = cloudModelSmall ? ragHit.text.slice(0, 600) : ragHit.text;
           cloudSystemPrompt += `\n\n[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragText}`;
@@ -2284,6 +2288,10 @@ export async function streamFromLLM(
       // Handle tool call round-trip: execute tool, then feed result back to LLM
       const handleToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
         toolCallReceived = true;
+        if (inlineDraft) {
+          onError(new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.'));
+          return;
+        }
         console.log(`[HomeBot] Custom LLM tool call: ${tc.name}`, tc.arguments);
         onToolCall(tc.name, tc.arguments);
         
@@ -2418,13 +2426,15 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = historyBeforeCurrentTurn(conversationId, message);
       // Build system prompt for the actual code model (may differ in size from chatModel)
-      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines);
+      const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
+      const codeSystemPrompt = [getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines), inlineDraft ? options?.conversationPrompt : undefined].filter(Boolean).join('\n\n');
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
         || codeApiProvider === 'anthropic'
         || codeApiProvider === 'openrouter';
       const codeToolDefs = codeProviderSupportsTools
+        && !inlineDraft
         && shouldOfferToolsForMessage(message, { hasDocuments })
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
@@ -2432,6 +2442,10 @@ export async function streamFromLLM(
       let codeToolCallReceived = false;
       const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
         codeToolCallReceived = true;
+        if (inlineDraft) {
+          onError(new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.'));
+          return;
+        }
         console.log(`[HomeBot] Code API tool call: ${tc.name}`, tc.arguments);
         onToolCall(tc.name, tc.arguments);
         try {
@@ -2479,6 +2493,7 @@ export async function streamFromLLM(
   // When MoA is enabled and the query is complex enough, fan out to multiple
   // proposer models and aggregate the results.
   if (
+    currentWorkspace()?.mode !== 'inline-draft' &&
     settings.moaEnabled &&
     Array.isArray(settings.moaProposers) && settings.moaProposers.length >= 2 &&
     settings.moaAggregator &&
@@ -2616,7 +2631,7 @@ export async function streamFromOllamaWithTools(
    * is for — so a matched category opens the gate too.
    */
   const intentCategories = detectToolCategories(message);
-  const willUseTools = !hasImages
+  const willUseTools = currentWorkspace()?.mode !== 'inline-draft' && !hasImages
     && !isSimpleGreeting(message)
     && !isSynthesisCall
     && (shouldOfferToolsForMessage(message, { hasImages, hasDocuments: options?.hasDocuments ?? false })
@@ -2698,13 +2713,13 @@ export async function streamFromOllamaWithTools(
     : rawDigest;
 
   let recalled: string | null = null;
-  if (!uncensoredThisTurn && !isSynthesisCall) {
+  if (currentWorkspace()?.mode !== 'inline-draft' && !uncensoredThisTurn && !isSynthesisCall) {
     recalled = await recallMemory(message).catch(() => null);
     memorizeIfUseful(message).catch(() => {});
   }
 
   let ragSnippet: string | null = null;
-  if (!isSynthesisCall && !uncensoredThisTurn) {
+  if (currentWorkspace()?.mode !== 'inline-draft' && !isSynthesisCall && !uncensoredThisTurn) {
     try {
       // Pre-warm embedding cache so the synchronous ragSearch can use it
       await ragSearchWarmup(message).catch(() => {});
@@ -2982,11 +2997,15 @@ export async function streamFromOllamaWithTools(
         stream.on('end', resolve);
         stream.on('error', reject);
       });
+
+      if (currentWorkspace()?.mode === 'inline-draft' && pendingToolCalls.length) {
+        throw new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed. Try generating replacement code again.');
+      }
       
       // If no explicit tool_calls were emitted but the assistant content
       // looks like raw tool JSON, parse and route it through the tool
       // execution pipeline rather than rendering it as plain text.
-      if (pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
+      if (currentWorkspace()?.mode !== 'inline-draft' && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
         // Try extracting tool calls from mixed text (models like mistral
         // often embed tool JSON inside descriptive prose)
         const extracted = extractToolCallsFromText(assistantContent);
@@ -3010,7 +3029,7 @@ export async function streamFromOllamaWithTools(
       // Final fallback: detect prose-style tool descriptions like
       // "write_file path='...' content='...'" that models sometimes output
       // instead of using the proper tool_call mechanism.
-      if (pendingToolCalls.length === 0) {
+      if (currentWorkspace()?.mode !== 'inline-draft' && pendingToolCalls.length === 0) {
         const proseCalls = extractProseToolCalls(assistantContent);
         if (proseCalls && proseCalls.length > 0) {
           pendingToolCalls = proseCalls;
@@ -4481,7 +4500,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ── AGENTIC MODE DETECTION ──
         // If no deterministic intent matched but the message looks multi-step,
         // inject an agentic system prompt so the LLM chains tools autonomously.
-        const isAgenticRequest = looksMultiStep(enhancedMessage);
+        const isAgenticRequest = currentWorkspace()?.mode !== 'inline-draft' && looksMultiStep(enhancedMessage);
         if (isAgenticRequest) {
           console.log('[HomeBot] Agentic mode activated — multi-step request detected');
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }

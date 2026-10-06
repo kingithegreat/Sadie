@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { canonicalTrustedWorkspacePath, validateTrustedWorkspaceRoot } from './workspace-trust';
 import { getMainWindow } from './window-manager';
 
-export interface WorkspaceAuthority { root: string; displayRoot?: string; senderId: number; streamId: string; approved: boolean; cancelled?: boolean }
+export interface WorkspaceAuthority { root: string; displayRoot?: string; senderId: number; streamId: string; approved: boolean; mode?: 'inline-draft'; cancelled?: boolean }
 const scope = new AsyncLocalStorage<WorkspaceAuthority>();
 const plans = new Map<string, { root: string; senderId: number; text: string; expires: number; approved: boolean }>();
 const TTL = 30 * 60_000;
@@ -60,12 +60,18 @@ export function runWorkspaceRequest<T>(request: any, senderId: number, run: () =
   }
   const root = validateWorkspaceRoot(request.workspace.root);
   if (typeof request.streamId !== 'string' || !request.streamId) throw new Error('An IDE stream identifier is required.');
+  const mode = request.workspace.mode;
+  if (mode !== undefined && mode !== 'inline-draft') throw new Error('Unknown IDE request mode.');
+  if (mode === 'inline-draft' && request.workspace.planId) throw new Error('Inline drafts cannot use plan approval or tool authority.');
   const plan = plans.get(String(request.workspace.planId || ''));
   const approved = !!(plan && plan.approved && plan.root === root && plan.senderId === senderId && plan.expires > Date.now());
   if (request.workspace.planId && !approved) throw new Error('Approve a current plan for this project before continuing.');
   // Server-generated instruction cannot substitute for the separate approval record.
-  request.conversationPrompt = [request.conversationPrompt, `You are in the IDE project ${root}. Relative file paths resolve here. ${approved ? `The user approved this plan: ${plan!.text}. Propose file changes for review; do not execute shell commands.` : 'Read-only planning. Explain a concrete plan first; no edits until the user separately approves a plan.'}`].filter(Boolean).join('\n\n');
-  const authority: WorkspaceAuthority = { root, displayRoot: request.workspace.root, senderId, streamId: request.streamId, approved };
+  const instruction = mode === 'inline-draft'
+    ? `You are producing an inline code draft for the IDE project ${root}. Return only the requested replacement source code, without Markdown fences or planning prose. This is a draft for human preview, not a file edit. No tools are available or permitted; do not call tools, write files, or run commands. The editor applies changes only after human acceptance and byte-conflict validation.`
+    : `You are in the IDE project ${root}. Relative file paths resolve here. ${approved ? `The user approved this plan: ${plan!.text}. Propose file changes for review; do not execute shell commands.` : 'Read-only planning. Explain a concrete plan first; no edits until the user separately approves a plan.'}`;
+  request.conversationPrompt = [request.conversationPrompt, instruction].filter(Boolean).join('\n\n');
+  const authority: WorkspaceAuthority = { root, displayRoot: request.workspace.root, senderId, streamId: request.streamId, approved, ...(mode ? { mode } : {}) };
   if (liveStreams.has(request.streamId)) streamScopes.set(request.streamId, authority);
   return scope.run(authority, run);
 }
@@ -115,6 +121,7 @@ export function workspaceToolError(name: string): string | undefined {
   const context = currentWorkspace();
   if (!context) return;
   if (context.cancelled) return 'This IDE request was stopped. No further tools can run.';
+  if (context.mode === 'inline-draft') return 'Inline drafts cannot call tools. Review the generated code in the editor; no tool was run.';
   try { validateWorkspaceRoot(context.root); } catch { return 'This IDE project is no longer trusted or available. No further tools can run.'; }
   if (READ_TOOLS.has(name)) return;
   if (name === 'write_file' || name === 'edit_file') return context.approved ? undefined : 'Approve a plan in the IDE assistant before proposing edits. No file was changed.';

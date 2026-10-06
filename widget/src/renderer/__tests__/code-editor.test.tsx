@@ -88,10 +88,34 @@ test('restored editor state uses current handlers, compartments, read-only mode 
 });
 
 describe('IDE-5: Inline Edit (Ctrl+K)', () => {
+  test('inline generation without a project reports guidance before sending a request', async () => {
+    const sendStreamMessage = jest.fn();
+    (window as any).electron = { sendStreamMessage, subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    act(() => { viewOf(container).contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename value' } });
+    await act(async () => fireEvent.click(screen.getByTestId('inline-edit-submit-btn')));
+    expect(sendStreamMessage).not.toHaveBeenCalled();
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('Open a project folder');
+    expect(viewOf(container).state.doc.toString()).toBe('const value = 1;');
+  });
+  test('inline generation sends a transient nonreserved conversation and explicit no-tools draft scope', async () => {
+    const sendStreamMessage = jest.fn().mockResolvedValue(undefined);
+    (window as any).electron = { sendStreamMessage, subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor root="/project" filePath="/project/main.ts" value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    act(() => { viewOf(container).contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename value' } });
+    await act(async () => fireEvent.click(screen.getByTestId('inline-edit-submit-btn')));
+    const request = sendStreamMessage.mock.calls[0][0];
+    expect(request.conversation_id).toBe(`inline-edit:${request.streamId}`);
+    expect(request.conversation_id.startsWith('workspace:')).toBe(false);
+    expect(request.workspace).toEqual({ root: '/project', mode: 'inline-draft' });
+    expect(request.message).toContain('const value = 1;');
+  });
   test('typing before or inside the target while generating refuses stale acceptance and preserves all bytes', async () => {
     let callbacks: any;
     (window as any).electron = { sendStreamMessage: jest.fn().mockResolvedValue({ success: true }), subscribeToStream: jest.fn((_id, handlers) => { callbacks = handlers; return jest.fn(); }), cancelStream: jest.fn() };
-    const { container } = render(<CodeEditor value={'const first = 1;\nconst second = 2;\n'} language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const { container } = render(<CodeEditor root="/project" value={'const first = 1;\nconst second = 2;\n'} language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
     const view = viewOf(container);
     act(() => { view.dispatch({ selection: { anchor: 17, head: 34 } }); view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
     fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename second' } });
@@ -105,7 +129,7 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
   test('rejected request displays recovery error and does not leave an active generation', async () => {
     (window as any).electron = { sendStreamMessage: jest.fn().mockRejectedValue(new Error('Connection failed')), subscribeToStream: jest.fn(() => jest.fn()) };
-    const { container } = render(<CodeEditor value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const { container } = render(<CodeEditor root="/project" value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
     const view = viewOf(container);
     act(() => { view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
     fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'change value' } });
@@ -158,7 +182,7 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
     const onChange = jest.fn();
     const { container } = render(
-      <CodeEditor value={'const greeting = "hello";\nconsole.log(greeting);\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
+      <CodeEditor root="/project" value={'const greeting = "hello";\nconsole.log(greeting);\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
     );
     const view = viewOf(container);
 
@@ -231,7 +255,7 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
     const onChange = jest.fn();
     const { container } = render(
-      <CodeEditor value={'const count = 0;\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
+      <CodeEditor root="/project" value={'const count = 0;\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
     );
     const view = viewOf(container);
 

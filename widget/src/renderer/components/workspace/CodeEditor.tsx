@@ -329,14 +329,15 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
 
     const fullPrompt = buildInlineEditPrompt(promptText, currentEdit.range.text, language);
     try {
+      if (!root) throw new Error('Open a project folder before generating an inline draft.');
       if (!api?.sendStreamMessage) throw new Error('The coding assistant is unavailable.');
       await api.sendStreamMessage({
       streamId,
       user_id: 'desktop_user',
-      conversation_id: `workspace:inline-edit:${Date.now()}`,
+      conversation_id: `inline-edit:${streamId}`,
       message: fullPrompt,
       timestamp: new Date().toISOString(),
-      ...(root ? { workspace: { root } } : {}),
+      ...(root ? { workspace: { root, mode: 'inline-draft' as const } } : {}),
       });
     } catch (error) {
       if (activeStreamIdRef.current !== streamId) return;
