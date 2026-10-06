@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import Icon from '../Icon';
 import FileTree from './FileTree';
 import CodeEditor, { type CodeEditorSession } from './CodeEditor';
+import type { WorkspaceEntry } from '../../../shared/types';
 
 const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // Lazy: the browser panel is off by default, and its first render triggers an
@@ -32,11 +33,28 @@ interface OpenFile {
   original: string;
   language: string;
   editorSession: CodeEditorSession;
+  version?: string;
+  eol?: 'lf' | 'crlf';
+  bom?: boolean;
+  disk?: { content: string; version: string; eol: 'lf' | 'crlf'; bom: boolean };
+  missing?: boolean;
 }
 
 type SideView = 'explorer' | 'search' | 'problems' | 'changes' | 'scm' | null;
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
+const parentPath = (p: string) => p.replace(/[\\/][^\\/]+$/, '');
+const joinPath = (folder: string, name: string) => `${folder.replace(/[\\/]$/, '')}/${name}`;
+const underPath = (file: string, folder: string) => file === folder || file.startsWith(`${folder}/`) || file.startsWith(`${folder}\\`);
+
+function reconcile(file: OpenFile, result: any): OpenFile {
+  if (!result?.success) return result?.error?.match(/ENOENT|no longer exists/i) ? { ...file, missing: true } : file;
+  if (result.version === file.version && file.version) return file.disk || file.missing ? { ...file, disk: undefined, missing: false } : file;
+  if ((result.content ?? '') === file.original) return { ...file, version: result.version, eol: result.eol ?? file.eol, bom: result.bom ?? file.bom, disk: undefined, missing: false };
+  if (file.content !== file.original) return { ...file, disk: { content: result.content ?? '', version: result.version, eol: result.eol ?? 'lf', bom: !!result.bom }, missing: false };
+  return { ...file, content: result.content ?? '', original: result.content ?? '', version: result.version,
+    eol: result.eol, bom: result.bom, disk: undefined, missing: false, editorSession: { current: null } };
+}
 
 /**
  * Focus targets that own Escape themselves. CodeMirror's content is a
@@ -110,6 +128,15 @@ export default function WorkspaceShell({
   const [reveal, setReveal] = useState<{ path: string; line: number } | null>(null);
   // Ctrl+Shift+F bumps this; SearchPanel focuses its query box on the change.
   const [searchFocusToken, setSearchFocusToken] = useState(0);
+  const [showHidden, setShowHidden] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [recentRoots, setRecentRoots] = useState<string[]>([]);
+  const [recoveryReady, setRecoveryReady] = useState('');
+  const [fileDialog, setFileDialog] = useState<{ action: string; path: string; value: string; error?: string; busy?: boolean } | null>(null);
+  const [comparePath, setComparePath] = useState<string | null>(null);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const savingPaths = useRef(new Set<string>());
 
   const api = (window as any).electron;
   const active = files.find(f => f.path === activePath) || null;
@@ -121,8 +148,10 @@ export default function WorkspaceShell({
   const appliedHandoffRef = useRef<Record<string, unknown> | null>(null);
 
   const openFile = useCallback(async (path: string, line?: number) => {
-    // Already open? Just focus its tab — never reload over unsaved edits.
+    // Existing tabs reconcile disk, preserving dirty drafts and flagging conflicts.
     if (files.some(f => f.path === path)) {
+      const result = await api?.workspaceRead?.(path);
+      setFiles(prev => prev.map(f => f.path === path ? reconcile(f, result) : f));
       setActivePath(path);
       // A search result landing on an already-open tab still needs its jump.
       if (line) setReveal({ path, line });
@@ -130,18 +159,92 @@ export default function WorkspaceShell({
     }
     const res = await api?.workspaceRead?.(path);
     if (!res?.success) { setStatus(res?.error || 'Could not open that file.'); return; }
-    setFiles(prev => [...prev, {
+    setFiles(prev => prev.some(f => f.path === path) ? prev : [...prev, {
       path,
       name: baseName(path),
       content: res.content ?? '',
       original: res.content ?? '',
       language: res.language || 'plaintext',
       editorSession: { current: null },
+      version: res.version, eol: res.eol, bom: res.bom,
     }]);
     setActivePath(path);
     if (line) setReveal({ path, line });
     setStatus(null);
   }, [files, api]);
+
+  const syncFiles = useCallback(async () => {
+    const snapshot = filesRef.current;
+    const results = await Promise.all(snapshot.map(async f => ({ path: f.path, result: await api?.workspaceRead?.(f.path) })));
+    setFiles(prev => prev.map(f => {
+      const result = results.find(r => r.path === f.path);
+      return result ? reconcile(f, result.result) : f;
+    }));
+  }, [api]);
+
+  // Poll while visible plus on focus: all disk writers (AI, Git, tools, editors)
+  // go through the same reconciliation, rather than only refreshing one panel.
+  useEffect(() => {
+    if (!open || !root) return;
+    const refresh = () => { void syncFiles(); setRefreshToken(t => t + 1); };
+    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener('focus', refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener('focus', refresh); };
+  }, [open, root, syncFiles]);
+
+  useEffect(() => {
+    if (!root) return;
+    let cancelled = false;
+    setRecoveryReady('');
+    void (async () => {
+      const result = await api?.workspaceRecoveryLoad?.(root);
+      if (cancelled) return;
+      const saved = result?.state;
+      if (saved?.schema === 1 && Array.isArray(saved.files)) {
+        const restored: OpenFile[] = saved.files.filter((f: any) => typeof f.path === 'string' && underPath(f.path, root) && typeof f.content === 'string' && typeof f.original === 'string')
+          .map((f: any) => ({ ...f, name: baseName(f.path), language: f.language || 'plaintext', editorSession: { current: null } }));
+        const snapshots = await Promise.all(restored.map(f => api?.workspaceRead?.(f.path)));
+        if (cancelled) return;
+        setFiles(prev => [...prev, ...restored.filter(f => !prev.some(p => p.path === f.path)).map((f) => reconcile(f, snapshots[restored.indexOf(f)]))]);
+        setActivePath(prev => prev || (restored.some(f => f.path === saved.activePath) ? saved.activePath : restored[0]?.path) || null);
+        if (restored.some(f => f.content !== f.original)) setStatus('Recovered unsaved drafts.');
+      } else if (result?.error) setStatus(`Draft recovery: ${result.error}`);
+      setRecoveryReady(root);
+      const recent = await api?.workspaceRecentProjects?.(root);
+      if (!cancelled && recent?.success) setRecentRoots(recent.paths || []);
+    })();
+    return () => { cancelled = true; };
+  }, [root, api]);
+
+  const recoveryState = useCallback(() => ({ files: filesRef.current.filter(f => underPath(f.path, root)).map(({ editorSession: _session, disk: _disk, ...f }) => f), activePath }), [root, activePath]);
+  useEffect(() => {
+    if (!root || recoveryReady !== root || !api?.workspaceRecoverySave) return;
+    const persist = () => { void api.workspaceRecoverySave(root, recoveryState()).then((r: any) => { if (r?.error) setStatus(`Draft recovery: ${r.error}`); }); };
+    const timer = window.setTimeout(persist, 250);
+    window.addEventListener('blur', persist);
+    return () => { window.clearTimeout(timer); window.removeEventListener('blur', persist); };
+  }, [files, activePath, root, recoveryReady, api, recoveryState]);
+
+  const changeProject = useCallback(async (next: string) => {
+    if (next === root) return;
+    const change = async () => {
+      if (api?.workspaceRecoverySave && root) {
+        const result = await api.workspaceRecoverySave(root, recoveryState());
+        if (!result?.success) { setStatus(result?.error || 'Could not preserve drafts.'); return; }
+      }
+      const checked = await api?.workspaceList?.(next);
+      if (!checked?.success) { setStatus(checked?.error || 'Could not open that project.'); return; }
+      setFiles([]); setActivePath(null); setRoot(checked.path || next); setStatus(null);
+    };
+    if (filesRef.current.some(f => f.content !== f.original)) confirm({ title: 'Switch projects and keep drafts?', body: <p>Your unsaved tabs will be stored for this project and restored when you return.</p>, confirmLabel: 'Keep drafts and switch', onConfirm: () => { void change(); } });
+    else await change();
+  }, [root, api, recoveryState, confirm]);
+
+  const chooseProject = useCallback(async () => {
+    const result = await api?.workspaceChooseProject?.();
+    if (result?.success) await changeProject(result.path);
+    else if (result?.error) setStatus(result.error);
+  }, [api, changeProject]);
 
   // Bootstrap root once. A whole-effect guard (`if (root) return`) silently
   // drops every later handoff that carries a different starting point — the
@@ -221,19 +324,63 @@ export default function WorkspaceShell({
     });
   }, []);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (contentOverride?: string, expectedVersion?: string) => {
     if (!active) return;
-    const res = await api?.workspaceSave?.(active.path, active.content);
+    const content = contentOverride ?? active.content;
+    if (contentOverride !== undefined) setFiles(prev => prev.map(f => f.path === active.path ? { ...f, content } : f));
+    if (savingPaths.current.has(active.path)) { setStatus('Save is still in progress. Your newer edits remain unsaved.'); return; }
+    savingPaths.current.add(active.path);
+    try {
+    const res = await api?.workspaceSave?.(active.path, content, { expectedVersion: expectedVersion ?? active.version, eol: active.eol, bom: active.bom });
     if (res?.success) {
       // The write contains this snapshot. Edits made while its reply is pending
       // still need saving; marking the latest text clean would silently lose them.
-      setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, original: active.content } : f)));
+      setFiles(prev => prev.map(f => (f.path === active.path ? { ...f, original: content, version: res.version, eol: res.eol ?? f.eol, bom: res.bom ?? f.bom, disk: undefined, missing: false } : f)));
       setStatus(`Saved ${active.name}`);
       window.setTimeout(() => setStatus(s => (s === `Saved ${active.name}` ? null : s)), 2000);
     } else {
+      if (res?.conflict) setFiles(prev => prev.map(f => f.path === active.path ? { ...f, disk: res.disk, missing: !res.disk } : f));
       setStatus(res?.error || 'Save failed.');
     }
+    } catch (e: any) { setStatus(e?.message || 'Save failed. Your draft is preserved.'); }
+    finally { savingPaths.current.delete(active.path); }
   }, [active, api]);
+
+  const runFileAction = useCallback(async (action: string, entry?: WorkspaceEntry) => {
+    const target = entry?.path || activePath || root;
+    if (action === 'copy-path') { try { await navigator.clipboard.writeText(target); setStatus('Path copied.'); } catch { setStatus('Could not copy the path.'); } return; }
+    if (action === 'delete') {
+      if (filesRef.current.some(f => underPath(f.path, target) && f.content !== f.original)) { setStatus('Save or close the unsaved tabs before deleting this file or folder.'); return; }
+      confirm({ title: `Move “${baseName(target)}” to the recycle bin?`, body: <p>You can restore it from the operating system’s recycle bin. Open clean tabs inside it will close.</p>, confirmLabel: 'Move to recycle bin', onConfirm: () => {
+        void api?.workspaceFileAction?.({ root, action, path: target }).then((res: any) => {
+          if (!res?.success) { setStatus(res?.error || 'Could not remove this file.'); return; }
+          setFiles(prev => prev.filter(f => !underPath(f.path, target))); setActivePath(prev => prev && underPath(prev, target) ? null : prev); setRefreshToken(t => t + 1);
+        });
+      } }); return;
+    }
+    if (action === 'reveal') { const res = await api?.workspaceFileAction?.({ root, action, path: target }); if (!res?.success) setStatus(res?.error || 'Could not show that file.'); return; }
+    const folder = entry?.isDirectory ? target : action === 'create-file' || action === 'create-folder' ? root : parentPath(target);
+    setFileDialog({ action, path: action === 'create-file' || action === 'create-folder' ? folder : target, value: action === 'move' ? baseName(target) : '' });
+  }, [root, activePath, api, confirm]);
+
+  const submitFileDialog = async () => {
+    if (!fileDialog || fileDialog.busy || !fileDialog.value.trim()) return;
+    const current = fileDialog;
+    const name = current.value.trim();
+    const destination = /^[a-z]:[\\/]|^[\\/]/i.test(name) ? name : joinPath(current.action === 'move' || current.action === 'save-as' ? parentPath(current.path) : current.path, name);
+    setFileDialog({ ...current, busy: true, error: undefined });
+    try {
+      const action = current.action === 'save-as' ? 'create-file' : current.action;
+      const result = await api?.workspaceFileAction?.({ root, action, path: action === 'move' ? current.path : destination,
+        destination: action === 'move' ? destination : undefined, content: current.action === 'save-as' ? (active?.bom ? '\uFEFF' : '') + (active?.eol === 'crlf' ? (active?.content ?? '').replace(/\n/g, '\r\n') : active?.content ?? '') : '' });
+      if (!result?.success) { setFileDialog({ ...current, error: result?.error || 'Could not change that file.' }); return; }
+      if (action === 'move') {
+        setFiles(prev => prev.map(f => underPath(f.path, current.path) ? { ...f, path: `${destination}${f.path.slice(current.path.length)}`, name: baseName(`${destination}${f.path.slice(current.path.length)}`) } : f));
+        setActivePath(prev => prev && underPath(prev, current.path) ? `${destination}${prev.slice(current.path.length)}` : prev);
+      } else if (action === 'create-file') await openFile(destination);
+      setRefreshToken(t => t + 1); setFileDialog(null);
+    } catch (e: any) { setFileDialog({ ...current, error: e?.message || 'Could not change that file.' }); }
+  };
 
   // Surface what the assistant does with HomeBot's tools. Dangerous calls
   // already raise the confirmation modal; this makes the harmless ones visible
@@ -296,6 +443,22 @@ export default function WorkspaceShell({
   return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
       {confirmDialog}
+      {fileDialog && <div className="confirm-destructive-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1300 }}>
+        <form className="confirm-destructive" role="dialog" aria-modal="true" aria-label="File action" onSubmit={e => { e.preventDefault(); void submitFileDialog(); }}>
+          <h2>{fileDialog.action === 'move' ? 'Rename or move' : fileDialog.action === 'save-as' ? 'Save As' : fileDialog.action === 'create-folder' ? 'New folder' : 'New file'}</h2>
+          <p>{fileDialog.action === 'move' ? 'Choose a new name or a full path inside this project.' : 'Choose a name or path inside this project. Existing files will be preserved.'}</p>
+          <label>File or folder path<input autoFocus value={fileDialog.value} onChange={e => setFileDialog({ ...fileDialog, value: e.target.value, error: undefined })} onKeyDown={e => { if (e.key === 'Escape') setFileDialog(null); }} /></label>
+          {fileDialog.error && <p role="alert">{fileDialog.error}</p>}
+          <div className="confirm-destructive-actions"><button type="button" disabled={fileDialog.busy} onClick={() => setFileDialog(null)}>Cancel</button><button type="submit" disabled={fileDialog.busy || !fileDialog.value.trim()}>{fileDialog.busy ? 'Working…' : fileDialog.action === 'move' ? 'Move' : 'Create'}</button></div>
+        </form>
+      </div>}
+      {comparePath && (() => { const file = files.find(f => f.path === comparePath); return file?.disk ? <div className="confirm-destructive-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1300 }}>
+        <div className="confirm-destructive" role="dialog" aria-modal="true" aria-label="Compare disk and draft" style={{ width: 'min(1000px, 94vw)', maxWidth: '94vw' }}>
+          <h2>Compare {file.name}</h2><p>Your draft is preserved. The disk version has not been overwritten.</p>
+          <div style={{ display: 'flex', gap: 12 }}><label style={{ flex: 1 }}>Current disk<textarea readOnly aria-label="Current disk version" value={file.disk.content} style={{ width: '100%', height: '45vh', fontFamily: 'monospace' }} /></label><label style={{ flex: 1 }}>Your draft<textarea readOnly aria-label="Unsaved draft" value={file.content} style={{ width: '100%', height: '45vh', fontFamily: 'monospace' }} /></label></div>
+          <button type="button" autoFocus onClick={() => setComparePath(null)}>Keep draft and close</button>
+        </div>
+      </div> : null; })()}
       {/* Activity bar */}
       <nav className="ws-activity" aria-label="Activity bar">
         <button
@@ -430,7 +593,13 @@ export default function WorkspaceShell({
           <div className="ws-sidebar-title">Explorer</div>
           <div className="ws-sidebar-root" title={root}>{baseName(root) || root}</div>
           <div className="ws-sidebar-body">
-            {root && <FileTree root={root} activePath={activePath} onOpenFile={openFile} />}
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', padding: 6 }}>
+              <button onClick={() => { void runFileAction('create-file', { path: root, name: baseName(root), isDirectory: true, size: 0 }); }}>New file</button>
+              <button onClick={() => { void runFileAction('create-folder', { path: root, name: baseName(root), isDirectory: true, size: 0 }); }}>New folder</button>
+              <button onClick={() => { setRefreshToken(t => t + 1); void syncFiles(); }}>Refresh</button>
+              <label><input type="checkbox" checked={showHidden} onChange={e => setShowHidden(e.target.checked)} />Hidden files</label>
+            </div>
+            {root && <FileTree root={root} activePath={activePath} onOpenFile={openFile} showHidden={showHidden} refreshToken={refreshToken} onAction={(action, entry) => { void runFileAction(action, entry); }} />}
           </div>
         </aside>
       )}
@@ -453,6 +622,11 @@ export default function WorkspaceShell({
             Back
           </button>
           <span className="ws-header-root" title={root}>{baseName(root) || root}</span>
+          <button type="button" onClick={() => { void chooseProject(); }}>Open project</button>
+          <select aria-label="Recent projects" value="" onChange={e => { if (e.target.value) void changeProject(e.target.value); }}>
+            <option value="">Recent projects</option>{recentRoots.map(folder => <option key={folder} value={folder}>{folder}</option>)}
+          </select>
+          {active && <button type="button" onClick={() => setFileDialog({ action: 'save-as', path: active.path, value: '' })}>Save As</button>}
         </div>
         <div className="ws-tabs" role="tablist" aria-label="Open files">
           {files.length === 0 && <div className="ws-tabs-empty">No file open</div>}
@@ -500,6 +674,17 @@ export default function WorkspaceShell({
         </div>
 
         <div className="ws-editor-area">
+          {active && (active.disk || active.missing) && <div role="alert" style={{ padding: 8, borderBottom: '1px solid var(--border-color)' }}>
+            <span>{active.missing ? 'This file was removed on disk. Your draft is preserved.' : 'This file changed on disk. Your draft is preserved.'}</span>
+            {active.disk && <>
+              <button onClick={() => setComparePath(active.path)}>Compare</button>
+              <button onClick={() => confirm({ title: `Reload “${active.name}” and discard your draft?`, body: <p>The current draft will be replaced by the disk version. Use Save As to keep a separate copy first.</p>, confirmLabel: 'Reload from disk', onConfirm: () => {
+                void api?.workspaceRead?.(active.path).then((res: any) => { if (res?.success) setFiles(prev => prev.map(f => f.path === active.path ? reconcile({ ...f, content: f.original }, res) : f)); else setStatus(res?.error || 'Reload failed.'); });
+              } })}>Reload disk</button>
+              <button onClick={() => confirm({ title: `Replace disk with your draft for “${active.name}”?`, body: <p>The disk version shown by Compare will be replaced. If it changes again, Save will refuse and preserve both versions.</p>, confirmLabel: 'Replace reviewed disk version', onConfirm: () => { void save(undefined, active.disk?.version); } })}>Replace disk</button>
+            </>}
+            <button onClick={() => setFileDialog({ action: 'save-as', path: active.path, value: '' })}>Save draft as</button>
+          </div>}
           {active ? (
             <CodeEditor
               // The DOM view is keyed per file, while the tab owns its editor
@@ -526,10 +711,10 @@ export default function WorkspaceShell({
           )}
         </div>
 
-        {terminalOpen && (
+        {terminalOpen && root && (
           <div className="ws-panel" aria-label="Panel">
             <Suspense fallback={<div className="tree-hint">Loading terminal…</div>}>
-              <TerminalPanel open onClose={() => setTerminalOpen(false)} projectPath={root} />
+              <TerminalPanel key={root} open onClose={() => setTerminalOpen(false)} projectPath={root} />
             </Suspense>
           </div>
         )}

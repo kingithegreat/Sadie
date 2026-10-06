@@ -193,7 +193,7 @@ describe('IDE Back control (App)', () => {
         key: 's', code: 'KeyS', ctrlKey: true, bubbles: true, cancelable: true,
       }));
     });
-    await waitFor(() => expect(api.workspaceSave).toHaveBeenCalledWith(FILE, edited));
+    await waitFor(() => expect(api.workspaceSave).toHaveBeenCalledWith(FILE, edited, { expectedVersion: undefined, eol: undefined, bom: undefined }));
     await waitFor(() => expect(screen.queryByLabelText('Unsaved changes')).toBeNull());
 
     // Closing the file discards its session, including its prior undo history.

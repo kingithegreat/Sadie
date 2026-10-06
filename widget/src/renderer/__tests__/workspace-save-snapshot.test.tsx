@@ -24,7 +24,7 @@ async function openWorkspace() {
   }));
   (window as any).electron = {
     workspaceRoot: async () => ({ path: 'C:/project' }),
-    workspaceRead: async () => ({ success: true, content: disk, language: 'typescript' }),
+    workspaceRead: async () => ({ success: true, content: disk, language: 'typescript', version: 'v1' }),
     workspaceSave,
     onAssistantToolActivity: () => () => undefined,
   };
@@ -41,7 +41,7 @@ test('typing while Save is pending keeps newer text unsaved until a second save'
   const pending = await openWorkspace();
   edit('saved snapshot');
   save();
-  expect(pending.workspaceSave).toHaveBeenCalledWith('C:/project/example.ts', 'saved snapshot');
+  expect(pending.workspaceSave).toHaveBeenCalledWith('C:/project/example.ts', 'saved snapshot', { expectedVersion: 'v1', eol: undefined, bom: undefined });
   edit('newer unsaved text');
   await act(async () => pending.finishSave({ success: true }));
   expect(pending.disk()).toBe('saved snapshot');

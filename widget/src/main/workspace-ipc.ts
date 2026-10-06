@@ -11,7 +11,7 @@
  * across the IPC boundary.
  */
 
-import { ipcMain } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -19,12 +19,22 @@ import { validatePath } from './tools/filesystem';
 import { runCodeSearch } from './tools/codebase';
 import { gitWorkspaceBranches, gitWorkspaceCheckout, gitWorkspaceCommit, gitWorkspaceStage, gitWorkspaceStatus, gitWorkspaceUnstage } from './workspace-git';
 import { applyProposal, listProposals, rejectProposal } from './workspace-proposals';
+import { checkedWorkspacePath, readWorkspaceSnapshot, saveWorkspaceSnapshot } from './workspace-files';
+import { WorkspaceRecoveryStore } from './workspace-recovery';
+import { getMainWindow } from './window-manager';
+import type { WorkspaceReadResult, WorkspaceSaveResult } from '../shared/workspace-file-types';
+export type { WorkspaceReadResult, WorkspaceSaveResult } from '../shared/workspace-file-types';
 
 export const WORKSPACE_CHANNELS = {
   ROOT: 'homebot:workspace:root',
   LIST: 'homebot:workspace:list',
   READ: 'homebot:workspace:read',
   SAVE: 'homebot:workspace:save',
+  FILE_ACTION: 'homebot:workspace:file-action',
+  CHOOSE_PROJECT: 'homebot:workspace:choose-project',
+  RECENT_PROJECTS: 'homebot:workspace:recent-projects',
+  RECOVERY_LOAD: 'homebot:workspace:recovery-load',
+  RECOVERY_SAVE: 'homebot:workspace:recovery-save',
   SEARCH: 'homebot:workspace:search',
   REPLACE: 'homebot:workspace:replace',
   GIT_STATUS: 'homebot:workspace:git-status',
@@ -58,20 +68,6 @@ export interface WorkspaceListResult {
   success: boolean;
   path?: string;
   entries?: WorkspaceEntry[];
-  error?: string;
-}
-
-export interface WorkspaceReadResult {
-  success: boolean;
-  path?: string;
-  content?: string;
-  language?: string;
-  truncated?: boolean;
-  error?: string;
-}
-
-export interface WorkspaceSaveResult {
-  success: boolean;
   error?: string;
 }
 
@@ -142,13 +138,6 @@ export function languageForPath(filePath: string): string {
   return 'plaintext';
 }
 
-/** Heuristic binary check — a NUL byte in the first 8 KB. */
-function looksBinary(buf: Buffer): boolean {
-  const end = Math.min(buf.length, 8192);
-  for (let i = 0; i < end; i++) if (buf[i] === 0) return true;
-  return false;
-}
-
 /** Folders first, then files, each alphabetical — the Explorer convention. */
 function sortEntries(a: WorkspaceEntry, b: WorkspaceEntry): number {
   if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
@@ -157,6 +146,67 @@ function sortEntries(a: WorkspaceEntry, b: WorkspaceEntry): number {
 
 export function registerWorkspaceIpc(getProjectPath: () => string | undefined): void {
   for (const channel of Object.values(WORKSPACE_CHANNELS)) ipcMain.removeHandler(channel);
+  const recovery = () => new WorkspaceRecoveryStore(app.getPath('userData'));
+  const trusted = (event: Electron.IpcMainInvokeEvent) => {
+    const window = getMainWindow();
+    return !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
+  };
+  const denied = () => ({ success: false, error: 'Open the HomeBot workspace to use this action.' });
+  ipcMain.handle(WORKSPACE_CHANNELS.CHOOSE_PROJECT, async (event) => {
+    if (!trusted(event)) return denied();
+    try {
+      const chosen = await dialog.showOpenDialog({ title: 'Open a project folder', properties: ['openDirectory'] });
+      if (chosen.canceled || !chosen.filePaths[0]) return { success: false, cancelled: true };
+      const folder = checkedWorkspacePath(chosen.filePaths[0]);
+      if (!fs.statSync(folder).isDirectory()) throw new Error('Choose a folder.');
+      recovery().recent(folder);
+      return { success: true, path: folder };
+    } catch (e) { return { success: false, error: fail(e) }; }
+  });
+  ipcMain.handle(WORKSPACE_CHANNELS.RECENT_PROJECTS, (event, folder?: unknown) => {
+    if (!trusted(event)) return denied();
+    try { return { success: true, paths: recovery().recent(typeof folder === 'string' ? folder : undefined) }; }
+    catch (e) { return { success: false, error: fail(e) }; }
+  });
+  ipcMain.handle(WORKSPACE_CHANNELS.RECOVERY_LOAD, (event, folder: string) => {
+    if (!trusted(event)) return denied();
+    try { return { success: true, state: recovery().load(folder) }; }
+    catch (e) { return { success: false, error: fail(e) }; }
+  });
+  ipcMain.handle(WORKSPACE_CHANNELS.RECOVERY_SAVE, (event, folder: string, state: unknown) => {
+    if (!trusted(event)) return denied();
+    try { recovery().save(folder, state); return { success: true }; }
+    catch (e) { return { success: false, error: fail(e) }; }
+  });
+  ipcMain.handle(WORKSPACE_CHANNELS.FILE_ACTION, async (event, input: unknown) => {
+    if (!trusted(event)) return denied();
+    try {
+      const a = (input || {}) as Record<string, unknown>;
+      if (typeof a.root !== 'string' || typeof a.path !== 'string') throw new Error('No project or file path given.');
+      const root = checkedWorkspacePath(a.root);
+      const target = checkedWorkspacePath(a.path, root);
+      if (path.relative(root, target) === '' || (fs.existsSync(target) && fs.realpathSync(root) === fs.realpathSync(target))) throw new Error('The project folder itself cannot be moved or deleted here.');
+      if (a.action === 'create-file') {
+        if (typeof a.content !== 'string') throw new Error('No content to create.');
+        if (Buffer.byteLength(a.content) > MAX_EDITABLE_BYTES) throw new Error('File is too large (maximum 2 MB).');
+        fs.writeFileSync(target, a.content, { encoding: 'utf8', flag: 'wx' });
+      } else if (a.action === 'create-folder') {
+        fs.mkdirSync(target);
+      } else if (a.action === 'move') {
+        if (typeof a.destination !== 'string') throw new Error('Choose a destination.');
+        const destination = checkedWorkspacePath(a.destination, root);
+        if (fs.existsSync(destination)) throw new Error('A file or folder already exists at that destination.');
+        fs.renameSync(target, destination);
+        return { success: true, path: destination };
+      } else if (a.action === 'delete') {
+        // OS recycle bin, never recursive permanent deletion from the renderer.
+        await shell.trashItem(target);
+      } else if (a.action === 'reveal') {
+        shell.showItemInFolder(target);
+      } else throw new Error('Unknown file action.');
+      return { success: true, path: target };
+    } catch (e) { return { success: false, error: fail(e) }; }
+  });
 
   // Source Control panel. Each returns { success, ... } and never throws across IPC.
   const gitCall = async <T extends object>(run: () => Promise<T | void>) => {
@@ -187,16 +237,17 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
     return { success: true, path: os.homedir() };
   });
 
-  ipcMain.handle(WORKSPACE_CHANNELS.LIST, async (_e, dirPath?: unknown): Promise<WorkspaceListResult> => {
+  ipcMain.handle(WORKSPACE_CHANNELS.LIST, async (_e, dirPath?: unknown, options?: { showHidden?: boolean }): Promise<WorkspaceListResult> => {
     try {
       if (typeof dirPath !== 'string' || !dirPath) return { success: false, error: 'No directory given.' };
       const v = validatePath(dirPath);
       if (!v.valid) return { success: false, error: v.error };
+      checkedWorkspacePath(dirPath);
 
       const dirents = fs.readdirSync(v.resolved, { withFileTypes: true });
       const entries: WorkspaceEntry[] = [];
       for (const d of dirents) {
-        if (d.name.startsWith('.') && d.name !== '.env') continue;
+        if (d.name.startsWith('.') && d.name !== '.env' && options?.showHidden !== true) continue;
         if (d.isDirectory() && IGNORED_DIRS.has(d.name)) continue;
         const full = path.join(v.resolved, d.name);
         let size = 0;
@@ -215,20 +266,11 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
       if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
       const v = validatePath(filePath);
       if (!v.valid) return { success: false, error: v.error };
-
-      const stat = fs.statSync(v.resolved);
-      if (stat.isDirectory()) return { success: false, error: 'That is a folder, not a file.' };
-      if (stat.size > MAX_EDITABLE_BYTES) {
-        return { success: false, error: `File is too large to open (${Math.round(stat.size / 1024 / 1024)} MB).` };
-      }
-
-      const buf = fs.readFileSync(v.resolved);
-      if (looksBinary(buf)) return { success: false, error: 'Binary file — cannot open in the editor.' };
-
+      checkedWorkspacePath(filePath);
       return {
         success: true,
         path: v.resolved,
-        content: buf.toString('utf8'),
+        ...readWorkspaceSnapshot(v.resolved),
         language: languageForPath(v.resolved),
       };
     } catch (e) {
@@ -238,17 +280,14 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
 
   ipcMain.handle(
     WORKSPACE_CHANNELS.SAVE,
-    async (_e, filePath?: unknown, content?: unknown): Promise<WorkspaceSaveResult> => {
+    async (_e, filePath?: unknown, content?: unknown, options?: { expectedVersion?: string; eol?: 'lf' | 'crlf'; bom?: boolean }): Promise<WorkspaceSaveResult> => {
       try {
         if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file given.' };
         if (typeof content !== 'string') return { success: false, error: 'No content to save.' };
         const v = validatePath(filePath);
         if (!v.valid) return { success: false, error: v.error };
-        // Only overwrite files that already exist — the editor is not a
-        // create-anywhere surface, and this keeps saves inside what the user opened.
-      if (!fs.existsSync(v.resolved)) return { success: false, error: 'File no longer exists.' };
-      fs.writeFileSync(v.resolved, content, 'utf8');
-      return { success: true };
+        checkedWorkspacePath(filePath);
+        return saveWorkspaceSnapshot(v.resolved, content, options);
     } catch (e) {
       return { success: false, error: fail(e) };
     }
@@ -310,10 +349,9 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
         if (!v.valid) return { success: false, error: v.error };
         if (!fs.existsSync(v.resolved)) return { success: false, error: 'File no longer exists.' };
 
-        const buf = fs.readFileSync(v.resolved);
-        if (looksBinary(buf)) return { success: false, error: 'Binary file — cannot edit.' };
-
-        const content = buf.toString('utf8');
+        checkedWorkspacePath(filePath);
+        const snapshot = readWorkspaceSnapshot(v.resolved);
+        const content = snapshot.content;
         // Keep the file's own line-ending style on the way back out.
         const eol = content.includes('\r\n') ? '\r\n' : '\n';
         const lines = content.split(/\r?\n/);
@@ -353,7 +391,8 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
           };
         }
 
-        fs.writeFileSync(v.resolved, lines.join(eol), 'utf8');
+        const saved = saveWorkspaceSnapshot(v.resolved, lines.join(eol), { expectedVersion: snapshot.version });
+        if (!saved.success) return { success: false, applied: 0, skipped, error: saved.error };
         return { success: true, applied, skipped };
       } catch (e) {
         return { success: false, error: fail(e) };

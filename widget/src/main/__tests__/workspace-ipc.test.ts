@@ -12,16 +12,21 @@ jest.mock('electron', () => ({
     handle: (channel: string, fn: any) => { (global as any).__handlers.set(channel, fn); },
     removeHandler: (channel: string) => { (global as any).__handlers.delete(channel); },
   },
-  app: { getPath: () => '/mock' },
+  app: { getPath: () => (global as any).__workspaceProfile },
+  dialog: { showOpenDialog: jest.fn() },
+  shell: { trashItem: jest.fn(), showItemInFolder: jest.fn() },
 }));
+jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: (global as any).__workspaceContents }) }));
 
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { registerWorkspaceIpc, WORKSPACE_CHANNELS, languageForPath } from '../workspace-ipc';
+import { dialog, shell } from 'electron';
 
 (global as any).__handlers = new Map<string, any>();
-const invoke = (channel: string, ...args: unknown[]) => (global as any).__handlers.get(channel)({}, ...args);
+(global as any).__workspaceContents = { mainFrame: {} };
+const invoke = (channel: string, ...args: unknown[]) => (global as any).__handlers.get(channel)({ sender: (global as any).__workspaceContents, senderFrame: (global as any).__workspaceContents.mainFrame }, ...args);
 
 const HOME = os.homedir();
 let tmpDir: string;
@@ -29,6 +34,7 @@ let tmpDir: string;
 beforeAll(() => {
   // Inside HOME so it is inside the sandbox, like a real project folder.
   tmpDir = fs.mkdtempSync(path.join(HOME, 'hb-ws-test-'));
+  (global as any).__workspaceProfile = path.join(tmpDir, 'profile');
   fs.writeFileSync(path.join(tmpDir, 'hello.ts'), 'export const x = 1;\n', 'utf8');
   fs.writeFileSync(path.join(tmpDir, 'notes.md'), '# hi\n', 'utf8');
   fs.writeFileSync(path.join(tmpDir, 'binary.bin'), Buffer.from([0x41, 0x00, 0x42]));
@@ -117,7 +123,8 @@ describe('read', () => {
 describe('save', () => {
   test('writes content back to disk', async () => {
     const target = path.join(tmpDir, 'hello.ts');
-    const r = await invoke(WORKSPACE_CHANNELS.SAVE, target, 'export const x = 2;\n');
+    const opened = await invoke(WORKSPACE_CHANNELS.READ, target);
+    const r = await invoke(WORKSPACE_CHANNELS.SAVE, target, 'export const x = 2;\n', { expectedVersion: opened.version });
     expect(r.success).toBe(true);
     expect(fs.readFileSync(target, 'utf8')).toBe('export const x = 2;\n');
   });
@@ -146,6 +153,51 @@ describe('root', () => {
     registerWorkspaceIpc(() => 'C:\\Windows');
     const r = await invoke(WORKSPACE_CHANNELS.ROOT);
     expect(r.path).toBe(HOME);
+  });
+});
+
+describe('human project and file actions', () => {
+  test('hidden config is reachable while dependencies stay excluded', async () => {
+    fs.writeFileSync(path.join(tmpDir, '.gitignore'), 'secret');
+    fs.mkdirSync(path.join(tmpDir, '.github'), { recursive: true });
+    const hidden = await invoke(WORKSPACE_CHANNELS.LIST, tmpDir, { showHidden: true });
+    expect(hidden.entries.map((e: any) => e.name)).toEqual(expect.arrayContaining(['.gitignore', '.github']));
+    expect(hidden.entries.map((e: any) => e.name)).not.toContain('node_modules');
+  });
+  test('create and move are no-clobber and refuse root deletion and project escape', async () => {
+    const file = path.join(tmpDir, 'created.txt');
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'create-file', path: file, content: 'keep' })).success).toBe(true);
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'create-file', path: file, content: 'erase' })).success).toBe(false);
+    expect(fs.readFileSync(file, 'utf8')).toBe('keep');
+    const destination = path.join(tmpDir, 'moved.txt');
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'move', path: file, destination })).success).toBe(true);
+    expect(fs.readFileSync(destination, 'utf8')).toBe('keep');
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'delete', path: tmpDir })).success).toBe(false);
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'create-file', path: path.join(tmpDir, '..', 'escape.txt'), content: 'bad' })).success).toBe(false);
+  });
+  test('folder picker records recents without changing global project settings', async () => {
+    (dialog.showOpenDialog as jest.Mock).mockResolvedValueOnce({ canceled: false, filePaths: [tmpDir] });
+    expect(await invoke(WORKSPACE_CHANNELS.CHOOSE_PROJECT)).toMatchObject({ success: true, path: tmpDir });
+    expect(await invoke(WORKSPACE_CHANNELS.RECENT_PROJECTS)).toMatchObject({ success: true, paths: [tmpDir] });
+  });
+  test('untrusted renderer and child frames cannot mutate files, recovery, recents or open dialogs', async () => {
+    const file = path.join(tmpDir, 'unauthorized.txt');
+    const handler = (channel: string) => (global as any).__handlers.get(channel);
+    for (const event of [{ sender: {}, senderFrame: {} }, { sender: (global as any).__workspaceContents, senderFrame: {} }]) {
+      expect((await handler(WORKSPACE_CHANNELS.FILE_ACTION)(event, { root: tmpDir, action: 'create-file', path: file, content: 'bad' })).success).toBe(false);
+      expect((await handler(WORKSPACE_CHANNELS.RECOVERY_SAVE)(event, tmpDir, { files: [] })).success).toBe(false);
+      expect((await handler(WORKSPACE_CHANNELS.RECOVERY_LOAD)(event, tmpDir)).success).toBe(false);
+      expect((await handler(WORKSPACE_CHANNELS.RECENT_PROJECTS)(event, tmpDir)).success).toBe(false);
+      expect((await handler(WORKSPACE_CHANNELS.CHOOSE_PROJECT)(event)).success).toBe(false);
+    }
+    expect(fs.existsSync(file)).toBe(false);
+  });
+  test('deleting calls the OS recycle bin rather than recursive removal', async () => {
+    const file = path.join(tmpDir, 'notes.md');
+    (shell.trashItem as jest.Mock).mockResolvedValueOnce(undefined);
+    expect((await invoke(WORKSPACE_CHANNELS.FILE_ACTION, { root: tmpDir, action: 'delete', path: file })).success).toBe(true);
+    expect(shell.trashItem).toHaveBeenCalledWith(file);
+    expect(fs.existsSync(file)).toBe(true); // mock deliberately does not remove anything
   });
 });
 

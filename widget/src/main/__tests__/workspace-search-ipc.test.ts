@@ -13,6 +13,7 @@
  */
 
 const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
+jest.mock('../window-manager', () => ({ getMainWindow: () => null }));
 jest.mock('electron', () => ({
   ipcMain: {
     handle: (name: string, handler: any) => { handlers[name] = handler; },
