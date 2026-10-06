@@ -33,8 +33,10 @@ function harness() {
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
   const safeCatch = jest.fn();
-  vm.runInNewContext(compiled, { app, ...otherCleanup, shutdownMcpServers, safeCatch, process: { platform: 'win32' } });
-  return { app, handlers, otherCleanup, shutdownMcpServers, safeCatch, resolve, reject, nativeQuits: () => nativeQuits };
+  const dialog = { showMessageBox: jest.fn(async () => ({ response: 1 })) };
+  const createMainWindow = jest.fn(() => ({ isDestroyed: () => false }));
+  vm.runInNewContext(compiled, { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, mainWindow: null, createMainWindow, process: { platform: 'win32' } });
+  return { app, handlers, otherCleanup, shutdownMcpServers, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
 async function settle() { for (let n = 0; n < 10; n++) await Promise.resolve(); }
 
@@ -55,7 +57,7 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
 });
 
-test('one synchronous runtime cleanup failure cannot skip the other owned runtimes', async () => {
+test('unconfirmed owned runtime cleanup runs every other cleanup and keeps the app available for retry', async () => {
   const h = harness();
   const error = new Error('controlled debugger cleanup failure');
   h.otherCleanup.stopWorkspaceDebuggers.mockImplementationOnce(() => { throw error; });
@@ -67,6 +69,11 @@ test('one synchronous runtime cleanup failure cannot skip the other owned runtim
   h.resolve();
   await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).toHaveBeenCalledTimes(1);
+  h.app.quit();
+  await settle();
   expect(h.nativeQuits()).toBe(1);
 });
 

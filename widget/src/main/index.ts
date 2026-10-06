@@ -1,5 +1,5 @@
 // Main process for HomeBot - Full implementation
-import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol, dialog } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -669,11 +669,28 @@ app.on('before-quit', event => {
   try { if (supervisorHandle) supervisorHandle.stop(); } catch (e) { safeCatch(e); }
   // shutdown owns in-flight transports too and bounds each close. Allow the
   // native quit only once cleanup settles; repeated quit requests share it.
+  let runtimeReady = true;
   Promise.resolve().then(async () => {
     const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll()];
     const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
-    for (const result of results) if (result.status === 'rejected') safeCatch(result.reason);
-  }).catch(safeCatch).finally(() => {
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        safeCatch(result.reason);
+        if (index > 0) runtimeReady = false;
+      }
+    });
+  }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
+    if (!runtimeReady) {
+      mcpQuitPending = false;
+      void dialog.showMessageBox({ type: 'error', message: 'A running IDE program could not be stopped.',
+        detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, debugger or tests panel.',
+        buttons: ['Try closing again', 'Keep HomeBot open'], defaultId: 1, cancelId: 1,
+      }).then(result => {
+        if (result.response === 0) app.quit();
+        else if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+      }).catch(safeCatch);
+      return;
+    }
     mcpQuitReady = true;
     app.quit();
   });
