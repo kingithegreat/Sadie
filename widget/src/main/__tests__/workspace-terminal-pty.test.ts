@@ -18,7 +18,7 @@ function setup(autoExit = true, confirmed = true) {
     return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
   });
   const stopped = jest.fn(async () => confirmed);
-  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped });
+  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped }, async () => true);
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
   return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped };
 }

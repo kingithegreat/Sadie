@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity, type WorkspacePtyLifecycle } from './workspace-pty-identity';
+import { forceStopWorkspacePty } from './workspace-pty-force-stop';
 import { checkedWorkspacePath } from './workspace-files';
 import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../shared/workspace-terminal-types';
 
@@ -57,7 +58,7 @@ export class WorkspacePtySessions {
     const baton = native._pty;
     if (!worker || typeof worker.dispose !== 'function' || !Number.isInteger(baton)) { if (Number.isInteger(baton)) binding.kill(baton, false); throw new Error('The installed terminal binding does not support owned worker cleanup.'); }
     return { pid: native.pid, write: native.write.bind(native), resize: native.resize.bind(native), onData: native.onData.bind(native), onExit: native.onExit.bind(native), kill: () => { try { binding.kill(baton, false); } finally { worker.dispose(); } } };
-  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle) {}
+  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = forceStopWorkspacePty) {}
 
   create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void): WorkspaceTerminalSessionInfo {
     if (process.platform === 'win32' && Number(os.release().split('.')[2]) < 26100) throw new Error('Interactive terminals require Windows 11 24H2 (build 26100) or newer for bounded native cleanup. Use the command terminal on this Windows version.');
@@ -123,10 +124,12 @@ export class WorkspacePtySessions {
     const session = this.owned(owner, id);
     if (session.closing) return session.closing;
     session.closing = (async () => {
+      const original = await session.identity;
+      if (!session.exited && process.platform === 'win32' && !await this.forceStop(session.pty.pid, original)) throw new Error('Terminal process-tree exit could not be confirmed. Its session is retained; try Close again.');
       const exited = this.waitForExit(session, 5500);
       if (!session.exited) this.kill(session);
       const notified = await exited;
-      if ((!notified && process.platform !== 'win32') || !await this.lifecycle.stopped(session.pty.pid, await session.identity)) throw new Error('Terminal exit could not be confirmed. Its session is retained; try Close again before quitting HomeBot.');
+      if ((!notified && process.platform !== 'win32') || !await this.lifecycle.stopped(session.pty.pid, original)) throw new Error('Terminal exit could not be confirmed. Its session is retained; try Close again before quitting HomeBot.');
       session.exited = true;
       this.release(session, process.platform === 'win32');
       this.sessions.delete(id);
