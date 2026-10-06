@@ -12,6 +12,20 @@ const SKIP = new Set(['node_modules', '.git', 'out', 'dist', 'dist-electron', 'b
 const supported = /\.[cm]?[jt]sx?$/i;
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 const key = (file: string) => process.platform === 'win32' ? path.resolve(file).toLowerCase() : path.resolve(file);
+function configGlobMatches(file: string, directory: string, pattern: string): boolean {
+  const relative = path.relative(directory, file).replace(/\\/g, '/');
+  const normal = pattern.replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!/[?*]/.test(normal) && !path.extname(normal)) return relative === normal || relative.startsWith(`${normal}/`);
+  let expression = '';
+  for (let index = 0; index < normal.length; index++) {
+    const character = normal[index];
+    if (character === '*' && normal[index + 1] === '*') { index++; if (normal[index + 1] === '/') { index++; expression += '(?:.*/)?'; } else expression += '.*'; }
+    else if (character === '*') expression += '[^/]*';
+    else if (character === '?') expression += '[^/]';
+    else expression += character.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${expression}$`, process.platform === 'win32' ? 'i' : '').test(relative);
+}
 function resolveAllowed(input: string): string {
   const result = validatePath(input);
   if (!result.valid) throw new Error(result.error || 'This path is not allowed.');
@@ -63,12 +77,12 @@ class LanguageProject {
       return this.dependencyRoots.some(root => within(root, real)) && (fs.statSync(real).isDirectory() || /\.(?:[cm]?jsx?|tsx?|json)$/i.test(real));
     } catch { return false; }
   }
-  private declaredDependencies(): void {
+  private declaredDependencies(projectDirectory: string): void {
     this.dependencyRoots = [];
     const home = fs.realpathSync(homeDir());
     const visited = new Set<string>();
     let manifestBytes = 0;
-    const queue: Array<{ directory: string; depth: number }> = [{ directory: this.root, depth: 0 }];
+    const queue: Array<{ directory: string; depth: number }> = [{ directory: projectDirectory, depth: 0 }, { directory: this.root, depth: 0 }];
     while (queue.length && visited.size < 100) {
       const { directory, depth } = queue.shift()!;
       if (depth > 10 || visited.has(key(directory))) continue;
@@ -76,6 +90,7 @@ class LanguageProject {
       let manifest: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown>; optionalDependencies?: Record<string, unknown>; peerDependencies?: Record<string, unknown> };
       try {
         const file = path.join(directory, 'package.json');
+        if (!within(directory, fs.realpathSync(file)) || !within(home, fs.realpathSync(file))) continue;
         const size = fs.statSync(file).size;
         if (size > 64 * 1024 || manifestBytes + size > 2 * 1024 * 1024) continue;
         manifestBytes += size;
@@ -126,7 +141,14 @@ class LanguageProject {
   update(request: WorkspaceLanguageRequest) {
     this.buffers.clear();
     this.readBytes = 0; this.counted.clear();
-    this.declaredDependencies();
+    let config: string | undefined;
+    let currentDirectory = path.dirname(request.path);
+    while (within(this.root, currentDirectory)) {
+      config = ['tsconfig.json', 'jsconfig.json'].map(name => path.join(currentDirectory, name)).find(file => fs.existsSync(file));
+      if (config || currentDirectory === this.root) break;
+      currentDirectory = path.dirname(currentDirectory);
+    }
+    this.declaredDependencies(config ? path.dirname(config) : this.root);
     let bufferBytes = 0;
     for (const buffer of [...(request.buffers || []), { path: request.path, content: request.content }]) {
       if (typeof buffer.path !== 'string' || typeof buffer.content !== 'string' || Buffer.byteLength(buffer.content) > MAX_BYTES) throw new Error('An editor buffer exceeds the language-service limit.');
@@ -137,7 +159,6 @@ class LanguageProject {
       this.buffers.set(key(file), buffer.content);
     }
     this.files = this.walk().filter(file => supported.test(file));
-    const config = ['tsconfig.json', 'jsconfig.json'].map(name => path.join(this.root, name)).find(file => fs.existsSync(file));
     this.options = { allowJs: true, checkJs: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.ReactJSX, noEmit: true };
     if (config) {
       const parsed = ts.readConfigFile(config, file => this.read(file));
@@ -145,8 +166,8 @@ class LanguageProject {
       const result = ts.parseJsonConfigFileContent(parsed.config, {
         useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
         fileExists: file => this.readable(file) && fs.existsSync(file), readFile: file => this.read(file),
-        readDirectory: () => this.files,
-      }, this.root);
+        readDirectory: (directory, extensions, excludes, includes) => this.files.filter(file => within(directory, file) && (!extensions || extensions.some(extension => file.endsWith(extension))) && (!includes || includes.some(pattern => configGlobMatches(file, directory, pattern))) && (!excludes || !excludes.some(pattern => configGlobMatches(file, directory, pattern)))),
+      }, path.dirname(config));
       this.options = { ...this.options, ...result.options, noEmit: true };
       this.files = result.fileNames.filter(file => within(this.root, file) && supported.test(file));
     }

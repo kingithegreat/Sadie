@@ -1,6 +1,6 @@
 import { useEffect, useState, type MutableRefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
+import { autocompletion, completeAnyWord, type CompletionContext } from '@codemirror/autocomplete';
 import { hoverTooltip, type EditorView } from '@codemirror/view';
 import { linter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
@@ -22,7 +22,7 @@ export async function languageQuery(context: SemanticContext, view: EditorView, 
 /** TypeScript's semantic engine reads current unsaved buffers; no renderer compiler. */
 export function semanticExtensions(context: () => SemanticContext): Extension {
   return [autocompletion({ override: [async (completion: CompletionContext) => {
-    const current = context(); if (!supported(current)) return null;
+    const current = context(); if (!supported(current)) return completeAnyWord(completion);
     const word = completion.matchBefore(/[\w$]*/);
     if (!word || (!completion.explicit && word.from === word.to && completion.state.doc.sliceString(Math.max(0, completion.pos - 1), completion.pos) !== '.')) return null;
     const api = window.electron as any;

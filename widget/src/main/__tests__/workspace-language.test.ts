@@ -59,6 +59,15 @@ test('compiler quick fixes are returned with exact source guards', () => {
   const result = query('fixes', content, content.indexOf('count = 2') + 2);
   expect(result.success).toBe(true); expect(result.fixes?.some(fix => fix.edits.some(edit => edit.changes.some(change => change.text.includes('let'))))).toBe(true);
 });
+test('nearest nested project config applies local path aliases instead of the parent config', () => {
+  const nested = path.join(root, 'nested'); fs.mkdirSync(nested, { recursive: true });
+  fs.writeFileSync(path.join(nested, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, baseUrl: '.', paths: { '@local/*': ['./*'] } }, include: ['*.ts'] }));
+  const source = path.join(nested, 'app.ts'); const types = path.join(nested, 'types.ts');
+  const content = 'import { value } from "@local/types";\nvalue.';
+  fs.writeFileSync(source, content); fs.writeFileSync(types, 'export const value = { nestedProperty: 1 };');
+  const result = queryWorkspaceLanguage({ root, path: source, content, position: content.length, action: 'complete' });
+  expect(result.success).toBe(true); expect(result.entries?.some(item => item.label === 'nestedProperty')).toBe(true);
+});
 test('symbols and file picker include project files while excluding dependencies', () => {
   fs.mkdirSync(path.join(root, 'node_modules'), { recursive: true }); fs.writeFileSync(path.join(root, 'node_modules', 'junk.ts'), 'export const junk = 1;');
   const symbols = query('symbols'); expect(symbols).toEqual(expect.objectContaining({ success: true, locations: expect.arrayContaining([expect.objectContaining({ name: 'greet' })]) }));
