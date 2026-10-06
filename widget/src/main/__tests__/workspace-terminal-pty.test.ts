@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { WorkspacePtySessions } from '../workspace-terminal-pty';
+import type { WorkspacePtyStopResult } from '../workspace-pty-force-stop';
 let folder: string;
 beforeEach(() => { folder = fs.mkdtempSync(path.join(os.homedir(), 'homebot-pty-')); });
 afterEach(() => { fs.rmSync(folder, { recursive: true, force: true }); });
@@ -18,8 +19,8 @@ function setup(autoExit = true, confirmed = true) {
     return { ...pty, kill: jest.fn(() => ownedExit({ exitCode: 0 })), onExit: jest.fn(fn => { ownedExit = fn; return { dispose: jest.fn() }; }) };
   });
   const stopped = jest.fn(async () => confirmed);
-  const force = jest.fn(async () => true);
-  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: 'original', parent: process.pid }), stopped }, force);
+  const force = jest.fn(async (_pid: number, _identity: unknown, _receipt?: unknown): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: true }));
+  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped }, force);
   const events = jest.fn(); const session = manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
   return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force };
 }
@@ -52,17 +53,35 @@ test('an exit notification without native identity disappearance refuses Close a
   await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/could not be confirmed/);
   app.stopped.mockResolvedValue(true);
   await app.manager.close(7, app.session.sessionId);
-  expect(app.stopped).toHaveBeenCalledWith(12345, { creation: 'original', parent: process.pid });
+  expect(app.stopped).toHaveBeenCalledWith(12345, { creation: '638953000000000000', parent: process.pid });
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
 });
 
 test('unproven force Stop keeps the live session and never reports successful Close', async () => {
-  const app = setup(); app.force.mockResolvedValue(false);
+  const app = setup(true, false); app.force.mockResolvedValue({ stopped: false, attempted: false });
   await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/process-tree exit/);
   expect(app.pty.kill).not.toHaveBeenCalled();
   app.manager.write(7, app.session.sessionId, 'still available');
   expect(app.pty.write).toHaveBeenCalledWith('still available');
-  app.force.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
+  app.force.mockResolvedValue({ stopped: true, attempted: true }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
+});
+
+test('captured descendants remain recoverable after root exits during a partial Stop', async () => {
+  const app = setup();
+  const receipt = [{ pid: 12345, creation: '638953000000000000', parent: process.pid }, { pid: 23456, creation: '638953000000000100', parent: 12345 }];
+  app.force.mockImplementationOnce(async () => { app.exit({ exitCode: 1 }); return { stopped: false, attempted: true, receipt }; });
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/captured identities/);
+  app.force.mockResolvedValue({ stopped: true, attempted: true, receipt });
+  await app.manager.close(7, app.session.sessionId);
+  expect(app.force).toHaveBeenLastCalledWith(12345, { creation: '638953000000000000', parent: process.pid }, receipt);
+  expect(app.pty.kill).toHaveBeenCalledTimes(1);
+});
+
+test('natural root exit before any force effect does not create a permanent Close refusal', async () => {
+  const app = setup();
+  app.force.mockImplementationOnce(async () => { app.exit({ exitCode: 0 }); return { stopped: false, attempted: false }; });
+  await app.manager.close(7, app.session.sessionId);
+  expect(app.pty.kill).toHaveBeenCalledTimes(1);
 });
 test('natural exit releases listeners/ConPTY exactly once; Close does not kill a reused PID', async () => {
   const app = setup(); app.data('ready'); app.exit({ exitCode: 0 });

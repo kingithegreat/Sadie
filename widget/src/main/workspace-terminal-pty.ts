@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
-import { forceStopWorkspacePty } from './workspace-pty-force-stop';
+import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 import { checkedWorkspacePath } from './workspace-files';
 import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../shared/workspace-terminal-types';
 
@@ -16,7 +16,7 @@ interface PtyProcess {
   onExit(callback: (event: { exitCode: number }) => void): { dispose(): void };
 }
 type PtyFactory = (file: string, args: string[], options: { name: string; cols: number; rows: number; cwd: string; env: NodeJS.ProcessEnv; useConpty?: boolean; useConptyDll?: boolean }) => PtyProcess;
-interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; stopUncertain?: boolean }
+interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; stopReceipt?: WorkspacePtyStopReceipt }
 const MAX_SESSIONS = 4;
 const MAX_OUTPUT = 256 * 1024;
 
@@ -58,7 +58,7 @@ export class WorkspacePtySessions {
     const baton = native._pty;
     if (!worker || typeof worker.dispose !== 'function' || !Number.isInteger(baton)) { if (Number.isInteger(baton)) binding.kill(baton, false); throw new Error('The installed terminal binding does not support owned worker cleanup.'); }
     return { pid: native.pid, write: native.write.bind(native), resize: native.resize.bind(native), onData: native.onData.bind(native), onExit: native.onExit.bind(native), kill: () => { try { binding.kill(baton, false); } finally { worker.dispose(); } } };
-  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = forceStopWorkspacePty) {}
+  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = stopWorkspacePtyTree) {}
 
   create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void): WorkspaceTerminalSessionInfo {
     if (process.platform === 'win32' && Number(os.release().split('.')[2]) < 26100) throw new Error('Interactive terminals require Windows 11 24H2 (build 26100) or newer for bounded native cleanup. Use the command terminal on this Windows version.');
@@ -125,10 +125,10 @@ export class WorkspacePtySessions {
     if (session.closing) return session.closing;
     session.closing = (async () => {
       const original = await session.identity;
-      if (session.exited && session.stopUncertain) throw new Error('The terminal exited during an uncertain Stop. Its process-tree exit remains unconfirmed.');
-      if (!session.exited && process.platform === 'win32') {
-        session.stopUncertain = !await this.forceStop(session.pty.pid, original);
-        if (session.stopUncertain) throw new Error('Terminal process-tree exit could not be confirmed. Its session is retained; try Close again.');
+      if (process.platform === 'win32' && (!session.exited || session.stopReceipt)) {
+        const result = await this.forceStop(session.pty.pid, original, session.stopReceipt);
+        if (result.receipt) session.stopReceipt = result.receipt;
+        if (!result.stopped && (session.stopReceipt || result.attempted || !await this.lifecycle.stopped(session.pty.pid, original))) throw new Error('Terminal process-tree exit could not be confirmed. Its captured identities are retained; try Close again.');
       }
       const exited = this.waitForExit(session, 5500);
       if (!session.exited) this.kill(session);
