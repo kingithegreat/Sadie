@@ -19,8 +19,12 @@ import { go } from '@codemirror/lang-go';
 import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
-import { csharp } from '@codemirror/legacy-modes/mode/clike';
+import { csharp, c, cpp, kotlin, clike } from '@codemirror/legacy-modes/mode/clike';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { sCSS, less } from '@codemirror/legacy-modes/mode/css';
+import { ruby } from '@codemirror/legacy-modes/mode/ruby';
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile';
+import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
 import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
 import { ghostCompletionExtension } from './GhostCompletion';
@@ -59,6 +63,8 @@ export function languageExtension(language: string): Extension {
     case 'python': return python();
     case 'json': return json();
     case 'css': return css();
+    case 'scss': return StreamLanguage.define(sCSS);
+    case 'less': return StreamLanguage.define(less);
     case 'xml':
     case 'html': return html();
     case 'markdown': return markdown();
@@ -71,6 +77,14 @@ export function languageExtension(language: string): Extension {
     case 'powershell': return StreamLanguage.define(powerShell);
     case 'ini': return StreamLanguage.define(properties);
     case 'csharp': return StreamLanguage.define(csharp);
+    case 'c': return StreamLanguage.define(c);
+    case 'cpp': return StreamLanguage.define(cpp);
+    case 'kotlin': return StreamLanguage.define(kotlin);
+    case 'ruby': return StreamLanguage.define(ruby);
+    case 'dockerfile': return StreamLanguage.define(dockerFile);
+    case 'toml': return StreamLanguage.define(toml);
+    case 'php': return StreamLanguage.define(clike({ name: 'PHP basic syntax', keywords: Object.fromEntries('class function return public private protected static const namespace use new extends implements if else elseif while for foreach switch case break continue try catch finally throw true false null echo print include require yield match'.split(' ').map(word => [word, true])), types: Object.fromEntries('int float string bool array object mixed void never callable'.split(' ').map(word => [word, true])), hooks: { '$': stream => { stream.eatWhile(/[\w]/); return 'variable-2'; } } }));
+    case 'makefile': return StreamLanguage.define({ token(stream) { if (stream.eatSpace()) return null; if (stream.match(/^#.*/)) return 'comment'; if (stream.match(/^\$\([^)]+\)|^\$\{[^}]+\}|^\$[@<^?*%+]/)) return 'variable-2'; if (stream.sol() && stream.match(/^[\w./%-]+(?=:)/)) return 'def'; if (stream.match(/^[\w.-]+(?=\s*(?::|\+|\?)?=)/)) return 'variable'; stream.next(); return null; } });
     case 'lua':
     case 'luau': return StreamLanguage.define(lua);
     default: return [];
@@ -625,7 +639,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
 
       <div className="code-cm-host" ref={hostRef} />
       <div className="code-cursor-pos" aria-live="off">
-        Ln {cursor.line}, Col {cursor.col}
+        Ln {cursor.line}, Col {cursor.col} • {language}{['php', 'makefile'].includes(language) ? ' (basic syntax)' : language === 'luau' ? ' (Lua syntax; no Luau type analysis)' : ''}
       </div>
     </div>
   );

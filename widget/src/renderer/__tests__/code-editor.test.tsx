@@ -23,7 +23,7 @@ const viewOf = (container: HTMLElement) => EditorView.findFromDOM(container.quer
 
 test('every language the Explorer reports gets a highlighter', () => {
   for (const lang of ['javascript', 'typescript', 'python', 'json', 'css', 'xml', 'html', 'markdown', 'sql', 'yaml',
-    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp', 'lua', 'luau']) {
+    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp', 'lua', 'luau', 'scss', 'less', 'c', 'cpp', 'kotlin', 'ruby', 'dockerfile', 'toml', 'php', 'makefile']) {
     expect(languageExtension(lang)).not.toEqual([]);
   }
   expect(languageExtension('plaintext')).toEqual([]);
