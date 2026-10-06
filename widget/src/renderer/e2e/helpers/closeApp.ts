@@ -1,11 +1,13 @@
 import type { ElectronApplication } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { monitorNativeApp, type NativeAppMonitor, type NativeAppExit } from './nativeAppProcess';
+import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ownedElectronInspector';
 import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
 export const CLOSE_BUDGET_MS = 20_000;
-interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean }
+interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; irreversibleExit: Promise<void>; inspector?: OwnedElectronInspector }
 const states = new WeakMap<ElectronApplication, Promise<State>>();
 const pendingApps = new Set<ElectronApplication>();
 const closings = new WeakMap<ElectronApplication, Promise<number>>();
@@ -26,16 +28,23 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
   if (states.has(app)) { await states.get(app); return; }
   pendingApps.add(app);
   const pending = (async () => {
-    const child = app.process(); const state = { stderr: '', stdout: '', entry } as State;
+    const child = app.process(); const state = { stderr: '', stdout: '', entry, exitNonce: randomUUID() } as State;
+    let finished!: () => void;
+    state.irreversibleExit = new Promise(resolve => { finished = resolve; });
+    const observe = () => {
+      const marker = exitDiagnostics(state.stdout) as any;
+      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce && state.stderr.includes('Waiting for the debugger to disconnect...')) finished();
+    };
     const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
     app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
-    child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); });
-    child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); });
-    const info = await app.evaluate(({ dialog }) => {
+    child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); observe(); });
+    child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); observe(); });
+    const info = await app.evaluate(({ dialog }, exitNonce) => {
       const cp = (process as any).getBuiltinModule('child_process');
       const log = (global as any).__homebotE2eShutdown = { helpers: [] as unknown[], refusals: [] as unknown[] };
       process.once('exit', () => {
         const final = {
+          pid: process.pid, nonce: exitNonce,
           helpers: log.helpers.slice(-12).map((value: any) => ({ ...value, stdout: value.stdout?.slice(0, 2048), stderr: value.stderr?.slice(0, 512), error: value.error ? { ...value.error, message: value.error.message?.slice(0, 512) } : null })),
           refusals: log.refusals.slice(-4),
         };
@@ -67,12 +76,14 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
       const show = dialog.showMessageBox;
       dialog.showMessageBox = function (this: unknown, ...args: any[]) {
         const options = args.find(value => value && typeof value.message === 'string');
-        if (options?.message === 'A running IDE program could not be stopped.') log.refusals.push({ at: Date.now(), message: options.message, detail: options.detail });
+        if (['A running IDE program could not be stopped.', 'A running HomeBot program could not be stopped.'].includes(options?.message)) log.refusals.push({ at: Date.now(), message: options.message, detail: options.detail });
         return (show as any).apply(this, args);
       };
       return { pid: process.pid, ppid: process.ppid, execPath: process.execPath };
-    });
+    }, state.exitNonce);
     state.monitor = await monitorNativeApp(info, child, entry);
+    state.inspector = captureOwnedElectronInspector(app, child, state.monitor);
+    observe();
     void state.monitor.exit.then(exit => { state.nativeExit = exit; releaseCompleted(); }).catch(() => {});
     return state;
   })();
@@ -95,6 +106,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
   const receipt: Record<string, unknown> = { label, started: new Date(started).toISOString() };
   const artifact = path.resolve('test-results', `electron-shutdown-${process.pid}-${started}.json`);
   let state: State | undefined, tree: WorkspacePtyStopReceipt | undefined;
+  let driverClose: Promise<void> | undefined;
   const persist = () => { fs.mkdirSync(path.dirname(artifact), { recursive: true }); fs.writeFileSync(artifact, JSON.stringify(receipt, null, 2)); };
   try {
     if (!states.has(app)) throw new Error('Electron shutdown identity was not prepared at launch.');
@@ -115,7 +127,17 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
       }
     }
-    receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.irreversibleExit.then(() => ({ inspectorWait: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    if ('inspectorWait' in exited) {
+      if (!state.inspector) throw new Error('Irreversible main exit is waiting on an inspector whose owned transport could not be verified.');
+      receipt.inspectorBeforeClose = state.inspector.status();
+      // Installed Playwright's public close gracefully quits, detaches its node
+      // inspector and waits; it has no process kill in this custom handler.
+      driverClose = Promise.resolve().then(() => app.close()); void driverClose.catch(() => {});
+      const detached = await bounded(Promise.race([state.monitor.exit.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 250))]), deadline - Date.now(), 'Owned inspector disconnect exceeded close budget');
+      if (!detached) { receipt.inspectorAfterPublicClose = state.inspector.status(); receipt.ownedInspectorSocketTerminated = state.inspector.terminate(); }
+      receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit after its owned inspector disconnected');
+    } else receipt.nativeExit = exited.native;
     receipt.productionAtExit = exitDiagnostics(state.stdout);
     const nativeExit = receipt.nativeExit as NativeAppExit;
     if (nativeExit.code !== 0 || nativeExit.signal) throw new Error('Actual Electron main exited with a nonzero OS code or termination signal.');
@@ -131,7 +153,8 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       if (deadline - Date.now() <= 200) throw new Error('Captured owned processes remain alive after native main exit within the close budget.');
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
+    if (driverClose) await bounded(driverClose, deadline - Date.now(), 'Public Playwright close did not settle after actual native exit');
+    else if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
     receipt.elapsed = Date.now() - started; receipt.graceful = true; persist();
     console.log(`[E2E-CLOSE] ${JSON.stringify({ label, artifact, native: receipt.native, nativeExit: receipt.nativeExit, elapsed: receipt.elapsed, graceful: true })}`);
     return Date.now() - started;

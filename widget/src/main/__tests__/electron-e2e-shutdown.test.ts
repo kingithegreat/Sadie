@@ -98,3 +98,61 @@ test('native exit diagnostics survive main teardown without relying on a dispose
   await closeElectronApp(f.app);
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.productionAtExit).toEqual(diagnostic);
 });
+
+function inspectorFixture() {
+  const f = fixture();
+  const socket = { readyState: 1, terminate: jest.fn(() => { socket.readyState = 3; f.finish({ code: 0 }); }) };
+  const connection = { _closed: false, rootSession: {}, close: jest.fn(), _transport: { _ws: socket } };
+  const impl = { process: () => f.child, _nodeConnection: connection, _nodeSession: connection.rootSession };
+  f.app._connection = { toImpl: () => impl };
+  const exiting = (qualified = true) => {
+    const nonce = f.app.evaluate.mock.calls[0][1];
+    f.child.stdout.emit('data', '[E2E-SHUTDOWN-DIAGNOSTIC] ' + JSON.stringify({ pid: f.monitor.info.pid, nonce: qualified ? nonce : 'another-app', helpers: [], refusals: [] }) + '\n');
+    f.child.stderr.emit('data', 'Waiting for the debugger to disconnect...\r\n');
+  };
+  return { ...f, socket, connection, impl, exiting };
+}
+test('qualified irreversible exit first uses public driver close while still requiring native OS exit', async () => {
+  const f = inspectorFixture(); f.app.close.mockImplementation(async () => { f.socket.readyState = 3; f.finish({ code: 0 }); });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting();
+  await closeElectronApp(f.app);
+  expect(f.app.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).not.toHaveBeenCalled(); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+});
+test('qualified exit can terminate only the held inspector websocket after its graceful handshake stalls', async () => {
+  const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting();
+  await closeElectronApp(f.app);
+  expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.child.kill).not.toHaveBeenCalled(); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt).toMatchObject({ graceful: true, nativeExit: { code: 0 }, ownedInspectorSocketTerminated: true });
+});
+test.each(['missing', 'foreign-nonce', 'foreign-pid'])('debugger wait with %s exit marker cannot detach or close the driver early', async kind => {
+  const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  if (kind === 'foreign-nonce') f.exiting(false);
+  else {
+    if (kind === 'foreign-pid') f.child.stdout.emit('data', '[E2E-SHUTDOWN-DIAGNOSTIC] ' + JSON.stringify({ pid: 101, nonce: f.app.evaluate.mock.calls[0][1], helpers: [], refusals: [] }) + '\n');
+    f.child.stderr.emit('data', 'Waiting for the debugger to disconnect...\r\n');
+  }
+  const closing = closeElectronApp(f.app); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+  expect(f.socket.terminate).not.toHaveBeenCalled(); expect(f.app.close).not.toHaveBeenCalled();
+  f.finish({ code: 0 }); await closing; expect(f.socket.terminate).not.toHaveBeenCalled();
+});
+test('an unaudited driver version cannot enable qualified inspector detachment', async () => {
+  const packageInfo = require('playwright-core/package.json'), version = packageInfo.version;
+  try {
+    packageInfo.version = '999.0.0';
+    const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting();
+    await expect(closeElectronApp(f.app)).rejects.toThrow('owned transport could not be verified');
+    expect(f.socket.terminate).not.toHaveBeenCalled();
+  } finally { packageInfo.version = version; }
+});
+test('a changed inspector socket is rejected even when a qualified process exit marker arrives', async () => {
+  const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  const otherSocket = { readyState: 1, terminate: jest.fn() }; f.connection._transport._ws = otherSocket;
+  f.exiting(); await expect(closeElectronApp(f.app)).rejects.toThrow('inspector identity changed');
+  expect(f.socket.terminate).not.toHaveBeenCalled(); expect(otherSocket.terminate).not.toHaveBeenCalled();
+});
+test('inspector detachment never converts a nonzero native exit into a passing close', async () => {
+  const f = inspectorFixture(); f.socket.terminate.mockImplementation(() => { f.finish({ code: 1 }); });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting();
+  await expect(closeElectronApp(f.app)).rejects.toThrow('nonzero OS code');
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(false);
+});
