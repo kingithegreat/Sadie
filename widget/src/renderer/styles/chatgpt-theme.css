@@ -14644,7 +14644,7 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 }
 :where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button, select, input, textarea) {
   box-sizing: border-box;
-  font-family: inherit;
+  font-family: var(--font-sans, system-ui, sans-serif);
   font-size: 12px;
 }
 :where(.workspace-shell, [role='dialog'][aria-label='Quick Open'], [role='dialog'][aria-label='Command palette'], [role='dialog'][aria-label='Project symbols'], [role='dialog'][aria-label='Rename symbol']) :where(button) {
@@ -14708,6 +14708,7 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 .workspace-shell .code-editor > div:has([aria-label='Editor indentation']) { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; border-top: 1px solid var(--hairline); background: var(--ws-control-surface); }
 .workspace-shell .code-editor > div:has([aria-label='Editor indentation']) label { display: inline-flex; align-items: center; gap: 6px; }
 .workspace-shell [aria-label='Editor font size'] { width: 64px; }
+.workspace-shell :where([aria-label='Merged file result'], [aria-label='Debug program arguments']) { font-family: var(--font-mono, Consolas, monospace); }
 .workspace-shell .code-editor > div:has([aria-label='Editor indentation']) p { flex-basis: 100%; margin: 0; color: var(--ws-control-muted); line-height: 1.5; }
 .workspace-shell :where(section[aria-label='Language result'], section[aria-label='Git details']) { border-top: 1px solid var(--hairline); background: var(--ws-control-surface); border-radius: 5px; }
 .workspace-shell :where(section[aria-label='Language result'], section[aria-label='Git details'], section[aria-label='Debugger'], section[aria-label='Tests']) :where(p, small) { line-height: 1.5; overflow-wrap: anywhere; }
