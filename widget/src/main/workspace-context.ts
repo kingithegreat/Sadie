@@ -41,17 +41,20 @@ export function validateWorkspaceRoot(input: unknown): string {
 export function prepareWorkspacePlan(rootInput: unknown, text: unknown, senderId: number) {
   const root = validateWorkspaceRoot(rootInput);
   if (typeof text !== 'string' || !text.trim() || text.length > 20_000) throw new Error('Provide a plan of up to 20,000 characters.');
-  for (const [id, plan] of plans) if (plan.expires < Date.now()) plans.delete(id);
+  const now = Date.now();
+  for (const [id, plan] of plans) if (plan.expires <= now) plans.delete(id);
   if (plans.size >= 100) throw new Error('Too many pending plans. Wait for older plans to expire.');
   const id = randomUUID();
-  plans.set(id, { root, text: text.trim(), senderId, expires: Date.now() + TTL, approved: false });
-  return { id, root, text: text.trim(), expires: Date.now() + TTL };
+  const expires = now + TTL;
+  plans.set(id, { root, text: text.trim(), senderId, expires, approved: false });
+  return { id, root, text: text.trim(), expires };
 }
 export function approveWorkspacePlan(rootInput: unknown, id: unknown, senderId: number) {
   const root = validateWorkspaceRoot(rootInput), plan = plans.get(String(id));
-  if (!plan || plan.root !== root || plan.senderId !== senderId || plan.expires < Date.now()) throw new Error('This plan expired or belongs to another project/window. Prepare it again.');
-  plan.approved = true;
-  return { id: String(id), text: plan.text };
+  const now = Date.now();
+  if (!plan || plan.root !== root || plan.senderId !== senderId || plan.expires <= now) throw new Error('This plan expired or belongs to another project/window. Prepare it again.');
+  plan.approved = true; plan.expires = now + TTL;
+  return { id: String(id), root, text: plan.text, expires: plan.expires };
 }
 export function runWorkspaceRequest<T>(request: any, senderId: number, run: () => T): T {
   if (!request?.workspace) {

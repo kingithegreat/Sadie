@@ -22,6 +22,7 @@ type Attachment = { kind: 'file' | 'folder' | 'selection' | 'terminal' | 'codeba
 /** Per-file and total caps so one large file cannot crowd out the question. */
 export const MAX_FILE_CHARS = 60_000;
 export const MAX_CONTEXT_CHARS = 150_000;
+const PLAN_EXPIRY_NOTE = 'Plan expired. Review the plan again, then approve it before continuing.';
 
 /** The message sent to the assistant: attached context first, then the question. */
 export function buildWorkspacePrompt(question: string, context: ContextItem[]): string {
@@ -59,7 +60,9 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const [history, setHistory] = useState<AssistantSessionState>(() => assistantSessionState(root));
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
-  const [plan, setPlan] = useState<{ id: string; text: string; approved: boolean } | null>(null);
+  const [plan, setPlan] = useState<{ id: string; text: string; expires: number; approved: boolean } | null>(null);
+  const [planExpired, setPlanExpired] = useState(false);
+  const planRef = useRef(plan); planRef.current = plan;
   const [planText, setPlanText] = useState('');
   const [note, setNote] = useState<string | null>(null);
   const [semantic, setSemantic] = useState(false);
@@ -78,7 +81,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const changeTurns = (update: (previous: WorkspaceAiTurn[]) => WorkspaceAiTurn[]) => updateAssistantTurns(root, update, api);
   useEffect(() => {
     viewIdentity.current += 1;
-    setQuestion(''); setPlanText(''); setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]); setStreamingId(null); setClearing(false);
+    setQuestion(''); setPlanText(''); setPlan(null); setPlanExpired(false); setAttached([]); setNote(null); setRules([]); setActivity([]); setStreamingId(null); setClearing(false);
     let active = true;
     const remove = subscribeAssistantTurns(root, setTurns, api, undefined, state => { if (active) setHistory(state); });
     api?.workspaceAiRules?.(root).then((res: any) => { if (active && res?.success) setRules(res.rules || []); }).catch(() => {});
@@ -96,6 +99,13 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     };
   }, [root, api]);
 
+  const expirePlan = () => { setPlan(null); setPlanExpired(true); setNote(PLAN_EXPIRY_NOTE); };
+  useEffect(() => {
+    if (!plan) return;
+    const timer = setTimeout(() => { setPlan(null); setPlanExpired(true); setNote(PLAN_EXPIRY_NOTE); }, Math.max(0, plan.expires - Date.now()));
+    return () => clearTimeout(timer);
+  }, [plan]);
+
   const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
   const attach = (value: string) => {
     if (!value) return;
@@ -107,6 +117,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const send = async () => {
     const text = question.trim();
     if (!text || busy.current || assistantSessionState(root).phase !== 'ready') return;
+    if (planExpired || (plan && plan.expires <= Date.now())) { expirePlan(); return; }
     const owner = {}, identity = viewIdentity.current;
     operationOwner.current = owner;
     const ownsView = () => operationOwner.current === owner && viewIdentity.current === identity;
@@ -138,6 +149,9 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       }
     }
     if (!ownsView()) return;
+    // A suspended window or a slow attachment read can cross the approval TTL
+    // before its expiry timer runs. Never send the captured expired plan ID.
+    if (plan && plan.expires <= Date.now()) { expirePlan(); operationOwner.current = null; busy.current = false; cancelActive.current = null; return; }
     const streamId = `ws-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     changeTurns(prev => [...prev,
       { id: `${streamId}-q`, role: 'user', text, context: attached.map(a => baseName(a.path)) },
@@ -191,17 +205,26 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       const res = await api?.workspaceAiPreparePlan?.(root, planText);
       if (viewIdentity.current !== identity) return;
       if (!res?.success) throw new Error(res?.error || 'The plan could not be prepared.');
-      setPlan({ id: res.id, text: res.text, approved: false }); setNote(null);
+      if (typeof res.id !== 'string' || typeof res.text !== 'string' || !Number.isFinite(res.expires) || res.expires <= Date.now()) throw new Error('The review expired or returned no expiry. Review the plan again.');
+      setPlan({ id: res.id, text: res.text, expires: res.expires, approved: false }); setPlanExpired(false); setNote(null);
     } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
   };
   const approvePlan = async () => {
     const identity = viewIdentity.current;
+    const currentPlan = planRef.current;
+    if (!currentPlan || currentPlan.expires <= Date.now()) { expirePlan(); return; }
     try {
-      const res = await api?.workspaceAiApprovePlan?.(root, plan?.id);
-      if (viewIdentity.current !== identity) return;
+      const res = await api?.workspaceAiApprovePlan?.(root, currentPlan.id);
+      if (viewIdentity.current !== identity || planRef.current?.id !== currentPlan.id) return;
       if (!res?.success) throw new Error(res?.error || 'The plan could not be approved.');
-      setPlan(previous => previous ? { ...previous, approved: true } : null); setNote('Plan approved for this project for 30 minutes. File changes still require review in Changes.');
-    } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
+      if (!Number.isFinite(res.expires) || res.expires <= Date.now()) throw new Error('Approval expired or returned no expiry. Review the plan again.');
+      setPlan(previous => previous?.id === currentPlan.id ? { ...previous, expires: res.expires, approved: true } : previous); setNote('Plan approved for this project for 30 minutes. File changes still require review in Changes.');
+    } catch (error) {
+      if (viewIdentity.current !== identity) return;
+      const message = (error as Error).message;
+      if (planRef.current?.id === currentPlan.id && /expired/i.test(message)) expirePlan();
+      else setNote(message);
+    }
   };
   const revokeFolder = async (folder: string) => {
     const identity = viewIdentity.current;
@@ -306,7 +329,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         <div className="ws-assistant-actions">
           {streamingId
             ? <button type="button" className="sp-btn" onClick={() => cancelActive.current?.()}>Stop</button>
-            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim() || clearing || history.phase !== 'ready'}>Send</button>}
+            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim() || clearing || planExpired || history.phase !== 'ready'}>Send</button>}
         </div>
       </div>
     </section>
