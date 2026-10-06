@@ -23,7 +23,7 @@ const viewOf = (container: HTMLElement) => EditorView.findFromDOM(container.quer
 
 test('every language the Explorer reports gets a highlighter', () => {
   for (const lang of ['javascript', 'typescript', 'python', 'json', 'css', 'xml', 'html', 'markdown', 'sql', 'yaml',
-    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp']) {
+    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp', 'lua', 'luau']) {
     expect(languageExtension(lang)).not.toEqual([]);
   }
   expect(languageExtension('plaintext')).toEqual([]);
@@ -88,6 +88,32 @@ test('restored editor state uses current handlers, compartments, read-only mode 
 });
 
 describe('IDE-5: Inline Edit (Ctrl+K)', () => {
+  test('typing before or inside the target while generating refuses stale acceptance and preserves all bytes', async () => {
+    let callbacks: any;
+    (window as any).electron = { sendStreamMessage: jest.fn().mockResolvedValue({ success: true }), subscribeToStream: jest.fn((_id, handlers) => { callbacks = handlers; return jest.fn(); }), cancelStream: jest.fn() };
+    const { container } = render(<CodeEditor value={'const first = 1;\nconst second = 2;\n'} language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const view = viewOf(container);
+    act(() => { view.dispatch({ selection: { anchor: 17, head: 34 } }); view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename second' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    act(() => { view.dispatch({ changes: { from: 0, insert: '// user edit\n' } }); callbacks.onStreamChunk({ chunk: 'const renamed = 2;' }); callbacks.onStreamEnd(); });
+    const expected = view.state.doc.toString();
+    fireEvent.click(screen.getByTestId('inline-edit-accept-btn'));
+    expect(view.state.doc.toString()).toBe(expected);
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('replacement was not applied');
+  });
+
+  test('rejected request displays recovery error and does not leave an active generation', async () => {
+    (window as any).electron = { sendStreamMessage: jest.fn().mockRejectedValue(new Error('Connection failed')), subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const view = viewOf(container);
+    act(() => { view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'change value' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('Connection failed');
+    expect(screen.queryByTestId('inline-edit-loading')).not.toBeInTheDocument();
+    expect(view.state.doc.toString()).toBe('const value = 1;');
+  });
   test('buildInlineEditPrompt packages instruction, language, and selected code snippet', () => {
     const prompt = buildInlineEditPrompt('convert to arrow function', 'function add(a, b) { return a + b; }', 'typescript');
     expect(prompt).toContain('INSTRUCTION:\nconvert to arrow function');

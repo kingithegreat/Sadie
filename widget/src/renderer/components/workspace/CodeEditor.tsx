@@ -3,7 +3,7 @@ import { EditorView, basicSetup } from 'codemirror';
 import { Compartment, EditorState, Prec, StateEffect, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
-import { StreamLanguage } from '@codemirror/language';
+import { StreamLanguage, indentUnit } from '@codemirror/language';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -20,6 +20,9 @@ import { shell } from '@codemirror/legacy-modes/mode/shell';
 import { powerShell } from '@codemirror/legacy-modes/mode/powershell';
 import { properties } from '@codemirror/legacy-modes/mode/properties';
 import { csharp } from '@codemirror/legacy-modes/mode/clike';
+import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
+import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
 
 /**
  * Code editor pane, on CodeMirror 6.
@@ -67,6 +70,8 @@ export function languageExtension(language: string): Extension {
     case 'powershell': return StreamLanguage.define(powerShell);
     case 'ini': return StreamLanguage.define(properties);
     case 'csharp': return StreamLanguage.define(csharp);
+    case 'lua':
+    case 'luau': return StreamLanguage.define(lua);
     default: return [];
   }
 }
@@ -172,7 +177,13 @@ interface CodeEditorProps {
   value: string;
   language: string;
   onChange: (next: string) => void;
-  onSave: () => void;
+  onSave: (contentOverride?: string) => void;
+  root?: string;
+  filePath?: string;
+  buffers?: WorkspaceLanguageBuffer[];
+  onNavigate?: (path: string, line: number) => void;
+  onApplyEdits?: (edits: WorkspaceLanguageEdit[]) => Promise<boolean> | boolean;
+  onSelection?: (selection: { path: string; text: string; from: number; to: number }) => void;
   readOnly?: boolean;
   /** Land on this line (1-based) when it changes — a search result's target. */
   focusLine?: number;
@@ -181,12 +192,19 @@ interface CodeEditorProps {
   session?: CodeEditorSession;
 }
 
-export default function CodeEditor({ value, language, onChange, onSave, readOnly, focusLine, onFocusLineConsumed, session }: CodeEditorProps) {
+export default function CodeEditor({ value, language, onChange, onSave, readOnly, focusLine, onFocusLineConsumed, session, root, filePath, buffers, onNavigate, onApplyEdits, onSelection }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageSlot = useRef(new Compartment());
   const readOnlySlot = useRef(new Compartment());
   const themeSlot = useRef(new Compartment());
+  const preferencesSlot = useRef(new Compartment());
+  const semanticSlot = useRef(new Compartment());
+  const [preferences, setPreferences] = useState<EditorPreferences>(readEditorPreferences);
+  const semanticContext = useRef({ root, filePath, buffers });
+  semanticContext.current = { root, filePath, buffers };
+  const onSelectionRef = useRef(onSelection);
+  onSelectionRef.current = onSelection;
   // The view is created once; handlers read the latest props through refs.
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
@@ -201,14 +219,21 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
   const unsubscribeInline = useRef<(() => void) | null>(null);
   const onInlineEditRef = useRef<() => void>(() => {});
   const [inputPrompt, setInputPrompt] = useState('');
+  const [saveError, setSaveError] = useState('');
+  // The entire source snapshot is intentionally conservative: an edit anywhere
+  // during generation invalidates the result instead of risking an old offset.
+  const inlineSourceRef = useRef<string | null>(null);
 
   useEffect(() => () => {
+    if (activeStreamIdRef.current) (window as any).electron?.cancelStream?.(activeStreamIdRef.current);
     unsubscribeInline.current?.();
   }, []);
 
   const handleOpenInlineEdit = () => {
     const view = viewRef.current;
     if (!view || readOnly) return;
+    if (activeStreamIdRef.current) (window as any).electron?.cancelStream?.(activeStreamIdRef.current);
+    unsubscribeInline.current?.(); unsubscribeInline.current = null; activeStreamIdRef.current = null;
     const sel = view.state.selection.main;
     let from: number;
     let to: number;
@@ -232,6 +257,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     }
 
     setInputPrompt('');
+    inlineSourceRef.current = view.state.doc.toString();
     setInlineEdit({
       range: { from, to, text, lineStart, lineEnd },
       prompt: '',
@@ -244,6 +270,10 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
 
   const handleGenerateInlineEdit = async (promptText: string) => {
     if (!inlineEdit || !promptText.trim()) return;
+    if (viewRef.current?.state.doc.toString() !== inlineSourceRef.current) {
+      setInlineEdit(prev => prev ? { ...prev, error: 'The document changed. Close this preview and select the code again.' } : null);
+      return;
+    }
     const currentEdit = inlineEdit;
     setInlineEdit({ ...currentEdit, status: 'generating', prompt: promptText, replacement: '', error: null });
 
@@ -252,6 +282,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     activeStreamIdRef.current = streamId;
 
     const finish = (finalReplacement?: string) => {
+      if (activeStreamIdRef.current !== streamId) return;
       unsubscribeInline.current?.();
       unsubscribeInline.current = null;
       activeStreamIdRef.current = null;
@@ -264,6 +295,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
 
     unsubscribeInline.current = api?.subscribeToStream?.(streamId, {
       onStreamChunk: (data: { chunk: string }) => {
+        if (activeStreamIdRef.current !== streamId) return;
         setInlineEdit(prev => {
           if (!prev) return null;
           return { ...prev, replacement: prev.replacement + (data.chunk || '') };
@@ -271,6 +303,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       },
       onStreamEnd: () => finish(),
       onStreamError: (err: any) => {
+        if (activeStreamIdRef.current !== streamId) return;
         const msg = err?.message || err?.error || 'AI inline edit failed';
         setInlineEdit(prev => prev ? { ...prev, status: 'idle', error: msg } : null);
         unsubscribeInline.current?.();
@@ -280,17 +313,30 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     }) ?? null;
 
     const fullPrompt = buildInlineEditPrompt(promptText, currentEdit.range.text, language);
-    await api?.sendStreamMessage?.({
+    try {
+      if (!api?.sendStreamMessage) throw new Error('The coding assistant is unavailable.');
+      await api.sendStreamMessage({
       streamId,
       user_id: 'desktop_user',
       conversation_id: `workspace:inline-edit:${Date.now()}`,
       message: fullPrompt,
       timestamp: new Date().toISOString(),
-    });
+      ...(root ? { workspace: { root } } : {}),
+      });
+    } catch (error) {
+      if (activeStreamIdRef.current !== streamId) return;
+      unsubscribeInline.current?.(); unsubscribeInline.current = null; activeStreamIdRef.current = null;
+      setInlineEdit(prev => prev ? { ...prev, status: 'idle', error: error instanceof Error ? error.message : String(error) } : null);
+    }
   };
 
   const handleAcceptInlineEdit = () => {
     if (!inlineEdit || !viewRef.current) return;
+    if (readOnly || inlineEdit.status !== 'preview') return;
+    if (viewRef.current.state.doc.toString() !== inlineSourceRef.current) {
+      setInlineEdit(prev => prev ? { ...prev, error: 'The document changed. This replacement was not applied. Select the code again.' } : null);
+      return;
+    }
     const { from, to } = inlineEdit.range;
     const insert = inlineEdit.replacement;
     viewRef.current.dispatch({
@@ -325,12 +371,13 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       keymap.of([indentWithTab]),
       // Ctrl+S saves; Ctrl+K opens inline edit bar.
       Prec.high(keymap.of([
-        { key: 'Mod-s', preventDefault: true, run: () => { onSaveRef.current(); return true; } },
+        { key: 'Mod-s', preventDefault: true, run: () => { void saveEditorRef.current(); return true; } },
         { key: 'Mod-k', preventDefault: true, run: () => { onInlineEditRef.current(); return true; } },
       ])),
       languageSlot.current.of(languageExtension(language)),
       readOnlySlot.current.of(readOnlyExtensions(!!readOnly)),
-      EditorState.tabSize.of(2),
+      preferencesSlot.current.of(preferenceExtensions(preferences)),
+      semanticSlot.current.of(semanticExtensions(() => semanticContext.current)),
       EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -338,6 +385,8 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
           const head = update.state.selection.main.head;
           const line = update.state.doc.lineAt(head);
           setCursor({ line: line.number, col: head - line.from + 1 });
+          const selection = update.state.selection.main;
+          onSelectionRef.current?.({ path: semanticContext.current.filePath || '', text: update.state.sliceDoc(selection.from, selection.to), from: selection.from, to: selection.to });
         }
       }),
     ];
@@ -403,6 +452,32 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     viewRef.current?.dispatch({ effects: readOnlySlot.current.reconfigure([EditorState.readOnly.of(on), EditorView.editable.of(!on)]) });
   }, [readOnly]);
 
+  function preferenceExtensions(settings: EditorPreferences): Extension {
+    return [EditorState.tabSize.of(settings.tabSize), indentUnit.of(' '.repeat(settings.tabSize)), EditorView.theme({ '&': { fontSize: `${settings.fontSize}px` }, '.cm-content': { fontFamily: 'Consolas, monospace' } })];
+  }
+  const saveEditor = async () => {
+    const view = viewRef.current;
+    if (!view || readOnly) return;
+    setSaveError('');
+    const currentPreferences = readEditorPreferences();
+    if (currentPreferences.formatOnSave && root && filePath && /\.[cm]?[jt]sx?$/i.test(filePath)) {
+      const before = view.state.doc.toString();
+      try {
+        const result = await (window.electron as any).workspaceLanguage?.({ root, path: filePath, content: before, buffers, action: 'format', tabSize: currentPreferences.tabSize });
+        if (!result?.success) { setSaveError(result?.error || 'Formatting is unavailable. Disable format on save or retry. Your draft was kept.'); return; }
+        if (viewRef.current !== view || view.state.doc.toString() !== before) { setSaveError('You typed while formatting. Your draft was kept; save again when ready.'); return; }
+        const changes = result.edits?.[0]?.changes || [];
+        view.dispatch({ changes: changes.map((change: { start: number; length: number; text: string }) => ({ from: change.start, to: change.start + change.length, insert: change.text })), userEvent: 'input.format' });
+        onSaveRef.current(view.state.doc.toString());
+      } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
+    } else onSaveRef.current();
+  };
+  const saveEditorRef = useRef(saveEditor);
+  saveEditorRef.current = saveEditor;
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: preferencesSlot.current.reconfigure(preferenceExtensions(preferences)) });
+  }, [preferences]);
+
   // A search result asked for this line. Only a CHANGE acts, so the user's own
   // scrolling is never yanked; the editor is keyed per file in WorkspaceShell,
   // so a jump into a newly opened tab fires on mount.
@@ -428,6 +503,8 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
 
   return (
     <div className="code-editor code-editor-cm">
+      {root && filePath && <SemanticEditorSupport viewRef={viewRef} root={root} filePath={filePath} buffers={buffers} onNavigate={onNavigate} onApplyEdits={onApplyEdits} preferences={preferences} onPreferences={setPreferences} readOnly={readOnly} />}
+      {saveError && <div role="alert">{saveError}</div>}
       {inlineEdit && (
         <div className="code-inline-edit-bar" data-testid="code-inline-edit-bar">
           <div className="code-inline-edit-header">
@@ -534,6 +611,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
                 type="button"
                 className="code-inline-btn code-inline-btn-primary"
                 data-testid="inline-edit-accept-btn"
+                disabled={inlineEdit.status !== 'preview' || readOnly}
                 onClick={handleAcceptInlineEdit}
               >
                 ✓ Accept (Ctrl+Enter)
