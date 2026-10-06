@@ -31,7 +31,7 @@ describe('IDE assistant lifecycle and approval controls', () => {
     const second = render(panel());
     expect(screen.getByRole('log')).toHaveTextContent('partial answer'); expect(screen.getByRole('log')).toHaveTextContent('[Stopped]');
     await waitFor(() => expect(api.workspaceAiSaveSession).toHaveBeenCalledWith(root, expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining('partial answer') })])));
-    second.rerender(panel('C:/other-project'));
+    await act(async () => { second.rerender(panel('C:/other-project')); });
     expect(screen.getByRole('log')).not.toHaveTextContent('partial answer');
   });
   test('IPC rejection releases Send and surfaces error, and a later request works', async () => {
