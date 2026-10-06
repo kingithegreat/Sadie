@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './workspace-trust';
+import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
 import type { WorkspaceDebugRequest, WorkspaceDebugResult, WorkspaceDebugFrame } from '../shared/workspace-debug-types';
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 function projectRoot(input: string): string {
@@ -31,6 +32,7 @@ class DebugSession {
     if (this.child) throw new Error('Stop the current debug session first.');
     this.child = spawn(process.execPath, ['--inspect-brk=127.0.0.1:0', '--', file, ...args], { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
     const child = this.child;
+    rememberWorkspaceChild(child);
     const url = await new Promise<string>((resolve, reject) => {
       let stderr = '';
       const timeout = setTimeout(() => reject(new Error('The debugger did not start in time.')), 5000);
@@ -91,11 +93,9 @@ class DebugSession {
   async stop(): Promise<void> {
     this.socket?.close(); this.socket = null;
     for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error('Debug session stopped.')); } this.requests.clear();
-    const child = this.child; this.child = null;
-    if (child?.pid) {
-      if (process.platform === 'win32') await new Promise<void>(resolve => { const kill = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); kill.once('close', () => resolve()); kill.once('error', () => { child.kill(); resolve(); }); });
-      else { try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); } }
-    }
+    const child = this.child;
+    if (child) await stopWorkspaceChild(child);
+    if (this.child === child) this.child = null;
     this.paused = false; this.frames = []; this.points.clear();
   }
 }

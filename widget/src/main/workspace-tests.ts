@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import { stripAnsi } from '../shared/ansi';
 import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath, validateTrustedWorkspaceRoot, workspacePathWithin } from './workspace-trust';
 import type { WorkspaceDiscoveredTest, WorkspaceTestRequest, WorkspaceTestResult } from '../shared/workspace-test-types';
+import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
 const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cache', '.next', '.venv']);
 const TEST_FILE = /(?:\.test|\.spec)\.[cm]?[jt]sx?$/i;
 interface TestRun { child: ChildProcess | null; output: string; exitCode: number | null; coveragePath?: string; stopped: boolean }
@@ -111,8 +112,7 @@ function state(run?: TestRun): WorkspaceTestResult {
 async function stopRun(run: TestRun) {
   const child = run.child; run.stopped = true;
   if (!child?.pid || child.exitCode !== null) { run.child = null; return; }
-  if (process.platform === 'win32') await new Promise<void>(resolve => { const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); killer.once('close', () => resolve()); killer.once('error', () => { child.kill(); resolve(); }); });
-  else { try { process.kill(-child.pid, 'SIGTERM'); } catch { child.kill('SIGTERM'); } }
+  await stopWorkspaceChild(child);
 }
 export async function stopWorkspaceTestRuns(): Promise<void> { await Promise.all([...runs.values()].map(stopRun)); }
 export async function performWorkspaceTests(request: WorkspaceTestRequest): Promise<WorkspaceTestResult> {
@@ -125,6 +125,7 @@ export async function performWorkspaceTests(request: WorkspaceTestRequest): Prom
     if (runs.get(root)?.child || [...runs.values()].some(run => !!run.child)) throw new Error('Stop the current test run first.');
     const prepared = prepareWorkspaceTestCommand(request);
     const child = spawn(process.execPath, prepared.args, { cwd: prepared.cwd, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
+    rememberWorkspaceChild(child);
     const run: TestRun = { child, output: '', exitCode: null, coveragePath: prepared.coveragePath, stopped: false }; runs.set(root, run);
     const append = (chunk: Buffer) => { run.output = (run.output + chunk.toString('utf8')).slice(-256_000); };
     child.stdout!.on('data', append); child.stderr!.on('data', append);

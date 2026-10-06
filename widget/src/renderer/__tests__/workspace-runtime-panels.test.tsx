@@ -58,3 +58,10 @@ test('test runner transport rejection is visible and controls recover', async ()
   await act(async () => render(<WorkspaceTestsPanel root="/project" onOpenFile={jest.fn()} />));
   expect(screen.getByRole('alert')).toHaveTextContent('Test service disconnected'); expect(screen.getByText('Refresh tests')).not.toBeDisabled();
 });
+test('Debug test file starts the actual Node debugger and opens its panel after approval succeeds', async () => {
+  const workspaceDebug = jest.fn().mockResolvedValue({ success: true, running: true, paused: true }); const openDebugger = jest.fn();
+  (window as any).electron = { workspaceDebug, workspaceTests: jest.fn().mockResolvedValue({ success: true, tests: [{ path: '/project/math.test.js', name: 'adds', line: 1, runner: 'node' }] }) };
+  await act(async () => render(<WorkspaceTestsPanel root="/project" onOpenFile={jest.fn()} onDebugFile={openDebugger} />));
+  await act(async () => fireEvent.click(screen.getByText('Debug JS test file')));
+  expect(workspaceDebug).toHaveBeenCalledWith({ root: '/project', action: 'start', file: '/project/math.test.js' }); expect(openDebugger).toHaveBeenCalledWith('/project/math.test.js');
+});
