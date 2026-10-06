@@ -12,8 +12,8 @@ describe('IDE assistant lifecycle and approval controls', () => {
       workspaceAiSession: jest.fn(async () => ({ success: true, turns: [] })),
       workspaceAiSaveSession: jest.fn(async () => ({ success: true })),
       deleteConversation: jest.fn(async () => ({ success: true })),
-      workspaceAiPreparePlan: jest.fn(async (_root, text) => ({ success: true, id: 'approved-plan', text })),
-      workspaceAiApprovePlan: jest.fn(async () => ({ success: true, id: 'approved-plan' })),
+      workspaceAiPreparePlan: jest.fn(async (_root, text) => ({ success: true, id: 'approved-plan', text, expires: Date.now() + 30 * 60_000 })),
+      workspaceAiApprovePlan: jest.fn(async () => ({ success: true, id: 'approved-plan', expires: Date.now() + 30 * 60_000 })),
       workspaceAiRules: jest.fn(async () => ({ success: true, rules: [{ path: `${root}/AGENTS.md`, text: 'Use project conventions.' }] })),
       workspaceAiMcpStatus: jest.fn(async () => ({ success: true, servers: [{ name: 'test', connected: true, toolCount: 1 }] })),
     };

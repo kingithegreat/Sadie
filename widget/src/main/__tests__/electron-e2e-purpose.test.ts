@@ -15,8 +15,10 @@ windowsTest('OS observer exports only allowlisted purpose labels, including enco
   ];
   const values = Buffer.from(JSON.stringify(commands), 'utf8').toString('base64');
   const source = `$ErrorActionPreference='Stop';${nativePurposeClassifierSource()};$commands=ConvertFrom-Json ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${values}')));$labels=@($commands|ForEach-Object{Get-CapturedPurpose $_});ConvertTo-Json -InputObject $labels -Compress`;
-  const stdout = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], { encoding: 'utf8', env: process.env, windowsHide: true, timeout: 5000, maxBuffer: 4096 });
+  // This pure metadata transform includes native shell startup. Its bounded
+  // fixture budget is separate from the product's identity/Stop/quit deadlines.
+  const stdout = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], { encoding: 'utf8', env: process.env, windowsHide: true, timeout: 15_000, maxBuffer: 4096 });
   expect(JSON.parse(stdout.trim())).toEqual(['outlook-com', 'gpu-discovery', 'pty-identity', 'pty-identity', 'pty-stop', 'unclassified', 'unclassified']);
   expect(stdout).not.toContain('secret-');
   expect(stdout).not.toContain('ProcessId');
-});
+}, 20_000);
