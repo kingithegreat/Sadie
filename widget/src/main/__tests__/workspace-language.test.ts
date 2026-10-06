@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { queryWorkspaceLanguage, disposeWorkspaceLanguageServices } from '../workspace-language';
 import type { WorkspaceLanguageAction } from '../../shared/workspace-language-types';
+import * as userPaths from '../user-paths';
 let root: string;
 let entry: string;
 let library: string;
@@ -97,6 +98,13 @@ test('reads declared linked dependency types without permitting edits or unrelat
     expect(query('complete', privateContent, privateContent.length).entries?.some(item => item.label === 'secretProperty')).toBe(false);
     const target = queryWorkspaceLanguage({ root, path: path.join(store, 'typed-library', 'index.d.ts'), content: '', action: 'rename', newName: 'Other' });
     expect(target.success).toBe(false);
+    disposeWorkspaceLanguageServices();
+    const narrowedHome = jest.spyOn(userPaths, 'homeDir').mockReturnValue(root);
+    try {
+      // The same linked package becomes untrusted when its real store is
+      // outside the profile boundary; a declared name never widens that bound.
+      expect(query('complete', content, content.length).entries?.some(item => item.label === 'displayName')).toBe(false);
+    } finally { narrowedHome.mockRestore(); }
   } finally {
     // Remove only the test's symlink entries before deleting their known stores.
     fs.unlinkSync(moduleDir); fs.unlinkSync(unrelated);

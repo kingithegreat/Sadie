@@ -153,7 +153,7 @@ class LanguageProject {
     for (const file of this.buffers.keys()) if (supported.test(file) && !this.files.some(existing => key(existing) === file)) this.files.push(file);
   }
   location(file: string, span: ts.TextSpan, name?: string): WorkspaceLanguageLocation | undefined {
-    if (!within(this.root, file)) return undefined;
+    if (!within(this.root, file) || !within(this.root, fs.realpathSync(file))) return undefined;
     const text = this.read(file); if (text === undefined) return undefined;
     const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest);
     const pos = source.getLineAndCharacterOfPosition(Math.min(span.start, text.length));
@@ -161,7 +161,7 @@ class LanguageProject {
   }
   edits(changes: readonly ts.FileTextChanges[]): WorkspaceLanguageEdit[] {
     return changes.map(change => {
-      if (change.isNewFile || !within(this.root, change.fileName)) throw new Error('This action creates files or edits outside this project; use an explicit reviewed edit instead.');
+      if (change.isNewFile || !within(this.root, change.fileName) || !within(this.root, fs.realpathSync(change.fileName)) || path.relative(this.root, change.fileName).split(path.sep).includes('node_modules')) throw new Error('This action creates files or edits dependencies or files outside this project; use an explicit reviewed edit instead.');
       const content = this.read(change.fileName); if (content === undefined) throw new Error('The refactoring target cannot be read.');
       return { path: path.resolve(change.fileName), expectedContent: content, changes: change.textChanges.map(edit => ({ start: edit.span.start, length: edit.span.length, text: edit.newText })) };
     });
@@ -193,8 +193,8 @@ export function queryWorkspaceLanguage(request: WorkspaceLanguageRequest): Works
       if (projects.size >= 2) { const oldest = projects.keys().next().value as string; projects.get(oldest)?.service.dispose(); projects.delete(oldest); }
       project = new LanguageProject(root); projects.set(root, project);
     }
-    project.update({ ...request, path: file });
     if (request.action === 'files') return { success: true, files: project.walk() };
+    project.update({ ...request, path: file });
     if (!supported.test(file)) return { success: false, error: 'Semantic navigation and formatting currently support JavaScript and TypeScript projects. Other languages keep syntax highlighting and text editing.' };
     const position = request.position ?? 0;
     if (!Number.isInteger(position) || position < 0 || position > request.content.length) throw new Error('The cursor position is invalid.');
