@@ -80,7 +80,7 @@ export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess,
       const source = `$ErrorActionPreference='Stop';$captured=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${value}')));$all=@(Get-CimInstance Win32_Process -ErrorAction Stop);foreach($identity in $captured){if($all|Where-Object{$_.ProcessId -eq $identity.pid -and $_.CreationDate.ToUniversalTime().Ticks -eq [long]$identity.creation}){[Console]::Write('live');exit 0}};[Console]::Write('gone')`;
       return (await powershell(source, env)).trim() === 'gone';
     },
-    cleanup: receipt => stopWorkspacePtyTree(info.pid, { creation: creation!, parent: info.ppid }, receipt),
+    cleanup: receipt => stopWorkspacePtyTree(info.pid, { creation: creation!, parent: info.ppid }, receipt, env),
     dispose: () => { if (watcher.exitCode === null && watcher.signalCode === null) watcher.kill(); },
   };
 }
