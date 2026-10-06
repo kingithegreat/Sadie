@@ -69,6 +69,12 @@ test('apps using direct close leave no pending cleanup after both actual exit an
   await closeElectronApp(f.app); // The cached OS oracle remains available.
   expect(f.monitor.cleanup).not.toHaveBeenCalled();
 });
+test('direct close with nonzero native exit stays pending so afterEach rejects it', async () => {
+  const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  f.finish({ code: 1 }); await Promise.resolve(); f.app.emit('close');
+  await expect(closeRemainingElectronApps()).rejects.toThrow(/nonzero OS code/);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(false);
+});
 test('snapshot disappearance waits for the original held OS exit receipt, never a guessed PID', async () => {
   const f = fixture(); f.monitor.snapshot.mockImplementation(async () => { f.finish({ code: 0 }); throw new Error('main disappeared before snapshot'); });
   await prepareElectronShutdown(f.app, '/owned/index.js'); await closeElectronApp(f.app);

@@ -20,7 +20,7 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
   pendingApps.add(app);
   const pending = (async () => {
     const child = app.process(); const state = { stderr: '', stdout: '', entry } as State;
-    const releaseCompleted = () => { if (state.transportClosed && state.nativeExit) pendingApps.delete(app); };
+    const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
     app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
     child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); });
     child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); });
@@ -96,7 +96,8 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       if (!state.nativeExit) await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
     }
     receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit within close budget');
-    if ((receipt.nativeExit as { code: number | null }).code !== 0) throw new Error('Actual Electron main exited with a nonzero OS code.');
+    const nativeExit = receipt.nativeExit as NativeAppExit;
+    if (nativeExit.code !== 0 || nativeExit.signal) throw new Error('Actual Electron main exited with a nonzero OS code or termination signal.');
     receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
     receipt.verificationScope = tree ? 'captured-owned-tree' : 'native-main';
     if (!receipt.capturedIdentitiesGone) throw new Error('Captured owned processes remain alive after native main exit.');
