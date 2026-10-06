@@ -253,7 +253,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       updateAssistantTurns(root, () => [], api);
       const saved = await flushAssistantTurns(root, api);
       if (viewIdentity.current === identity) {
-        setPlan(null);
+        setPlan(null); setPlanExpired(false);
         setNote(saved ? 'Conversation history and model context cleared.' : 'Model context cleared, but transcript deletion could not be saved. Retry to remove its saved history.');
       }
     } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }

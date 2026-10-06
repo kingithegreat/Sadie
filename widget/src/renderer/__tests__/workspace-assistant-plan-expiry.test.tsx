@@ -101,3 +101,19 @@ test('a fresh approval replaces an earlier plan during context loading without b
   expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root, planId: 'plan-2' });
   act(() => { callbacks.onStreamEnd(); });
 });
+
+test('only successful conversation clearing releases the expiry gate and the next chat is read-only', async () => {
+  await open(); await review(); await approve(); advance(TTL);
+  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  api.deleteConversation = jest.fn().mockResolvedValueOnce({ success: false, error: 'Deletion failed.' }).mockResolvedValueOnce({ success: true });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history', exact: true })); });
+  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history', exact: true })); });
+  expect(api.deleteConversation).toHaveBeenLastCalledWith(`workspace:${root}`);
+  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
+  expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root });
+  act(() => { callbacks.onStreamEnd(); });
+});
