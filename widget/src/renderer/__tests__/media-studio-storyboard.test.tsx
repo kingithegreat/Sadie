@@ -526,7 +526,8 @@ describe('Media Studio Visual Storyboard Deck', () => {
     // Ribbon Tab
     expect(screen.getByRole('tab', { name: /Storyboard/i })).toBeInTheDocument();
     // Hub Card
-    expect(screen.getByText('Visual Storyboard Deck')).toBeInTheDocument();
+    const hub = screen.getByLabelText('Studio Quick Launch');
+    expect(within(hub).getByRole('button', { name: /^Storyboard/ })).toBeInTheDocument();
   });
 
   test('switches to Storyboard Deck workspace on tab click and loads projects', async () => {
@@ -777,7 +778,7 @@ describe('Media Studio Visual Storyboard Deck', () => {
 
     // Should switch to timeline workspace and show confirmation
     expect(screen.getByText(/Loaded storyboard sequence into CapCut timeline with 2 edit cuts!/i)).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /CapCut Timeline/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Timeline/i })).toHaveAttribute('aria-selected', 'true');
   });
 
   test('renders 1080p broadcast movie on button click and displays completion banner', async () => {

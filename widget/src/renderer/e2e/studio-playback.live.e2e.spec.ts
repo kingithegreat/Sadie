@@ -45,6 +45,14 @@ test('real Studio decoders coordinate, report missing media, and keep transport 
     renderPath: id === 'sample' ? undefined : id === 'missing' ? path.join(home, 'missing.mp4') : movie,
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), history: [],
   }))));
+  if (process.env.HOMEBOT_STUDIO_WORKFLOW_LIVE === '1') {
+    const jobsPath = path.join(profile, 'media-jobs.json');
+    const jobs = JSON.parse(fs.readFileSync(jobsPath, 'utf8'));
+    jobs.push({ id: 'recover', title: 'Interrupted project', format: 'short', state: 'failed',
+      script: 'Recovery fixture.', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      history: [{ from: 'media_production', to: 'failed', at: new Date().toISOString(), by: 'render stage' }] });
+    fs.writeFileSync(jobsPath, JSON.stringify(jobs));
+  }
   // Install before importing the real main bundle, rather than trusting NODE_OPTIONS.
   const guard = path.join(home, 'offline.cjs');
   fs.writeFileSync(guard, `
@@ -107,6 +115,58 @@ require('electron').app.whenReady().then(()=>{
     // Fixture installed before the app's duplicate-registration guard.
     expect(await app.evaluate(() => (globalThis as any).playbackFixture.installed)).toContain('homebot:tts-sample-voice');
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: testInfo.outputPath('studio-overview.png') });
+    if (process.env.HOMEBOT_STUDIO_WORKFLOW_LIVE === '1') {
+      await expect(page.getByRole('region', { name: 'Your video workflow' })).toBeVisible();
+      const next = page.getByRole('button', { name: 'Open next step: Playback first' });
+      await expect(next).toBeVisible();
+      await expect(page.getByRole('textbox', { name: 'New video title' })).toBeInViewport();
+      await next.click();
+      await expect(page.locator('[data-job-id="first"]')).toBeFocused();
+      await page.getByRole('button', { name: 'Start a new video' }).click();
+      const title = page.getByRole('textbox', { name: 'New video title' });
+      await expect(title).toBeFocused();
+      await title.fill('Workflow acceptance project');
+      await title.press('Enter');
+      const created = page.getByRole('listitem', { name: 'Workflow acceptance project', exact: true });
+      await expect(created).toBeVisible();
+      await expect(created.getByRole('button', { name: 'Write script', exact: true })).toBeVisible();
+      expect(JSON.parse(fs.readFileSync(path.join(profile, 'media-jobs.json'), 'utf8'))
+        .filter((job: { title: string }) => job.title === 'Workflow acceptance project')).toHaveLength(1);
+      await expect(title).toHaveValue('');
+      const recovery = page.getByRole('listitem', { name: 'Interrupted project', exact: true });
+      await recovery.getByRole('button', { name: /Resume at/ }).click();
+      await expect(recovery.getByRole('button', { name: 'Record narration', exact: true })).toBeVisible();
+      expect(JSON.parse(fs.readFileSync(path.join(profile, 'media-jobs.json'), 'utf8'))
+        .find((job: { id: string }) => job.id === 'recover').state).toBe('media_production');
+      await page.getByRole('button', { name: 'Start a new video' }).click();
+      const disclosure = page.getByText('Explore Studio tools', { exact: true });
+      await disclosure.press('Enter');
+      const storyboardTool = page.getByRole('region', { name: 'Studio Quick Launch' })
+        .getByRole('button', { name: /^Storyboard/ });
+      await storyboardTool.scrollIntoViewIfNeeded();
+      const toolText = page.getByRole('region', { name: 'Studio Quick Launch' }).locator('.ms-hub-info');
+      await expect(toolText).toHaveCount(5);
+      for (const info of await toolText.all()) {
+        expect((await info.boundingBox())!.width).toBeGreaterThan(100);
+      }
+      await page.mouse.move(0, 0);
+      await page.screenshot({ path: testInfo.outputPath('studio-tools-expanded.png') });
+      await storyboardTool.press('Space');
+      await expect(page.getByRole('tab', { name: /Storyboard/ })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('region', { name: 'Visual Storyboard Deck' })).toContainText('Playback board');
+      await page.getByRole('tab', { name: /Projects/ }).click();
+      await page.getByRole('button', { name: 'Start a new video' }).click();
+      await page.mouse.move(0, 0);
+      await page.screenshot({ path: testInfo.outputPath('studio-create.png') });
+      const originalBounds = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(820, 740));
+      await expect.poll(() => page.locator('.media-studio').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath('studio-narrow.png') });
+      await app.evaluate(({ BrowserWindow }, bounds) => BrowserWindow.getAllWindows()[0].setBounds(bounds), originalBounds);
+      await page.getByRole('button', { name: 'Open Movie preview: Playback first', exact: true }).click();
+    }
     // First verify actual audio coordination before exercising the new lazy UI.
     // This reaches the autoplay/overlap regression on the unchanged baseline too.
     const first = page.getByTestId('ms-video-first');
@@ -142,7 +202,7 @@ require('electron').app.whenReady().then(()=>{
     await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
     await expect(page.getByRole('button', { name: 'Enter timeline fullscreen' })).toBeVisible();
-    await page.getByRole('tab', { name: /Director Console/ }).click();
+    await page.getByRole('tab', { name: /Projects/ }).click();
     await expect(sample).toBeVisible();
     await expect.poll(() => sample.evaluate((audio: HTMLAudioElement) => audio.readyState)).toBeGreaterThanOrEqual(2);
     expect(await sample.evaluate((audio: HTMLAudioElement) => ({ paused: audio.paused, autoplay: audio.autoplay, time: audio.currentTime }))).toEqual({ paused: true, autoplay: false, time: 0 });
@@ -177,6 +237,7 @@ require('electron').app.whenReady().then(()=>{
     await dialog.getByRole('button', { name: 'Close Animatic Player', exact: true }).click();
     expect(await narrationHandle!.evaluate((audio: HTMLAudioElement) => ({ paused: audio.paused, source: audio.getAttribute('src') }))).toEqual({ paused: true, source: null });
     fs.writeFileSync(testInfo.outputPath('playback-evidence.json'), JSON.stringify({ home,
+      workflowVerified: process.env.HOMEBOT_STUDIO_WORKFLOW_LIVE === '1',
       mainSha256: createHash('sha256').update(fs.readFileSync(entry)).digest('hex'),
       movieSha256: createHash('sha256').update(fs.readFileSync(movie)).digest('hex'),
       network: await app.evaluate(() => (globalThis as any).playbackNetwork),

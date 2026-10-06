@@ -66,7 +66,7 @@ describe('Media Studio timeline media wiring', () => {
       mediaTrimClip: jest.fn().mockResolvedValue({ ok: true, result: { path: '/mock/trimmed.mp4' } }),
     };
     await act(async () => { render(<MediaStudioPanel />); });
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /Timeline/i })); });
 
     const video = screen.getByLabelText('Timeline video preview');
     const src = video.getAttribute('src') || '';

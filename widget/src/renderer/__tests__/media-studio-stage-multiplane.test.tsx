@@ -156,7 +156,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
       render(<MediaStudioPanel />);
     });
 
-    const stageTab = screen.getByRole('tab', { name: /Stage Viewport/i });
+    const stageTab = screen.getByRole('tab', { name: /Stage/i });
     await act(async () => {
       fireEvent.click(stageTab);
     });
@@ -177,7 +177,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
 
     // Select custom setting
@@ -199,7 +199,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
 
     // Click Slow Pan motion
@@ -231,7 +231,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
 
     // Select setting first
@@ -279,7 +279,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
       render(<MediaStudioPanel />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
@@ -303,7 +303,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
       render(<MediaStudioPanel />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
@@ -322,7 +322,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
       render(<MediaStudioPanel />);
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /Stage Viewport/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Stage/i }));
     });
     await act(async () => {
       fireEvent.change(screen.getByLabelText('Active Setting Plate'), { target: { value: 'throne_room' } });
@@ -364,7 +364,7 @@ describe('Media Studio Stage MultiPlane & Series Settings Integration', () => {
     });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('tab', { name: /CapCut Timeline/i }));
+      fireEvent.click(screen.getByRole('tab', { name: /Timeline/i }));
     });
 
     // Switch to transitions tab

@@ -14,6 +14,25 @@ No shared dependency rebuild/install; no existing delivered build modifications.
 One guarded test/build at a time. Other sessions' processes and held PRs preserved.
 This is an active implementation claim, not a completion or verification claim.
 
+## 2026-10-07 — STUDIO-WORKFLOW-UI
+
+Codex root owns a focused Media Studio workflow/UI pass requested by Aden after
+playback #473: clearer navigation and next actions, accessible workspace entry,
+and less clutter before project creation/review. Isolated from main `7951c205`
+in `.homebot/studio-workflow-ui-20261007`, branch of the same task name under
+`claude/`. Scope is Studio renderer components/styles and relevant tests. The
+IDE completion team retains its separate scope. No provider calls, generation,
+publication or owner profile changes. Root owns serial guarded verification and
+publication. Source editing is released to root integration. TypeScript, scoped
+lint, fresh build and 201 affected tests pass. Compiled Electron acceptance passes
+1/1 with zero retries, including actual saved creation/recovery and keyboard
+workspace loading; desktop/narrow screenshots inspected. Hosted CI/review,
+landing and separate delivery remain pending. Root additionally owns the focused
+streaming E2E cleanup follow-up after Windows shard 3 passed its streaming/UI
+assertions but leaked a mock server on timeout and failed worker teardown.
+Scope is streaming.e2e.spec.ts/mockUpstream.ts cleanup, no production streaming
+or IDE changes. Evidence: tasks/studio-workflow-ui.md.
+
 ## 2026-10-07 — STUDIO-PLAYBACK
 
 User requested agents fix the reviewed playback audit. Root owns serial integration
