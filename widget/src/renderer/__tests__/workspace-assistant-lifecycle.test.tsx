@@ -23,6 +23,7 @@ describe('IDE assistant lifecycle and approval controls', () => {
   const panel = (project = root) => <WorkspaceAssistantPanel root={project} files={[]} activePath={null} onClose={jest.fn()} selection={{ path: `${project}/app.ts`, text: 'selected UNSAVED' }} terminalOutput="terminal result 42" />;
   const send = async (text: string) => {
     fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: text } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   };
   test('closing retains transcript, cancels its active stream, and isolates a different project', async () => {

@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { WorkspaceAiSelection, WorkspaceAiTurn } from '../../../shared/workspace-ai-types';
-import { assistantTurns, flushAssistantTurns, subscribeAssistantTurns, updateAssistantTurns } from './workspace-assistant-session';
+import { assistantTurns, assistantSessionState, flushAssistantTurns, retryAssistantSession, subscribeAssistantTurns, updateAssistantTurns, type AssistantSessionState } from './workspace-assistant-session';
 
 export interface WorkspaceOpenFile { path: string; name: string; content: string; language: string }
 
@@ -56,6 +56,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const [question, setQuestion] = useState('');
   const [attached, setAttached] = useState<Attachment[]>([]);
   const [turns, setTurns] = useState<WorkspaceAiTurn[]>(() => assistantTurns(root));
+  const [history, setHistory] = useState<AssistantSessionState>(() => assistantSessionState(root));
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
   const [plan, setPlan] = useState<{ id: string; text: string; approved: boolean } | null>(null);
@@ -77,9 +78,9 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
   const changeTurns = (update: (previous: WorkspaceAiTurn[]) => WorkspaceAiTurn[]) => updateAssistantTurns(root, update, api);
   useEffect(() => {
     viewIdentity.current += 1;
-    setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]); setStreamingId(null); setClearing(false);
+    setQuestion(''); setPlanText(''); setPlan(null); setAttached([]); setNote(null); setRules([]); setActivity([]); setStreamingId(null); setClearing(false);
     let active = true;
-    const remove = subscribeAssistantTurns(root, setTurns, api, message => { if (active) setNote(message); });
+    const remove = subscribeAssistantTurns(root, setTurns, api, undefined, state => { if (active) setHistory(state); });
     api?.workspaceAiRules?.(root).then((res: any) => { if (active && res?.success) setRules(res.rules || []); }).catch(() => {});
     const refreshMcp = () => api?.workspaceAiMcpStatus?.().then((res: any) => { if (active && res?.success) setServers(res.servers || []); }).catch(() => {});
     refreshMcp();
@@ -105,7 +106,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
 
   const send = async () => {
     const text = question.trim();
-    if (!text || busy.current) return;
+    if (!text || busy.current || assistantSessionState(root).phase !== 'ready') return;
     const owner = {}, identity = viewIdentity.current;
     operationOwner.current = owner;
     const ownsView = () => operationOwner.current === owner && viewIdentity.current === identity;
@@ -214,7 +215,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     } catch (error) { if (viewIdentity.current === identity) setNote((error as Error).message); }
   };
   const clearConversation = async () => {
-    if (busy.current || activeStreamId.current) return;
+    if (busy.current || activeStreamId.current || assistantSessionState(root).phase !== 'ready') return;
     const identity = viewIdentity.current;
     const owner = {}; operationOwner.current = owner;
     busy.current = true; setClearing(true); setNote(null);
@@ -254,6 +255,8 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       </div>
 
       <div className="ws-assistant-composer">
+        {history.phase === 'loading' && <p role="status">Restoring conversation history before sending.</p>}
+        {history.phase === 'error' && <div><p role="alert">{history.error} Sending and clearing are paused to preserve saved history.</p><button type="button" onClick={() => void retryAssistantSession(root, api)}>Retry history recovery</button></div>}
         {note && <p role="status">{note}</p>}
         <details><summary>Plan and project instructions</summary>
           <p>{rules.length ? `Loaded ${rules.length} project instruction file(s).` : 'No project instruction files found.'}</p>
@@ -275,7 +278,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
           <p>Your home folder is available by default. Other folders require the native Open project picker.</p>
           {trustedFolders.length ? trustedFolders.map(folder => <div key={folder}><span>{folder}</span><button type="button" onClick={() => void revokeFolder(folder)}>Remove project access</button></div>) : <p>No project folders outside your home have been granted access.</p>}
         </details>
-        <button type="button" disabled={!!streamingId || clearing} onClick={() => void clearConversation()}>Clear conversation history</button>
+        <button type="button" disabled={!!streamingId || clearing || history.phase !== 'ready'} onClick={() => void clearConversation()}>Clear conversation history</button>
         <p>History is saved on this PC when HomeBot conversation history saving is enabled. Closing the assistant stops its active response.</p>
         {attached.length > 0 && (
           <ul className="ws-assistant-chips" aria-label="Attached context">
@@ -303,7 +306,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
         <div className="ws-assistant-actions">
           {streamingId
             ? <button type="button" className="sp-btn" onClick={() => cancelActive.current?.()}>Stop</button>
-            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim() || clearing}>Send</button>}
+            : <button type="button" className="sp-btn" onClick={() => void send()} disabled={!question.trim() || clearing || history.phase !== 'ready'}>Send</button>}
         </div>
       </div>
     </section>
