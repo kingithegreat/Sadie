@@ -20,7 +20,8 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
   pendingApps.add(app);
   const pending = (async () => {
     const child = app.process(); const state = { stderr: '', stdout: '', entry } as State;
-    app.on?.('close', () => { state.transportClosed = true; });
+    const releaseCompleted = () => { if (state.transportClosed && state.nativeExit) pendingApps.delete(app); };
+    app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
     child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); });
     child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); });
     const info = await app.evaluate(({ dialog }) => {
@@ -56,7 +57,7 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
       return { pid: process.pid, ppid: process.ppid, execPath: process.execPath };
     });
     state.monitor = await monitorNativeApp(info, child, entry);
-    void state.monitor.exit.then(exit => { state.nativeExit = exit; }).catch(() => {});
+    void state.monitor.exit.then(exit => { state.nativeExit = exit; releaseCompleted(); }).catch(() => {});
     return state;
   })();
   states.set(app, pending); await pending;
@@ -84,13 +85,20 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     state = await bounded(states.get(app)!, deadline - Date.now(), 'Native Electron launch identity unavailable');
     receipt.native = { ...state.monitor.info, creation: state.monitor.creation }; receipt.launcherPid = app.process().pid;
     if (!state.nativeExit) {
-      tree = await bounded(state.monitor.snapshot(), Math.min(4000, deadline - Date.now()), 'Native owned-tree snapshot exceeded its bound'); receipt.ownedTree = tree;
+      try { tree = await bounded(state.monitor.snapshot(), Math.min(4000, deadline - Date.now()), 'Native owned-tree snapshot exceeded its bound'); receipt.ownedTree = tree; }
+      catch (snapshotError) {
+        // Native may have exited just before the snapshot while its observer's
+        // stdout receipt is still queued. Require that same held OS exit proof.
+        try { state.nativeExit = await bounded(state.monitor.exit, Math.min(1000, deadline - Date.now()), 'Native exit receipt not available after snapshot failure'); receipt.snapshotFailure = String(snapshotError); }
+        catch { throw snapshotError; }
+      }
       // app.close disposes transport before a production refusal can be diagnosed.
-      await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
+      if (!state.nativeExit) await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
     }
     receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit within close budget');
     if ((receipt.nativeExit as { code: number | null }).code !== 0) throw new Error('Actual Electron main exited with a nonzero OS code.');
     receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
+    receipt.verificationScope = tree ? 'captured-owned-tree' : 'native-main';
     if (!receipt.capturedIdentitiesGone) throw new Error('Captured owned processes remain alive after native main exit.');
     if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
     receipt.elapsed = Date.now() - started; receipt.graceful = true; persist();

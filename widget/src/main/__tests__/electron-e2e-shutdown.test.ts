@@ -14,7 +14,7 @@ function fixture() {
   const monitor = { info: { pid: 100, ppid: 200, execPath: 'electron.exe' }, creation: tree[0].creation, exit: nativeExit, snapshot: jest.fn(async () => tree), verify: jest.fn(async () => true), cleanup: jest.fn(async () => { finish({ code: 1 }); return { stopped: true, attempted: true, receipt: tree }; }), dispose: jest.fn() };
   (monitorNativeApp as jest.Mock).mockResolvedValue(monitor);
   const production = { helpers: [{ purpose: 'identity', error: { killed: true, signal: 'SIGTERM' }, duration: 1800, stdout: '' }], refusals: [{ message: 'A running IDE program could not be stopped.' }] };
-  const app = { process: () => child, evaluate: jest.fn().mockResolvedValueOnce(monitor.info).mockImplementation(async (run: Function) => String(run).includes('setImmediate') ? undefined : production), close: jest.fn(async () => {}) } as any;
+  const app = Object.assign(new EventEmitter(), { process: () => child, evaluate: jest.fn().mockResolvedValueOnce(monitor.info).mockImplementation(async (run: Function) => String(run).includes('setImmediate') ? undefined : production), close: jest.fn(async () => {}) }) as any;
   return { app, child, monitor, tree, finish, production };
 }
 test('actual native exit precedes transport close; wrapper disappearance is not the oracle', async () => {
@@ -61,4 +61,18 @@ test('native main exit zero cannot hide an owned descendant that remains alive',
   await expect(closeElectronApp(f.app)).rejects.toThrow(/owned processes remain alive/);
   expect(f.monitor.cleanup).toHaveBeenCalled();
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(false);
+});
+test('apps using direct close leave no pending cleanup after both actual exit and transport close', async () => {
+  const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  f.finish({ code: 0 }); await Promise.resolve(); f.app.emit('close');
+  await closeRemainingElectronApps(); expect(f.app.close).not.toHaveBeenCalled();
+  await closeElectronApp(f.app); // The cached OS oracle remains available.
+  expect(f.monitor.cleanup).not.toHaveBeenCalled();
+});
+test('snapshot disappearance waits for the original held OS exit receipt, never a guessed PID', async () => {
+  const f = fixture(); f.monitor.snapshot.mockImplementation(async () => { f.finish({ code: 0 }); throw new Error('main disappeared before snapshot'); });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); await closeElectronApp(f.app);
+  expect(f.monitor.cleanup).not.toHaveBeenCalled(); expect(f.child.kill).not.toHaveBeenCalled();
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt).toMatchObject({ graceful: true, verificationScope: 'native-main', nativeExit: { code: 0 } }); expect(receipt.snapshotFailure).toContain('main disappeared');
 });
