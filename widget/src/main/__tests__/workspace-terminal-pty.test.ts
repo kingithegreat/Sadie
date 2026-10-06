@@ -6,6 +6,7 @@ import * as path from 'path';
 import { WorkspacePtySessions } from '../workspace-terminal-pty';
 import type { WorkspacePtyStopResult } from '../workspace-pty-force-stop';
 import type { WorkspacePtyIdentity } from '../workspace-pty-identity';
+const windowsTest = process.platform === 'win32' ? test : test.skip;
 let folder: string;
 beforeEach(() => { folder = fs.mkdtempSync(path.join(os.homedir(), 'homebot-pty-')); });
 afterEach(() => { fs.rmSync(folder, { recursive: true, force: true }); });
@@ -68,8 +69,7 @@ test('unproven force Stop keeps the live session and never reports successful Cl
   app.force.mockResolvedValue({ stopped: true, attempted: false }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
 });
 
-test('unknown startup identity guides manual exit, stays writable and never recaptures a PID on Retry', async () => {
-  if (process.platform !== 'win32') return;
+windowsTest('unknown startup identity guides manual exit, stays writable and never recaptures a PID on Retry', async () => {
   const app = setup(false, false, { original: undefined });
   app.force.mockResolvedValue({ stopped: false, attempted: false });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -117,7 +117,7 @@ test('natural root exit before any force effect does not create a permanent Clos
 
 test('corrupted force evidence cannot forget uncertainty after a later root exit', async () => {
   const app = setup(); app.force.mockResolvedValue({ stopped: false, attempted: true });
-  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/could not be confirmed/);
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/Stop evidence was corrupted or lost/);
   app.exit({ exitCode: 1 });
   await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/evidence was corrupted or lost/);
 });
