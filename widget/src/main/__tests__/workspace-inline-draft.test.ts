@@ -15,7 +15,7 @@ jest.mock('../window-manager', () => ({ getMainWindow: () => mockWindow }));
 jest.mock('../user-paths', () => ({ homeDir: () => mockHome || require('os').tmpdir() }));
 jest.mock('../config-manager', () => ({ getSettings: () => ({
   ollamaUrl: mockOllama, chatModel: 'qwen2.5:7b', codeModel: 'qwen2.5:7b', uncensoredModel: 'qwen2.5:7b',
-  saveConversationHistory: false, allowAutoTools: true, enableSmartRouting: false, toolRouting: false,
+  saveConversationHistory: false, allowAutoTools: true, enableSmartRouting: false, toolRouting: false, morningBriefing: true,
   useCustomLLM: mockProvider !== 'ollama',
   customLLM: mockProvider === 'cloud' ? { enabled: true, name: 'Loopback provider', provider: 'openai', model: 'gpt-4o', apiUrl: mockOllama, apiKey: 'fixture-not-a-secret' } : undefined,
   codeApiKey: mockProvider === 'code' ? 'fixture-not-a-secret' : '', codeApiProvider: 'openai', codeApiUrl: mockOllama,
@@ -25,7 +25,7 @@ jest.mock('../memory-manager', () => ({ MemoryManager: {
   getConversation: jest.fn(id => String(id).startsWith('workspace:') ? { messages: [{ role: 'assistant', content: 'PRIVATE_ASSISTANT_HISTORY', streamingState: 'finished' }] } : null),
   saveConversation: jest.fn(), addMessageToConversation: jest.fn(),
 } }));
-jest.mock('../mcp-client', () => ({ getMcpTools: () => [], seedMcpDefaults: jest.fn(), discoverExternalMcpServers: jest.fn(), initializeMcpServers: jest.fn() }));
+jest.mock('../mcp-client', () => ({ getMcpTools: () => [], seedMcpDefaults: jest.fn(), discoverExternalMcpServers: jest.fn(), initializeMcpServers: jest.fn(async () => {}) }));
 import { registerMessageRouter, setUncensoredMode } from '../message-router';
 import { approveWorkspacePlan, prepareWorkspacePlan, runWorkspaceRequest, currentWorkspace, workspaceToolError } from '../workspace-context';
 import { registerTool, getTool } from '../tools/registry';
@@ -90,6 +90,7 @@ describe('actual inline draft IPC through the real model HTTP boundary', () => {
     expect(prompt).toContain(fs.realpathSync(root)); expect(prompt).toContain('Return only the requested replacement source code');
     expect(prompt).not.toContain('Read-only planning'); expect(prompt).not.toContain('PRIVATE_ASSISTANT_HISTORY');
     expect(sends.filter(send => send.channel === 'homebot:stream-error')).toEqual([]);
+    expect(sends.filter(send => send.channel === 'homebot:stream-chunk').map(send => send.payload.chunk).join('')).not.toContain('briefing');
     expect(sends.filter(send => send.channel === 'homebot:stream-chunk').map(send => send.payload.chunk).join('')).toContain('const renamed = 1;');
     expect(fs.readFileSync(file, 'utf8')).toBe('const original = 1;\r\n');
   });

@@ -22,8 +22,9 @@ async function openEditor() {
   localStorage.setItem('homebot.code.editor.preferences.v1', JSON.stringify({ formatOnSave: true, tabSize: 2, fontSize: 13 }));
   const rendered = render(<WorkspaceShell open onClose={jest.fn()} />);
   fireEvent.click(await screen.findByText('Open example'));
-  await waitFor(() => expect(rendered.container.querySelector('.cm-content')).not.toBeNull());
-  const view = EditorView.findFromDOM(rendered.container.querySelector('.cm-editor') as HTMLElement)!;
+  // The real shell is a body portal, outside React Testing Library's container.
+  await waitFor(() => expect(rendered.baseElement.querySelector('.cm-content')).not.toBeNull());
+  const view = EditorView.findFromDOM(rendered.baseElement.querySelector('.cm-editor') as HTMLElement)!;
   return { view, workspaceSave, workspaceLanguage, disk: () => disk, finish: () => finish({ success: true, edits: [{ path: '/project/example.ts', expectedContent: original, changes: [{ start: 7, length: 1, text: ' = ' }] }] }) };
 }
 function save(view: EditorView) {

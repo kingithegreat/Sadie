@@ -3547,7 +3547,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // On the first interaction each calendar day, generate a proactive
         // weather + calendar + reminders summary and stream it before the
         // normal response.  Runs in the background so it doesn't block.
-        if (shouldInjectMorningBriefingForRequest(request)) {
+        if (currentWorkspace()?.mode !== 'inline-draft' && shouldInjectMorningBriefingForRequest(request)) {
           markBriefingDelivered(); // mark immediately to prevent double-trigger
           generateBriefing(requestConfirmation).then((briefing) => {
             if (briefing && activeStreams.has(streamId)) {
