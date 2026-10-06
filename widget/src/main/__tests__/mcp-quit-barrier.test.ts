@@ -26,7 +26,7 @@ function harness(keepExistingWindow = false) {
     }),
   };
   const otherCleanup = {
-    closeAllWorkspaceTasks: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
+    closeAllWorkspaceTasks: jest.fn(), stopCalendarHelpers: jest.fn(async () => {}), resumeCalendarHelpers: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
     disposeWorkspaceLanguageServices: jest.fn(), stopWorkspaceDebuggers: jest.fn(async () => {}), stopWorkspaceTestRuns: jest.fn(async () => {}),
     workspacePtySessions: { closeAll: jest.fn(async () => {}) },
     globalShortcut: { unregisterAll: jest.fn() }, supervisorHandle: { stop: jest.fn() },
@@ -100,6 +100,21 @@ test('native quit waits for package task ownership and keeps the renderer availa
   h.app.quit(); await settle();
   expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(2);
   expect(h.nativeQuits()).toBe(1);
+});
+
+test('unconfirmed calendar helper close blocks native quit and resumes admission only after refusal', async () => {
+  const h = harness(true);
+  const error = new Error('calendar child close unconfirmed');
+  h.otherCleanup.stopCalendarHelpers.mockRejectedValueOnce(error);
+  h.app.quit(); h.resolve(); await settle();
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(1);
+  expect(h.otherCleanup.stopCalendarHelpers).toHaveBeenCalledTimes(2);
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
 });
 
 test('unconfirmed owned runtime cleanup runs every other cleanup and keeps the app available for retry', async () => {

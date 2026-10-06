@@ -29,6 +29,7 @@ import { registerWorkspaceTaskIpc } from './workspace-task-ipc';
 import { registerWorkspaceTerminalIpc } from './workspace-terminal-ipc';
 import { workspacePtySessions } from './workspace-terminal-pty';
 import { closeAllWorkspaceTasks } from './workspace-tasks';
+import { stopCalendarHelpers, resumeCalendarHelpers } from './calendar-helpers';
 import { registerProblemReportIpc } from './problem-report-ipc';
 import { registerWhisperIpc } from './speech/whisper-ipc';
 import { startAssistantBridge, stopAssistantBridge, CODING_TOOLS } from './assistant-bridge';
@@ -683,7 +684,7 @@ app.on('before-quit', event => {
   // native quit only once cleanup settles; repeated quit requests share it.
   let runtimeReady = true;
   Promise.resolve().then(async () => {
-    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks];
+    const cleanupJobs = [shutdownMcpServers, stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks, stopCalendarHelpers];
     const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
@@ -694,8 +695,9 @@ app.on('before-quit', event => {
   }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
     if (!runtimeReady) {
       mcpQuitPending = false;
-      void dialog.showMessageBox({ type: 'error', message: 'A running IDE program could not be stopped.',
-        detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, debugger or tests panel.',
+      resumeCalendarHelpers();
+      void dialog.showMessageBox({ type: 'error', message: 'A running HomeBot program could not be stopped.',
+        detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, tasks, debugger or tests panel.',
         buttons: ['Try closing again', 'Keep HomeBot open'], defaultId: 1, cancelId: 1,
       }).then(result => {
         if (result.response === 0) app.quit();
