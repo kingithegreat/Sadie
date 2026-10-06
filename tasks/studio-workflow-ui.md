@@ -35,6 +35,12 @@ wrap long actions and adapt at narrower widths.
   visual specs now check all four real workflow count labels, current approval
   guidance and the reachable tool disclosure. Final hosted checks must qualify
   this follow-up head; a rerun of the old assertions is not a resolution.
+- Final local theme/visual follow-up passed 2/2 with zero retries against the
+  accepted compiled copy, including dark/light theme checks and Storyboard entry.
+  Its initial run timed out and required cleanup of the identified owned runner;
+  both specs now use the existing bounded Electron-close helper. The final run
+  closed naturally within its budget. Evidence: `workflow-theme-bounded-results`
+  and `workflow-theme-bounded-junit.xml`; the earlier run remains retained.
 
 Evidence: `C:/Users/adenk/.homebot/workflow-ui-tests.json`,
 `workflow-ui-baseline-results`, `workflow-ui-compact-results` (intermediate),

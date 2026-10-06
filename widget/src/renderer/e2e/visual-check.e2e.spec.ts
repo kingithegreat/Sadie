@@ -14,6 +14,7 @@ import path from 'path';
 import os from 'os';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
+import { closeElectronApp } from './helpers/closeApp';
 
 const OUT = path.resolve(__dirname, '../../../test-results/visual');
 
@@ -73,6 +74,6 @@ test.describe('visual check', () => {
     await page.screenshot({ path: path.join(OUT, '3-browser.png') });
 
     console.log('screenshots written to', OUT);
-    await app.close();
+    await closeElectronApp(app, 'visual check');
   });
 });

@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { launchFocusedStudioApp as launchElectronApp } from './helpers/focusStudioWindow';
 import { dismissFirstRun } from './helpers/firstRun';
+import { closeElectronApp } from './helpers/closeApp';
 
 async function checkStudioPalette(page: Page) {
   const colours = await page.evaluate(() => {
@@ -109,6 +110,6 @@ test('theme remains coherent across reachable chat, settings and Studio', async 
     expect(focus.outline).toBe('solid');
     expect(focus.physicalWidth).toBeGreaterThanOrEqual(2);
   } finally {
-    await app.close();
+    await closeElectronApp(app, 'UI harmony');
   }
 });
