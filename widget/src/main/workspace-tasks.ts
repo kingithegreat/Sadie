@@ -90,13 +90,17 @@ export function resolveWorkspaceTaskProject(projectDir: unknown): { projectDir: 
   if (!stat.isDirectory()) throw new Error('The selected project path is not a folder.');
 
   const packageJsonPath = path.join(project, 'package.json');
+  // The trust resolver can preserve a Windows 8.3 spelling. Compare both
+  // existing filesystem identities with the native resolver, while keeping
+  // the trusted/display root unchanged for later authority validation.
+  const comparisonRoot = canonicalExistingPath(project);
   let packageReal: string;
   try {
     packageReal = canonicalExistingPath(packageJsonPath);
   } catch {
     throw new Error('No package.json was found in this project folder.');
   }
-  if (!isWithin(project, packageReal) || !fs.statSync(packageReal).isFile()) {
+  if (!isWithin(comparisonRoot, packageReal) || !fs.statSync(packageReal).isFile()) {
     throw new Error('The project package.json must be a file inside the project folder.');
   }
   return { projectDir: project, packageJsonPath: packageReal };
@@ -216,12 +220,13 @@ function resolveProblemPath(projectDir: string, rawPath: string, rawBase = proje
   // cwd-relative paths. Resolve them against the raw project root the request
   // came from too, so the click returns a path the renderer's own lexical
   // HOME sandbox can open (junction/8.3/symlink homes make raw != realpath).
-  const lexical = path.resolve(projectDir, cleaned);
-  if (!isWithin(projectDir, lexical)) return null;
   try {
+    const comparisonRoot = canonicalExistingPath(projectDir);
     const real = canonicalExistingPath(path.resolve(rawBase, cleaned));
-    if (!isWithin(projectDir, real) || !fs.statSync(real).isFile()) return null;
-    const file = path.relative(projectDir, real) || path.basename(real);
+    // Absolute diagnostics may use a long path while cwd uses its short alias.
+    // Canonical containment still rejects every missing/outside/junction target.
+    if (!isWithin(comparisonRoot, real) || !fs.statSync(real).isFile()) return null;
+    const file = path.relative(comparisonRoot, real) || path.basename(real);
     // Raw form of the SAME verified real file; rawBase defaults to projectDir,
     // where raw == canonical and this returns exactly the old value.
     return { path: path.join(rawBase, file), file };

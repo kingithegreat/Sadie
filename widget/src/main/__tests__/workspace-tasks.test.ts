@@ -80,6 +80,48 @@ test('canonical project validation rejects a junction that escapes home', () => 
   fs.rmSync(outside, { recursive: true, force: true });
 });
 
+test('native task containment accepts a trusted alias spelling and still rejects an outside diagnostic junction', () => {
+  fs.writeFileSync(path.join(project, 'broken.ts'), 'const ok = true;\nconst answer: string = 42;\n');
+  const alias = path.join(home, 'trusted-alias');
+  fs.symlinkSync(project, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const trust = require('../workspace-trust');
+  const validate = trust.validateTrustedWorkspaceRoot;
+  // Windows's JS realpath can keep an 8.3 spelling while native realpath expands
+  // it. Reproduce that contract portably with a REAL alias, after actual trust
+  // validation succeeds; no filesystem or permission checks are mocked away.
+  const retainedSpelling = jest.spyOn(trust, 'validateTrustedWorkspaceRoot').mockImplementation((input: unknown) => {
+    const checked = validate(input);
+    return input === alias ? alias : checked;
+  });
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-task-outside-'));
+  try {
+    const listing = listWorkspacePackageTasks(alias);
+    expect(listing).toMatchObject({ success: true, projectDir: alias, tasks: expect.arrayContaining([expect.objectContaining({ name: 'check' })]) });
+    const snapshot = prepareWorkspacePackageTask(alias, 'check');
+    expect(snapshot.projectDir).toBe(alias);
+    expect(snapshot.packageJsonPath).toBe(fs.realpathSync.native(path.join(project, 'package.json')));
+    const parser = new WorkspaceTaskDiagnosticParser(snapshot.projectDir, alias);
+    parser.push('stdout', 'broken.ts(2,7): error TS2322: Relative diagnostic\n');
+    parser.push('stdout', `${fs.realpathSync.native(path.join(project, 'broken.ts'))}(2,7): error TS2322: Long absolute diagnostic\n`);
+    fs.writeFileSync(path.join(outside, 'secret.ts'), 'private');
+    fs.symlinkSync(outside, path.join(project, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
+    parser.push('stdout', 'escape/secret.ts(1,1): error TS1: Outside junction\n');
+    const problems = parser.finish();
+    expect(problems).toHaveLength(3);
+    for (const problem of problems.slice(0, 2)) {
+      expect(problem).toMatchObject({ file: 'broken.ts', path: path.join(alias, 'broken.ts'), line: 2 });
+      expect(problem.clickable).not.toBe(false);
+      expect(fs.realpathSync.native(problem.path)).toBe(fs.realpathSync.native(path.join(project, 'broken.ts')));
+    }
+    expect(problems[2]).toMatchObject({ path: '', clickable: false, code: 'TS1' });
+    expect(fs.readFileSync(path.join(outside, 'secret.ts'), 'utf8')).toBe('private');
+  } finally {
+    retainedSpelling.mockRestore();
+    fs.rmSync(path.join(project, 'escape'), { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('parses chunked ANSI TypeScript and ESLint output but rejects outside files', () => {
   const parser = new WorkspaceTaskDiagnosticParser(fs.realpathSync.native(project));
   parser.push('stdout', '\u001b[31mbroken.ts(1,7): err');
