@@ -27,6 +27,7 @@ function makeMockWindowInstance() {
       },
       on: jest.fn(),
       openDevTools: jest.fn(),
+      getURL: jest.fn(),
     },
   };
   return inst;
@@ -226,4 +227,43 @@ describe('createMainWindow — permission handler', () => {
       expect(cb).toHaveBeenCalledWith(false);
     }
   );
+
+  test('allows fullscreen for the exact app main frame, including hash navigation', () => {
+    loadModule();
+    createMainWindow();
+    const appUrl = require('url').pathToFileURL(mockWindowInstance.loadFile.mock.calls[0][0]).href;
+    mockWindowInstance.webContents.getURL.mockReturnValue(`${appUrl}#studio`);
+    const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+    const cb = jest.fn();
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: `${appUrl}#studio` });
+    expect(cb).toHaveBeenCalledWith(true);
+  });
+
+  test.each(['foreign contents', 'subframe', 'different file', 'remote URL', 'different loaded URL', 'missing details'])(
+    'denies fullscreen from %s', (kind) => {
+      loadModule();
+      createMainWindow();
+      const appUrl = require('url').pathToFileURL(mockWindowInstance.loadFile.mock.calls[0][0]).href;
+      mockWindowInstance.webContents.getURL.mockReturnValue(kind === 'different loaded URL' ? 'https://example.invalid/' : appUrl);
+      const details = { isMainFrame: kind !== 'subframe', requestingUrl:
+        kind === 'different file' ? appUrl.replace('index.html', 'other.html') : kind === 'remote URL' ? 'https://example.invalid/' : appUrl };
+      const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+      const cb = jest.fn();
+      handler(kind === 'foreign contents' ? { getURL: () => appUrl } : mockWindowInstance.webContents,
+        'fullscreen', cb, kind === 'missing details' ? undefined : details);
+      expect(cb).toHaveBeenCalledWith(false);
+    }
+  );
+
+  test('allows the configured development renderer but not a prefix lookalike', () => {
+    loadModule({ isDev: true, rendererUrl: 'http://localhost:5173/' });
+    createMainWindow();
+    mockWindowInstance.webContents.getURL.mockReturnValue('http://localhost:5173/#studio');
+    const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+    const cb = jest.fn();
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: 'http://localhost:5173/#studio' });
+    expect(cb).toHaveBeenLastCalledWith(true);
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: 'http://localhost:5173.evil.invalid/' });
+    expect(cb).toHaveBeenLastCalledWith(false);
+  });
 });

@@ -1,5 +1,6 @@
 import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { isDevelopment } from './env';
 import { is } from '@electron-toolkit/utils';
 
@@ -73,8 +74,26 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Setting permission handlers...');
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Setting permission handlers'); } catch (e) { safeCatch(e); }
 
-  // Handle permission requests (microphone for speech recognition)
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+  const htmlPath = path.join(__dirname, '../renderer/index.html');
+  const trustedRendererUrl = is.dev && process.env['ELECTRON_RENDERER_URL']
+    ? process.env['ELECTRON_RENDERER_URL'] : pathToFileURL(htmlPath).href;
+  const isRendererUrl = (candidate: string | undefined) => {
+    if (!candidate) return false;
+    try {
+      const actual = new URL(candidate);
+      const expected = new URL(trustedRendererUrl);
+      actual.hash = ''; expected.hash = '';
+      return actual.href === expected.href;
+    } catch { return false; }
+  };
+  // Fullscreen belongs to the app's own top-level document, not other content
+  // sharing this session. Keep the existing speech permissions unchanged.
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    if (permission === 'fullscreen') {
+      callback(Boolean(mainWindow && webContents === mainWindow.webContents &&
+        details?.isMainFrame && isRendererUrl(details.requestingUrl) && isRendererUrl(webContents.getURL())));
+      return;
+    }
     const allowedPermissions = ['media', 'microphone', 'audioCapture'];
     if (allowedPermissions.includes(permission)) {
       callback(true);
@@ -94,7 +113,6 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
-  const htmlPath = path.join(__dirname, '../renderer/index.html');
   console.log('[WINDOW] Loading HTML from:', htmlPath);
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] [WINDOW] Loading HTML from: ${htmlPath}`); } catch (e) { safeCatch(e); }
 

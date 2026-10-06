@@ -1,0 +1,32 @@
+.ms-fullscreen-monitor .ms-monitor-transport {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0.5rem;
+}
+.ms-fullscreen-monitor .ms-monitor-transport input { flex: 1; min-width: 0; }
+.ms-fullscreen-monitor:fullscreen {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  background: #080b10;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+.ms-fullscreen-monitor:fullscreen .ms-monitor-screen {
+  flex: 1;
+  min-height: 0;
+  aspect-ratio: auto;
+}
+.ms-fullscreen-monitor:fullscreen .ms-monitor-video,
+.ms-fullscreen-monitor:fullscreen .ms-monitor-img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain;
+}
+.ms-fullscreen-monitor:fullscreen .ms-monitor-transport { flex-shrink: 0; }

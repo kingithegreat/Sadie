@@ -10177,6 +10177,9 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   width: 100%;
   max-width: 22rem;
   height: 2rem;
+  /* Keep native controls usable when Studio's column is taller than its viewport. */
+  min-height: 2rem;
+  flex-shrink: 0;
 }
 
 /* The one-off video-engine download. Informational, not an error â€” nothing has
