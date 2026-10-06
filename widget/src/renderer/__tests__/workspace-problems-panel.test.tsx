@@ -36,6 +36,23 @@ test('shows an IPC failure and allows the selected task to be retried', async ()
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
+test('late restored status cannot replace a newly submitted watch task and Stop rejection is visible', async () => {
+  let restore!: (value: any) => void;
+  const run = jest.fn((_request: any) => new Promise(() => {}));
+  (window as any).electron = {
+    workspaceTaskList: async () => ({ success: true, tasks: [{ name: 'dev', command: 'watch' }] }),
+    workspaceTaskStatus: () => new Promise(resolve => { restore = resolve; }),
+    workspaceTaskRun: run, workspaceTaskStop: jest.fn().mockRejectedValue(new Error('disconnected')),
+  };
+  render(<ProblemsPanel root="C:/fixture" onOpenFile={jest.fn()} />);
+  await screen.findByRole('option', { name: 'dev' }); fireEvent.click(screen.getByText('Run'));
+  await act(async () => restore({ task: { projectDir: 'C:/fixture', taskId: 'old', scriptName: 'check', running: false } }));
+  expect(screen.getByRole('button', { name: 'Running…' })).toBeDisabled();
+  fireEvent.click(screen.getByText('Stop'));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not stop this task');
+  expect((window as any).electron.workspaceTaskStop).toHaveBeenCalledWith({ taskId: run.mock.calls[0][0].taskId });
+});
+
 test('live task output is shown before completion and Stop targets its current ID', async () => {
   let listener!: (event: any) => void; let finish!: (value: any) => void;
   const run = jest.fn((_request: any) => new Promise(resolve => { finish = resolve; })); const stop = jest.fn(async () => ({ success: true }));

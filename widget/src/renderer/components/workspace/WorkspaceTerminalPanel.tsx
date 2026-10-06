@@ -19,14 +19,16 @@ function TerminalPane({ session, visible, onError }: { session: ClientSession; v
   const api = (window as any).electron;
   useEffect(() => {
     if (!host.current) return;
+    let alive = true;
+    const report = (error: unknown, fallback: string) => { if (alive) onError(error instanceof Error ? error.message : fallback); };
     const terminal = new Terminal({ cursorBlink: true, scrollback: 5000, fontFamily: 'Consolas, monospace', fontSize: 13 });
     const addon = new FitAddon(); terminal.loadAddon(addon); terminal.open(host.current);
     emulator.current = terminal; fit.current = addon; terminal.write(session.info.output);
-    const input = terminal.onData(data => { void api?.workspaceTerminalWrite?.({ sessionId: session.info.sessionId, data }).then((r: any) => { if (!r?.success) onError(r?.error || 'Terminal input failed.'); }); });
-    const size = terminal.onResize(({ cols, rows }) => { if (cols >= 20 && rows >= 5) void api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows }); });
+    const input = terminal.onData(data => { void Promise.resolve(api?.workspaceTerminalWrite?.({ sessionId: session.info.sessionId, data })).then((r: any) => { if (alive && !r?.success) onError(r?.error || 'Terminal input failed.'); }).catch(e => report(e, 'Terminal input failed.')); });
+    const size = terminal.onResize(({ cols, rows }) => { if (cols >= 20 && rows >= 5) void Promise.resolve(api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows })).then((r: any) => { if (alive && !r?.success) onError(r?.error || 'Terminal resize failed.'); }).catch(e => report(e, 'Terminal resize failed.')); });
     const resize = new ResizeObserver(() => { if (host.current?.getBoundingClientRect().width) { try { addon.fit(); } catch { /* next resize */ } } });
     resize.observe(host.current);
-    return () => { resize.disconnect(); input.dispose(); size.dispose(); terminal.dispose(); emulator.current = null; fit.current = null; };
+    return () => { alive = false; resize.disconnect(); input.dispose(); size.dispose(); terminal.dispose(); emulator.current = null; fit.current = null; };
   // Each PTY owns one emulator; hiding tabs does not destroy it.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.info.sessionId]);
@@ -70,26 +72,30 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       }
       setSessions(prev => { const next = prev.map(s => s.info.sessionId === event.sessionId ? { ...s, events: boundedEvents([...s.events, event]), ...(event.type === 'exit' ? { exited: true, exitCode: event.exitCode } : {}) } : s); sessionsRef.current = next; return next; });
     });
-    void api?.workspaceTerminalProfiles?.().then((result: any) => {
+    void Promise.resolve(api?.workspaceTerminalProfiles?.()).then((result: any) => {
       if (!alive.current) return;
       if (!result?.success) { setError(result?.error || 'No shell profiles are available.'); return; }
       setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || ''); void create(result.profiles?.[0]?.id);
-    });
-    return () => { alive.current = false; off?.(); for (const session of sessionsRef.current) void api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId }); };
+    }).catch((e: unknown) => { if (alive.current) setError(e instanceof Error ? e.message : 'Could not load shell profiles.'); });
+    return () => { alive.current = false; off?.(); for (const session of sessionsRef.current) void Promise.resolve(api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main owns final window/quit cleanup. */ }); };
   // Project remount starts a fresh shell; user-entered cd stays in that shell.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, projectPath]);
   const closeSession = async (id: string) => {
+    try {
     const result = await api?.workspaceTerminalClose?.({ sessionId: id });
+    if (!alive.current) return;
     if (!result?.success) { setError(result?.error || 'Could not close that terminal.'); return; }
     const next = sessionsRef.current.filter(s => s.info.sessionId !== id); sessionsRef.current = next; setSessions(next); setActive(next[0]?.info.sessionId || '');
+    } catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : 'Could not close that terminal.'); }
   };
+  const interrupt = async () => { try { const r = await api?.workspaceTerminalInterrupt?.({ sessionId: active }); if (alive.current && !r?.success) setError(r?.error || 'Interrupt failed.'); } catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : 'Interrupt failed.'); } };
   const current = sessions.find(s => s.info.sessionId === active);
   return <section className="terminal-panel" aria-label="Interactive terminal" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
     <header style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 4 }}>
       <strong>Terminal</strong><select aria-label="Shell profile" value={profileId} onChange={e => setProfileId(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select>
       <button onClick={() => { void create(); }} disabled={creating || sessions.length >= 4 || !profileId}>{creating ? 'Opening…' : 'New terminal'}</button>
-      <button disabled={!current || current.exited} onClick={() => { void api?.workspaceTerminalInterrupt?.({ sessionId: active }).then((r: any) => { if (!r?.success) setError(r?.error || 'Interrupt failed.'); }); }}>Interrupt (Ctrl+C)</button>
+      <button disabled={!current || current.exited} onClick={() => { void interrupt(); }}>Interrupt (Ctrl+C)</button>
       {onSendToChat && <button disabled={!current} onClick={() => { if (current) onSendToChat(excerptForModel(current.info.output + current.events.map(e => e.data || '').join(''), { maxLines: 100, maxChars: 20000 })); }}>Attach output to assistant</button>}
       <button aria-label="Close terminal panel" onClick={onClose}>Close panel</button>
     </header>

@@ -18,10 +18,15 @@ export default function ProblemsPanel({
   const [output, setOutput] = useState('');
   const [longRunning, setLongRunning] = useState(false);
   const taskId = useRef<string | null>(null);
+  const lifecycle = useRef(0);
   const api = window.electron as any;
+  useEffect(() => { lifecycle.current++; return () => { lifecycle.current++; taskId.current = null; }; }, [root]);
 
   const refresh = useCallback(async () => {
+    const generation = lifecycle.current;
+    try {
     const result = await api.workspaceTaskList?.({ projectDir: root });
+    if (generation !== lifecycle.current) return;
     if (!result?.success) {
       setTasks([]);
       setSelected('');
@@ -31,6 +36,7 @@ export default function ProblemsPanel({
     setError('');
     setTasks(result.tasks || []);
     setSelected(current => result.tasks?.some(task => task.name === current) ? current : (result.tasks?.[0]?.name || ''));
+    } catch { if (generation === lifecycle.current) setError('Could not load package scripts. Select Refresh to try again.'); }
   }, [api, root]);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -38,13 +44,13 @@ export default function ProblemsPanel({
     let alive = true;
     taskId.current = null; setRunning(false); setOutput(''); setProblems([]);
     const update = (task: any) => {
-      if (!alive || task.projectDir !== root) return;
+      if (!alive || task.projectDir !== root || (taskId.current && taskId.current !== task.taskId)) return;
       taskId.current = task.taskId; setRunning(task.running); setSelected(task.scriptName);
       setOutput(task.outputExcerpt || ''); setProblems(task.problems || []);
       if (task.result?.error && !task.result.cancelled) setError(task.result.error);
     };
     const off = api?.onWorkspaceTaskEvent?.(update);
-    void api?.workspaceTaskStatus?.({ projectDir: root }).then((res: any) => { if (res?.task) update(res.task); });
+    void Promise.resolve(api?.workspaceTaskStatus?.({ projectDir: root })).then((res: any) => { if (res?.task) update(res.task); }).catch(() => { if (alive) setError('Could not restore the task status. Refresh or try again.'); });
     return () => { alive = false; off?.(); };
   }, [api, root]);
 
@@ -53,7 +59,7 @@ export default function ProblemsPanel({
     setRunning(true);
     setError('');
     setOutput('');
-    const submittedId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const submittedId = typeof globalThis.crypto?.randomUUID === 'function' ? globalThis.crypto.randomUUID() : `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     taskId.current = submittedId;
     try {
       const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected, taskId: taskId.current, longRunning });
@@ -71,6 +77,14 @@ export default function ProblemsPanel({
       if (taskId.current === submittedId) setRunning(false);
     }
   };
+  const stop = async () => {
+    const submittedId = taskId.current;
+    try {
+      const res = await api?.workspaceTaskStop?.({ taskId: submittedId });
+      if (taskId.current !== submittedId) return;
+      if (!res?.success) setError(res?.error || 'Could not stop this task.'); else onStatus?.('Stopping task…');
+    } catch { if (taskId.current === submittedId) setError('Could not stop this task. Try Stop again.'); }
+  };
 
   return (
     <div className="ws-problems">
@@ -81,7 +95,7 @@ export default function ProblemsPanel({
         </select>
         <button type="button" onClick={() => void run()} disabled={!selected || running}>{running ? 'Running…' : 'Run'}</button>
         <button type="button" onClick={() => void refresh()} disabled={running} aria-label="Refresh package scripts">Refresh</button>
-        {running && <button type="button" onClick={() => { void api?.workspaceTaskStop?.({ taskId: taskId.current }).then((res: any) => { if (!res?.success) setError(res?.error || 'Could not stop this task.'); else onStatus?.('Stopping task…'); }); }}>Stop</button>}
+        {running && <button type="button" onClick={() => { void stop(); }}>Stop</button>}
       </div>
       <label><input type="checkbox" checked={longRunning} disabled={running} onChange={e => setLongRunning(e.target.checked)} />Watch or dev server (runs until Stop)</label>
       <div className="ws-problems-consent">HomeBot shows the exact package.json command and npm lifecycle scripts before running anything.</div>

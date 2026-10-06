@@ -47,7 +47,8 @@ export function registerWorkspaceTaskIpc(): void {
   ipcMain.handle(WORKSPACE_TASK_CHANNELS.STATUS, (event, args: unknown) => {
     if (!trustedSender(event) || !objectArg(args) || typeof args.projectDir !== 'string') return { success: false, error: 'Invalid task status request.' };
     const found = [...records.values()].filter(r => r.owner === event.sender && path.resolve(r.state.projectDir) === path.resolve(String(args.projectDir)));
-    return { success: true, task: found[found.length - 1]?.state || null };
+    const running = found.filter(record => record.state.running);
+    return { success: true, task: (running[running.length - 1] || found[found.length - 1])?.state || null };
   });
 
   ipcMain.handle(WORKSPACE_TASK_CHANNELS.LIST, (event, args: unknown) => {
