@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
-import { workspacePtyLifecycle, type WorkspacePtyIdentity, type WorkspacePtyLifecycle } from './workspace-pty-identity';
+import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
 import { forceStopWorkspacePty } from './workspace-pty-force-stop';
 import { checkedWorkspacePath } from './workspace-files';
 import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../shared/workspace-terminal-types';
