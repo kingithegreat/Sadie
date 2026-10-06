@@ -40,6 +40,13 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   // rather than on a pricier tier the user never chose.
   'deepseek-chat': 'deepseek-v4-flash',
   'deepseek-reasoner': 'deepseek-v4-flash',
+  // Codex — the CLI rejects any explicit model id with a ChatGPT account
+  // (400 "not supported when using Codex with a ChatGPT account"), so these
+  // picker entries were removed. Saved settings naming one still work, because
+  // streamCodex no longer passes -m at all; mapping them to 'default' keeps the
+  // header and the reply badge from showing an id the picker no longer offers.
+  'gpt-5.1-codex': 'default',
+  'gpt-5.1': 'default',
 };
 
 export interface ModelMigration {

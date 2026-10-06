@@ -50,6 +50,7 @@ import { recommendLocalModelForTask } from '../shared/model-advisor';
 import { resolveTheme, followsSystem, systemPrefersDark } from '../shared/theme';
 import type { ResolvedTheme } from '../shared/theme';
 import type { ModelRecommendation } from '../shared/model-advisor';
+import { resetCliOnlyFields } from '../shared/provider-urls';
 
 // Types
 type Status = ConnectionStatus;
@@ -1354,12 +1355,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                   // changed the label and nothing else — opus kept answering.
                   ...(settings.customLLM ? {
                     customLLM: useCustom
-                      ? {
+                      ? resetCliOnlyFields({
                           ...settings.customLLM,
                           model,
                           provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
                           enabled: true,
-                        }
+                        }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider)
                       : { ...settings.customLLM, enabled: false }
                   } : {}),
                 };
@@ -1525,12 +1526,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             // changed the label and nothing else — opus kept answering.
             ...(settings.customLLM ? {
               customLLM: useCustom
-                ? {
+                ? resetCliOnlyFields({
                     ...settings.customLLM,
                     model,
                     provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
                     enabled: true,
-                  }
+                  }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider)
                 : { ...settings.customLLM, enabled: false }
             } : {}),
           };

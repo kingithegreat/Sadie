@@ -12,7 +12,7 @@ jest.mock('axios');
 import axios from 'axios';
 import { EventEmitter } from 'events';
 import { fetchAvailableCustomModels } from '../custom-llm-client';
-import { CURATED_METERED_MODELS } from '../../shared/subscription-models';
+import { CURATED_METERED_MODELS, CODEX_MODELS } from '../../shared/subscription-models';
 
 describe('chatTemperature reaches the wire', () => {
   // The knob is the feature: a slider that nothing reads is the defect this
@@ -179,5 +179,24 @@ describe('model picker fallback list (shared/subscription-models.ts)', () => {
       for (const m of models) expect(mainIds).toContain(m.id);
     }
     expect(axios.get).not.toHaveBeenCalled();
+  });
+});
+
+describe('Codex picker (shared/subscription-models.ts)', () => {
+  // The Codex CLI answers 400 "not supported when using Codex with a ChatGPT
+  // account" for any explicit model id, so streamCodex passes no -m flag and
+  // the picker must offer only 'default'. Offering anything else silently
+  // fell back to local Ollama while the badge claimed the cloud model.
+  test('offers only the id the CLI actually accepts', () => {
+    expect(CODEX_MODELS.map(m => m.id)).toEqual(['default']);
+  });
+
+  test('a settings file naming a removed codex id migrates to default', () => {
+    // Saved configs predate the prune; without a rename they keep an id the
+    // picker no longer shows, so the header and the reply badge disagree.
+    for (const dead of ['gpt-5.1-codex', 'gpt-5.1']) {
+      expect(RETIRED_MODEL_RENAMES[dead]).toBe('default');
+      expect(migrateRetiredModel(dead)).toEqual({ model: 'default', renamedFrom: dead });
+    }
   });
 });

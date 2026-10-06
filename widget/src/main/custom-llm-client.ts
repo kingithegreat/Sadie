@@ -1107,7 +1107,7 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
  *    granularity, not a bug here.
  */
 async function streamCodex(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, onChunk, onEnd, onError, signal } = options;
+  const { apiConfig, messages, onChunk, onEnd, onError, signal } = options;
 
   // Codex has no --system-prompt flag, so the system text is folded into the
   // prompt body. toClaudeCodeTranscript already does exactly that shaping.
@@ -1130,10 +1130,9 @@ async function streamCodex(options: StreamOptions): Promise<void> {
     '--skip-git-repo-check',
     // Don't leave session files behind for what is a chat turn.
     '--ephemeral',
+    // Codex with a ChatGPT account does not accept -m/--model; any explicit
+    // model id returns 400. Omit it entirely and let the CLI pick the entitled model.
   ];
-  // 'default' means "let the CLI choose what the plan allows" — pass nothing.
-  // Model ids come from CODEX_MODELS, never from user input.
-  if (model && model !== 'default') args.push('-m', model);
   // Sandbox is left at the CLI default (read-only). HomeBot's own permission
   // gate is the authority on side effects; a chat provider must not be able to
   // write files on its own.
