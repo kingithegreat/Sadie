@@ -3,6 +3,7 @@ import { RegisteredTool, ToolDefinition, ToolHandler } from './types';
 import { canonicalWorkspacePath, currentWorkspace, withinRoot, workspaceToolError } from '../workspace-context';
 import * as path from 'path';
 import { checkedTrustedWorkspacePath } from '../workspace-trust';
+import { getMainWindow } from '../window-manager';
 
 function scopedHandler(name: string, handler: ToolHandler): ToolHandler {
   return async (args, context) => {
@@ -10,7 +11,7 @@ function scopedHandler(name: string, handler: ToolHandler): ToolHandler {
     const finish = (result: Awaited<ReturnType<ToolHandler>>) => {
       if (authority) {
         try {
-          const window = require('../window-manager').getMainWindow();
+          const window = getMainWindow();
           if (window && !window.isDestroyed() && window.webContents.id === authority.senderId) window.webContents.send('homebot:assistant-tool-activity', {
             tool: name, allowed: !!result.success, error: result.success ? undefined : result.error,
             root: authority.displayRoot || authority.root, streamId: authority.streamId,

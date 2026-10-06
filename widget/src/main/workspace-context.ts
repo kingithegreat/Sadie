@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { canonicalTrustedWorkspacePath, validateTrustedWorkspaceRoot } from './workspace-trust';
+import { getMainWindow } from './window-manager';
 
 export interface WorkspaceAuthority { root: string; displayRoot?: string; senderId: number; streamId: string; approved: boolean; cancelled?: boolean }
 const scope = new AsyncLocalStorage<WorkspaceAuthority>();
@@ -79,7 +80,7 @@ export function workspaceStreamHandler(handler: (event: any, request: any) => Pr
     let reserved = false;
     try {
       if (request?.workspace) {
-        const window = require('./window-manager').getMainWindow();
+        const window = getMainWindow();
         if (!window || window.isDestroyed() || event.sender !== window.webContents || !event.senderFrame || event.senderFrame !== window.webContents.mainFrame) throw new Error('Open the assistant in the HomeBot IDE.');
       }
       if (request && typeof request === 'object') {

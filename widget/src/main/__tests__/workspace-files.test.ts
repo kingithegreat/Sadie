@@ -101,11 +101,26 @@ test('redirecting a parent to another allowed folder with identical bytes cannot
   fs.mkdirSync(project); fs.mkdirSync(other);
   const file = path.join(project, 'same.txt'); fs.writeFileSync(file, 'original'); fs.writeFileSync(path.join(other, 'same.txt'), 'original');
   const opened = readWorkspaceSnapshot(file);
-  const sync = jest.spyOn(require('fs'), 'fsyncSync').mockImplementationOnce(() => {
-    fs.renameSync(project, moved); fs.symlinkSync(other, project, process.platform === 'win32' ? 'junction' : 'dir');
+  // Windows cannot rename this parent while its durable temporary file is
+  // open. Simulate the external redirect after that exact descriptor closes,
+  // immediately before atomicProjectWrite revalidates the canonical parent.
+  const nativeFs = require('fs'); const originalOpen = nativeFs.openSync; const originalClose = nativeFs.closeSync;
+  let temporaryDescriptor: number | undefined; let redirected = false;
+  const open = jest.spyOn(nativeFs, 'openSync').mockImplementation((...args: any[]) => {
+    const descriptor = originalOpen(...args);
+    if (typeof args[0] === 'string' && path.dirname(args[0]) === project && /^\.same\.txt\..+\.tmp$/.test(path.basename(args[0]))) temporaryDescriptor = descriptor;
+    return descriptor;
+  });
+  const close = jest.spyOn(nativeFs, 'closeSync').mockImplementation((...args: any[]) => {
+    originalClose(...args);
+    if (args[0] === temporaryDescriptor && !redirected) {
+      fs.renameSync(project, moved); fs.symlinkSync(other, project, process.platform === 'win32' ? 'junction' : 'dir'); redirected = true;
+    }
   });
   try { expect(() => saveWorkspaceSnapshot(file, 'draft', { expectedVersion: opened.version })).toThrow(/path changed/); }
-  finally { sync.mockRestore(); }
+  finally { close.mockRestore(); open.mockRestore(); }
+  expect(temporaryDescriptor).toBeDefined(); expect(redirected).toBe(true);
+  expect(fs.realpathSync(project)).toBe(fs.realpathSync(other));
   expect(fs.readFileSync(path.join(moved, 'same.txt'), 'utf8')).toBe('original');
   expect(fs.readFileSync(path.join(other, 'same.txt'), 'utf8')).toBe('original');
 });

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { homeDir } from './user-paths';
+import { getMainWindow } from './window-manager';
 
 export function workspacePathWithin(root: string, target: string): boolean {
   const relative = path.relative(root, target);
@@ -26,7 +27,7 @@ function grants(): string[] {
   } catch { return []; }
 }
 function trustedPickerSender(event: any) {
-  const window = require('./window-manager').getMainWindow();
+  const window = getMainWindow();
   return !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
 }
 export function listTrustedWorkspaceFolders(): string[] { return activeGrants(); }
@@ -73,7 +74,7 @@ export function checkedTrustedWorkspacePath(rootInput: unknown, targetInput: unk
   return target;
 }
 export async function chooseTrustedWorkspaceFolder(event: any) {
-  const window = require('./window-manager').getMainWindow();
+  const window = getMainWindow();
   const trusted = () => !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
   if (!trusted()) throw new Error('Choose a project from the HomeBot IDE.');
   const selected = await dialog.showOpenDialog(window!, { title: 'Open IDE project folder', properties: ['openDirectory'] });
