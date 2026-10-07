@@ -87,6 +87,7 @@ jest.mock('../tools', () => ({
 // ── Import after all mocks ──────────────────────────────────────────────────
 import { streamFromLLM } from '../message-router';
 import { executeToolBatch } from '../tools';
+import { MemoryManager } from '../memory-manager';
 
 function callbacks() {
   return {
@@ -245,10 +246,41 @@ describe('streamFromLLM', () => {
       expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
       const followup = mockStreamFromCustomLLM.mock.calls[1][1];
       expect(followup.filter((row: any) => row.role === 'tool')).toEqual([
-        { role: 'tool', content: 'A', tool_call_id: 'a' }, { role: 'tool', content: 'B', tool_call_id: 'b' },
+        { role: 'tool', content: JSON.stringify({ result: 'A' }), tool_call_id: 'a' },
+        { role: 'tool', content: JSON.stringify({ result: 'B' }), tool_call_id: 'b' },
       ]);
       expect(cbs.onEnd).toHaveBeenCalledTimes(1);
       expect(cbs.onError).not.toHaveBeenCalled();
+    });
+
+    test('inline chat guidelines override saved guidelines and survive custom tool synthesis', async () => {
+      mockSettings.chatGuidelines = 'Use short paragraphs.';
+      (MemoryManager.getConversation as jest.Mock).mockReturnValueOnce({ systemPrompt: 'Use a pirate voice.' });
+      (executeToolBatch as jest.Mock).mockResolvedValueOnce([{ success: true, result: 'read' }]);
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[9]({ id: 'a', name: 'read_file', arguments: {} }); void args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      }).mockImplementationOnce((...args: any[]) => {
+        args[5](); return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('read my file', undefined, 'cloud-inline-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError, undefined, undefined,
+        { conversationPrompt: 'Answer in te reo Māori.' });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
+      for (const call of mockStreamFromCustomLLM.mock.calls) {
+        expect(call[3]).toContain('## User Guidelines\nUse short paragraphs.\n\nAnswer in te reo Māori.');
+        expect(call[3]).not.toContain('Use a pirate voice.');
+      }
+    });
+
+    test('saved per-chat guidelines are used when no inline prompt is supplied', async () => {
+      (MemoryManager.getConversation as jest.Mock).mockReturnValueOnce({ systemPrompt: 'Answer as a teacher.' });
+      const cbs = callbacks();
+      await streamFromLLM('explain rainbows', undefined, 'cloud-saved-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      expect(mockStreamFromCustomLLM.mock.calls[0][3]).toContain('## User Guidelines\nAnswer as a teacher.');
     });
 
     test('a cloud stream error after visible text surfaces without mixing in a local reply', async () => {
@@ -301,6 +333,15 @@ describe('streamFromLLM', () => {
       mockSettings.codeApiKey = 'sk-code-test';
       mockSettings.codeApiProvider = 'openai';
       mockSettings.codeModel = 'gpt-4o';
+    });
+
+    test('coding API prompt retains inline per-chat guidelines', async () => {
+      mockValidateCustomLLMConfig.mockReturnValue({ valid: true });
+      const cbs = callbacks();
+      await streamFromLLM('write a python function to sort a list', undefined, 'code-inline-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError, undefined, undefined,
+        { conversationPrompt: 'Explain every line for a beginner.' });
+      expect(mockStreamFromCustomLLM.mock.calls[0][3]).toContain('## User Guidelines\nExplain every line for a beginner.');
     });
 
     test('coding query with codeApiKey ⇒ routes to custom LLM (code config)', async () => {

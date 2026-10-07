@@ -2146,6 +2146,9 @@ export async function streamFromLLM(
   const storedConvForModel = MemoryManager.getConversation(conversationId);
   const perConvModel = storedConvForModel?.model?.trim() || undefined;
   const perRequestModel = options?.modelOverride?.trim() || undefined;
+  // Inline conversation state wins while its save is still pending.
+  const conversationGuidelines = options?.conversationPrompt?.trim() || storedConvForModel?.systemPrompt?.trim();
+  const cloudGuidelines = [settings.chatGuidelines?.trim(), conversationGuidelines].filter(Boolean).join('\n\n');
 
   // Build system prompt — compact variant for small models (<=3B)
   const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
@@ -2202,7 +2205,7 @@ export async function streamFromLLM(
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
       // compact/small-model prompt even for large cloud models like llama-3.3-70b.
       const cloudModelName = customConfig.model || activeModel;
-      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, settings.chatGuidelines);
+      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, cloudGuidelines);
 
       // Inject MCP memory recall and RAG context into the system prompt (same as Ollama path).
       // Fire-and-forget memorization of any self-disclosures in this message.
@@ -2283,7 +2286,7 @@ export async function streamFromLLM(
         systemPrompt: cloudSystemPrompt + '\n\nSummarize any tool results clearly for the user. Present key information naturally.',
         context: { executionId: `custom-llm-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
         signal: controller.signal, onChunk: cloudChunk, onToolCall: cloudToolCall,
-        onToolResult: cloudToolResult, onEnd: cloudEnd, onError: cloudError, onInitialError: cloudOnError,
+        onToolResult: cloudToolResult, onEnd: cloudEnd, onError: cloudError, onInitialError: cloudOnError, requestPermission,
       });
       void Promise.resolve(streamFromCustomLLM(
         message,
@@ -2342,7 +2345,7 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getHistory(conversationId);
       // Build system prompt for the actual code model (may differ in size from chatModel)
-      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines);
+      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, cloudGuidelines);
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
@@ -2357,7 +2360,7 @@ export async function streamFromLLM(
         message, history: history.map(m => ({ role: m.role as any, content: m.content })),
         apiConfig: codeApiConfig, systemPrompt: codeSystemPrompt,
         context: { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
-        signal: controller.signal, onChunk, onToolCall, onToolResult, onEnd, onError,
+        signal: controller.signal, onChunk, onToolCall, onToolResult, onEnd, onError, requestPermission,
       });
       void Promise.resolve(streamFromCustomLLM(
         message, history.map(m => ({ role: m.role as any, content: m.content })),

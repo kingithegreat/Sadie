@@ -4,6 +4,7 @@ import type { ChatMessage } from './custom-llm-client';
 import { executeToolBatch } from './tools';
 import type { ToolContext } from './tools';
 import type { CustomLLMConfig } from '../shared/types';
+import { getSettings, saveSettings } from './config-manager';
 
 interface RoundTripOptions {
   message: string;
@@ -18,6 +19,7 @@ interface RoundTripOptions {
   onEnd: () => void;
   onError: (error: any) => void;
   onInitialError?: (error: any) => void;
+  requestPermission?: (missing: string[], reason: string) => Promise<{ decision: 'allow_once' | 'always_allow' | 'cancel' }>;
 }
 
 /** One response may request several tools. Finish all of them in one transcript. */
@@ -59,16 +61,52 @@ export function createCustomToolRoundTrip(options: RoundTripOptions) {
       responseEnded = true;
       if (!calls.length) { finish(); return; }
       try {
-        const results = await executeToolBatch(
-          calls.map(call => ({ name: call.name, arguments: call.arguments })), options.context,
-        );
+        const batch = calls.map(call => ({ name: call.name, arguments: call.arguments }));
+        let results = await executeToolBatch(batch, options.context, { signal: options.signal });
         if (!active()) return;
+        const blocked = results.length === 1 && results[0].success === false && results[0].status === 'needs_confirmation'
+          ? results[0] : undefined;
+        if (blocked) {
+          const missing = blocked.missingPermissions || [];
+          const decision = options.requestPermission
+            ? await options.requestPermission(missing, blocked.reason || `This action requires: ${missing.join(', ')}`)
+            : undefined;
+          if (!active()) return;
+          if (!decision || decision.decision === 'cancel') {
+            options.onToolResult({ ...blocked, error: decision ? 'User declined permission request' : 'Missing tool permissions' });
+            if (!active()) return;
+            options.onChunk(decision
+              ? 'Okay — I won’t do that. Nothing was changed. If you change your mind, just ask again.'
+              : 'That needs a permission I don’t have, so I stopped. You can allow it in Settings → Privacy & Permissions, then ask again.');
+            finish();
+            return;
+          }
+          if (decision.decision === 'always_allow') {
+            const settings = getSettings();
+            saveSettings({ ...settings, permissions: { ...settings.permissions,
+              ...Object.fromEntries(missing.map(permission => [permission, true])),
+            } });
+          }
+          results = await executeToolBatch(batch, options.context, {
+            ...(decision.decision === 'allow_once' ? { overrideAllowed: missing } : {}), signal: options.signal,
+          });
+          if (!active()) return;
+          if (results.length === 1 && results[0].success === false && results[0].status === 'needs_confirmation') {
+            options.onToolResult(results[0]);
+            if (!active()) return;
+            options.onChunk('That still needs permission, so I stopped. Check Privacy & Permissions in Settings, then ask again.');
+            finish();
+            return;
+          }
+        }
         const resultMessages: ChatMessage[] = [];
         for (const [index, call] of calls.entries()) {
           if (!active()) return;
           // A batch-wide permission denial may be returned as a single row.
           const row = results[index] || (results.length === 1 ? results[0] : undefined);
-          const result = row?.result ?? row?.error ?? row ?? 'No result';
+          // Keep success/denial metadata alongside the payload. A failed tool
+          // must not reach the model as an apparently successful plain string.
+          const result = row || { success: false, error: 'No result was returned for this tool.' };
           options.onToolResult(result);
           resultMessages.push({ role: 'tool', content: typeof result === 'string' ? result : JSON.stringify(result), tool_call_id: call.id });
         }

@@ -226,15 +226,32 @@ function openAIEndpoint(apiUrl: string, resource: 'models' | 'chat/completions')
 }
 
 /** Network chunks can split both SSE lines and individual UTF-8 characters. */
-function readSSELines(stream: NodeJS.ReadableStream, onData: (data: string) => void, onEnd: () => void): void {
+function readSSELines(
+  stream: NodeJS.ReadableStream,
+  onData: (data: string, stop: () => void) => void,
+  onEnd: () => void,
+  onError: (error: Error) => void,
+): void {
   const decoder = new StringDecoder('utf8');
   let buffer = '';
   let dataLines: string[] = [];
+  let stopped = false;
+  const stop = (destroy = true) => {
+    if (stopped) return;
+    stopped = true;
+    stream.removeListener('data', data);
+    stream.removeListener('end', end);
+    stream.removeListener('close', close);
+    // Explicit terminal frames finish the turn even if the provider leaves
+    // the HTTP connection open. Release the actual response socket as well.
+    const readable = stream as import('stream').Readable;
+    if (destroy && typeof readable.destroy === 'function') readable.destroy();
+  };
   const dispatch = () => {
     if (!dataLines.length) return;
     const data = dataLines.join('\n');
     dataLines = [];
-    onData(data);
+    onData(data, stop);
   };
   const line = (value: string) => {
     if (!value) { dispatch(); return; }
@@ -245,15 +262,25 @@ function readSSELines(stream: NodeJS.ReadableStream, onData: (data: string) => v
     buffer += text;
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
-    for (const value of lines) line(value.replace(/\r$/, ''));
+    for (const value of lines) { if (stopped) break; line(value.replace(/\r$/, '')); }
   };
-  stream.on('data', (chunk: Buffer | string) => append(typeof chunk === 'string' ? chunk : decoder.write(chunk)));
-  stream.on('end', () => {
+  const data = (chunk: Buffer | string) => { if (!stopped) append(typeof chunk === 'string' ? chunk : decoder.write(chunk)); };
+  const end = () => {
+    if (stopped) return;
     append(decoder.end());
     if (buffer) line(buffer.replace(/\r$/, ''));
     dispatch();
+    stop(false);
     onEnd();
-  });
+  };
+  const close = () => {
+    if (stopped) return;
+    stop(false);
+    onError(new Error('The model connection closed before the response was complete.'));
+  };
+  stream.on('data', data);
+  stream.on('end', end);
+  stream.on('close', close);
 }
 
 function normalizeModelsPayload(payload: any): any[] {
@@ -536,12 +563,13 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
       stream.on('end', () => {
         try { processResponse(JSON.parse(body + decoder.end())); safeEnd(); } catch (error) { fail(error); }
       });
+      stream.on('close', () => { if (!ended) fail(new Error('The model connection closed before the response was complete.')); });
     } else {
-      readSSELines(stream, data => {
+      readSSELines(stream, (data, stop) => {
         if (ended || signal?.aborted) return;
-        if (data === '[DONE]') { safeEnd(); return; }
+        if (data === '[DONE]') { safeEnd(); stop(); return; }
         try { processResponse(JSON.parse(data)); } catch (error) { fail(error); }
-      }, safeEnd);
+      }, safeEnd, fail);
     }
     stream.on('error', fail);
   } catch (err: any) {
@@ -785,7 +813,7 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
       onEnd();
     };
 
-    readSSELines(stream, data => {
+    readSSELines(stream, (data, stop) => {
       if (ended || signal?.aborted) return;
       try {
           let parsed: any;
@@ -871,12 +899,13 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
             }
             case 'message_stop':
               safeEnd();
+              stop();
               break;
           }
       } catch (e) {
         console.error('[Custom LLM] Error processing Anthropic chunk:', e);
       }
-    }, safeEnd);
+    }, safeEnd, fail);
 
     stream.on('error', fail);
   } catch (err: any) {
@@ -1309,8 +1338,9 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
     let ended = false;
     const fail = (err: any) => { if (!ended) { ended = true; onError(err); } };
     const finish = () => { if (!ended) { ended = true; onEnd(); } };
-    readSSELines(stream, json => {
+    readSSELines(stream, (json, stop) => {
       if (ended || signal?.aborted) return;
+      if (json === '[DONE]') { finish(); stop(); return; }
           try {
             const parsed = JSON.parse(json);
             if (parsed.error) { fail(new Error(parsed.error.message || 'The model could not complete this reply.')); return; }
@@ -1321,7 +1351,7 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
               }
             }
           } catch (error) { fail(error); }
-    }, finish);
+    }, finish, fail);
     stream.on('error', fail);
   } catch (err: any) {
     onError(err);

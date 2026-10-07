@@ -31,6 +31,38 @@ test('accepts multiline SSE data, comments and fields without a space', async ()
   expect(call.onEnd).toHaveBeenCalledTimes(1);
 });
 
+test.each(['custom', 'anthropic', 'google-gemini'] as const)('%s reports a close-only provider disconnect exactly once', async provider => {
+  const call = await start(config(provider));
+  call.stream.emit('close'); call.stream.emit('end'); call.stream.emit('error', new Error('late'));
+  expect(call.onError).toHaveBeenCalledTimes(1);
+  expect(call.onError.mock.calls[0][0].message).toContain('closed before');
+  expect(call.onEnd).not.toHaveBeenCalled();
+});
+
+test.each(['custom', 'anthropic'] as const)('%s terminal frame releases a provider socket that has not ended', async provider => {
+  const call = await start(config(provider));
+  const destroy = jest.fn(); Object.assign(call.stream, { destroy });
+  call.stream.emit('data', Buffer.from(provider === 'custom' ? 'data: [DONE]\n\n' : frame({ type: 'message_stop' })));
+  expect(destroy).toHaveBeenCalledTimes(1);
+  expect(call.stream.listenerCount('data')).toBe(0);
+  expect(call.onEnd).toHaveBeenCalledTimes(1);
+  call.stream.emit('close'); call.stream.emit('end');
+  expect(call.onEnd).toHaveBeenCalledTimes(1);
+  expect(call.onError).not.toHaveBeenCalled();
+});
+
+test('compatible SSE EOF without DONE flushes complete text but rejects an incomplete final JSON frame', async () => {
+  const complete = await start();
+  complete.stream.emit('data', Buffer.from('data: {"choices":[{"delta":{"content":"Complete text"}}]}'));
+  complete.stream.emit('end');
+  expect(complete.onChunk).toHaveBeenCalledWith('Complete text');
+  expect(complete.onEnd).toHaveBeenCalledTimes(1);
+  const broken = await start();
+  broken.stream.emit('data', Buffer.from('data: {"choices":[')); broken.stream.emit('end');
+  expect(broken.onError).toHaveBeenCalledTimes(1);
+  expect(broken.onEnd).not.toHaveBeenCalled();
+});
+
 test.each(['custom', 'anthropic', 'google-gemini'] as const)('%s preserves UTF-8 text and events split at every byte', async provider => {
   const call = await start(config(provider));
   const content = provider === 'anthropic'
