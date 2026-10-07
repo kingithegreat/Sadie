@@ -126,17 +126,20 @@ test('selected held-file metadata reproduces the buffer decoder and authenticate
 });
 
 test('oversized logical dump retains only positional metadata, no memory/context or full-file hash', async () => {
-  const f = fixture(), file = path.join(f.crashes, 'oversized.dmp'), bytes = dump();
+  // Keep a legal lexical alias deliberately: production opens the canonical
+  // path, just as hosted Windows expands RUNNER~1 to its long directory name.
+  const f = fixture(), file = f.crashes + path.sep + '.' + path.sep + 'oversized.dmp', bytes = dump();
   // An unreferenced large context lies in the logical file; never read it.
   bytes.writeUInt32LE(1024, 240); bytes.writeUInt32LE(16 * 1024 * 1024, 244); fs.writeFileSync(file, bytes);
+  const canonicalFile = fs.realpathSync.native(file), ownsFile = p => fs.realpathSync.native(p) === canonicalFile;
   const logicalSize = BigInt(diagnostics.LIMITS.dumpBytes) + 1n; let selectedFd; const calls = [];
   const large = stat => ({ ...stat, size: typeof stat.size === 'bigint' ? logicalSize : Number(logicalSize), isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
   const controlledFs = { ...fs,
-    lstatSync(p, options) { const stat = fs.lstatSync(p, options); return path.resolve(p) === file ? large(stat) : stat; },
-    openSync(p, flags) { const fd = fs.openSync(p, flags); if (path.resolve(p) === file) selectedFd = fd; return fd; },
+    lstatSync(p, options) { const stat = fs.lstatSync(p, options); return ownsFile(p) ? large(stat) : stat; },
+    openSync(p, flags) { const fd = fs.openSync(p, flags); if (ownsFile(p)) selectedFd = fd; return fd; },
     fstatSync(fd, options) { const stat = fs.fstatSync(fd, options); return fd === selectedFd ? large(stat) : stat; },
     readSync(fd, buffer, offset, length, position) { if (fd === selectedFd) { calls.push({ length, position }); assert(Number.isInteger(position)); assert(length <= 1024); assert(position + length <= bytes.length); } return fs.readSync(fd, buffer, offset, length, position); },
-    readFileSync(p, options) { assert.notEqual(path.resolve(p), file, 'No whole dump read'); return fs.readFileSync(p, options); },
+    readFileSync(p, options) { assert.equal(ownsFile(p), false, 'No whole dump read'); return fs.readFileSync(p, options); },
   };
   const mock = isolatedCollector({ events: [], examined: 0, unknown: 0, capped: false }, 'win32', controlledFs);
   const proof = { passed: false, failure: { message: 'actual native AV' }, spawn: { status: 1 } };
@@ -157,11 +160,12 @@ test('selected parser refuses invalid references before reading them and never f
 });
 
 test('held metadata file changes refuse and always close the exact descriptor', () => {
-  const f = fixture(), file = path.join(f.crashes, 'changed.dmp'); fs.writeFileSync(file, dump());
+  const f = fixture(), file = f.crashes + path.sep + '.' + path.sep + 'changed.dmp'; fs.writeFileSync(file, dump());
+  const canonicalFile = fs.realpathSync.native(file), ownsFile = p => fs.realpathSync.native(p) === canonicalFile;
   for (const mode of ['size', 'mtime', 'inode', 'short-read']) {
     let fd, queries = 0, closed = false;
     const controlledFs = { ...fs,
-      openSync(p, flags) { const opened = fs.openSync(p, flags); if (path.resolve(p) === file) fd = opened; return opened; },
+      openSync(p, flags) { const opened = fs.openSync(p, flags); if (ownsFile(p)) fd = opened; return opened; },
       fstatSync(h, options) { const stat = fs.fstatSync(h, options); if (h !== fd || ++queries < 2) return stat; return { ...stat, isFile: () => true, ...(mode === 'size' ? { size: stat.size + 1n } : mode === 'mtime' ? { mtimeNs: stat.mtimeNs + 1n } : mode === 'inode' ? { ino: stat.ino + 1n } : {}) }; },
       readSync(h, ...args) { return h === fd && mode === 'short-read' ? 0 : fs.readSync(h, ...args); },
       closeSync(h) { if (h === fd) closed = true; return fs.closeSync(h); },
