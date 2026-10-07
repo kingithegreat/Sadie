@@ -93,7 +93,8 @@ test('rejects an invalid cooked newline with its generated filename before launc
 test('the exact stdin source records real TTY/resize/input fields with only native dependencies controlled', () => {
   const writes = new Map<string, string>();
   let data: ((chunk: Buffer) => void) | undefined, interval: (() => void) | undefined;
-  let columns = 80, exit: number | undefined;
+  let columns = 89, exit: number | undefined;
+  const handle = { getWindowSize: jest.fn((size: number[]) => { size[0] = columns; size[1] = 5; return 0; }) };
   const native = {
     writeFileSync: (file: string, text: string) => writes.set(file, text),
     renameSync: (from: string, to: string) => { writes.set(to, writes.get(from)!); writes.delete(from); },
@@ -102,14 +103,33 @@ test('the exact stdin source records real TTY/resize/input fields with only nati
   new Script(terminalTreeSources(project)['stdin.cjs']).runInNewContext({
     require: (name: string) => { expect(name).toBe('fs'); return native; },
     process: { pid: 17, stdin: { isTTY: true, once: (event: string, callback: typeof data) => { expect(event).toBe('data'); data = callback; } },
-      stdout: { isTTY: true, getWindowSize: () => [columns, 25] }, exit: (code: number) => { exit = code; } },
+      stdout: { isTTY: true, columns: 89, getWindowSize: () => [89, 10], _handle: handle }, exit: (code: number) => { exit = code; } },
     console: { log: () => {} }, setInterval: (callback: () => void) => { interval = callback; return 1; }, clearInterval: () => {},
   });
   const marker = path.join(project, 'tty.json');
-  expect(JSON.parse(writes.get(marker)!)).toEqual({ pid: 17, stdin: true, stdout: true, columns: 80 });
-  columns = 120; interval!(); data!(Buffer.from('NATIVE_STDIN\r\n'));
-  expect(JSON.parse(writes.get(marker)!)).toEqual({ pid: 17, stdin: true, stdout: true, columns: 120, input: 'NATIVE_STDIN' });
+  expect(JSON.parse(writes.get(marker)!)).toEqual({ pid: 17, stdin: true, stdout: true, columns: 89, rows: 5, cachedColumns: 89 });
+  columns = 57; interval!(); data!(Buffer.from('NATIVE_STDIN\r\n'));
+  expect(JSON.parse(writes.get(marker)!)).toEqual({ pid: 17, stdin: true, stdout: true, columns: 57, rows: 5, cachedColumns: 89, input: 'NATIVE_STDIN' });
+  expect(handle.getWindowSize).toHaveBeenCalledTimes(3);
+  expect(handle.getWindowSize.mock.instances.every(owner => owner === handle)).toBe(true);
   expect(exit).toBe(0);
+});
+
+test('the cooked stdin observer refuses missing, failed or invalid native dimensions without cached fallback', () => {
+  const source = terminalTreeSources(path.join('private', 'project'))['stdin.cjs'];
+  const handles: unknown[] = [undefined, {}, { getWindowSize: () => -9 },
+    { getWindowSize: (size: number[]) => { size[0] = 57; size[1] = 5; return undefined; } },
+    ...[[0, 5], [57, 0], [NaN, 5], [Infinity, 5], [57.5, 5], [57, -1]].map(dimensions => ({
+      getWindowSize: (size: number[]) => { size[0] = dimensions[0]; size[1] = dimensions[1]; return 0; },
+    }))];
+  for (const handle of handles) {
+    const write = jest.fn();
+    expect(() => new Script(source).runInNewContext({
+      require: () => ({ writeFileSync: write }), process: { pid: 17,
+        stdin: { isTTY: true }, stdout: { isTTY: true, columns: 57, getWindowSize: () => [57, 5], _handle: handle } },
+    })).toThrow(/held native TTY query (unavailable|refused)/);
+    expect(write).not.toHaveBeenCalled();
+  }
 });
 
 test('cooked background fixtures detach both child levels and retain parent identities; original unref-only structure does not', () => {

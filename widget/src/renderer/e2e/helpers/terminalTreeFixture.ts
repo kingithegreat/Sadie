@@ -83,7 +83,11 @@ export async function resizeTerminalWindow(app: ElectronApplication, windowId: n
 export function terminalTreeSources(project: string) {
   const file = (name: string) => JSON.stringify(path.join(project, name));
   return {
-    'stdin.cjs': `const fs=require('fs');const p=${file('tty.json')};const record=input=>{fs.writeFileSync(p+'.tmp',JSON.stringify({pid:process.pid,stdin:process.stdin.isTTY,stdout:process.stdout.isTTY,columns:process.stdout.getWindowSize()[0],input}));fs.renameSync(p+'.tmp',p);};record();const timer=setInterval(()=>record(),50);console.log('TTY_READY');process.stdin.once('data',d=>{clearInterval(timer);record(d.toString().trim());process.exit(0);});`,
+    // Node 22.23.3 public getWindowSize() returns cached columns/rows. Its
+    // held TTYWrap method queries uv_tty_get_winsize/GetConsoleScreenBufferInfo.
+    // This pinned fixture observes that native handle without refreshing the
+    // JS cache, synthesizing dimensions, opening a replacement or any fallback.
+    'stdin.cjs': `const fs=require('fs');const p=${file('tty.json')};const nativeSize=()=>{const handle=process.stdout._handle;if(!handle||typeof handle.getWindowSize!=='function')throw Error('held native TTY query unavailable');const size=[0,0];const error=handle.getWindowSize(size);if(error!==0||size.some(value=>!Number.isInteger(value)||value<=0))throw Error('held native TTY query refused');return size;};const record=input=>{const size=nativeSize();fs.writeFileSync(p+'.tmp',JSON.stringify({pid:process.pid,stdin:process.stdin.isTTY,stdout:process.stdout.isTTY,columns:size[0],rows:size[1],cachedColumns:process.stdout.columns,input}));fs.renameSync(p+'.tmp',p);};record();const timer=setInterval(()=>record(),50);console.log('TTY_READY');process.stdin.once('data',d=>{clearInterval(timer);record(d.toString().trim());process.exit(0);});`,
     'interrupt.cjs': `require('fs').writeFileSync(${file('interrupt.json')},JSON.stringify({pid:process.pid}));console.log('INTERRUPT_READY');setInterval(()=>{},1000);`,
     'grandchild.cjs': `require('fs').writeFileSync(${file('grandchild.json')},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000);`,
     // Windows libuv assigns non-detached children to its per-Node kill-on-close
