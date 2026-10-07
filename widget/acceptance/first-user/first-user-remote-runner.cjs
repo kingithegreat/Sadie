@@ -33,6 +33,7 @@ let payloadBefore;
 let dependencyBefore;
 let nativeStatus;
 let sqliteBinding;
+let electronExecutable;
 
 function write(name, value) {
   fs.writeFileSync(path.join(proof, name), JSON.stringify(value, null, 2));
@@ -101,7 +102,7 @@ function dependencySnapshot() {
   const files = {
     rootPackage: path.join(repo, 'package.json'), rootLock: path.join(repo, 'package-lock.json'),
     widgetPackage: path.join(widget, 'package.json'), widgetLock: path.join(widget, 'package-lock.json'),
-    electron: path.join(widget, 'node_modules', 'electron', 'dist', 'electron.exe'),
+    electron: electronExecutable || path.join(widget, 'node_modules', 'electron', 'dist', 'electron.exe'),
     widgetSQLite: sqliteBinding || path.join(widget, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
     rootSQLite: path.join(repo, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
     sharp: path.join(widget, 'node_modules', '@img', 'sharp-win32-x64', 'lib', 'sharp-win32-x64.node'),
@@ -113,7 +114,7 @@ function dependencySnapshot() {
 // by the unchanged acceptance bootstrap and has no provider/model access.
 const env = { ...process.env };
 for (const key of Object.keys(env)) {
-  if (key.startsWith('HOMEBOT_') || ['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_RENDERER_URL', 'JEST_WORKER_ID'].includes(key)
+  if (key.startsWith('HOMEBOT_') || ['NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'ELECTRON_RENDERER_URL', 'ELECTRON_OVERRIDE_DIST_PATH', 'ELECTRON_INSTALL_PLATFORM', 'ELECTRON_INSTALL_ARCH', 'JEST_WORKER_ID'].includes(key)
     || /(?:API_KEY|TOKEN|SECRET|PASSWORD)$/.test(key) || key.startsWith('N8N_')) delete env[key];
 }
 Object.assign(env, { NODE_ENV: 'production', HOMEBOT_FIRST_USER_NATIVE: '1',
@@ -142,6 +143,14 @@ try {
   stage = 'widget npm ci / private Electron ABI';
   resourcePreflight('widget-install');
   command(process.execPath, [npmCli, 'ci'], widget, installEnv, false, 8 * 60_000);
+  // Electron42 exposes install-electron and downloads lazily on require;
+  // package installation alone does not prove its executable exists.
+  stage = 'explicit Electron executable installation';
+  resourcePreflight('electron-install');
+  command(process.execPath,[binary(path.join(widget,'node_modules/electron'),'install-electron')],widget,installEnv,false,8*60_000);
+  const widgetRequire=createRequire(path.join(widget,'package.json'));
+  electronExecutable=fs.realpathSync(widgetRequire('electron'));
+  assert(within(fs.realpathSync(path.join(widget,'node_modules/electron')),electronExecutable),'Electron must come from the disposable widget package');
   git(['diff', '--exit-code', 'HEAD', '--']);
   stage = 'build';
   resourcePreflight('build');
@@ -171,7 +180,7 @@ try {
   const bindingHome=path.join(owned,'binding-home');
   fs.mkdirSync(bindingHome);
   const probeCode=`const {createRequire}=require('node:module');const r=createRequire(${JSON.stringify(path.join(widget,'package.json'))});const Database=r('better-sqlite3');const db=new Database(':memory:');const result=db.prepare('SELECT 42 AS value').get();const native=Object.keys(require.cache).filter(file=>file.endsWith('better_sqlite3.node'));db.close();console.log(JSON.stringify({value:result.value,native,electron:process.versions.electron,modules:process.versions.modules}));`;
-  const bindingProbe=JSON.parse(command(path.join(widget,'node_modules/electron/dist/electron.exe'),['-e',probeCode],bindingHome,
+  const bindingProbe=JSON.parse(command(electronExecutable,['-e',probeCode],bindingHome,
     {...env,ELECTRON_RUN_AS_NODE:'1',HOME:bindingHome,USERPROFILE:bindingHome,APPDATA:bindingHome,LOCALAPPDATA:bindingHome,TEMP:bindingHome,TMP:bindingHome},true,30_000));
   write('native-binding-proof.json',bindingProbe);
   assert.equal(bindingProbe.value,42,'Electron must execute a real in-memory SQLite query');
@@ -188,7 +197,6 @@ try {
   write('resource-preflight.json', resources);
   assert(disk.bavail * disk.bsize >= 5n * 1024n ** 3n, 'Native launch requires at least 5GiB free disk');
   assert(resources.freeRAMBytes >= resources.minimumRAMBytes, 'Native launch requires at least 2GiB free RAM');
-  const widgetRequire = createRequire(path.join(widget, 'package.json'));
   const playwright = binary(path.dirname(widgetRequire.resolve('@playwright/test/package.json')), 'playwright');
   const config = path.join(acceptance, 'playwright.config.cjs');
   const discoveryEnv = { ...env };
