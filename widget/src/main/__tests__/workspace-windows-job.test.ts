@@ -36,7 +36,7 @@ describe('creation-gated Windows Job ownership', () => {
     expect(f.requests()).toEqual([{ id: 1, operation: 'attach-child', pid: 90, parent: process.pid }]);
     f.reply({ ok: true, creation: identity.creation, parent: process.pid });
     await expect(capture).resolves.toEqual({ creation: identity.creation, parent: process.pid }); await job.ready;
-    await expect(job.attachChild!(91)).rejects.toThrow('fixed task child');
+    await expect(job.attachChild!(91)).rejects.toThrow('fixed core child');
   });
   it.each([{ ok: false }, { ok: true, creation: '0', parent: process.pid }, { ok: true, creation: identity.creation, parent: process.pid + 1 }, { ok: true, creation: 123, parent: process.pid }])('unknown task child result refuses readiness and never grants GO: %o', async response => {
     const f = helper(), job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });

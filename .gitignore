@@ -160,3 +160,4 @@ workspace/
 
 # Retained generated managed task-control proof; uploaded by existing CI jobs.
 /artifacts/ide-native-zero-retry/task-attachment-controls-*/
+/artifacts/ide-native-zero-retry/managed-framing-*/
