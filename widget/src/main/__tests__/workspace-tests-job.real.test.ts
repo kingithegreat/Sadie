@@ -29,7 +29,14 @@ live('naturally ended Node test runner retains late descendants until Stop confi
   let primaryFailure = false;
   try {
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Unrelated readiness failed.')), 4000); unrelated.stdout!.once('data', () => { clearTimeout(timer); resolve(); }); unrelated.once('error', error => { clearTimeout(timer); reject(error); }); });
-    expect((await performWorkspaceTests({ root, action: 'run', file })).success).toBe(true);
+    const admission = await performWorkspaceTests({ root, action: 'run', file });
+    if (!admission.success) console.error(JSON.stringify({ ownedTestRunnerAdmissionFailure: {
+      error: typeof admission.error === 'string' ? admission.error.slice(0, 2000) : undefined,
+      running: typeof admission.running === 'boolean' ? admission.running : undefined,
+      cleanupPending: typeof admission.cleanupPending === 'boolean' ? admission.cleanupPending : undefined,
+      exitCode: admission.exitCode === null || (typeof admission.exitCode === 'number' && Number.isSafeInteger(admission.exitCode)) ? admission.exitCode : undefined,
+    } }));
+    expect(admission.success).toBe(true);
     let result = await performWorkspaceTests({ root, action: 'state' }); const deadline = Date.now() + 8000;
     while (result.running && Date.now() < deadline) { await new Promise(resolve => setTimeout(resolve, 30)); result = await performWorkspaceTests({ root, action: 'state' }); }
     expect(result).toMatchObject({ running: false, exitCode: 0, cleanupPending: true });
