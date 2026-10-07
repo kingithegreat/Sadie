@@ -107,7 +107,9 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Managed helper build contracts
-        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
+        # Keep independent cold PowerShell/compiler fixtures from competing.
+        # Process isolation, each fixture deadline and every assertion remain.
+        run: node --test --test-concurrency=1 widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
 
       - name: Preserve managed framing proof
         if: always()
