@@ -50,13 +50,13 @@ test('whole-quit admission rejects valid new runtime requests before any process
 
 test('existing runtime cleanup still works while closing and refusal can admit a fresh terminal', async () => {
   const terminal = terminalFixture();
-  const first = terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn());
+  const first = await terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn());
   setWorkspaceRuntimeClosing(true);
   await terminal.sessions.close(7, first.sessionId);
   expect(terminal.pty.kill).toHaveBeenCalledTimes(1);
   expect(() => terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn())).toThrow(/HomeBot is closing/);
   setWorkspaceRuntimeClosing(false);
-  const second = terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn());
+  const second = await terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn());
   expect(terminal.create).toHaveBeenCalledTimes(2);
   await terminal.sessions.close(7, second.sessionId);
 });
