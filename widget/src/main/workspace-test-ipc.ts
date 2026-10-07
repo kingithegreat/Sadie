@@ -14,7 +14,7 @@ export function registerWorkspaceTestIpc(): void {
         const prepared = prepareWorkspaceTestCommand(request);
         if (!await requestConfirmationFrom(event.sender, `Run ${request.testName || 'all tests in'} ${request.file}? Project tests can access files, the network and processes. Working folder: ${prepared.cwd}`)) return { success: false, error: 'Test run cancelled.' };
         if (!trusted()) return { success: false, error: 'Test run cancelled because the window closed.' };
-        event.sender.once('destroyed', () => { void stopWorkspaceTestRuns(); });
+        event.sender.once('destroyed', () => { void stopWorkspaceTestRuns().catch(() => { console.warn('Workspace test cleanup remains pending after the window closed.'); }); });
       }
       return performWorkspaceTests(request, () => { if (!trusted()) throw new Error('Test run cancelled because the window changed.'); });
     } catch (error) { return { success: false, error: String(error) }; }
