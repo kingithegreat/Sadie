@@ -7,10 +7,20 @@ import { stripAnsi } from '../shared/ansi';
 import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath, validateTrustedWorkspaceRoot, workspacePathWithin } from './workspace-trust';
 import type { WorkspaceDiscoveredTest, WorkspaceTestRequest, WorkspaceTestResult } from '../shared/workspace-test-types';
 import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
+import { createPendingWorkspaceWindowsJob, type PendingWorkspaceWindowsJob } from './workspace-windows-job';
+import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
+import { workspacePtyLifecycle } from './workspace-pty-identity';
 const SKIP = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cache', '.next', '.venv']);
 const TEST_FILE = /(?:\.test|\.spec)\.[cm]?[jt]sx?$/i;
-interface TestRun { child: ChildProcess | null; output: string; exitCode: number | null; coveragePath?: string; stopped: boolean }
+interface TestRun {
+  child: ChildProcess | null; output: string; exitCode: number | null; coveragePath?: string; stopped: boolean;
+  starting: boolean; ended: boolean; released: boolean; cleanupConfirmed: boolean; stopRequested: boolean;
+  job?: PendingWorkspaceWindowsJob; stopping?: Promise<void>; cleanupError?: string;
+  close?: Promise<void>; resolveClose?: () => void;
+}
 const runs = new Map<string, TestRun>();
+let stoppingAll = false, cleanupGeneration = 0;
+let globalStopping: Promise<void> | undefined;
 function nearestPackage(root: string, file: string): { directory: string; manifest: any } {
   let directory = fs.statSync(file).isDirectory() ? file : path.dirname(file);
   while (workspacePathWithin(root, directory)) {
@@ -108,30 +118,122 @@ function state(run?: TestRun): WorkspaceTestResult {
   if (!run) return { success: true, running: false, output: '', exitCode: null };
   const output = stripAnsi(run.output); const nodePassed = output.match(/^\s*(?:#|ℹ)\s+pass (\d+)/m); const nodeFailed = output.match(/^\s*(?:#|ℹ)\s+fail (\d+)/m); const nodeSkipped = output.match(/^\s*(?:#|ℹ)\s+skipped (\d+)/m);
   const jestLine = output.match(/^Tests:\s*(.+)$/m); const summary = nodePassed ? { passed: Number(nodePassed[1]), failed: Number(nodeFailed?.[1] || 0), skipped: Number(nodeSkipped?.[1] || 0) } : jestLine ? { passed: Number(jestLine[1].match(/(\d+) passed/)?.[1] || 0), failed: Number(jestLine[1].match(/(\d+) failed/)?.[1] || 0), skipped: Number(jestLine[1].match(/(\d+) skipped/)?.[1] || 0) } : undefined;
-  return { success: true, running: !!run.child, output, exitCode: run.exitCode, coveragePath: run.coveragePath, summary, note: run.stopped ? 'Stopped by user.' : !run.child && run.exitCode === 0 && (!summary || summary.passed === 0) ? 'The process exited successfully; an executed test pass was not confirmed. Review the output.' : undefined };
+  const running = run.starting || (!!run.child && !run.ended);
+  const cleanupPending = !!run.job && !run.cleanupConfirmed;
+  return { success: true, running, cleanupPending, output, exitCode: run.exitCode, coveragePath: run.coveragePath, summary,
+    note: run.cleanupError ? `Cleanup remains pending: ${run.cleanupError} Try Stop tests again.` : cleanupPending && !running ? 'The runner ended; Stop tests must confirm its retained Windows Job has no remaining programs.' : run.stopped ? 'Stopped by user.' : !running && run.exitCode === 0 && (!summary || summary.passed === 0) ? 'The process exited successfully; an executed test pass was not confirmed. Review the output.' : undefined };
 }
-async function stopRun(run: TestRun) {
-  const child = run.child; run.stopped = true;
-  if (!child?.pid || child.exitCode !== null) { run.child = null; return; }
-  await stopWorkspaceChild(child);
+function waitRunClose(run: TestRun): Promise<void> {
+  if (!run.close || run.ended) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('The owned test runner has not confirmed close.')), 5500);
+    void run.close!.then(() => { clearTimeout(timer); resolve(); });
+  });
 }
-export async function stopWorkspaceTestRuns(): Promise<void> { await Promise.all([...runs.values()].map(stopRun)); }
-export async function performWorkspaceTests(request: WorkspaceTestRequest): Promise<WorkspaceTestResult> {
+function stopRun(run: TestRun): Promise<void> {
+  run.stopped = true; run.stopRequested = true;
+  if (run.cleanupConfirmed) return Promise.resolve();
+  if (run.stopping) return run.stopping;
+  const operation = (async () => {
+    if (run.job) {
+      // A failed assignment must not orphan the exact still-gated child. Both
+      // cleanup outcomes remain required; Job uncertainty never becomes success.
+      const results = await Promise.allSettled([
+        run.job.stop(),
+        !run.released && run.child && !run.ended ? stopWorkspaceChild(run.child) : Promise.resolve(),
+      ]);
+      const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failure) throw failure.reason;
+    } else if (run.child && !run.ended) await stopWorkspaceChild(run.child);
+    await waitRunClose(run);
+    run.cleanupConfirmed = true; run.cleanupError = undefined;
+  })();
+  run.stopping = operation;
+  void operation.catch(error => { run.cleanupError = error instanceof Error ? error.message : String(error); });
+  void operation.finally(() => { if (run.stopping === operation) run.stopping = undefined; }).catch(() => {});
+  return operation;
+}
+export function stopWorkspaceTestRuns(): Promise<void> {
+  if (globalStopping) return globalStopping;
+  stoppingAll = true; cleanupGeneration++;
+  const operation = (async () => {
+    try {
+    const results = await Promise.allSettled([...runs.values()].map(stopRun));
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    } finally { stoppingAll = false; }
+  })();
+  globalStopping = operation;
+  void operation.finally(() => { if (globalStopping === operation) globalStopping = undefined; }).catch(() => {});
+  return operation;
+}
+export async function performWorkspaceTests(request: WorkspaceTestRequest, assertCurrent: () => void = () => {}): Promise<WorkspaceTestResult> {
+  let root: string | undefined;
   try {
-    const root = validateTrustedWorkspaceRoot(request.root);
+    root = validateTrustedWorkspaceRoot(request.root);
     if (request.action === 'list') return { success: true, tests: discoverWorkspaceTests(root) };
     if (request.action === 'state') return state(runs.get(root));
     if (request.action === 'stop') { const run = runs.get(root); if (run) await stopRun(run); return state(run); }
     if (request.action !== 'run') throw new Error('Unknown test action.');
     assertWorkspaceRuntimeOpen();
-    if (runs.get(root)?.child || [...runs.values()].some(run => !!run.child)) throw new Error('Stop the current test run first.');
-    const prepared = prepareWorkspaceTestCommand(request);
-    const child = spawn(process.execPath, prepared.args, { cwd: prepared.cwd, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
+    assertCurrent();
+    const generation = cleanupGeneration;
+    const previous = runs.get(root);
+    if (previous && !previous.starting && (previous.ended || !previous.child) && !previous.cleanupConfirmed) await stopRun(previous);
+    if (stoppingAll || generation !== cleanupGeneration) throw new Error('Test cleanup changed during startup. Try Run again after cleanup finishes.');
+    if ([...runs.values()].some(run => run.starting || (!!run.child && !run.ended))) throw new Error('Stop the current test run first.');
+    const snapshot = { ...request };
+    const prepared = prepareWorkspaceTestCommand(snapshot);
+    const file = checkedTrustedWorkspacePath(root, snapshot.file!);
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' };
+    const run: TestRun = { child: null, output: '', exitCode: null, coveragePath: prepared.coveragePath, stopped: false,
+      starting: true, ended: false, released: false, cleanupConfirmed: false, stopRequested: false };
+    // Synchronous reservation prevents two requests or global Stop overlooking
+    // an awaited Job listener/assignment that has not spawned its core gate yet.
+    runs.set(root, run);
+    const admitted = () => {
+      assertCurrent(); assertWorkspaceRuntimeOpen();
+      if (run.stopRequested || run.ended || stoppingAll || cleanupGeneration !== generation || runs.get(root!) !== run) throw new Error('Test startup was cancelled before project execution.');
+      if (validateTrustedWorkspaceRoot(root!) !== root || checkedTrustedWorkspacePath(root!, file) !== file || !fs.statSync(file).isFile()) throw new Error('The test project or file changed during startup.');
+    };
+    try {
+    let child: ChildProcess;
+    if (process.platform === 'win32') {
+      const gate = createWorkspaceProcessGate(env);
+      run.job = createPendingWorkspaceWindowsJob({ env: gate.env, gate: { pipeName: gate.pipeName, capability: gate.capability } });
+      void run.job.ready.catch(() => {});
+      await run.job.listening; admitted();
+      child = spawn(gate.executable, gate.args, { cwd: prepared.cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: gate.env });
+    } else {
+      admitted(); run.released = true;
+      child = spawn(process.execPath, prepared.args, { cwd: prepared.cwd, windowsHide: true, detached: true, stdio: ['ignore', 'pipe', 'pipe'], env });
+    }
+    run.child = child;
     rememberWorkspaceChild(child);
-    const run: TestRun = { child, output: '', exitCode: null, coveragePath: prepared.coveragePath, stopped: false }; runs.set(root, run);
+    run.close = new Promise(resolve => { run.resolveClose = resolve; });
     const append = (chunk: Buffer) => { run.output = (run.output + chunk.toString('utf8')).slice(-256_000); };
-    child.stdout!.on('data', append); child.stderr!.on('data', append);
-    child.once('error', error => { run.output += error.message; run.exitCode = -1; run.child = null; }); child.once('close', code => { run.exitCode = code; run.child = null; });
+    child.stdout?.on('data', append); child.stderr?.on('data', append);
+    child.once('error', error => { run.output = (run.output + error.message).slice(-256_000); run.exitCode = -1;
+      if (!child.pid) { run.ended = true; run.resolveClose?.(); } });
+    child.once('close', code => { run.exitCode = code; run.ended = true; run.resolveClose?.();
+      // Windows retains the SAME Job after leader close; no descendant/PID
+      // recapture. POSIX keeps its existing narrower natural-close behavior.
+      if (!run.job) run.cleanupConfirmed = true;
+    });
+    if (run.job) {
+      if (!Number.isSafeInteger(child.pid) || child.pid! <= 0) throw new Error('The test bootstrap did not spawn a positive native PID.');
+      const identity = await workspacePtyLifecycle.capture(child.pid!);
+      if (!identity) throw new Error('The test bootstrap native identity could not be verified.');
+      admitted(); await run.job.attach(child.pid!, identity); await run.job.ready; admitted();
+      const launch = snapshotWorkspaceLaunch(process.execPath, prepared.args, env, { cwd: prepared.cwd });
+      await run.job.authorize(launch, () => { admitted(); run.released = true; });
+    }
+    run.starting = false;
     return state(run);
-  } catch (error) { return { success: false, error: error instanceof Error ? error.message : String(error) }; }
+    } catch (error) {
+      run.starting = false;
+      try { await stopRun(run); } catch { /* Retained uncertainty is visible in state and remains retryable. */ }
+      throw error;
+    }
+  } catch (error) { return { ...(root ? state(runs.get(root)) : {}), success: false, error: error instanceof Error ? error.message : String(error) }; }
 }
