@@ -9,6 +9,9 @@ filesystem/recovery modules; `ide_editor_language` owns CodeEditor and language
 modules; `ide_ai_workflows` owns assistant/Changes/proposals/context and scoped
 router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
 main registrations, generated docs, publication and resource-gated verification.
+Current review follow-ups: editor agent owns assistant rule-loading and incomplete
+turn persistence; Files owns native observer startup diagnostics. Root integrates
+their narrow commits and verifies the combined head. The original AI lane is idle.
 See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
 No shared dependency rebuild/install; no existing delivered build modifications.
 One guarded test/build at a time. Other sessions' processes and held PRs preserved.
