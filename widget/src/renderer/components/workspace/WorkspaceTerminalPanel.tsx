@@ -83,7 +83,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
     alive.current = true;
     generation.current++;
     let cancelled = false;
-    sessionsRef.current = []; setSessions([]); setActive(''); setRecovering(true); setRecoveryFailed(false); setError('');
+    sessionsRef.current = []; setSessions([]); setActive(''); setCreating(false); setRecovering(true); setRecoveryFailed(false); setError('');
     const off = api?.onWorkspaceTerminalEvent?.((event: WorkspaceTerminalEvent) => {
       if (!sessionsRef.current.some(s => s.info.sessionId === event.sessionId)) {
         if (!pending.current.has(event.sessionId) && pending.current.size >= 8) return;
@@ -110,7 +110,13 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       if (!restored.length) void create(result.profiles?.[0]?.id, false);
     })().catch((e: unknown) => { if (!cancelled) { setRecoveryFailed(true); setError(e instanceof Error ? e.message : 'Could not recover terminal sessions.'); } })
       .finally(() => { if (!cancelled) setRecovering(false); });
-    return () => { cancelled = true; alive.current = false; off?.(); for (const session of sessionsRef.current) void Promise.resolve().then(() => api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main retains failed sessions for recovery on reopen. */ }); };
+    return () => {
+      cancelled = true; alive.current = false; off?.();
+      for (const session of sessionsRef.current) {
+        try { void Promise.resolve(api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main retains failed sessions for recovery on reopen. */ }); }
+        catch { /* A disconnected bridge also leaves the main-owned session recoverable. */ }
+      }
+    };
   // Main retains failed cleanup attempts across panel and project remounts.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, projectPath, recoveryAttempt]);

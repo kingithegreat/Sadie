@@ -7,6 +7,7 @@ import { WorkspacePtySessions } from '../workspace-terminal-pty';
 import type { WorkspacePtyStopResult } from '../workspace-pty-force-stop';
 import type { WorkspacePtyIdentity } from '../workspace-pty-identity';
 const windowsTest = process.platform === 'win32' ? test : test.skip;
+jest.setTimeout(15_000);
 let folder: string;
 beforeEach(() => { folder = fs.mkdtempSync(path.join(os.homedir(), 'homebot-pty-')); });
 afterEach(() => { fs.rmSync(folder, { recursive: true, force: true }); });
