@@ -7,7 +7,20 @@ jest.setTimeout(30_000);
 let root: string; let file: string;
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.homedir(), 'hb-debug-')); file = path.join(root, 'main.js'); fs.writeFileSync(file, 'let count = 1;\ncount += 2;\nconsole.log("RESULT", count);\ncount += 1;\n'); });
 afterEach(async () => { await stopWorkspaceDebuggers(); fs.rmSync(root, { recursive: true, force: true }); });
-const call = (action: Parameters<typeof performWorkspaceDebug>[0]['action'], extra = {}) => performWorkspaceDebug({ root, action, ...extra });
+function recordStartFailure(result: Awaited<ReturnType<typeof performWorkspaceDebug>>) {
+  if (!result.success) console.error(JSON.stringify({ ownedDebuggerAdmissionFailure: {
+    error: typeof result.error === 'string' ? result.error.slice(0, 2000) : undefined,
+    running: typeof result.running === 'boolean' ? result.running : undefined,
+    cleanupPending: typeof result.cleanupPending === 'boolean' ? result.cleanupPending : undefined,
+    paused: typeof result.paused === 'boolean' ? result.paused : undefined,
+    pid: typeof result.pid === 'number' && Number.isSafeInteger(result.pid) && result.pid > 0 ? result.pid : undefined,
+  } }));
+}
+const call = async (action: Parameters<typeof performWorkspaceDebug>[0]['action'], extra = {}) => {
+  const result = await performWorkspaceDebug({ root, action, ...extra });
+  if (action === 'start') recordStartFailure(result);
+  return result;
+};
 async function waitForPaused(expectedLine?: number) {
   let lastLine: number | undefined;
   for (let attempts = 0; attempts < 50; attempts++) {
@@ -79,7 +92,7 @@ test('completed debug roots free the live limit while retained cleanup remains a
   for (let index = 0; index < 3; index++) {
     const project = path.join(root, `project-${index}`); fs.mkdirSync(project);
     const entry = path.join(project, 'main.js'); fs.writeFileSync(entry, 'console.log("COMPLETED");\n');
-    const started = await performWorkspaceDebug({ root: project, action: 'start', file: entry }); expect(started.success).toBe(true);
+    const started = await performWorkspaceDebug({ root: project, action: 'start', file: entry }); recordStartFailure(started); expect(started.success).toBe(true);
     let state = await performWorkspaceDebug({ root: project, action: 'state' });
     for (let attempt = 0; !state.paused && attempt < 100; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); state = await performWorkspaceDebug({ root: project, action: 'state' }); }
     expect(state.paused).toBe(true); expect((await performWorkspaceDebug({ root: project, action: 'resume' })).success).toBe(true);
