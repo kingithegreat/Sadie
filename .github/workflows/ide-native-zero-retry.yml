@@ -44,7 +44,7 @@ jobs:
           [ordered]@{ expectedHead = $env:EXPECTED_PR_HEAD; phase = 'not-run'; scope = 'supplemental-native-E2E-fixtures'; at = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $proof 'request.json')
 
       - name: Runner contract controls
-        run: node --test scripts/__tests__/run-ide-native-zero-retry.test.cjs
+        run: node --test scripts/__tests__/run-ide-native-zero-retry.test.cjs scripts/__tests__/ide-native-crash-diagnostics.test.cjs
 
       - name: Install root and widget from committed locks
         shell: pwsh
