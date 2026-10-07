@@ -334,6 +334,40 @@ test('failed task shutdown rejects and retries the retained stopper after its ro
 });
 
 const liveTreeTest = process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;
+/** Fixed first-error categories only; neither messages nor inferred timing are copied. */
+function nativeTaskErrorCategory(error: unknown): string {
+  const message = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
+  if (!message) return error == null || error === '' ? 'none' : 'other-error';
+  if (message === 'The task launcher creation identity could not be verified. No package code was released.') return 'launcher-identity-unverified';
+  if (message === 'One positive captured native identity is required before Job assignment.' || message.startsWith('Job assignment or startup peer verification failed. No project execution was released.')) return 'job-attachment-refused';
+  if (message.startsWith('The approved shell did not confirm a positive owned process. Its Job is retained for cleanup.')) return 'gate-launch-refused';
+  if (message === 'A main-approved launch is required.' || message === 'The approved launch kind is invalid.' || message === 'The approved launch exceeds its bounded transport size.') return 'invalid-approved-launch';
+  if (message.startsWith('The owned Job helper did not become ready in time.')) return 'helper-listener-timeout';
+  if (message.startsWith('The owned Job did not confirm its state in time.')) return 'helper-state-timeout';
+  return 'other-error';
+}
+test('native task first-error categories distinguish capture, attachment and GO without inferring a timeout', () => {
+  for (const [message, category] of [
+    ['The task launcher creation identity could not be verified. No package code was released.', 'launcher-identity-unverified'],
+    ['One positive captured native identity is required before Job assignment.', 'job-attachment-refused'],
+    ['Job assignment or startup peer verification failed. No project execution was released. Helper phase: attach.', 'job-attachment-refused'],
+    ['The approved shell did not confirm a positive owned process. Its Job is retained for cleanup. Helper phase: go.', 'gate-launch-refused'],
+    ['A main-approved launch is required.', 'invalid-approved-launch'],
+    ['The approved launch kind is invalid.', 'invalid-approved-launch'],
+    ['The approved launch exceeds its bounded transport size.', 'invalid-approved-launch'],
+    ['The owned Job helper did not become ready in time. Helper phase: unobserved.', 'helper-listener-timeout'],
+    ['The owned Job did not confirm its state in time. Its cleanup ownership is retained.', 'helper-state-timeout'],
+  ]) expect(nativeTaskErrorCategory(message)).toBe(category);
+});
+test('native task first-error categories never publish unknown errors, argv or capabilities', () => {
+  const canary = 'PRIVATE_ENV_ARG_PIPE_CAP_CANARY';
+  expect(nativeTaskErrorCategory(undefined)).toBe('none');
+  expect(nativeTaskErrorCategory(canary)).toBe('other-error');
+  expect(nativeTaskErrorCategory(new Error(canary))).toBe('other-error');
+  expect(nativeTaskErrorCategory(canary + ' The task launcher creation identity could not be verified. No package code was released.')).toBe('other-error');
+  expect(nativeTaskErrorCategory('The task launcher creation identity could not be verified. No package code was released.' + canary)).toBe('other-error');
+  expect(nativeTaskErrorCategory({ message: canary, toString: () => { throw new Error('Never inspect arbitrary errors.'); } })).toBe('other-error');
+});
 /** Diagnostic metadata only; never evidence of readiness or cleanup authority. */
 function boundedJobStartupDiagnostic(error: unknown): Record<string, string | number> {
   const message = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
@@ -402,7 +436,7 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
       },
     });
     void running.then(result => report('result-settled', { success: result.success, exitCode: result.exitCode, cancelled: result.cancelled, cleanupPending: result.cleanupPending,
-      hasError: !!result.error, errorCategory: /helper did not become ready/.test(result.error || '') ? 'helper-listener-timeout' : /did not confirm its state/.test(result.error || '') ? 'helper-state-timeout' : result.error ? 'other-error' : 'none', ...boundedJobStartupDiagnostic(result.error) }), () => report('result-rejected'));
+      hasError: !!result.error, errorCategory: nativeTaskErrorCategory(result.error), ...boundedJobStartupDiagnostic(result.error) }), () => report('result-rejected'));
     for (let attempt = 0; attempt < 100 && !fs.existsSync(pidFile); attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }

@@ -47,6 +47,25 @@ test('Windows executes only a fixed bootstrap, then main-approved target after i
   expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'approved-node.exe', args: ['approved-npm.js', 'run-script', 'check'], kind: 'task' }), expect.any(Function));
   app.finish(); await expect(run).resolves.toMatchObject({ success: true, cleanupPending: false, exitCode: 0 });
 });
+
+test('a missing or unknown launcher identity refuses before attachment and joins retained ownership', async () => {
+  for (const capture of [null, undefined]) {
+    jest.mocked(workspacePtyLifecycle.capture).mockResolvedValueOnce(capture);
+    const app = fixture();
+    await expect(app.run()).resolves.toMatchObject({ success: false, cancelled: false, cleanupPending: false,
+      error: 'The task launcher creation identity could not be verified. No package code was released.' });
+    expect(app.job.attach).not.toHaveBeenCalled(); expect(app.job.authorize).not.toHaveBeenCalled();
+    expect(app.child.kill).toHaveBeenCalledTimes(1); expect(app.job.stop).toHaveBeenCalledTimes(1);
+  }
+});
+
+test('a rejected launcher query preserves its first error and never authorizes package execution', async () => {
+  jest.mocked(workspacePtyLifecycle.capture).mockRejectedValueOnce(new Error('controlled-query-rejection'));
+  const app = fixture();
+  await expect(app.run()).resolves.toMatchObject({ success: false, cancelled: false, cleanupPending: false, error: 'controlled-query-rejection' });
+  expect(app.job.attach).not.toHaveBeenCalled(); expect(app.job.authorize).not.toHaveBeenCalled();
+  expect(app.child.kill).toHaveBeenCalledTimes(1); expect(app.job.stop).toHaveBeenCalledTimes(1);
+});
 test('a partial UTF8 environment overlay inherits npm discovery PATH and reaches the approved target', async () => {
   const bin = path.join(home, 'fixed-node-bin'), npmCli = path.join(bin, 'node_modules', 'npm', 'bin', 'npm-cli.js');
   fs.mkdirSync(path.dirname(npmCli), { recursive: true });
