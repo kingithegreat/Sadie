@@ -34,7 +34,7 @@ interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capab
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown; nativeCode?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
-const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'compile', 'asset-load', 'asset-loaded', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'setup', 'setup-read', 'utility-import', 'utility-imported', 'compile', 'asset-load', 'asset-loaded', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
 const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'console-input', 'console-output', 'console-close', 'spawn', 'unknown']);
 const DIAGNOSTIC_NATIVE_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENXIO', 'EINVAL', 'EBADF', 'EIO', 'ENOTSUP', 'UNKNOWN']);
 
@@ -42,6 +42,7 @@ const DIAGNOSTIC_NATIVE_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENXIO', '
 export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): PendingWorkspaceWindowsJob {
   let child: ChildProcessWithoutNullStreams | undefined;
   let asset: { assembly: string; sha256: string };
+  let setup: string;
   let readyResolve!: () => void, readyReject!: (error: Error) => void;
   let listenResolve!: () => void, listenReject!: (error: Error) => void;
   let closeResolve!: () => void;
@@ -161,6 +162,9 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     if (!systemRoot || !path.win32.isAbsolute(systemRoot)) throw new Error('The Windows system installation path is unavailable.');
     const helperExecutable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     asset = verifiedWorkspaceWindowsJobAsset();
+    const encodedPath = Buffer.from(asset.assembly, 'utf8').toString('base64');
+    if (!encodedPath || encodedPath.length > 8192 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('The fixed product setup is invalid.');
+    setup = [encodedPath, asset.sha256, options.gate?.pipeName || '', options.gate?.capability || ''].join('\n') + '\n';
     spawnStarted = Date.now();
     child = spawn(helperExecutable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(windowsJobSource(), 'utf16le').toString('base64')], { windowsHide: true, env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch { observedClose = { observedMs: elapsed(), outcome: 'not-started' }; closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
@@ -208,7 +212,9 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     };
     clearTimeout(startupTimer); closed = true; closeCode = code; closeResolve(); if (!zeroConfirmed || code !== 0) fail('The owned Job helper closed without verified cleanup.');
   });
-  child.stdin.write(JSON.stringify({ gate: options.gate || null, asset: asset! }) + '\n');
+  // Setup has four fixed bounded lines, not a PowerShell JSON cmdlet cold path.
+  // Capabilities remain only in the held stdin pipe, never executable argv.
+  child.stdin.write(setup!);
   return job;
 }
 
@@ -227,12 +233,22 @@ $inputEncoding=[System.Text.UTF8Encoding]::new($false)
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-constructed"}'); [Console]::Out.Flush()
 [Console]::InputEncoding=$inputEncoding
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-set"}'); [Console]::Out.Flush()
-[Console]::Out.WriteLine('{"type":"phase","phase":"utility-import"}'); [Console]::Out.Flush()
-Microsoft.PowerShell.Core\\Import-Module -Name ([System.IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
-[Console]::Out.WriteLine('{"type":"phase","phase":"utility-imported"}'); [Console]::Out.Flush()
-function Emit($value) { [Console]::Out.WriteLine(($value | Microsoft.PowerShell.Utility\\ConvertTo-Json -Compress)); [Console]::Out.Flush() }
+function ReadSetupLine([int]$maximum) {
+ $text=[System.Text.StringBuilder]::new()
+ while($true) { $character=[Console]::In.Read(); if($character -lt 0) { throw 'input' }; if($character -eq 10) { return $text.ToString() }; if($character -eq 13 -or $text.Length -ge $maximum) { throw 'input' }; [void]$text.Append([char]$character) }
+}
+function Emit($value) { [Console]::Out.WriteLine([OwnedWindowsJob]::EncodeFrame($value)); [Console]::Out.Flush() }
 try {
- $initial=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([Console]::In.ReadLine())
+ [Console]::Out.WriteLine('{"type":"phase","phase":"setup"}'); [Console]::Out.Flush()
+ $encodedPath=ReadSetupLine 8192; $expectedHash=ReadSetupLine 64; $pipeName=ReadSetupLine 40; $capability=ReadSetupLine 64
+ if($encodedPath.Length -eq 0 -or $encodedPath -cnotmatch '^[A-Za-z0-9+/]+={0,2}$' -or $expectedHash -cnotmatch '^[a-f0-9]{64}$') { throw 'input' }
+ $pathBytes=[System.Convert]::FromBase64String($encodedPath); if([System.Convert]::ToBase64String($pathBytes) -cne $encodedPath) { throw 'input' }
+ $assemblyPath=[System.Text.UTF8Encoding]::new($false,$true).GetString($pathBytes)
+ if(![System.IO.Path]::IsPathRooted($assemblyPath) -or $assemblyPath.IndexOf([char]0) -ge 0 -or $assemblyPath.IndexOf([char]10) -ge 0 -or $assemblyPath.IndexOf([char]13) -ge 0) { throw 'input' }
+ $gate=$null
+ if($pipeName.Length -ne 0 -or $capability.Length -ne 0) { if($pipeName -cnotmatch '^hbi-[a-f0-9-]{36}$' -or $capability -cnotmatch '^[a-f0-9]{64}$') { throw 'input' }; $gate=@{pipeName=$pipeName;capability=$capability} }
+ $initial=@{asset=@{assembly=$assemblyPath;sha256=$expectedHash};gate=$gate}
+ [Console]::Out.WriteLine('{"type":"phase","phase":"setup-read"}'); [Console]::Out.Flush()
  [Console]::Out.WriteLine('{"type":"phase","phase":"asset-load"}'); [Console]::Out.Flush()
  if($initial.asset.assembly -isnot [string] -or ![System.IO.Path]::IsPathRooted($initial.asset.assembly) -or $initial.asset.sha256 -isnot [string] -or $initial.asset.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'asset' }
  $assetStream=[System.IO.File]::Open($initial.asset.assembly,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::Read)
@@ -254,25 +270,29 @@ try {
  $attached=$false; $authorized=$false
  while($true) {
   Emit @{type='phase';phase='command'}
-  $line=[Console]::In.ReadLine(); if($null -eq $line) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }
-  if($line.Length -gt 131072) { throw 'input' }; $request=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject $line
-  if($request.id -isnot [int] -or $request.id -le 0) { throw 'request' }
+  if([Console]::In.Peek() -lt 0) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }; $line=ReadSetupLine 131072
+  if($line.Length -gt 131072) { throw 'input' }; $request=[OwnedWindowsJob]::ParseFrame($line)
+  if($request.id -isnot [int] -or $request.id -le 0 -or $request.operation -isnot [string]) { throw 'request' }
+  foreach($key in $request.Keys) { if($key -cnotin @('id','operation','pid','creation','launch')) { throw 'request' } }
   try {
    if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation} }
-   if($request.operation -eq 'attach' -and !$attached) { $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true} }
+   if($request.operation -eq 'attach' -and !$attached) {
+    if($request.pid -isnot [int] -or $request.pid -le 0 -or $request.creation -isnot [string] -or $request.creation -cnotmatch '^[0-9]{1,19}$' -or [long]$request.creation -le 0) { throw 'operation' }
+    $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true}
+   }
    elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
-    $authorized=$true; $ack=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | Microsoft.PowerShell.Utility\\ConvertTo-Json -Compress -Depth 5)))
+    $authorized=$true; $ack=[OwnedWindowsJob]::ParseFrame([OwnedWindowsJob]::Go([OwnedWindowsJob]::EncodeFrame($request.launch)))
     if($ack.type -eq 'launch-error') {
      if($ack.stage -is [string] -and $ack.code -is [string] -and $ack.stage -in @('console-input','console-output','console-close','spawn') -and $ack.code -in @('ENOENT','EACCES','EPERM','ENXIO','EINVAL','EBADF','EIO','ENOTSUP','UNKNOWN')) {
       Emit @{type='phase';phase='go';code=[string]$ack.stage;nativeCode=[string]$ack.code}
       Emit @{type='result';id=$request.id;ok=$false}; continue
      }; throw 'child'
     }
-    if($ack.type -ne 'spawn' -or $ack.pid -isnot [int] -or $ack.pid -le 0) { throw 'child' }
+    if($ack.type -isnot [string] -or $ack.type -ne 'spawn' -or $ack.pid -isnot [int] -or $ack.pid -le 0) { throw 'child' }
     $member=[OwnedWindowsJob]::VerifyChild($ack.pid)
     if($member -eq 0 -and $request.launch.kind -eq 'task') {
-     $done=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([OwnedWindowsJob]::ReadCompletion())
-     if($done.type -ne 'completed' -or $done.pid -ne $ack.pid -or $done.exitCode -isnot [int] -or ![OwnedWindowsJob]::CompletedTarget()) { throw 'completion' }
+     $done=[OwnedWindowsJob]::ParseFrame([OwnedWindowsJob]::ReadCompletion())
+     if($done.type -isnot [string] -or $done.type -ne 'completed' -or $done.pid -isnot [int] -or $done.pid -ne $ack.pid -or $done.exitCode -isnot [int] -or ![OwnedWindowsJob]::CompletedTarget()) { throw 'completion' }
     } elseif($member -ne 1) { throw 'membership' }
     [OwnedWindowsJob]::Accept(); [OwnedWindowsJob]::ReleaseGate(); Emit @{type='result';id=$request.id;ok=$true;pid=$ack.pid}
    }

@@ -24,7 +24,7 @@ function compilerInputs(systemRoot) {
     const compiler = path.win32.join(framework, 'csc.exe');
     if (!fs.existsSync(compiler)) continue;
     regular(compiler);
-    const references = ['mscorlib.dll', 'System.dll', 'System.Core.dll'].map(name => path.win32.join(framework, name));
+    const references = ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'].map(name => path.win32.join(framework, name));
     references.forEach(regular);
     return { framework, compiler, references };
   }

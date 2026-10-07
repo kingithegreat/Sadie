@@ -16,7 +16,7 @@ function helper() {
   child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
   spawnMock.mockReturnValue(child);
   const send = (value: object) => child.stdout.emit('data', Buffer.from(JSON.stringify(value) + '\n'));
-  const requests = () => child.stdin.write.mock.calls.map(call => JSON.parse(call[0])).filter(value => value.id);
+  const requests = () => child.stdin.write.mock.calls.slice(1).map(call => JSON.parse(call[0])).filter(value => value.id);
   const reply = (value: object) => send({ type: 'result', id: requests().at(-1).id, ...value });
   return { child, send, requests, reply };
 }
@@ -172,9 +172,9 @@ describe('creation-gated Windows Job ownership', () => {
     fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
   });
 
-  it('fails closed when the system Utility import exits without a listener or cleanup receipt', async () => {
+  it('fails closed when typed setup exits without a listener or cleanup receipt', async () => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();
-    fake.send({ type: 'phase', phase: 'utility-import' }); fake.child.emit('close', 1);
+    fake.send({ type: 'phase', phase: 'setup' }); fake.child.emit('close', 1);
     await expect(job.listening).rejects.toThrow('closed without verified cleanup');
     await expect(job.ready).rejects.toThrow('closed without verified cleanup');
     await expect(job.stop()).rejects.toThrow('lost');
@@ -273,11 +273,31 @@ describe('creation-gated Windows Job ownership', () => {
     expect(managed).toContain('limits.Basic.Flags=0x2000');
     expect(managed).toContain('QueryInformationJobObject(job,1'); expect(managed).toContain('return Account().Active==0');
     expect(source).not.toContain('Add-Type'); expect(source).not.toContain('csc.exe');
+    expect(source).not.toContain('Import-Module'); expect(source).not.toContain('ConvertFrom-Json'); expect(source).not.toContain('ConvertTo-Json');
+    expect(source).toContain('[OwnedWindowsJob]::ParseFrame($line)');
     expect(source).toContain('[System.Reflection.Assembly]::Load($assetBytes)');
     expect(source.indexOf('$actualHash -cne $initial.asset.sha256')).toBeLessThan(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)'));
     expect(source).not.toContain('Get-CimInstance'); expect(source).not.toContain('TerminateProcess');
     expect(source).toContain('$inputEncoding=[System.Text.UTF8Encoding]::new($false)');
     expect(source).toContain('[Console]::InputEncoding=$inputEncoding');
+  });
+
+  it('uses exactly four bounded setup lines and preserves Unicode, quotes and spaces without argv authority', () => {
+    const fake = helper(); const assembly = 'C:\\HomeBot Unicode é🌿\\quoted " folder\\assets\\OwnedWindowsJob.dll';
+    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReturnValueOnce({ assembly, sha256: 'b'.repeat(64) });
+    createPendingWorkspaceWindowsJob();
+    const lines = fake.child.stdin.write.mock.calls[0][0].split('\n');
+    expect(lines).toHaveLength(5); expect(lines.slice(1)).toEqual(['b'.repeat(64), '', '', '']);
+    expect(Buffer.from(lines[0], 'base64').toString('utf8')).toBe(assembly);
+    expect(JSON.stringify(spawnMock.mock.calls[0][1])).not.toContain(assembly);
+    expect(fake.requests()).toHaveLength(0);
+  });
+
+  it('rejects oversized fixed setup before spawning, without orphaning any helper', async () => {
+    helper(); (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReturnValueOnce({ assembly: 'C:\\' + 'x'.repeat(8192), sha256: 'b'.repeat(64) });
+    const job = createPendingWorkspaceWindowsJob(); await expect(job.listening).rejects.toThrow('could not start');
+    await job.stop(); expect(spawnMock).not.toHaveBeenCalled();
+    expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBe(true);
   });
 
   it('rechecks main-owned authority after readiness and cannot send GO when that fence rejects', async () => {

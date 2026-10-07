@@ -1,5 +1,18 @@
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
 public static class OwnedWindowsJob {
+ // Fixed framework serializer only; no type resolver or request-selected assembly.
+ static System.Web.Script.Serialization.JavaScriptSerializer Json() { return new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength=131072,RecursionLimit=16 }; }
+ public static object ParseFrame(string line) {
+  if(line==null||line.Length>131072) throw new Exception("input");
+  var value=Json().DeserializeObject(line); if(!(value is System.Collections.Generic.IDictionary<string,object>)) throw new Exception("input"); ValidateFrame(value,0); return value;
+ }
+ static void ValidateFrame(object value,int depth) {
+  if(depth>16) throw new Exception("input");
+  var map=value as System.Collections.Generic.IDictionary<string,object>;
+  if(map!=null) { foreach(var pair in map) { if(pair.Key=="__type"||pair.Key=="__proto__"||pair.Key=="constructor"||pair.Key=="prototype") throw new Exception("input"); ValidateFrame(pair.Value,depth+1); } return; }
+  var array=value as object[]; if(array!=null) foreach(var item in array) ValidateFrame(item,depth+1);
+ }
+ public static string EncodeFrame(object value) { return Json().Serialize(value); }
  [StructLayout(LayoutKind.Sequential)] struct BasicLimit { public long PerProcess,PerJob; public uint Flags; public UIntPtr MinWorking,MaxWorking; public uint ActiveLimit; public UIntPtr Affinity; public uint Priority,Scheduling; }
  [StructLayout(LayoutKind.Sequential)] struct IoCounters { public ulong ReadOps,WriteOps,OtherOps,ReadBytes,WriteBytes,OtherBytes; }
  [StructLayout(LayoutKind.Sequential)] struct ExtendedLimit { public BasicLimit Basic; public IoCounters Io; public UIntPtr ProcessMemory,JobMemory,PeakProcess,PeakJob; }

@@ -15,7 +15,7 @@ const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex
 const stat = (size: number) => ({ dev: 1, ino: 2, size, isFile: () => true, isSymbolicLink: () => false });
 let files: Map<string, Buffer>, held: string;
 beforeEach(() => {
-  files = new Map([[asset, Buffer.from(bytes)], [path.join(native, 'OwnedWindowsJob.cs'), source], [preparationFile, preparation], [manifestFile, Buffer.from(JSON.stringify({ version: 2, sourceSha256: digest(source), preparationSha256: digest(preparation), compilerSha256: 'c'.repeat(64), optionsSha256: 'd'.repeat(64), references: ['mscorlib.dll', 'System.dll', 'System.Core.dll'].map(name => ({ name, sha256: 'e'.repeat(64) })), assemblySha256: digest(bytes) }))]]);
+  files = new Map([[asset, Buffer.from(bytes)], [path.join(native, 'OwnedWindowsJob.cs'), source], [preparationFile, preparation], [manifestFile, Buffer.from(JSON.stringify({ version: 2, sourceSha256: digest(source), preparationSha256: digest(preparation), compilerSha256: 'c'.repeat(64), optionsSha256: 'd'.repeat(64), references: ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'].map(name => ({ name, sha256: 'e'.repeat(64) })), assemblySha256: digest(bytes) }))]]);
   (fs.lstatSync as jest.Mock).mockImplementation(file => { const value = files.get(file); if (!value) throw new Error('missing'); return stat(value.length); });
   (fs.realpathSync.native as jest.Mock).mockImplementation(file => file);
   (fs.openSync as jest.Mock).mockClear().mockImplementation(file => { held = file; return 9; });

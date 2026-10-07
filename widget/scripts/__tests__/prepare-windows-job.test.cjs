@@ -13,7 +13,7 @@ function fixture() {
   const compiler = 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
   const framework = path.win32.dirname(compiler);
   files.set(compiler, Buffer.from('compiler'));
-  for (const name of ['mscorlib.dll', 'System.dll', 'System.Core.dll']) files.set(path.win32.join(framework, name), Buffer.from('fixed system ref'));
+  for (const name of ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll']) files.set(path.win32.join(framework, name), Buffer.from('fixed system ref'));
   const stats = file => ({ size: files.get(file)?.length || 0, isFile: () => files.has(file), isDirectory: () => file === dir, isSymbolicLink: () => false });
   const calls = [];
   const fakeFs = { existsSync: file => files.has(file), lstatSync: stats, statSync: stats, realpathSync: { native: file => file }, readFileSync: (file, encoding) => { if (!files.has(file)) throw Error('missing'); return encoding ? files.get(file).toString(encoding) : files.get(file); }, mkdirSync: () => {}, renameSync: (from, to) => { files.set(to, files.get(from)); files.delete(from); }, writeFileSync: (file, value) => files.set(file, Buffer.from(value)), unlinkSync: file => files.delete(file) };
@@ -71,7 +71,7 @@ test('installed reference changes invalidate output and are recorded in fixed or
   const current = f.api.prepareWindowsJob();
   assert.equal(f.calls.length, 2); assert.equal(current.compilerSha256, previous.compilerSha256);
   assert.notEqual(current.references[2].sha256, previous.references[2].sha256);
-  assert.equal(JSON.stringify(current.references.map(row => row.name)), JSON.stringify(['mscorlib.dll', 'System.dll', 'System.Core.dll']));
+  assert.equal(JSON.stringify(current.references.map(row => row.name)), JSON.stringify(['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll']));
 });
 test('version1 caches are rebuilt rather than promoted without dependency identities', () => {
   const f = fixture(); f.api.prepareWindowsJob();
