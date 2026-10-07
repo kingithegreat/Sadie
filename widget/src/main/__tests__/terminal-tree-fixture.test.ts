@@ -111,7 +111,7 @@ test('the exact stdin source records real TTY/resize/input fields with only nati
   columns = 57; interval!(); data!(Buffer.from('NATIVE_STDIN\r\n'));
   expect(JSON.parse(writes.get(marker)!)).toEqual({ pid: 17, stdin: true, stdout: true, columns: 57, rows: 5, cachedColumns: 89, input: 'NATIVE_STDIN' });
   expect(handle.getWindowSize).toHaveBeenCalledTimes(3);
-  expect(handle.getWindowSize.mock.instances.every(owner => owner === handle)).toBe(true);
+  expect(handle.getWindowSize.mock.contexts.every(owner => owner === handle)).toBe(true);
   expect(exit).toBe(0);
 });
 
