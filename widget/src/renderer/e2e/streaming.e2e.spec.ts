@@ -376,11 +376,16 @@ test('falls back to non-stream final text on stream init error', async () => {
     // If the first-run modal is visible (fresh profile), finish setup so the test can interact with the main UI
     await completeFirstRunWizardIfVisible(page);
 
-    const beforeCount = await page.locator('[data-role="assistant-message"]').count();
+    // User replies have id-* identities; startup briefings have briefing-*.
+    // A briefing can arrive after this snapshot, so neither a count nor an
+    // array position identifies the reply created by this send.
+    const replySelector = '[data-role="assistant-message"][data-message-id^="id-"]';
+    const previousReplies = await page.locator('[data-role="assistant-message"][data-message-id]').evaluateAll(nodes =>
+      nodes.map(node => `:not([data-message-id="${CSS.escape(node.getAttribute('data-message-id')!)}"])`).join(''));
     await page.getByLabel('Message HomeBot').fill('hello');
     await page.locator('button.send-button').click();
 
-    const assistant = page.locator('[data-role="assistant-message"]').nth(beforeCount);
+    const assistant = page.locator(`${replySelector}${previousReplies}`);
 
     // The app's OWN recovery, not a simulated one.
     //
