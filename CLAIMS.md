@@ -1,5 +1,16 @@
 # Work Claims
 
+## 2026-10-07 — CHAT-CUSTOM-TRANSPORT
+
+Custom-model agent owns custom-llm-client, its transport regressions, and cloud
+chat/code tool-round-trip regions of message-router in isolated worktree
+`.homebot/chat-custom-20261007`, branch `claude/chat-custom-20261007`, based on
+`ce53a7db`. Local agent owns Ollama router region; root owns integration and
+native qualification. Provider catalogs, credentials, owner profiles, wizard
+retention and shared dependency targets are outside this claim. Bounded actual
+source A/B controls proved transport regressions and corrections; full Jest,
+typecheck, native app and real-provider proof await resource-qualified execution.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make

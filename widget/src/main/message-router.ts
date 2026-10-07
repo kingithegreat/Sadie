@@ -17,6 +17,7 @@ import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from './custom-llm-client';
+import { createCustomToolRoundTrip } from './custom-tool-round-trip';
 import { markRequestStart, markFirstToken } from './utils/perf-logger';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
@@ -2241,106 +2242,65 @@ export async function streamFromLLM(
       const toolDefs = providerSupportsTools && shouldOfferTools
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
-      
-      // Track whether a tool call was received (to know if onEnd should be deferred)
-      let toolCallReceived = false;
-      
-      // Handle tool call round-trip: execute tool, then feed result back to LLM
-      const handleToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
-        toolCallReceived = true;
-        console.log(`[HomeBot] Custom LLM tool call: ${tc.name}`, tc.arguments);
-        onToolCall(tc.name, tc.arguments);
-        
-        try {
-          const results = await executeToolBatch(
-            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
-            {
-              executionId: `custom-llm-tool-${Date.now()}`,
-              requestConfirmation,
-              requestPermission: requestPermission as any
-            } as ToolContext
-          );
-          
-          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
-          onToolResult(toolResult);
-          console.log('[HomeBot] Custom LLM tool result, sending follow-up...');
-          
-          // Send the tool result back to the LLM for a follow-up response
-          const updatedHistory = [
-            ...history.map(m => ({ role: m.role as any, content: m.content })),
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: '', tool_calls: [{
-              id: tc.id || `call_${Date.now()}`,
-              type: 'function' as const,
-              function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
-            }] },
-            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
-          ];
-          
-          // Stream the follow-up (no tools this time to avoid infinite loops)
-          const summaryPrompt = cloudSystemPrompt + '\n\nIMPORTANT: You just called a tool and received its result. Summarize the tool result in a clear, conversational response for the user. Do NOT dump raw JSON or data — present the key information naturally.';
-          await streamFromCustomLLM(
-            '', // empty — context is in the history
-            updatedHistory,
-            customConfig,
-            summaryPrompt,
-            onChunk,
-            onEnd,
-            onError,
-            controller.signal
-          );
-        } catch (err: any) {
-          console.error('[HomeBot] Custom LLM tool execution failed:', err.message);
-          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
-          onEnd();
-        }
+      let cloudSettled = false;
+      let cloudHadOutput = false;
+      let fallbackCancel: (() => void) | undefined;
+      const cloudEnd = () => { if (!cloudSettled) { cloudSettled = true; onEnd(); } };
+      const cloudError = (err: any) => { if (!cloudSettled) { cloudSettled = true; onError(err); } };
+      const cloudChunk = (text: string) => {
+        if (!cloudSettled && !controller.signal.aborted) { cloudHadOutput ||= !!text; onChunk(text); }
       };
-      
-      // Wrap onEnd: if a tool call was received, the tool handler manages onEnd after the follow-up.
-      // If no tool call happened (plain text response), fire onEnd normally.
-      const wrappedOnEnd = () => {
-        if (!toolCallReceived) {
-          onEnd();
-        }
-        // else: handleToolCall will call onEnd after the follow-up stream completes
+      const cloudToolCall = (name: string, args: any) => {
+        if (!cloudSettled && !controller.signal.aborted) { cloudHadOutput = true; onToolCall(name, args); }
       };
+      const cloudToolResult = (result: any) => { if (!cloudSettled && !controller.signal.aborted) onToolResult(result); };
       
       // Wrap onError: surface hard cloud-side failures instead of masking them
       // behind a local Ollama reply. Only unreachable/transient failures fall back.
       const cloudOnError = (err: any) => {
+        if (controller.signal.aborted || cloudSettled) return;
         const errMsg = typeof err === 'string' ? err : err?.message || String(err);
         const cloudTarget = describeCloudTarget(customConfig);
-        if (shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
+        if (cloudHadOutput || shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
           const surfacedError = new Error(`Cloud API error (${cloudTarget}): ${errMsg}`);
           console.warn(`[HomeBot] ${surfacedError.message} — not falling back to local Ollama`);
-          onError(surfacedError);
+          cloudError(surfacedError);
           return;
         }
 
         console.warn(`[HomeBot] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
-        onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
+        cloudChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
         // Fall through to Ollama — forward onMeta so the model badge reports
         // the local model that actually answered, not the cloud model that failed.
-        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options, onMeta)
-          .catch((ollamaErr: any) => onError(ollamaErr));
+        streamFromOllamaWithTools(message, images, conversationId, cloudChunk, cloudToolCall, cloudToolResult, cloudEnd, cloudError, requestConfirmation, requestPermission, options, onMeta)
+          .then(handle => { if (controller.signal.aborted) handle.cancel(); else fallbackCancel = handle.cancel; })
+          .catch((ollamaErr: any) => { if (!controller.signal.aborted) cloudError(ollamaErr); });
       };
 
-      streamFromCustomLLM(
+      const toolRoundTrip = createCustomToolRoundTrip({
+        message, history: history.map(m => ({ role: m.role as any, content: m.content })),
+        apiConfig: customConfig,
+        systemPrompt: cloudSystemPrompt + '\n\nSummarize any tool results clearly for the user. Present key information naturally.',
+        context: { executionId: `custom-llm-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
+        signal: controller.signal, onChunk: cloudChunk, onToolCall: cloudToolCall,
+        onToolResult: cloudToolResult, onEnd: cloudEnd, onError: cloudError, onInitialError: cloudOnError,
+      });
+      void Promise.resolve(streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         customConfig,
         cloudSystemPrompt,
-        onChunk,
-        wrappedOnEnd,
-        cloudOnError,
+        toolRoundTrip.onChunk,
+        toolRoundTrip.onEnd,
+        toolRoundTrip.onError,
         controller.signal,
         toolDefs,
-        providerSupportsTools ? handleToolCall : undefined,
-        cloudImageData
-      );
+        providerSupportsTools ? toolRoundTrip.onToolCall : undefined,
+        cloudImageData,
+      )).catch(toolRoundTrip.onError);
 
       return {
-        cancel: () => controller.abort()
+        cancel: () => { controller.abort(); fallbackCancel?.(); cloudEnd(); }
       };
     } else {
       // The user turned cloud chat ON. Falling back silently is how a missing
@@ -2393,46 +2353,18 @@ export async function streamFromLLM(
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
 
-      let codeToolCallReceived = false;
-      const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
-        codeToolCallReceived = true;
-        console.log(`[HomeBot] Code API tool call: ${tc.name}`, tc.arguments);
-        onToolCall(tc.name, tc.arguments);
-        try {
-          const results = await executeToolBatch(
-            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
-            { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext
-          );
-          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
-          onToolResult(toolResult);
-          const updatedHistory = [
-            ...history.map(m => ({ role: m.role as any, content: m.content })),
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: '', tool_calls: [{ id: tc.id || `call_${Date.now()}`, type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.arguments) } }] },
-            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
-          ];
-          await streamFromCustomLLM('', updatedHistory, codeApiConfig, codeSystemPrompt, onChunk, onEnd, onError, controller.signal);
-        } catch (err: any) {
-          console.error('[HomeBot] Code API tool execution failed:', err.message);
-          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
-          onEnd();
-        }
-      };
-
-      const codeWrappedOnEnd = () => { if (!codeToolCallReceived) onEnd(); };
-
-      streamFromCustomLLM(
-        message,
-        history.map(m => ({ role: m.role as any, content: m.content })),
-        codeApiConfig,
-        codeSystemPrompt,
-        onChunk,
-        codeWrappedOnEnd,
-        onError,
-        controller.signal,
-        codeToolDefs,
-        codeProviderSupportsTools ? handleCodeToolCall : undefined
-      );
+      const toolRoundTrip = createCustomToolRoundTrip({
+        message, history: history.map(m => ({ role: m.role as any, content: m.content })),
+        apiConfig: codeApiConfig, systemPrompt: codeSystemPrompt,
+        context: { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
+        signal: controller.signal, onChunk, onToolCall, onToolResult, onEnd, onError,
+      });
+      void Promise.resolve(streamFromCustomLLM(
+        message, history.map(m => ({ role: m.role as any, content: m.content })),
+        codeApiConfig, codeSystemPrompt,
+        toolRoundTrip.onChunk, toolRoundTrip.onEnd, toolRoundTrip.onError, controller.signal,
+        codeToolDefs, codeProviderSupportsTools ? toolRoundTrip.onToolCall : undefined,
+      )).catch(toolRoundTrip.onError);
       return { cancel: () => controller.abort() };
     } else {
       console.log(`[HomeBot] Code API not ready: ${codeValidation.error}. Falling back to Ollama.`);

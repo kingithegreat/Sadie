@@ -86,6 +86,7 @@ jest.mock('../tools', () => ({
 
 // ── Import after all mocks ──────────────────────────────────────────────────
 import { streamFromLLM } from '../message-router';
+import { executeToolBatch } from '../tools';
 
 function callbacks() {
   return {
@@ -205,6 +206,47 @@ describe('streamFromLLM', () => {
       expect(signal.aborted).toBe(false);
       handle.cancel();
       expect(signal.aborted).toBe(true);
+    });
+
+    test('multiple custom tool calls yield one complete followup and one terminal end', async () => {
+      (executeToolBatch as jest.Mock).mockResolvedValueOnce([{ result: 'A' }, { result: 'B' }]);
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[4]('Checking files.');
+        args[9]({ id: 'a', name: 'read_file', arguments: { path: 'a' } });
+        args[9]({ id: 'b', name: 'read_file', arguments: { path: 'b' } });
+        void args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      }).mockImplementationOnce((...args: any[]) => {
+        args[4]('Summary'); args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('read both files', undefined, 'conv-custom-batch',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(executeToolBatch).toHaveBeenCalledTimes(1);
+      expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
+      const followup = mockStreamFromCustomLLM.mock.calls[1][1];
+      expect(followup.filter((row: any) => row.role === 'tool')).toEqual([
+        { role: 'tool', content: 'A', tool_call_id: 'a' }, { role: 'tool', content: 'B', tool_call_id: 'b' },
+      ]);
+      expect(cbs.onEnd).toHaveBeenCalledTimes(1);
+      expect(cbs.onError).not.toHaveBeenCalled();
+    });
+
+    test('a cloud stream error after visible text surfaces without mixing in a local reply', async () => {
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[4]('Partial reply');
+        args[6](new Error('Connection interrupted'));
+        args[4]('late'); args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('explain closures', undefined, 'conv-custom-partial',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      expect(cbs.onChunk.mock.calls.flat()).toEqual(['Partial reply']);
+      expect(cbs.onError).toHaveBeenCalledTimes(1);
+      expect(cbs.onEnd).not.toHaveBeenCalled();
     });
 
     test('429 from custom LLM surfaces the cloud error instead of falling back to Ollama', async () => {
