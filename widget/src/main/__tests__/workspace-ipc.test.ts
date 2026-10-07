@@ -167,7 +167,11 @@ describe('root', () => {
       expect(list).toMatchObject({ success: true, path: root.path });
       expect(file).toMatchObject({ success: true, path: path.join(root.path, 'hello.ts') });
       expect(path.relative(root.path, file.path)).toBe('hello.ts');
-    } finally { home.mockRestore(); fs.rmSync(alias, { force: true }); }
+    } finally {
+      home.mockRestore();
+      if (process.platform === 'win32') fs.rmdirSync(alias);
+      else fs.unlinkSync(alias);
+    }
   });
   test('default home validation preserves protected-root and trusted-sender refusal', async () => {
     const profile = (global as any).__workspaceProfile;
