@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+const nativeFs: typeof import('fs') = jest.requireActual('fs');
 let mockHome: string;
 jest.mock('electron', () => ({ app: { getPath: () => require('path').join(mockHome, 'profile') } }));
 jest.mock('../user-paths', () => ({ homeDir: () => mockHome }));
@@ -67,7 +68,7 @@ test('instruction text and file-count limits are visible rather than implying co
 test('directory discovery stops at its bound and discloses missing scopes', () => {
   write('AGENTS.md', 'ROOT_RULE');
   for (let i = 0; i < 210; i++) fs.mkdirSync(path.join(root, `d${String(i).padStart(3, '0')}`));
-  const opened = jest.spyOn(fs, 'opendirSync');
+  const opened = jest.spyOn(nativeFs, 'opendirSync');
   expect(prompt()).toContain('Instruction discovery is incomplete');
   expect(opened.mock.calls.length).toBeLessThanOrEqual(200);
 });
@@ -90,6 +91,6 @@ test('the global entry bound stops a large flat directory without depending on a
 test('a file redirected during open is rejected by its held descriptor identity', () => {
   const instruction = write('AGENTS.md', 'ROOT_RULE'); fs.writeFileSync(path.join(outside, 'AGENTS.md'), 'OUTSIDE_OPEN_RACE');
   const original = fs.openSync;
-  jest.spyOn(fs, 'openSync').mockImplementation(((file: any, flags: any, mode: any) => original(file === instruction ? path.join(outside, 'AGENTS.md') : file, flags, mode)) as any);
+  jest.spyOn(nativeFs, 'openSync').mockImplementation(((file: any, flags: any, mode: any) => original(file === instruction ? path.join(outside, 'AGENTS.md') : file, flags, mode)) as any);
   expect(prompt()).not.toContain('OUTSIDE_OPEN_RACE');
 });
