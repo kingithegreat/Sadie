@@ -23,28 +23,28 @@ async function open() {
   fireEvent.change(screen.getByLabelText('Plan to approve'), { target: { value: 'Review current changes.' } });
   fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'Continue with reviewed edits.' } });
 }
-async function review() { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Review plan', exact: true })); }); }
-async function approve() { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve plan', exact: true })); }); }
+async function review() { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Review plan' })); }); }
+async function approve() { await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve plan' })); }); }
 function advance(ms: number) { now += ms; act(() => { jest.advanceTimersByTime(ms); }); }
 
 test('full panel preserves renewed server expires, clears expired approval, and recovers with a fresh Review and Approve', async () => {
   await open(); await review();
   advance(TTL - 1000); await approve();
   // The original review deadline must not expire a renewed approval.
-  advance(1001); expect(screen.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  advance(1001); expect(screen.getByRole('button', { name: 'Approved' })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root, planId: 'plan-1' });
   act(() => { callbacks.onStreamEnd(); });
   fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'Continue after expiry.' } });
   advance(TTL - 1001);
-  expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Approved' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   expect(screen.getByLabelText('Ask the assistant')).toHaveValue('Continue after expiry.');
   await act(async () => { fireEvent.keyDown(screen.getByLabelText('Ask the assistant'), { key: 'Enter', ctrlKey: true }); });
   expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
   await review(); await approve();
   expect(api.workspaceAiApprovePlan).toHaveBeenLastCalledWith(root, 'plan-2');
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(api.sendStreamMessage.mock.calls[1][0].workspace).toEqual({ root, planId: 'plan-2' });
   act(() => { callbacks.onStreamEnd(); });
 });
@@ -54,32 +54,32 @@ test('a background clock jump and an awaited context read cannot send an expired
   let resolve!: (value: any) => void;
   api.workspaceList = jest.fn(() => new Promise(done => { resolve = done; }));
   fireEvent.change(screen.getByLabelText('Add context'), { target: { value: `folder:${root}` } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   now += TTL; // Deliberately do not deliver the UI timer before the IPC read returns.
   await act(async () => { resolve({ success: true, entries: [] }); });
   expect(api.sendStreamMessage).not.toHaveBeenCalled();
   expect(screen.getByLabelText('Ask the assistant')).toHaveValue('Continue with reviewed edits.');
-  expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Approved' })).not.toBeInTheDocument();
   await review(); await approve();
   now += TTL; // Also exercise the pre-Send check before a suspended timer runs.
   await act(async () => { fireEvent.keyDown(screen.getByLabelText('Ask the assistant'), { key: 'Enter', ctrlKey: true }); });
-  expect(api.sendStreamMessage).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: 'Review plan', exact: true })).toBeEnabled();
+  expect(api.sendStreamMessage).not.toHaveBeenCalled(); expect(screen.getByRole('button', { name: 'Review plan' })).toBeEnabled();
 });
 
 test('the panel uses the returned expiry and recovers from a main-process expiry rejection', async () => {
   await open(); await review();
   api.workspaceAiApprovePlan.mockResolvedValueOnce({ success: true, id: 'plan-1', expires: now + 1234 });
   await approve(); advance(1234);
-  expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Approved' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   await review();
   api.workspaceAiApprovePlan.mockResolvedValueOnce({ success: false, error: 'This plan expired. Prepare it again.' });
   await approve();
-  expect(screen.queryByRole('button', { name: 'Approve plan', exact: true })).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Review plan', exact: true })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Approve plan' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Review plan' })).toBeEnabled();
   await review(); await approve();
-  expect(screen.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Approved' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
 });
 
 test('a fresh approval replaces an earlier plan during context loading without being cleared or sending the earlier ID', async () => {
@@ -87,16 +87,16 @@ test('a fresh approval replaces an earlier plan during context loading without b
   let resolve!: (value: any) => void;
   api.workspaceList = jest.fn(() => new Promise(done => { resolve = done; }));
   fireEvent.change(screen.getByLabelText('Add context'), { target: { value: `folder:${root}` } });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   advance(TTL - 1000); await review(); await approve();
   expect(api.workspaceAiApprovePlan).toHaveBeenLastCalledWith(root, 'plan-2');
   advance(1000); // The captured first approval has expired; the new one is valid.
   await act(async () => { resolve({ success: true, entries: [] }); });
   expect(api.sendStreamMessage).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Approved', exact: true })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Approved' })).toBeDisabled();
   expect(screen.getByLabelText('Ask the assistant')).toHaveValue('Continue with reviewed edits.');
   api.workspaceList.mockResolvedValue({ success: true, entries: [] });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
   expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root, planId: 'plan-2' });
   act(() => { callbacks.onStreamEnd(); });
@@ -104,15 +104,15 @@ test('a fresh approval replaces an earlier plan during context loading without b
 
 test('only successful conversation clearing releases the expiry gate and the next chat is read-only', async () => {
   await open(); await review(); await approve(); advance(TTL);
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
   api.deleteConversation = jest.fn().mockResolvedValueOnce({ success: false, error: 'Deletion failed.' }).mockResolvedValueOnce({ success: true });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history', exact: true })); });
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history', exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history' })); });
+  expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Clear conversation history' })); });
   expect(api.deleteConversation).toHaveBeenLastCalledWith(`workspace:${root}`);
-  expect(screen.getByRole('button', { name: 'Send', exact: true })).toBeEnabled();
-  expect(screen.queryByRole('button', { name: 'Approved', exact: true })).not.toBeInTheDocument();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send', exact: true })); });
+  expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Approved' })).not.toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
   expect(api.sendStreamMessage.mock.calls[0][0].workspace).toEqual({ root });
   act(() => { callbacks.onStreamEnd(); });

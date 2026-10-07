@@ -3501,7 +3501,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           };
           
           // Start emitting chunks
-          setActiveStream(streamId, { 
+          setActiveStream(streamId, {
             destroy: () => {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled via destroy, streamId:', streamId);
               try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) { safeCatch(e); }
