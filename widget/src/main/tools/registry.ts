@@ -49,12 +49,16 @@ export interface ModuleToolOwner {
 
 const owners = new Map<string, ModuleToolOwner>();
 
-export function registerTool(name: string, definition: ToolDefinition, handler: ToolHandler): void {
+export function registerTool(name: string, definition: ToolDefinition, handler: ToolHandler): () => void {
   if (owners.has(name)) {
     throw new ModuleContractError('DUPLICATE_CONTRIBUTION', `Tool ${name} belongs to ${owners.get(name)!.moduleId}.`);
   }
-  entries.set(name, { definition, handler: scopedHandler(name, handler) });
+  const entry = { definition, handler: scopedHandler(name, handler) };
+  entries.set(name, entry);
   console.log(`[HomeBot Tools] Registered tool: ${name}`);
+  // Retained transports dispose their own registration, never a newer server
+  // or module contribution that happens to use the same public tool name.
+  return () => { if (entries.get(name) === entry) entries.delete(name); };
 }
 
 export function registerOwnedTool(owner: ModuleToolOwner, definition: ToolDefinition, handler: ToolHandler): () => void {
