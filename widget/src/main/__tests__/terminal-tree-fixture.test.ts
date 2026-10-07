@@ -41,6 +41,35 @@ test('the exact stdin source records real TTY/resize/input fields with only nati
   expect(exit).toBe(0);
 });
 
+test('cooked background fixtures detach both child levels and retain parent identities; original unref-only structure does not', () => {
+  const sources = terminalTreeSources(path.join('private', 'project'));
+  const run = (source: string) => {
+    const spawned: Array<{ executable: string; args: string[]; options: { detached?: boolean; stdio: string } }> = [];
+    const callbacks = new Map<string, (...args: unknown[]) => void>(), writes = new Map<string, string>();
+    new Script(source).runInNewContext({
+      require: (name: string) => name === 'child_process' ? {
+        spawn: (executable: string, args: string[], options: { detached?: boolean; stdio: string }) => {
+          spawned.push({ executable, args, options });
+          return { pid: 31, once: (event: string, callback: (...args: unknown[]) => void) => { callbacks.set(event, callback); }, unref: () => {} };
+        },
+      } : { writeFileSync: (file: string, text: string) => writes.set(file, text) },
+      process: { pid: 29, execPath: 'fixed-node', exit: () => {} }, setTimeout: (callback: () => void) => callback(),
+    });
+    callbacks.get('spawn')?.(); callbacks.get('exit')?.(0);
+    return { spawned, writes };
+  };
+  for (const name of ['intermediate.cjs', 'late-root.cjs'] as const) {
+    const fixed = run(sources[name]);
+    expect(fixed.spawned).toHaveLength(1);
+    expect(fixed.spawned[0].options).toEqual({ detached: true, stdio: 'ignore' });
+    const original = run(sources[name].replace('{detached:true,stdio:', '{stdio:'));
+    expect(original.spawned[0].options.detached).toBeUndefined();
+  }
+  const root = run(sources['late-root.cjs']);
+  expect(JSON.parse(root.writes.get(path.join('private', 'project', 'background-root.json'))!)).toEqual({ pid: 29, child: 31 });
+  expect(root.writes.get(path.join('private', 'project', 'intermediate-exited.txt'))).toBe('0');
+});
+
 test('diagnostics retain useful errors but exclude command argv, environment and capabilities', () => {
   const secret = 'a'.repeat(64);
   const output = terminalDiagnosticText(`\"C:\\node.exe\" \"C:\\private\\stdin.cjs\"\nenv={secret}\n{\"env\":{\"value\":\"private-secret\"}}\ncapability=${secret}\nTypeError: getWindowSize is unavailable\ntoken=private-secret\n${secret}`);

@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createHash } from 'crypto';
+import { queryWorkspacePtyIdentity, workspacePtyLifecycle } from '../../main/workspace-pty-identity';
 
 test.skip(process.platform !== 'win32' || process.env.HOMEBOT_LIVE_TASK_TREE !== '1', 'Opt-in actual Windows native Job/ConPTY fixture.');
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; } };
@@ -65,8 +66,14 @@ test('interactive terminal retains a late grandchild after its parents exit and 
     await command('late-root.cjs', ' & exit');
     await expect.poll(() => fs.existsSync(grandchildMarker) && fs.existsSync(intermediateGone), { timeout: 15000 }).toBe(true);
     const descendant = JSON.parse(fs.readFileSync(grandchildMarker, 'utf8')) as { pid: number; parent: number };
+    const backgroundRoot = JSON.parse(fs.readFileSync(path.join(project, 'background-root.json'), 'utf8')) as { pid: number; child: number };
+    expect(backgroundRoot.pid).toBeGreaterThan(0); expect(backgroundRoot.child).toBe(descendant.parent);
     await expect.poll(() => alive(descendant.parent)).toBe(false); expect(alive(descendant.pid)).toBe(true);
     await expect(panel.getByRole('tab', { name: /cmd.*exited/ })).toBeVisible();
+    expect(await queryWorkspacePtyIdentity(backgroundRoot.pid)).toBeNull();
+    expect(await queryWorkspacePtyIdentity(descendant.parent)).toBeNull();
+    const descendantIdentity = await queryWorkspacePtyIdentity(descendant.pid);
+    expect(descendantIdentity).toBeTruthy(); expect(descendantIdentity!.parent).toBe(descendant.parent);
     const retained = await page.evaluate(async projectDir => (window as any).electron.workspaceTerminalList({ projectDir }), project);
     const session = retained.sessions.find((item: { profileId: string }) => item.profileId === 'cmd');
     expect(session.pid).toBeGreaterThan(0); expect(session.shellPid).toBeGreaterThan(0); expect(session.pid).not.toBe(session.shellPid);
@@ -74,10 +81,12 @@ test('interactive terminal retains a late grandchild after its parents exit and 
     expect(unrelated.exitCode).toBeNull(); expect(unrelated.signalCode).toBeNull();
     await page.screenshot({ path: testInfo.outputPath('terminal-retained-background.png') });
     const tabs = await panel.getByRole('tab').allTextContents(), index = tabs.findIndex(name => name.includes('cmd')) + 1;
+    expect(await workspacePtyLifecycle.stopped(descendant.pid, descendantIdentity)).toBe(false);
     await panel.getByRole('button', { name: `Close terminal ${index}`, exact: true }).click();
     await expect(panel.getByRole('tab', { name: /cmd/ })).toHaveCount(0); expect(alive(descendant.pid)).toBe(false);
+    expect(await workspacePtyLifecycle.stopped(descendant.pid, descendantIdentity)).toBe(true);
     expect(unrelated.exitCode).toBeNull(); expect(unrelated.signalCode).toBeNull(); expect(hashes()).toEqual(before);
-    fs.writeFileSync(testInfo.outputPath('terminal-job-proof.json'), JSON.stringify({ session, descendant, intermediateGone: true, descendantGone: true, unrelatedPid: unrelated.pid, unrelatedAlive: true, stdin: resized, fixtureHashes: before }, null, 2));
+    fs.writeFileSync(testInfo.outputPath('terminal-job-proof.json'), JSON.stringify({ session, descendant, descendantIdentity, backgroundRoot, bothParentsGone: true, intermediateGone: true, descendantGone: true, unrelatedPid: unrelated.pid, unrelatedAlive: true, stdin: resized, fixtureHashes: before }, null, 2));
     await closeElectronApp(app, 'retained terminal Job fixture'); closed = true;
   } catch (error) {
     failed = true;

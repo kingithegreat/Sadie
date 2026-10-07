@@ -9,8 +9,12 @@ export function terminalTreeSources(project: string) {
     'stdin.cjs': `const fs=require('fs');const p=${file('tty.json')};const record=input=>{fs.writeFileSync(p+'.tmp',JSON.stringify({pid:process.pid,stdin:process.stdin.isTTY,stdout:process.stdout.isTTY,columns:process.stdout.getWindowSize()[0],input}));fs.renameSync(p+'.tmp',p);};record();const timer=setInterval(()=>record(),50);console.log('TTY_READY');process.stdin.once('data',d=>{clearInterval(timer);record(d.toString().trim());process.exit(0);});`,
     'interrupt.cjs': `require('fs').writeFileSync(${file('interrupt.json')},JSON.stringify({pid:process.pid}));console.log('INTERRUPT_READY');setInterval(()=>{},1000);`,
     'grandchild.cjs': `require('fs').writeFileSync(${file('grandchild.json')},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000);`,
-    'intermediate.cjs': `setTimeout(()=>{const c=require('child_process').spawn(process.execPath,[${file('grandchild.cjs')}],{stdio:'ignore'});c.once('spawn',()=>{c.unref();setTimeout(()=>process.exit(0),300);});},500);`,
-    'late-root.cjs': `const c=require('child_process').spawn(process.execPath,[${file('intermediate.cjs')}],{stdio:'ignore'});c.once('exit',code=>require('fs').writeFileSync(${file('intermediate-exited.txt')},String(code)));`,
+    // Windows libuv assigns non-detached children to its per-Node kill-on-close
+    // Job. unref() alone does not survive that parent's native exit:
+    // https://github.com/nodejs/node/blob/v22.23.3/deps/uv/src/win/process.c#L65-L91
+    // The actual GUI fixture must still prove the outer retained Job owns them.
+    'intermediate.cjs': `setTimeout(()=>{const c=require('child_process').spawn(process.execPath,[${file('grandchild.cjs')}],{detached:true,stdio:'ignore'});c.once('spawn',()=>{c.unref();setTimeout(()=>process.exit(0),300);});},500);`,
+    'late-root.cjs': `const c=require('child_process').spawn(process.execPath,[${file('intermediate.cjs')}],{detached:true,stdio:'ignore'});c.once('spawn',()=>require('fs').writeFileSync(${file('background-root.json')},JSON.stringify({pid:process.pid,child:c.pid})));c.once('exit',code=>require('fs').writeFileSync(${file('intermediate-exited.txt')},String(code)));`,
   };
 }
 
