@@ -31,6 +31,18 @@ function sameProcess(expected: ProcessIdentity, actual: ProcessIdentity | null) 
     && actual.CreationDate === expected.CreationDate && actual.ExecutablePath?.toLowerCase() === expected.ExecutablePath.toLowerCase();
 }
 
+function describeFailure(error: any, seen = new WeakSet<object>()): unknown {
+  if (!error || typeof error !== 'object') return { message: String(error) };
+  if (seen.has(error)) return { message: 'Repeated error reference' };
+  seen.add(error);
+  return { name: error.name, message: error.message, stack: error.stack,
+    code: error.code, status: error.status, signal: error.signal, killed: error.killed,
+    stdout: error.stdout == null ? undefined : String(error.stdout),
+    stderr: error.stderr == null ? undefined : String(error.stderr),
+    cause: error.cause ? describeFailure(error.cause, seen) : undefined,
+    errors: Array.isArray(error.errors) ? error.errors.map((nested: unknown) => describeFailure(nested, seen)) : undefined };
+}
+
 function stopOwnedProcess(identity: ProcessIdentity) {
   if (!identity.CreationDate || !identity.ExecutablePath) throw new Error('Refusing force: incomplete process identity');
   // Hold the exact OS process handle before rechecking the CIM birth, parent
@@ -113,7 +125,9 @@ export async function openFirstUserFixture(options: {
       && data?.model === CHAT_MODEL && data?.stream === true
       && data?.messages?.filter((message: any) => message.role === 'user').at(-1)?.content === 'Hello') {
       response.setHeader('Content-Type', 'application/x-ndjson');
-      response.write(JSON.stringify({ model: CHAT_MODEL, message: { role: 'assistant', content: 'Hi.' }, done: false }) + '\n');
+      // A normal greeting must pass the production small-model quality gate;
+      // "Hi." deliberately triggers its existing too-short retry.
+      response.write(JSON.stringify({ model: CHAT_MODEL, message: { role: 'assistant', content: 'Hello there.' }, done: false }) + '\n');
       response.end(JSON.stringify({ model: CHAT_MODEL, message: { role: 'assistant', content: '' }, done: true }) + '\n');
       return;
     }
@@ -203,6 +217,8 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
   let app: ElectronApplication | undefined;
   let nativeIdentity: ProcessIdentity | null = null;
   let launcherIdentity: ProcessIdentity | null = null;
+  let startupStage = 'launch';
+  let startupNativeProcess: { pid: number; ppid: number; executable: string } | null = null;
   async function close() {
     let receipt: any;
     let safeToCloseServers = !app;
@@ -297,22 +313,36 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
   try {
     app = await electron.launch({ executablePath: require('electron') as string, args: [shim], env });
     // Capture ownership before hydration/locator assertions can fail.
-    launcherIdentity = queryProcessIdentity(app.process().pid!);
-    const nativeProcess = await app.evaluate(() => ({ pid: process.pid, ppid: process.ppid, executable: process.execPath }));
-    nativeIdentity = queryProcessIdentity(nativeProcess.pid);
-    expect(nativeIdentity?.ProcessId).toBe(nativeProcess.pid);
-    expect(nativeIdentity?.ParentProcessId).toBe(nativeProcess.ppid);
+    startupStage = 'read native main metadata';
+    startupNativeProcess = await app.evaluate(() => ({ pid: process.pid, ppid: process.ppid, executable: process.execPath }));
+    // Cold Windows CIM/PowerShell startup has a separate bounded 15s budget.
+    // Keep the post-close 5s disappearance budget and strict refusal unchanged.
+    const initialCaptureDeadline = Date.now() + 15_000;
+    const captureIdentity = (pid: number) => {
+      const remaining = initialCaptureDeadline - Date.now();
+      if (remaining <= 0) throw new Error('Initial native/launcher CIM capture exceeded its 15s budget');
+      return queryProcessIdentity(pid, remaining);
+    };
+    startupStage = 'capture launcher CIM identity';
+    launcherIdentity = captureIdentity(app.process().pid!);
+    startupStage = 'capture native main CIM identity';
+    nativeIdentity = captureIdentity(startupNativeProcess.pid);
+    startupStage = 'verify native and launcher identities';
+    expect(nativeIdentity?.ProcessId).toBe(startupNativeProcess.pid);
+    expect(nativeIdentity?.ParentProcessId).toBe(startupNativeProcess.ppid);
     expect(nativeIdentity?.CreationDate).toBeTruthy();
     expect(nativeIdentity?.ExecutablePath).toBeTruthy();
     expect(launcherIdentity?.CreationDate).toBeTruthy();
     expect(launcherIdentity?.ExecutablePath).toBeTruthy();
-    expect(fs.realpathSync(nativeIdentity!.ExecutablePath).toLowerCase()).toBe(fs.realpathSync(nativeProcess.executable).toLowerCase());
+    expect(fs.realpathSync(nativeIdentity!.ExecutablePath).toLowerCase()).toBe(fs.realpathSync(startupNativeProcess.executable).toLowerCase());
     expect(fs.realpathSync(nativeIdentity!.ExecutablePath).toLowerCase()).toBe(fs.realpathSync(require('electron') as string).toLowerCase());
+    startupStage = 'hydrate production renderer';
     const page = await app.firstWindow();
     await page.waitForSelector('[data-testid="homebot-app-root"][data-hydrated="true"]');
     // The shipped renderer's connect-src self CSP would intercept this control
     // before the session guard. Exercise that same session from a separate
     // owned hidden sandboxed window, without changing production CSP.
+    startupStage = 'renderer transport positive control';
     const rendererBlocked = await app.evaluate(async ({ BrowserWindow, session }) => {
       const control = new BrowserWindow({ show: false, webPreferences: {
         sandbox: true, contextIsolation: true, nodeIntegration: false, session: session.defaultSession,
@@ -324,6 +354,7 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
     });
     expect(rendererBlocked).toBe(true);
     expect(await app.evaluate(() => (globalThis as any).firstUserGuard.rendererControls)).toBe(1);
+    startupStage = 'verify effective isolated paths and production mode';
     const passive = await app.evaluate(({ app }) => ({ appPath: app.getAppPath(), userData: app.getPath('userData'), appData: app.getPath('appData'), sessionData: app.getPath('sessionData'),
       nodeHome: (process as any).getBuiltinModule('os').homedir(), nativePid: process.pid, e2e: !!process.env.HOMEBOT_E2E,
       guardControls: (globalThis as any).firstUserGuard.controls }));
@@ -347,7 +378,17 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
     }
     return { app, page, fixture, roots, settingsPath, setPhase, evidence, close };
   } catch (error) {
-    try { await close(); } catch (cleanupError) { throw new AggregateError([error, cleanupError], 'First-user startup and bounded cleanup failed'); }
+    const failures: unknown[] = [error];
+    try { await close(); } catch (cleanupError) { failures.push(cleanupError); }
+    try {
+      // Playwright's JSON reporter does not serialize AggregateError.errors.
+      // Persist full nested primary/cleanup causes independently before throw.
+      fs.writeFileSync(options.testInfo.outputPath('first-user-startup-error.json'), JSON.stringify({
+        stage: startupStage, initialCIMCaptureBudgetMs: 15_000, startupNativeProcess,
+        nativeIdentity, launcherIdentity, failures: failures.map(failure => describeFailure(failure)),
+      }, null, 2));
+    } catch (diagnosticError) { failures.push(diagnosticError); }
+    if (failures.length > 1) throw new AggregateError(failures, `First-user startup failed at ${startupStage}; bounded cleanup/diagnostics also failed`);
     throw error;
   }
 }

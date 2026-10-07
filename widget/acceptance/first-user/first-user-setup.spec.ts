@@ -81,7 +81,7 @@ async function openWizard(fixture: NativeFixture, testInfo: TestInfo) {
   return wizard;
 }
 
-async function finishLocalAndChat(fixture: NativeFixture) {
+async function finishLocalAndChat(fixture: NativeFixture, testInfo: TestInfo) {
   const { page } = fixture;
   await expect(page.getByText('Ollama is ready!', { exact: true })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
@@ -104,7 +104,7 @@ async function finishLocalAndChat(fixture: NativeFixture) {
   await input.fill('Hello');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect.poll(() => fixture.fixture.requests.filter(request => request.path === '/api/chat').length).toBe(1);
-  await expect(page.getByText('Hi.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Hello there.', { exact: true })).toBeVisible();
   await expect(input).toBeEnabled();
   const chat = fixture.fixture.requests.find(request => request.path === '/api/chat')!;
   expect(chat.body).toMatchObject({ model: 'qwen2.5:3b', stream: true });
@@ -113,8 +113,9 @@ async function finishLocalAndChat(fixture: NativeFixture) {
   await expect.poll(() => {
     if (!fs.existsSync(memoryDir)) return false;
     return fs.readdirSync(memoryDir).filter(name => name.endsWith('.json'))
-      .some(name => fs.readFileSync(`${memoryDir}/${name}`, 'utf8').includes('Hi.'));
+      .some(name => fs.readFileSync(`${memoryDir}/${name}`, 'utf8').includes('Hello there.'));
   }).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('setup-first-local-chat.png') });
 }
 
 test('production first-run reuses installed3B and first HTTP greeting uses that model after runtime acknowledgement', async ({}, testInfo) => {
@@ -125,7 +126,7 @@ test('production first-run reuses installed3B and first HTTP greeting uses that 
   try {
     const wizard = await openWizard(fixture, testInfo);
     await wizard.getByRole('button', { name: /On this PC/ }).click();
-    await finishLocalAndChat(fixture);
+    await finishLocalAndChat(fixture, testInfo);
     expect(fixture.fixture.requests.filter(request => request.path === '/api/pull')).toEqual([]);
     await assertGuard(fixture);
     await fixture.page.screenshot({ path: testInfo.outputPath('setup-first-message.png') });
@@ -156,7 +157,7 @@ test('production first-run checks before consent then reaches real fixture pull,
     await expect.poll(() => fixture.fixture.requests.filter(request => request.path === '/api/pull').length).toBe(1);
     await expect(fixture.page.getByText('Setting up...', { exact: true })).toBeDisabled();
     fixture.fixture.completePull();
-    await finishLocalAndChat(fixture);
+    await finishLocalAndChat(fixture, testInfo);
     expect(fixture.fixture.requests.filter(request => request.path === '/api/pull')).toHaveLength(1);
     await assertGuard(fixture);
   } catch (error) {
@@ -178,9 +179,11 @@ test('production first-run fake key prepares configuration honestly without prov
     await fixture.page.getByRole('button', { name: 'Prepare service' }).click();
     await expect(fixture.page.getByText(/Your key and ability to chat have not been verified/)).toBeVisible();
     await expect(fixture.page.getByText('Connected! Ready to chat.', { exact: true })).toHaveCount(0);
+    await fixture.page.screenshot({ path: testInfo.outputPath('setup-cloud-prepared.png') });
     await fixture.page.getByRole('button', { name: 'Next', exact: true }).click();
     await expect(fixture.page.getByRole('heading', { name: 'Ready to try a message' })).toBeFocused();
     await expect(fixture.page.getByText(/Your key has not been verified/)).toBeVisible();
+    await fixture.page.screenshot({ path: testInfo.outputPath('setup-cloud-ready-unverified.png') });
     await fixture.page.getByRole('button', { name: 'Get Started' }).click();
     await expect(fixture.page.getByRole('dialog', { name: 'Ready to try a message' })).toHaveCount(0);
     const flags = await fixture.page.evaluate(async () => {

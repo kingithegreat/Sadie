@@ -50,6 +50,13 @@ process identities and before/after compiled/dependency hashes. Its supplemental
 TypeScript and runner syntax checks pass. CI execution, visual inspection and
 configured review remain pending. This lane preserves real package identity and
 does not enable production E2E IPC shortcuts; no real provider/download claim.
+Windows run37551972937 built production, proved the real Electron SQLite load
+and executed all four cases without retries. Cloud setup passed; local chat
+cases exposed a too-short fixture reply triggering the existing quality retry,
+and compact discovery failed before capturing process identities. Those harness
+causes are being corrected with retained primary diagnostics and bounded startup
+identity capture. All three setup cases closed without forced cleanup; discovery
+and overall native acceptance remain unqualified. Production UI is unchanged.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
