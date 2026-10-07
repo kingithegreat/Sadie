@@ -104,7 +104,7 @@ test('post-setup compact discovery and editable draft survive Home navigation in
     await expect(page.getByTestId('homebot-app-root')).toHaveClass(/widget-mode/);
     await expect(page.locator('.mode-switcher')).toBeHidden();
     const explore = page.getByRole('button', { name: 'Explore HomeBot', exact: true });
-    await visibleControl(page, explore, 'initial compact Explore HomeBot', 100, 32, bounds);
+    await visibleControl(page, explore, 'initial compact Explore HomeBot', 100, 44, bounds);
     await page.mouse.move(0, 0);
     await page.screenshot({ path: testInfo.outputPath('first-user-compact-dark.png') });
 

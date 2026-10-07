@@ -45,7 +45,14 @@ async function assertGuard(fixture: NativeFixture) {
   expect(receipt.transport.processAttempts.filter((attempt: { method: string; command: string; args: string[] }) =>
     attempt.method !== 'execFile' || attempt.command !== 'nvidia-smi'
     || JSON.stringify(attempt.args) !== JSON.stringify(['--query-gpu=name,memory.total', '--format=csv,noheader,nounits']))).toEqual([]);
-  expect(receipt.transport.denied.every((attempt: { method?: string; url?: string }) => {
+  const titleAttempts = receipt.transport.denied.filter((attempt: { method?: string; url?: string; phase?: string }) =>
+    attempt.method === 'POST' && attempt.url === `${fixture.ollamaUrl}/api/generate` && attempt.phase === 'chat');
+  // App requests a best-effort title after its first finished reply >=10 chars
+  // (generate-title IPC). It remains blocked before HTTP, never simulated.
+  expect(titleAttempts.length).toBeLessThanOrEqual(1);
+  expect(receipt.requests.filter(request => request.path === '/api/generate')).toEqual([]);
+  expect(receipt.transport.denied.every((attempt: { method?: string; url?: string; phase?: string }) => {
+    if (titleAttempts.includes(attempt)) return true;
     if (!attempt.url || attempt.method !== 'GET') return false;
     const url = new URL(attempt.url);
     // These optional/default probes were denied before making a request. They

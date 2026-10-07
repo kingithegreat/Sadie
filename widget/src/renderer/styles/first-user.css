@@ -9,6 +9,7 @@
   font-size: 13px;
 }
 .widget-first-task button {
+  min-height: 44px;
   padding: 7px 12px;
   border: 1px solid var(--border-color, #ddd);
   border-radius: 8px;

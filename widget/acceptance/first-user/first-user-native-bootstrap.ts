@@ -376,7 +376,7 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
       return { roots, passive, nativeIdentity, launcherIdentity, mainSha256: createHash('sha256').update(fs.readFileSync(entry)).digest('hex'), initialRag, currentRag,
         transport: state, requests: fixture.requests, rejected: fixture.rejected };
     }
-    return { app, page, fixture, roots, settingsPath, setPhase, evidence, close };
+    return { app, page, fixture, roots, settingsPath, ollamaUrl, setPhase, evidence, close };
   } catch (error) {
     const failures: unknown[] = [error];
     try { await close(); } catch (cleanupError) { failures.push(cleanupError); }

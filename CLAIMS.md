@@ -57,6 +57,15 @@ and compact discovery failed before capturing process identities. Those harness
 causes are being corrected with retained primary diagnostics and bounded startup
 identity capture. All three setup cases closed without forced cleanup; discovery
 and overall native acceptance remain unqualified. Production UI is unchanged.
+Follow-up run37552790012 captured identities and completed both local setup,
+single-request greeting and persistence assertions. Its final deny classification
+rejected the existing automatic title POST, which stayed blocked before HTTP;
+the next test recognises only that exact owned origin/path/method/chat phase and
+still requires zero actual generate requests. Compact discovery exposed a real
+31px Explore target; root raised its minimum to44px and the acceptance minimum
+to44px. This one CSS correction is the only production change after16149190.
+All four cases closed without forced cleanup, but overall acceptance still awaits
+the fresh run. Supplemental acceptance TypeScript passes; runtime guards unchanged.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
