@@ -18,7 +18,7 @@ export interface WorkspaceApprovedLaunch {
 export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   readonly listening: Promise<void>;
   attach(pid: number, original: WorkspacePtyIdentity): Promise<void>;
-  /** Task-only live-peer capture; originating parent is always main process.pid. */
+  /** Fixed core bootstrap capture; originating parent is always main process.pid. */
   attachChild?(pid: number): Promise<WorkspacePtyIdentity>;
   authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
   /** Observability only; never evidence of readiness, membership or cleanup. */
@@ -111,14 +111,14 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     },
     attachChild: async pid => {
       if (!options.gate || attached || !Number.isSafeInteger(pid) || pid <= 0) {
-        const error = new Error('One fixed task child and its private startup peer are required.'); readyReject(error); throw error;
+        const error = new Error('One fixed core child and its private startup peer are required.'); readyReject(error); throw error;
       }
       attached = true;
       try {
         await listening;
         const result = await request('attach-child', { pid, parent: process.pid });
         if (result.ok !== true || typeof result.creation !== 'string' || !/^\d{1,19}$/.test(result.creation) || BigInt(result.creation) <= 0n || result.parent !== process.pid) {
-          throw new Error('The task launcher creation identity could not be verified. No package code was released.' + diagnostic());
+          throw new Error('The fixed launcher creation identity could not be verified. No project code was released.' + diagnostic());
         }
         readyResolve(); return { creation: result.creation, parent: process.pid };
       } catch (error) { readyReject(error instanceof Error ? error : new Error('Task child assignment failed.')); throw error; }
