@@ -36,6 +36,9 @@ jest.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
 jest.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: jest.fn(),
 }));
+jest.mock('../mcp-stdio-owned', () => ({
+  createOwnedMcpStdioTransport: jest.fn(() => ({ transport: {}, close: jest.fn(async () => {}), cleanupScope: 'sdk-direct-child' })),
+}));
 
 // Shutdown is a final process boundary. Each fixture gets a fresh module
 // lifecycle instead of using shutdown as a reset and reconnecting afterward.

@@ -689,13 +689,17 @@ app.on('before-quit', event => {
       }
     });
     if (!runtimeReady) return;
+    // MCP may retain a Windows Job after its protocol client closes. Refusal
+    // must keep the renderer and ordinary services available for another try.
+    try { await shutdownMcpServers(); } catch (error) {
+      runtimeReady = false;
+      safeCatch(error);
+      return;
+    }
     for (const cleanup of [disposeWorkspaceLanguageServices, stopAssistantBridge, destroyBrowserPanel,
       () => globalShortcut.unregisterAll(), closeAllServiceWindows, () => supervisorHandle?.stop()]) {
       try { cleanup(); } catch (error) { safeCatch(error); }
     }
-    // MCP owns in-flight transports and bounds each close. It remains available
-    // on refusal; a connector close error after confirmed runtime cleanup is logged.
-    try { await shutdownMcpServers(); } catch (error) { safeCatch(error); }
   }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
     if (!runtimeReady) {
       mcpQuitPending = false;

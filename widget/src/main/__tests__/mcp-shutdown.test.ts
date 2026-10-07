@@ -7,6 +7,7 @@ jest.mock('fs', () => ({ existsSync: jest.fn(() => true), readFileSync: jest.fn(
 jest.mock('@modelcontextprotocol/sdk/client/index.js', () => ({ Client: jest.fn() }));
 jest.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({ StdioClientTransport: jest.fn() }));
 jest.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({ SSEClientTransport: jest.fn() }));
+jest.mock('../mcp-stdio-owned', () => ({ createOwnedMcpStdioTransport: jest.fn() }));
 
 const config: McpServerConfig = { type: 'stdio', name: 'owned', command: 'never-spawn', enabled: true };
 const tool = { name: 'read', inputSchema: { type: 'object' } };
@@ -30,6 +31,7 @@ let mcp: typeof import('../mcp-client');
 let client: { connect: jest.Mock; listTools: jest.Mock; close: jest.Mock; callTool: jest.Mock };
 let createClient: jest.Mock;
 let register: jest.Mock;
+let closeTransport: jest.Mock;
 
 beforeEach(() => {
   jest.resetModules();
@@ -41,6 +43,11 @@ beforeEach(() => {
   };
   createClient = require('@modelcontextprotocol/sdk/client/index.js').Client;
   createClient.mockImplementation(() => ({ ...client }));
+  closeTransport = jest.fn().mockResolvedValue(undefined);
+  require('../mcp-stdio-owned').createOwnedMcpStdioTransport.mockImplementation((parameters: any) => ({
+    transport: new (require('@modelcontextprotocol/sdk/client/stdio.js').StdioClientTransport)(parameters),
+    close: closeTransport, cleanupScope: 'windows-job',
+  }));
   require('fs').readFileSync.mockReturnValue(JSON.stringify({ servers: [config, { ...config, name: 'second' }] }));
   mcp = require('../mcp-client');
   register = jest.fn();
@@ -153,22 +160,60 @@ test('a new connect request after shutdown cannot construct or spawn a transport
   expect(require('@modelcontextprotocol/sdk/client/stdio.js').StdioClientTransport).not.toHaveBeenCalled();
 });
 
-test('shutdown closes concurrently and has a bounded wait for a nonsettling client', async () => {
+test('shutdown closes concurrently, refuses a nonsettling client and retries its retained owner', async () => {
   client.close.mockReturnValue(new Promise(() => {}));
   await mcp.connectSingleServer(config, register);
   const second = { ...client, close: jest.fn().mockResolvedValue(undefined) };
   createClient.mockImplementationOnce(() => second);
   await mcp.connectSingleServer({ ...config, name: 'second' }, register);
   let completed = false;
-  const shutdown = mcp.shutdownMcpServers().then(() => { completed = true; });
+  const shutdown = mcp.shutdownMcpServers().then(() => { completed = true; return ''; }, error => error.message);
   await settle();
   expect(client.close).toHaveBeenCalledTimes(1);
   expect(second.close).toHaveBeenCalledTimes(1);
   expect(completed).toBe(false);
   await jest.advanceTimersByTimeAsync(5000);
-  expect(completed).toBe(true);
-  await shutdown;
+  expect(completed).toBe(false);
+  expect(await shutdown).toMatch(/Cleanup timed out/);
+  client.close.mockResolvedValue(undefined);
+  await mcp.shutdownMcpServers();
+  expect(client.close).toHaveBeenCalledTimes(2);
+  expect(closeTransport).toHaveBeenCalledTimes(3);
+  expect(second.close).toHaveBeenCalledTimes(1);
   expect(mcp.getMcpStatus()).toEqual([]);
+});
+
+test('protocol close cannot discard a failed transport owner, replacement retries before spawning', async () => {
+  await mcp.connectSingleServer(config, register);
+  closeTransport.mockRejectedValue(new Error('retained Job stop unconfirmed'));
+  await expect(mcp.disconnectMcpServer(config.name)).rejects.toThrow(/unconfirmed/);
+  expect(await mcp.connectSingleServer(config, register)).toMatchObject({ connected: false, error: 'retained Job stop unconfirmed' });
+  expect(createClient).toHaveBeenCalledTimes(1);
+  closeTransport.mockResolvedValue(undefined);
+  expect(await mcp.connectSingleServer(config, register)).toMatchObject({ connected: true });
+  expect(createClient).toHaveBeenCalledTimes(2);
+  await mcp.shutdownMcpServers();
+});
+
+test('disconnect cancels an unfinished generation and ignores late discovery', async () => {
+  const discovery = deferred<{ tools: typeof tool[] }>();
+  client.listTools.mockReturnValue(discovery.promise);
+  const connecting = mcp.connectSingleServer(config, register);
+  await settle();
+  await mcp.disconnectMcpServer(config.name);
+  expect(await connecting).toMatchObject({ connected: false });
+  discovery.resolve({ tools: [tool] }); await settle();
+  expect(register).not.toHaveBeenCalled();
+  expect(closeTransport).toHaveBeenCalledTimes(1);
+});
+
+test('simultaneous replacements admit only the newest generation', async () => {
+  const first = mcp.connectSingleServer(config, register);
+  const second = mcp.connectSingleServer(config, register);
+  expect(await first).toMatchObject({ connected: false });
+  expect(await second).toMatchObject({ connected: true });
+  expect(createClient).toHaveBeenCalledTimes(1);
+  await mcp.shutdownMcpServers();
 });
 
 test('repeated shutdown requests share cleanup without closing a client twice', async () => {

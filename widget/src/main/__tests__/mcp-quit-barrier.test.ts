@@ -98,9 +98,10 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   await settle();
   expect(h.nativeQuits()).toBe(0);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
-  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  for (const cleanup of [h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
     h.otherCleanup.closeAllServiceWindows, h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
   }
   h.resolve();
   await settle();
@@ -132,6 +133,7 @@ test('native quit waits for package task ownership and keeps the renderer availa
   expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(2);
   expect(h.nativeQuits()).toBe(1);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
 });
 
@@ -189,18 +191,27 @@ test('unconfirmed owned runtime cleanup runs every other cleanup and keeps the a
   expect(h.nativeQuits()).toBe(1);
 });
 
-test('a cleanup rejection is reported and still resumes native quit', async () => {
-  const h = harness();
+test('an MCP cleanup rejection preserves the renderer and ordinary services until a successful retry', async () => {
+  const h = harness(true);
   h.app.quit();
   expect(h.nativeQuits()).toBe(0);
   const error = new Error('controlled cleanup failure');
   h.reject(error);
   await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  expect(h.otherCleanup.stopAssistantBridge).not.toHaveBeenCalled();
+  expect(h.otherCleanup.globalShortcut.unregisterAll).not.toHaveBeenCalled();
+  h.shutdownMcpServers.mockResolvedValueOnce(undefined);
+  h.app.quit(); await settle();
   expect(h.nativeQuits()).toBe(1);
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(2);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
 });
 
-test('a synchronous MCP shutdown exception is reported and repeated quit still resumes native quit once', async () => {
+test('a synchronous MCP shutdown exception refuses quit and preserves unrelated services', async () => {
   const h = harness();
   const error = new Error('controlled synchronous MCP shutdown failure');
   h.shutdownMcpServers.mockImplementationOnce(() => { throw error; });
@@ -211,14 +222,15 @@ test('a synchronous MCP shutdown exception is reported and repeated quit still r
   expect(h.nativeQuits()).toBe(0);
   await settle();
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
-  expect(h.nativeQuits()).toBe(1);
+  expect(h.nativeQuits()).toBe(0);
   expect(escaped).toBeUndefined();
   expect(h.safeCatch).toHaveBeenCalledTimes(1);
   expect(h.safeCatch).toHaveBeenCalledWith(error);
-  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge,
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  for (const cleanup of [h.otherCleanup.stopAssistantBridge,
     h.otherCleanup.destroyBrowserPanel, h.otherCleanup.closeAllServiceWindows,
     h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
   }
 });
 
@@ -228,11 +240,12 @@ test('an unrelated service cleanup error cannot bypass or strand connector clean
   h.otherCleanup.globalShortcut.unregisterAll.mockImplementationOnce(() => { throw error; });
   h.app.quit();
   await settle();
+  expect(h.safeCatch).not.toHaveBeenCalled();
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  h.resolve(); await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.closeAllServiceWindows).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.supervisorHandle.stop).toHaveBeenCalledTimes(1);
-  h.resolve();
-  await settle();
   expect(h.nativeQuits()).toBe(1);
 });
