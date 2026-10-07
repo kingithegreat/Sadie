@@ -137,6 +137,9 @@ jobs:
 
       - name: Unit tests
         working-directory: widget
+        env:
+          HOMEBOT_LIVE_TASK_TREE: '1'
+          HOMEBOT_LIVE_MCP_TREE: '1'
         run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
 
       - name: Build

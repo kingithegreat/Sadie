@@ -80,6 +80,7 @@ jobs:
           } finally { Pop-Location }
 
       - name: Compile this exact source head
+        id: native_compile
         working-directory: widget
         run: npm run build
 
@@ -88,6 +89,13 @@ jobs:
         env:
           EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: node scripts/run-ide-native-zero-retry.cjs --expected-head "$env:EXPECTED_PR_HEAD"
+
+      - name: Independent terminal late-descendant case without retries
+        if: always() && steps.native_compile.outcome == 'success'
+        timeout-minutes: 7
+        env:
+          EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/run-ide-native-zero-retry.cjs --terminal-tree --expected-head "$env:EXPECTED_PR_HEAD"
 
       - name: Upload all gate proof and failure artifacts
         if: always()

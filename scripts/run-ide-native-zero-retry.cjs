@@ -11,6 +11,7 @@ const EXPECTED_CASES = [
   { file: 'workspace-problems.e2e.spec.ts', title: 'package task reports a TypeScript problem and opens its exact editor line' },
   { file: 'workspace-problems.e2e.spec.ts', title: 'closing HomeBot stops an approved running watch task and its owned children' }
 ];
+const TERMINAL_TREE_CASES = [{ file: 'workspace-terminal-tree.live.e2e.spec.ts', title: 'interactive terminal retains a late grandchild after its parents exit and Close preserves unrelated owned process' }];
 const hash = file => {
   const digest = crypto.createHash('sha256'), buffer = Buffer.alloc(1024 * 1024), fd = fs.openSync(file, 'r');
   try { for (;;) { const count = fs.readSync(fd, buffer); if (!count) break; digest.update(buffer.subarray(0, count)); } } finally { fs.closeSync(fd); }
@@ -28,9 +29,9 @@ function hashTree(root, prefix = '') {
   }
   return result.sort((a, b) => a.path.localeCompare(b.path));
 }
-function validateResults(report) {
+function validateResults(report, expectedCases = EXPECTED_CASES) {
   assert.ok(report && report.stats && report.config, 'Missing Playwright report.');
-  for (const [key, value] of Object.entries({ expected: 4, unexpected: 0, skipped: 0, flaky: 0 })) assert.equal(report.stats[key], value, 'Playwright stats.' + key);
+  for (const [key, value] of Object.entries({ expected: expectedCases.length, unexpected: 0, skipped: 0, flaky: 0 })) assert.equal(report.stats[key], value, 'Playwright stats.' + key);
   assert.equal(report.config.version, '1.57.0', 'Inspector transport lease requires Playwright 1.57.0.');
   assert.equal(report.config.workers, 1); assert.equal(report.config.forbidOnly, true);
   assert.equal(report.config.projects.length, 1, 'Exactly one project is permitted.');
@@ -38,9 +39,9 @@ function validateResults(report) {
   const specs = [];
   const walk = suite => { for (const spec of suite.specs || []) specs.push(spec); for (const child of suite.suites || []) walk(child); };
   for (const suite of report.suites || []) walk(suite);
-  assert.equal(specs.length, EXPECTED_CASES.length, 'Wrong actual selected case count.');
+  assert.equal(specs.length, expectedCases.length, 'Wrong actual selected case count.');
   const identities = specs.map(spec => path.basename(spec.file) + ':' + spec.title).sort();
-  assert.deepEqual(identities, EXPECTED_CASES.map(row => row.file + ':' + row.title).sort(), 'Unexpected or missing selected case.');
+  assert.deepEqual(identities, expectedCases.map(row => row.file + ':' + row.title).sort(), 'Unexpected or missing selected case.');
   for (const spec of specs) {
     assert.equal(spec.ok, true); assert.equal(spec.tests.length, 1);
     const test = spec.tests[0]; assert.equal(test.expectedStatus, 'passed'); assert.equal(test.status, 'expected');
@@ -50,8 +51,8 @@ function validateResults(report) {
   }
   return specs.map(spec => ({ file: spec.file, title: spec.title, status: spec.tests[0].results[0].status, retry: 0 }));
 }
-function validateShutdownReceipts(receipts) {
-  assert.equal(receipts.length, 4, 'Exactly four new actual native shutdown receipts required.');
+function validateShutdownReceipts(receipts, expectedCount = 4) {
+  assert.equal(receipts.length, expectedCount, 'Exact number of new actual native shutdown receipts required.');
   const seen = new Set();
   return receipts.map(({ file, receipt }) => {
     assert.equal(receipt.graceful, true, file); assert.ok(!receipt.failure, 'Graceful failure recorded: ' + file);
@@ -93,8 +94,8 @@ function validateShutdownReceipts(receipts) {
   });
 }
 const PATH_KEYS = ['home', 'appData', 'userData', 'sessionData', 'temp', 'desktop', 'documents', 'downloads', 'music', 'pictures', 'videos', 'logs', 'crashDumps'];
-function validatePathReceipts(rows, shutdown, privateRoot, frozenMain) {
-  assert.equal(rows.length, 4, 'Exactly four actual app path receipts required.');
+function validatePathReceipts(rows, shutdown, privateRoot, frozenMain, expectedCount = 4) {
+  assert.equal(rows.length, expectedCount, 'Exact number of actual app path receipts required.');
   const seen = new Set();
   for (const row of rows) {
     assert.ok(!seen.has(row.pid)); seen.add(row.pid);
@@ -146,11 +147,13 @@ function command(executable, args, options = {}) {
 function validateSpawn(result, message = 'Actual process did not exit successfully without a signal.') { assert.ok(!result.error && result.status === 0 && result.signal === null, message); }
 function copyFiles(root, destination) { for (const row of hashTree(root)) { const target = path.join(destination, row.path); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(path.join(root, row.path), target); } }
 async function run() {
+  const terminalTree = process.argv.includes('--terminal-tree');
+  const expectedCases = terminalTree ? TERMINAL_TREE_CASES : EXPECTED_CASES;
   const source = path.resolve(__dirname, '..'), widget = path.join(source, 'widget');
   const arg = process.argv.indexOf('--expected-head'), expected = arg >= 0 ? process.argv[arg + 1] : '';
   const proofParent = path.join(source, 'artifacts', 'ide-native-zero-retry'); fs.mkdirSync(proofParent, { recursive: true });
   const output = fs.mkdtempSync(path.join(proofParent, 'run-'));
-  const proof = { source, expectedHead: expected, output, started: new Date().toISOString(), checks: [], limitations: ['Supplemental four-case Windows E2E fixture gate; not normal first-run delivery, installer, cloud/provider quality or all-IDE acceptance.', 'No retries. Exact PR head compiled by workflow; isolation bootstrap only sets paths before requiring frozen production main.', 'Native shutdown receipts and helper PID+nonce inspector ownership are unchanged production-test helpers.'] };
+  const proof = { source, expectedHead: expected, output, mode: terminalTree ? 'terminal-tree' : 'original-four', expectedCases, started: new Date().toISOString(), checks: [], limitations: ['Supplemental selected Windows E2E fixture gate; not normal first-run delivery, installer, cloud/provider quality or all-IDE acceptance.', 'No retries. Exact PR head compiled by workflow; isolation bootstrap only sets paths before requiring frozen production main.', 'Native shutdown receipts and helper PID+nonce inspector ownership are unchanged production-test helpers.'] };
   const persist = () => fs.writeFileSync(path.join(output, 'proof.json'), JSON.stringify(proof, null, 2));
   const check = (name, detail = {}) => { proof.checks.push({ name, passed: true, ...detail }); persist(); console.log(JSON.stringify({ name, ...detail })); };
   let runtime, before, env;
@@ -162,6 +165,7 @@ async function run() {
     for (const directory of ['tmp', 'AppData/Roaming', 'AppData/Local', 'ap', 'movies']) fs.mkdirSync(path.join(home, directory), { recursive: true });
     fs.writeFileSync(path.join(home, 'ap', 'run_pipeline.py'), '# Isolated native gate: AP provider is not configured.\n');
     env = privateEnvironment(process.env, home);
+    if (terminalTree) { env.HOMEBOT_LIVE_TASK_TREE = '1'; env.HOMEBOT_NATIVE_TERMINAL_TREE = '1'; }
     const head = command('git', ['rev-parse', 'HEAD'], { cwd: source, env }); assert.equal(head, expected, 'Checkout must be exact PR head, not merge ref.');
     assert.equal(command('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: source, env }), '', 'Tracked source changed.');
     proof.sourceHead = head;
@@ -184,7 +188,7 @@ async function run() {
     fs.symlinkSync(path.join(source, 'node_modules'), path.join(privateRoot, 'app', 'node_modules'), 'junction');
     const e2e = path.join(runtime.widget, 'src', 'renderer', 'e2e');
     copyFiles(path.join(widget, 'src/renderer/e2e/helpers'), path.join(e2e, 'helpers'));
-    for (const name of ['launchElectron.ts', 'overlay.e2e.spec.ts', 'tooltip.e2e.spec.ts', 'workspace-problems.e2e.spec.ts']) { fs.mkdirSync(e2e, { recursive: true }); fs.copyFileSync(path.join(widget, 'src/renderer/e2e', name), path.join(e2e, name)); }
+    for (const name of ['launchElectron.ts', 'overlay.e2e.spec.ts', 'tooltip.e2e.spec.ts', 'workspace-problems.e2e.spec.ts', ...(terminalTree ? ['workspace-terminal-tree.live.e2e.spec.ts'] : [])]) { fs.mkdirSync(e2e, { recursive: true }); fs.copyFileSync(path.join(widget, 'src/renderer/e2e', name), path.join(e2e, name)); }
     const mainSupport = path.join(runtime.widget, 'src', 'main'); fs.mkdirSync(mainSupport, { recursive: true });
     for (const name of ['workspace-pty-force-stop.ts', 'workspace-pty-identity.ts']) fs.copyFileSync(path.join(widget, 'src/main', name), path.join(mainSupport, name));
     const main = path.join(runtime.widget, 'out/main/index.js'), shim = path.join(runtime.widget, 'dist/main/index.js'); fs.mkdirSync(path.dirname(shim), { recursive: true }); fs.writeFileSync(shim, isolationEntry(privateRoot, runtime.widget, main));
@@ -211,13 +215,13 @@ async function run() {
     proof.compiledAndNativeUnchanged = true;
     check('All compiled/native/bootstrap/fixture bytes unchanged after actual test process');
     const report = JSON.parse(fs.readFileSync(path.join(output, 'results.json'), 'utf8')); proof.stats = report.stats;
-    proof.cases = validateResults(report);
+    proof.cases = validateResults(report, expectedCases);
     const receipts = fs.readdirSync(resultDirectory).filter(file => /^electron-shutdown-.*\.json$/.test(file)).map(file => ({ file, receipt: JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')) }));
-    proof.shutdown = validateShutdownReceipts(receipts);
+    proof.shutdown = validateShutdownReceipts(receipts, expectedCases.length);
     const paths = fs.readdirSync(resultDirectory).filter(file => /^ide-native-paths-\d+\.json$/.test(file)).map(file => JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')));
-    proof.actualPaths = validatePathReceipts(paths, proof.shutdown, privateRoot, main);
+    proof.actualPaths = validatePathReceipts(paths, proof.shutdown, privateRoot, main, expectedCases.length);
     validateSpawn(result, 'Actual Playwright process did not exit successfully without a signal.');
-    check('Exactly4 actual passed tests, zero skip/flaky/retry and four matching private-path/held-OS0 native receipts', { cases: proof.cases.length, shutdown: proof.shutdown.length });
+    check('Exact selected first-attempt cases with no skip/flaky/retry and matching private-path/held-OS0 native receipts', { cases: proof.cases.length, shutdown: proof.shutdown.length });
     proof.passed = true;
   } catch (error) {
     proof.passed = false; proof.failure = { message: error.message, stack: error.stack }; console.error(error.stack || String(error));
@@ -233,5 +237,5 @@ async function run() {
     persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true }));
   }
 }
-module.exports = { EXPECTED_CASES, PATH_KEYS, hashTree, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
+module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
 if (require.main === module) void run();

@@ -28,6 +28,26 @@ test('four exact first attempts pass; retries, flakiness, missing/extra cases an
   const mutations = [r => { r.stats.expected = 0; }, r => { r.stats.flaky = 1; }, r => { r.stats.skipped = 1; }, r => { r.suites[0].specs.push(clone(r.suites[0].specs[0])); }, r => { r.suites[0].specs[0].title = 'different test'; }, r => { r.config.projects[0].retries = 1; }, r => { r.suites[0].specs[0].tests[0].results[0].retry = 1; }, r => { r.suites[0].specs[0].tests[0].results.push({ status: 'passed', retry: 1 }); }, r => { r.suites[0].specs[0].tests[0].expectedStatus = 'failed'; }];
   for (const mutate of mutations) { const value = report(); mutate(value); assert.throws(() => gate.validateResults(value)); }
 });
+
+test('independent terminal mode requires its exact first attempt and held receipt, while default still requires four', () => {
+  const selected = report();
+  selected.stats.expected = 1;
+  const spec = selected.suites[0].specs[0];
+  spec.file = gate.TERMINAL_TREE_CASES[0].file;
+  spec.title = gate.TERMINAL_TREE_CASES[0].title;
+  selected.suites[0].specs = [spec];
+  assert.equal(gate.validateResults(selected, gate.TERMINAL_TREE_CASES).length, 1);
+  assert.throws(() => gate.validateResults(selected));
+  const held = receipts().slice(0, 1), stores = paths().slice(0, 1);
+  const receipt = gate.validateShutdownReceipts(held, 1);
+  assert.equal(gate.validatePathReceipts(stores, receipt, privateRoot, main, 1).length, 1);
+  assert.throws(() => gate.validateShutdownReceipts(held));
+  assert.throws(() => gate.validatePathReceipts(stores, receipt, privateRoot, main));
+  selected.suites[0].specs[0].tests[0].results[0].retry = 1;
+  assert.throws(() => gate.validateResults(selected, gate.TERMINAL_TREE_CASES));
+  held[0].receipt.forcedOwnedCleanup = true;
+  assert.throws(() => gate.validateShutdownReceipts(held, 1));
+});
 test('four held-main receipts pass; force cleanup, OS failure, unknown/live identities and absent tree fail', () => {
   const positive = gate.validateShutdownReceipts(receipts()); assert.equal(positive.length, 4); assert.equal(positive[0].rawSignalPresent, false); assert.equal(positive[0].normalizedSignal, null);
   const mutations = [r => { r.length = 0; }, r => { r.pop(); }, r => { r[0].receipt.graceful = false; }, r => { r[0].receipt.forcedOwnedCleanup = false; }, r => { r[0].receipt.nativeExit.code = 1; }, r => { r[0].receipt.nativeExit.signal = 'SIGTERM'; }, r => { r[0].receipt.nativeExit.creation = 'different'; }, r => { r[0].receipt.ownedTree = []; }, r => { r[0].receipt.ownedTree[1].parent = 99; }, r => { r[0].receipt.capturedIdentitiesGone = false; }, r => { r[0].receipt.identityObservations = []; }, r => { r[0].receipt.identityObservations = [{ at: 1, gone: false, live: [{ pid: r[0].receipt.native.pid, creation: r[0].receipt.native.creation }] }]; }, r => { r[0].receipt.elapsed = 20000; }];
