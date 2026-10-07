@@ -29,6 +29,7 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       return child;
     }) as typeof childProcess.spawn);
     const job = createPendingWorkspaceWindowsJob();
+    let originalFailure: unknown;
     try {
       // Stop is requested before listening, without attaching or executing any target.
       await job.stop();
@@ -40,8 +41,14 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy.mock.calls[0][0]).toBe(path.win32.join(process.env.SystemRoot || process.env.SYSTEMROOT!, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
       await job.stop(); expect(spy).toHaveBeenCalledTimes(1);
-    } finally {
+    } catch (error) { originalFailure = error; throw error; }
+    finally {
       try { await job.stop(); }
+      catch (error) {
+        if (!originalFailure) throw error;
+        // Keep the first real startup/Stop failure as the test oracle.
+        console.error('Pending Job cleanup retry also refused:', String(error));
+      }
       finally { spy.mockRestore(); }
     }
   }, 15_000);
