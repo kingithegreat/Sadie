@@ -656,8 +656,11 @@ export async function connectSingleServer(
     if (connectionVersions.get(config.name) !== version) throw new Error('MCP connection was replaced');
     if (config.enabled === false) return { connected: false, toolCount: 0 };
     await connectServer(config, registerTool, version);
+    assertRunning();
+    if (connectionVersions.get(config.name) !== version) throw new Error('MCP connection was replaced');
     const entry = connectedServers.find(s => s.config.name === config.name);
-    return { connected: true, toolCount: entry?.toolNames.length ?? 0 };
+    if (!entry) throw new Error('MCP connection is no longer active');
+    return { connected: true, toolCount: entry.toolNames.length };
   } catch (err: any) {
     const error = err?.message || String(err);
     console.error(`[MCP] Could not connect "${config.name}": ${error}`);
