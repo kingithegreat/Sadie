@@ -1,10 +1,11 @@
 import { EventEmitter } from 'events';
 import * as vm from 'vm';
+import { StringDecoder } from 'string_decoder';
 import { createWorkspaceProcessGate, snapshotWorkspaceLaunch, WORKSPACE_PROCESS_GATE_SOURCE } from '../workspace-process-gate';
 import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 
 function bootstrap(adapterPath?: string) {
-  const pipe = Object.assign(new EventEmitter(), { write: jest.fn(), end: jest.fn() });
+  const pipe = Object.assign(new EventEmitter(), { write: jest.fn(), end: jest.fn(), setEncoding: jest.fn() });
   const child = Object.assign(new EventEmitter(), { pid: 91 });
   const spawn = jest.fn(() => child);
   const crossSpawn = jest.fn((_exe: string, _argv: string[], _opts: { env: NodeJS.ProcessEnv }) => child), imports: string[] = [];
@@ -90,5 +91,14 @@ describe('fixed process bootstrap before Job assignment', () => {
       expect((f.process.env as Record<string, string>).comspec).toBe('C:\\Windows\\System32\\cmd.exe');
       expect(f.crossSpawn.mock.calls[0][2].env).not.toHaveProperty('comspec');
     } finally { if (old === undefined) delete process.env.comspec; else process.env.comspec = old; }
+  });
+  it('selects streaming UTF-8 and preserves a multibyte argument split across received packets', () => {
+    const f = bootstrap(); expect(f.pipe.setEncoding).toHaveBeenCalledWith('utf8');
+    const launch = { executable: 'approved-shell', args: ['nested/一🔧é.cmd'], env: { RULE: 'préserver🔧' } };
+    const bytes = Buffer.from(JSON.stringify(launch) + '\n'), split = bytes.indexOf(Buffer.from('🔧')) + 1;
+    const decoder = new StringDecoder('utf8');
+    f.pipe.emit('data', decoder.write(bytes.subarray(0, split))); expect(f.spawn).not.toHaveBeenCalled();
+    f.pipe.emit('data', decoder.write(bytes.subarray(split)));
+    expect(f.spawn).toHaveBeenCalledWith(launch.executable, launch.args, expect.objectContaining({ env: launch.env }));
   });
 });

@@ -47,6 +47,7 @@ let received=false, child, text='', acknowledged=false, accepted=false, complete
 const deadline=setTimeout(()=>process.exit(125),10000);
 const slash=String.fromCharCode(92),newline=String.fromCharCode(10);
 const connection=net.connect(slash+slash+'.'+slash+'pipe'+slash+pipe);
+connection.setEncoding('utf8');
 const fail=()=>{ if(!accepted) process.exit(125); };
 connection.on('error',fail); connection.on('end',fail);
 connection.on('connect',()=>connection.write(capability+newline));

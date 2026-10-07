@@ -155,6 +155,7 @@ export function createWorkspaceWindowsJob(pid: number, original: WorkspacePtyIde
 
 function windowsJobSource(): string {
   return `$ErrorActionPreference='Stop'
+[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
 public static class OwnedWindowsJob {

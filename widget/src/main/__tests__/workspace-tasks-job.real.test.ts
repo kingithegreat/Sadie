@@ -29,12 +29,12 @@ function fixture() {
 
 nativeTest('instant npm command executes once and completes without confusing a missing target PID with unknown ownership', async () => {
   const app = fixture(); const marker = path.join(app.project, 'instant-marker.txt');
-  fs.writeFileSync(path.join(app.project, 'instant.cjs'), `require('fs').appendFileSync(${JSON.stringify(marker)}, 'ran-once\n');`);
+  fs.writeFileSync(path.join(app.project, 'instant.cjs'), `require('fs').appendFileSync(${JSON.stringify(marker)}, 'ran-once:' + process.env.HOMEBOT_UTF8_JOB_CANARY + '\n');`);
   app.writeScript('node instant.cjs');
   try {
-    const result = await executeWorkspacePackageTask(prepareWorkspacePackageTask(app.project, 'check'), { taskId: 'native:instant', longRunning: true });
+    const result = await executeWorkspacePackageTask(prepareWorkspacePackageTask(app.project, 'check'), { taskId: 'native:instant', longRunning: true, env: { HOMEBOT_UTF8_JOB_CANARY: '一🔧é' } });
     expect(result).toMatchObject({ success: true, exitCode: 0, cleanupPending: false });
-    expect(fs.readFileSync(marker, 'utf8')).toBe('ran-once\n');
+    expect(fs.readFileSync(marker, 'utf8')).toBe('ran-once:一🔧é\n');
   } finally { await closeAllWorkspaceTasks(); fs.rmSync(app.home, { recursive: true, force: true }); }
 });
 
