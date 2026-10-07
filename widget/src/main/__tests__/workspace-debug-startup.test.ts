@@ -57,6 +57,9 @@ test('late open from an exited startup neither initializes nor stops the replace
   children[0].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick();
   const oldSocket = ControlledSocket.instances[0]; expect(oldSocket).toBeDefined();
   children[0].emit('exit', 0);
+  // Native exit settles the old startup and reservation without waiting for a
+  // socket callback that might never arrive. Late open remains harmless.
+  expect(await first).toEqual(expect.objectContaining({ success: false, error: expect.stringMatching(/session changed during startup/) }));
   expect(await call('state')).toEqual(expect.objectContaining({ running: false, frames: [], breakpoints: [] }));
   const second = call('start', { file }); expect(children).toHaveLength(2);
   children[1].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40002/def-456\n'); await tick();

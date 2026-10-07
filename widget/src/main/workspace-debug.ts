@@ -73,6 +73,7 @@ class DebugSession {
     let resolveExit!: () => void;
     const program: OwnedDebugProgram = { child, identity: workspacePtyLifecycle.capture(child.pid!), ended: false, executed: false, exit: new Promise(resolve => { resolveExit = resolve; }), resolveExit: () => resolveExit() };
     this.ownedPrograms.set(child, program);
+    let rejectStartup: ((error: Error) => void) | undefined;
     try {
     rememberWorkspaceChild(child);
     const url = await new Promise<string>((resolve, reject) => {
@@ -92,6 +93,7 @@ class DebugSession {
       });
       child.once('exit', () => {
         program.ended = true; program.resolveExit();
+        rejectStartup?.(new Error('The debug session changed during startup.'));
         // Project code has not run if inspect-brk was never released.
         if (!program.executed) this.ownedPrograms.delete(child);
         else if (process.platform === 'win32' && !program.receipt) program.error = 'The debug program ended before its process tree could be captured. Cleanup is unverified; inspect and stop its remaining programs, then retry Stop.';
@@ -125,7 +127,14 @@ class DebugSession {
       }
     });
     socket.addEventListener('close', () => { if (this.socket === socket) this.rejectRequests('Debugger disconnected.'); });
-    await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Debugger connection timed out.')), 5000); socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true }); socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('The debugger connection failed.')); }, { once: true }); });
+    await new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error) => { if (settled) return; settled = true; clearTimeout(timer); rejectStartup = undefined; if (error) reject(error); else resolve(); };
+      const timer = setTimeout(() => finish(new Error('Debugger connection timed out.')), 5000);
+      rejectStartup = error => finish(error);
+      socket.addEventListener('open', () => finish(), { once: true });
+      socket.addEventListener('error', () => finish(new Error('The debugger connection failed.')), { once: true });
+    });
     const initialize = async (method: string, params: Record<string, unknown> = {}) => {
       const requireOwner = () => { if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.'); };
       requireOwner(); await this.command(method, params); requireOwner();
