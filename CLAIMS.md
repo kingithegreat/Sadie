@@ -2,6 +2,8 @@
 
 ## 2026-10-07 NZ — IDE completion team (Codex root)
 
+Current follow-up: root integrated owned quit-before-optional-diagnostics, explicit Jest runner configuration precedence and protected profile/runtime/system descendants exclusion from code/rules context. Root actual-source light controls23/5/6 pass; six protected callbacks reproduce five old failures with synthetic fixtures/actual shared policy. Files independently reviews private final Electron helper integration; Editor independently reviews protected-context patch. Root owns coherent publication/exact-head gates/review/merge/normal-profile delivery. Published2bfb task native shutdown failure and original Windows1 startup flake remain failed receipts. No new native success, clean review, merge or delivery claim. Disk sufficient;RAM remains below2GiB.
+
 User explicitly requested agents finish the IDE audit gaps. Root integrates on
 `claude/ide-finish-20261007`, private `ide-finish-20261007`, fresh main79ffc386.
 Agents: `ide_files_safety` owns WorkspaceShell/FileTree/workspace-ipc and new
