@@ -43,6 +43,13 @@ results but retained the documented main-process Jest handle; exact-owned cleanu
 was recorded rather than described as natural exit. Hosted CI already uses
 `--forceExit` for that existing limitation. Native acceptance is still pending
 the standing 5 GiB/2 GiB resource floor; current free disk is about 4.08 GiB.
+The local build guard refused launch at that floor. To continue verification,
+root added an opt-in production-path Windows CI lane with the four reviewed
+setup/discovery cases, isolated stores and fixture HTTP, zero retries, captured
+process identities and before/after compiled/dependency hashes. Its supplemental
+TypeScript and runner syntax checks pass. CI execution, visual inspection and
+configured review remain pending. This lane preserves real package identity and
+does not enable production E2E IPC shortcuts; no real provider/download claim.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
