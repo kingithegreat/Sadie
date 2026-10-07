@@ -1,5 +1,20 @@
 # Work Claims
 
+## 2026-10-08 NZ — CHAT completion integration
+
+Codex root resumes the released chat source lanes under Aden's instruction to
+use remaining weekly capacity to complete HomeBot. Isolated worktree
+`.homebot/chat-complete-20261008` starts from main `69075fe5` and integrates the
+retained integration/native corrections without changing their original trees.
+Root owns serial full checks, production native fixtures, exact-head review,
+qualified landing through existing PR #478 and a separate current build.
+The active IDE #474, character/rig/art and existing delivered profiles remain
+with their owners. Source import is complete and released to root's serial
+qualification. Four semantic TypeScript checks and whole-widget lint pass.
+Fresh full Jest/native/CI/review/landing and delivery remain pending; original
+overlong isolated-HOME failures are retained as harness evidence.
+
+
 ## 2026-10-07 — SETUP-MODEL-RETENTION
 
 Codex root coordinates the carry-on setup follow-up from main `ce53a7db` in
