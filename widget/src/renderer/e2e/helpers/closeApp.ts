@@ -5,10 +5,11 @@ import { randomUUID } from 'crypto';
 import { monitorNativeApp, type NativeAppMonitor, type NativeAppExit } from './nativeAppProcess';
 import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ownedElectronInspector';
 import { collectWindowsNativeWaitChain } from './windowsNativeWaitChain';
+import { startLocalNativeCrashReporter } from './localCrashReporter';
 import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
 export const CLOSE_BUDGET_MS = 20_000;
-interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; committedQuit: Promise<void>; quitEventObserved?: boolean; inspector?: OwnedElectronInspector }
+interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; committedQuit: Promise<void>; quitEventObserved?: boolean; inspector?: OwnedElectronInspector; localCrashReporter?: Record<string, unknown> }
 const states = new WeakMap<ElectronApplication, Promise<State>>();
 const pendingApps = new Set<ElectronApplication>();
 const closings = new WeakMap<ElectronApplication, Promise<number>>();
@@ -90,6 +91,11 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
     state.inspector = captureOwnedElectronInspector(app, child, state.monitor);
     observe();
     void state.monitor.exit.then(exit => { state.nativeExit = exit; releaseCompleted(); }).catch(() => {});
+    if (process.env.HOMEBOT_NATIVE_LOCAL_CRASH_REPORTS === '1') {
+      try { state.localCrashReporter = await bounded(app.evaluate(startLocalNativeCrashReporter,
+        { pid: state.monitor.info.pid, nonce: state.exitNonce }), 4000, 'Local crash reporter initialization exceeded its diagnostic bound'); }
+      catch (error) { state.localCrashReporter = { status: 'failed', error: String(error) }; }
+    }
     return state;
   })();
   states.set(app, pending); await pending;
@@ -116,6 +122,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     if (!states.has(app)) throw new Error('Electron shutdown identity was not prepared at launch.');
     state = await bounded(states.get(app)!, deadline - Date.now(), 'Native Electron launch identity unavailable');
     receipt.native = { ...state.monitor.info, creation: state.monitor.creation }; receipt.launcherPid = app.process().pid;
+    if (state.localCrashReporter) receipt.localCrashReporter = state.localCrashReporter;
     if (!state.nativeExit) {
       try { tree = await bounded(state.monitor.snapshot(), Math.min(4000, deadline - Date.now()), 'Native owned-tree snapshot exceeded its bound'); receipt.ownedTree = tree; }
       catch (snapshotError) {

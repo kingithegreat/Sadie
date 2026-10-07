@@ -112,6 +112,17 @@ function validateShutdownReceipts(receipts, expectedCount = 4) {
     return { file, native, launcherPid: receipt.launcherPid, nativeExit: exit, normalizedSignal: null, rawSignalPresent: Object.hasOwn(exit, 'signal'), ownedIdentities: tree.length, capturedIdentitiesGone: true, graceful: true, forcedOwnedCleanup: false, elapsed: receipt.elapsed };
   });
 }
+function validateLocalCrashReporterReceipts(receipts) {
+  for (const { receipt } of receipts) {
+    const reporter = receipt.localCrashReporter;
+    assert.equal(reporter?.status, 'started', 'Required local crash reporter was not established.');
+    assert.equal(reporter.pid, receipt.native.pid); assert.equal(reporter.uploadToServer, false);
+    assert.equal(reporter.requestedSubmitURL, null); assert.ok(typeof reporter.nonce === 'string' && reporter.nonce.length > 0);
+    assert.equal(reporter.parameters?.homebot_native_pid, String(receipt.native.pid));
+    assert.equal(reporter.parameters?.homebot_native_nonce, reporter.nonce);
+    assert.equal(reporter.nonce, receipt.productionAtExit?.nonce, 'Reporter must belong to the same captured quit identity.');
+  }
+}
 const PATH_KEYS = ['home', 'appData', 'userData', 'sessionData', 'temp', 'desktop', 'documents', 'downloads', 'music', 'pictures', 'videos', 'logs', 'crashDumps'];
 function validatePathReceipts(rows, shutdown, privateRoot, frozenMain, expectedCount = 4) {
   assert.equal(rows.length, expectedCount, 'Exact number of actual app path receipts required.');
@@ -184,6 +195,7 @@ async function run() {
     for (const directory of ['tmp', 'AppData/Roaming', 'AppData/Local', 'ap', 'movies']) fs.mkdirSync(path.join(home, directory), { recursive: true });
     fs.writeFileSync(path.join(home, 'ap', 'run_pipeline.py'), '# Isolated native gate: AP provider is not configured.\n');
     env = privateEnvironment(process.env, home);
+    env.HOMEBOT_NATIVE_LOCAL_CRASH_REPORTS = '1'; env.HOMEBOT_NATIVE_LOCAL_CRASH_ROOT = privateRoot;
     if (terminalTree) { env.HOMEBOT_LIVE_TASK_TREE = '1'; env.HOMEBOT_NATIVE_TERMINAL_TREE = '1'; }
     const head = command('git', ['rev-parse', 'HEAD'], { cwd: source, env }); assert.equal(head, expected, 'Checkout must be exact PR head, not merge ref.');
     assert.equal(command('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: source, env }), '', 'Tracked source changed.');
@@ -237,6 +249,7 @@ async function run() {
     proof.cases = validateResults(report, expectedCases);
     const receipts = fs.readdirSync(resultDirectory).filter(file => /^electron-shutdown-.*\.json$/.test(file)).map(file => ({ file, receipt: JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')) }));
     proof.shutdown = validateShutdownReceipts(receipts, expectedCases.length);
+    validateLocalCrashReporterReceipts(receipts);
     const paths = fs.readdirSync(resultDirectory).filter(file => /^ide-native-paths-\d+\.json$/.test(file)).map(file => JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')));
     proof.actualPaths = validatePathReceipts(paths, proof.shutdown, privateRoot, main, expectedCases.length);
     validateSpawn(result, 'Actual Playwright process did not exit successfully without a signal.');
@@ -256,5 +269,5 @@ async function run() {
     persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true }));
   }
 }
-module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateCompiledInventory, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
+module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateCompiledInventory, validateResults, validateShutdownReceipts, validateLocalCrashReporterReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
 if (require.main === module) void run();

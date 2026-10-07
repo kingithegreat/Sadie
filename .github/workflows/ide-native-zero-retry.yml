@@ -56,7 +56,7 @@ jobs:
           finally { Pop-Location }
 
       - name: Managed helper build contracts
-        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs
+        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
 
       - name: Actual pending Windows Job Stop before any bootstrap attachment
         working-directory: widget
