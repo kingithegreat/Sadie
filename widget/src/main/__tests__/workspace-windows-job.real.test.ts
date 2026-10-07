@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { verifiedWorkspaceWindowsJobRuntime } from '../workspace-windows-job-asset';
 import { createPendingWorkspaceWindowsJob } from '../workspace-windows-job';
 import { createWorkspaceProcessGate } from '../workspace-process-gate';
 
@@ -49,10 +50,11 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
     try {
       // Stop is requested before listening, without attaching or executing any target.
       const stopping = job.stop(); void stopping.catch(() => {});
-      // The SDK-shaped case additionally qualifies the ORIGINAL listener deadline.
-      // The plain early-Stop case records a rejected listener honestly without masking it.
-      if (sdkGate) await job.listening;
+      // Both cold cases qualify the original listener deadline, independently
+      // of the confirmed empty Stop and same held helper's native close.
+      await job.listening;
       await stopping;
+      expect(listening!.ok).toBe(true); expect(listening!.elapsedMs).toBeLessThan(4500);
       expect(held!.pid).toBeGreaterThan(0);
       expect(closeCode).toBe(0); expect(closeSignal).toBeNull();
       expect(held!.exitCode).toBe(0); expect(held!.signalCode).toBeNull();
@@ -60,7 +62,8 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       expect(phases).not.toContain('attach'); expect(phases).not.toContain('go');
       if (sdkGate) { expect(listening!.ok).toBe(true); expect(phases).toContain('listen'); }
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0][0]).toBe(path.win32.join(process.env.SystemRoot || process.env.SYSTEMROOT!, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'));
+      expect(spy.mock.calls[0][0]).toBe(verifiedWorkspaceWindowsJobRuntime().host);
+      expect(spy.mock.calls[0][1]).toEqual([]);
       await job.stop(); expect(spy).toHaveBeenCalledTimes(1);
     } catch (error) { originalFailure = error; throw error; }
     finally {

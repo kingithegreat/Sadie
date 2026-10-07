@@ -3,11 +3,12 @@ import { spawn } from 'child_process';
 import { createPendingWorkspaceWindowsJob, createWorkspaceWindowsJob } from '../workspace-windows-job';
 import * as fs from 'fs';
 import * as path from 'path';
-import { verifiedWorkspaceWindowsJobAsset } from '../workspace-windows-job-asset';
+import { verifiedWorkspaceWindowsJobRuntime } from '../workspace-windows-job-asset';
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
-jest.mock('../workspace-windows-job-asset', () => ({ verifiedWorkspaceWindowsJobAsset: jest.fn() }));
+jest.mock('../workspace-windows-job-asset', () => ({ verifiedWorkspaceWindowsJobRuntime: jest.fn() }));
 const spawnMock = spawn as unknown as jest.Mock;
+const runtime = { host: 'C:\\HomeBot\\assets\\OwnedWindowsJobHost.exe', hostSha256: 'c'.repeat(64) };
 const identity = { creation: '639269357577651780', parent: 44 };
 
 function helper() {
@@ -26,9 +27,21 @@ describe('creation-gated Windows Job ownership', () => {
   const oldSystemRoot = process.env.SystemRoot;
   beforeEach(() => {
     process.env.SystemRoot = 'C:\\Windows'; jest.useFakeTimers(); spawnMock.mockReset();
-    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReset().mockReturnValue({ assembly: 'C:\\HomeBot\\assets\\OwnedWindowsJob.dll', sha256: 'b'.repeat(64) });
+    (verifiedWorkspaceWindowsJobRuntime as jest.Mock).mockReset().mockReturnValue({ ...runtime, assembly: 'C:\\HomeBot\\assets\\OwnedWindowsJob.dll', sha256: 'b'.repeat(64) });
   });
   afterEach(() => { if (oldSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = oldSystemRoot; jest.clearAllTimers(); jest.useRealTimers(); });
+
+  it('spawns only the verified compiled host with zero argv even with hostile lookup environment', async () => {
+    const fake = helper();
+    delete process.env.SystemRoot;
+    const env = { PATH: 'C:\\project', SystemRoot: 'C:\\project', PRIVATE_CANARY: 'private-env' };
+    const job = createPendingWorkspaceWindowsJob({ env });
+    expect(verifiedWorkspaceWindowsJobRuntime).toHaveBeenCalledWith();
+    expect(spawnMock).toHaveBeenCalledWith(runtime.host, [], { windowsHide: true, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    expect(fake.child.stdin.write).toHaveBeenCalledTimes(1);
+    fake.send({ type: 'listening' });
+    const stopping = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopping;
+  });
 
   it('task child capture binds its parent to main and resolves only a strict native identity result', async () => {
     const f = helper(), job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
@@ -56,7 +69,7 @@ describe('creation-gated Windows Job ownership', () => {
   });
 
   it.each(['missing', 'tampered'])('rejects %s assets before spawn and allows truthful no-owner cleanup', async reason => {
-    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockImplementationOnce(() => { throw new Error(reason); });
+    (verifiedWorkspaceWindowsJobRuntime as jest.Mock).mockImplementationOnce(() => { throw new Error(reason); });
     const job = createPendingWorkspaceWindowsJob();
     await expect(job.ready).rejects.toThrow('could not start');
     await expect(job.listening).rejects.toThrow('could not start');
@@ -79,7 +92,7 @@ describe('creation-gated Windows Job ownership', () => {
     expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBeUndefined();
   });
 
-  it('reports cold compile at the unchanged startup deadline without treating a phase as readiness', async () => {
+  it('reports an observed host phase at the unchanged startup deadline without treating a phase as readiness', async () => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();
     let ready = false; void job.ready.then(() => { ready = true; }, () => {});
     fake.send({ type: 'phase', phase: 'compile', empty: true }); await settle();
@@ -270,7 +283,7 @@ describe('creation-gated Windows Job ownership', () => {
   it('keeps launch capability and environment out of helper argv and responses', async () => {
     const fake = helper(); const capability = 'a'.repeat(64);
     const job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability } });
-    expect(spawnMock.mock.calls[0][0]).toBe('C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+    expect(spawnMock.mock.calls[0][0]).toBe(runtime.host);
     expect(JSON.stringify(spawnMock.mock.calls[0][1])).not.toContain(capability);
     fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle(); fake.reply({ ok: true }); await attached;
     const started = job.authorize({ executable: 'C:\\Windows\\System32\\cmd.exe', args: ['/D'], env: { PRIVATE_CANARY: 'never-log-env' } }); await settle();
@@ -280,26 +293,22 @@ describe('creation-gated Windows Job ownership', () => {
 
   it('generates exclusive OS-peer checked gated assignment and a retained-Job empty oracle', () => {
     helper(); createPendingWorkspaceWindowsJob();
-    const args = spawnMock.mock.calls[0][1]; const source = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+    const args = spawnMock.mock.calls[0][1]; expect(args).toEqual([]);
+    expect(spawnMock.mock.calls[0][0]).toBe(runtime.host);
     const managed = fs.readFileSync(path.resolve(__dirname, '../../../native/OwnedWindowsJob.cs'), 'utf8');
     expect(managed).toContain('CreateNamedPipe'); expect(managed).toContain('0x40080003');
     expect(managed).toContain('GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)');
     expect(managed).toContain('DateTime.FromFileTimeUtc(born).Ticks/10!=expected/10');
     expect(managed).toContain('limits.Basic.Flags=0x2000');
     expect(managed).toContain('QueryInformationJobObject(job,1'); expect(managed).toContain('return Account().Active==0');
-    expect(source).not.toContain('Add-Type'); expect(source).not.toContain('csc.exe');
-    expect(source).not.toContain('Import-Module'); expect(source).not.toContain('ConvertFrom-Json'); expect(source).not.toContain('ConvertTo-Json');
-    expect(source).toContain('[OwnedWindowsJob]::ParseFrame($line)');
-    expect(source).toContain('[System.Reflection.Assembly]::Load($assetBytes)');
-    expect(source.indexOf('$actualHash -cne $initial.asset.sha256')).toBeLessThan(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)'));
-    expect(source).not.toContain('Get-CimInstance'); expect(source).not.toContain('TerminateProcess');
-    expect(source).toContain('$inputEncoding=[System.Text.UTF8Encoding]::new($false)');
-    expect(source).toContain('[Console]::InputEncoding=$inputEncoding');
+    // Host parsing/loading controls exercise its exact source separately.
+    // TS supplies no executable program or capability in argv.
+    expect(spawnMock.mock.calls[0][2]).toMatchObject({ windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   });
 
   it('uses exactly four bounded setup lines and preserves Unicode, quotes and spaces without argv authority', () => {
     const fake = helper(); const assembly = 'C:\\HomeBot Unicode é🌿\\quoted " folder\\assets\\OwnedWindowsJob.dll';
-    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReturnValueOnce({ assembly, sha256: 'b'.repeat(64) });
+    (verifiedWorkspaceWindowsJobRuntime as jest.Mock).mockReturnValueOnce({ ...runtime, assembly, sha256: 'b'.repeat(64) });
     createPendingWorkspaceWindowsJob();
     const lines = fake.child.stdin.write.mock.calls[0][0].split('\n');
     expect(lines).toHaveLength(5); expect(lines.slice(1)).toEqual(['b'.repeat(64), '', '', '']);
@@ -309,7 +318,7 @@ describe('creation-gated Windows Job ownership', () => {
   });
 
   it('rejects oversized fixed setup before spawning, without orphaning any helper', async () => {
-    helper(); (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReturnValueOnce({ assembly: 'C:\\' + 'x'.repeat(8192), sha256: 'b'.repeat(64) });
+    helper(); (verifiedWorkspaceWindowsJobRuntime as jest.Mock).mockReturnValueOnce({ ...runtime, assembly: 'C:\\' + 'x'.repeat(8192), sha256: 'b'.repeat(64) });
     const job = createPendingWorkspaceWindowsJob(); await expect(job.listening).rejects.toThrow('could not start');
     await job.stop(); expect(spawnMock).not.toHaveBeenCalled();
     expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBe(true);

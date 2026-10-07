@@ -54,6 +54,10 @@ d260; its older history-clock fixture and actual native crash remain failed proo
 The original AI lane is unavailable; no overlapping source work is assigned.
 Current follow-ups: Editor owns bounded diff computation and actual opened-file
 containment, including registry availability and four opt-in real Windows cases.
+Files owns the compiled Job host TS control-process integration and its existing
+mock/real startup and pure framing controls in an isolated exact5d checkout;
+Editor owns the fixed host/build assets. Product admission/operation deadlines
+remain 4500ms; cold ready-run failure evidence remains unchanged.
 Files owns immutable managed Job preparation shared by product dev/build/Jest,
 fixed hash-bound runtime loading and Windows packaging validation. Root owns
 CI flags, complete built/native/delivery inventories, exact-head publication and
