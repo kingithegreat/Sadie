@@ -157,3 +157,6 @@ workspace/
 
 # Build/dev/Jest-prepared managed product asset (immutable source is tracked).
 /widget/native/generated/
+
+# Retained generated managed task-control proof; uploaded by existing CI jobs.
+/artifacts/ide-native-zero-retry/task-attachment-controls-*/
