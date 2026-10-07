@@ -469,6 +469,7 @@ export async function executeTool(
   call: ToolCall,
   context: ToolContext
 ): Promise<ToolResult> {
+  if (context.signal?.aborted) return { success: false, error: 'Operation cancelled by user' };
   // Normalize aliases (e.g., models may emit `nba_scores` but our registered tool is `nba_query`)
   const normalized = TOOL_ALIASES[call.name] || call.name;
   call.name = normalized;
@@ -547,6 +548,7 @@ export async function executeTool(
   }
 
   const startedAt = Date.now();
+  if (context.signal?.aborted) return { success: false, error: 'Operation cancelled by user' };
   try {
     const result = await tool.handler(call.arguments, context);
     const duration_ms = Date.now() - startedAt;
@@ -674,8 +676,10 @@ export function previewBatch(calls: ToolCall[], options?: { overrideAllowed?: st
 export async function executeToolBatch(
   calls: ToolCall[],
   context: ToolContext,
-  options?: { overrideAllowed?: string[]; dryRun?: boolean }
+  options?: { overrideAllowed?: string[]; dryRun?: boolean; signal?: AbortSignal }
 ): Promise<ToolResult[]> {
+  const signal = options?.signal || context.signal;
+  if (signal?.aborted) return [{ success: false, error: 'Operation cancelled by user' }];
   try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER = (global as any).__HOMEBOT_ROUTER_LOG_BUFFER || []; } catch (e) { safeCatch(e); }
   console.log('[BATCH] executeToolBatch called', { toolCount: calls.length, toolNames: calls.map(c => c.name) });
   try { (global as any).__HOMEBOT_ROUTER_LOG_BUFFER.push(`[BATCH] called tools=${calls.map(c=>c.name).join(',')}`); } catch (e) { safeCatch(e); }
@@ -743,8 +747,9 @@ export async function executeToolBatch(
   };
   for (const call of calls) {
     const callStartedAt = Date.now();
+    if (signal?.aborted) break;
     // Prepare execution context including any transient overrides
-    const callContext = { ...(context || {} as any), overrideAllowed: Array.from(overrides) } as any;
+    const callContext = { ...(context || {} as any), signal, overrideAllowed: Array.from(overrides) } as any;
     // If this call is explicitly overridden, skip the PERMISSION check — the
     // user just granted it by clicking "Allow once" on THIS batch, which is
     // itself user consent for running it now. The per-call confirmation
@@ -777,6 +782,7 @@ export async function executeToolBatch(
         } catch { /* a broken channel must not block an explicit grant */ }
       }
       try {
+        if (signal?.aborted) break;
         const r = await tool.handler(call.arguments, callContext);
         results.push(r);
         recordOutcome(call, r, callStartedAt);
