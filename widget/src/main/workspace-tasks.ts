@@ -21,7 +21,7 @@ import type {
   WorkspaceTaskRunResult,
 } from '../shared/types';
 import { validateTrustedWorkspaceRoot } from './workspace-trust';
-import { workspacePtyLifecycle } from './workspace-pty-identity';
+import { workspacePtyLifecycle, type WorkspacePtyIdentityDiagnostic } from './workspace-pty-identity';
 import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 import { createPendingWorkspaceWindowsJob } from './workspace-windows-job';
 import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
@@ -58,6 +58,8 @@ export interface WorkspaceTaskExecutionOptions {
   /** Main-owned originating-window/task key, never an executable authority. */
   taskId?: string;
   createWindowsJob?: typeof createPendingWorkspaceWindowsJob;
+  /** Main-only passive fixed diagnostic; no renderer authority or raw query text. */
+  onLauncherIdentity?: (diagnostic: WorkspacePtyIdentityDiagnostic) => void;
   /** Revalidate the originating main renderer/frame immediately before GO. */
   validateAuthority?: () => void;
   timeoutMs?: number;
@@ -490,7 +492,7 @@ async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runne
         } catch { publish(true, 'The package task ended with unverified Job cleanup. Select Stop to retry.'); }
       })().catch(() => publish(true, 'Task cleanup could not be confirmed. Select Stop to retry.'));
     });
-    const original = child.pid ? await workspacePtyLifecycle.capture(child.pid) : undefined;
+    const original = child.pid ? await workspacePtyLifecycle.capture(child.pid, options.onLauncherIdentity) : undefined;
     if (!original) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
     await job.attach(child.pid!, original);
     if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');

@@ -423,10 +423,12 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
   let primary: unknown;
   let failed = false;
   let observedJob: PendingWorkspaceWindowsJob | undefined;
+  let launcherIdentityDiagnostic: import('../workspace-pty-identity').WorkspacePtyIdentityDiagnostic | undefined;
   try {
     report('invocation-start');
     const running = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
       signal: controller.signal,
+      onLauncherIdentity: diagnostic => { launcherIdentityDiagnostic = diagnostic; },
       createWindowsJob: options => { observedJob = createPendingWorkspaceWindowsJob(options); return observedJob; },
       spawnProcess: (command, args, options) => {
         const child = spawn(command, args, options);
@@ -471,6 +473,10 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
       if (failed && observedJob?.getStartupDiagnostics) {
         try { console.info('[TASK-HELPER-STARTUP]', JSON.stringify({ scenario: 'npm-cancellation', afterCleanup: true, ...observedJob.getStartupDiagnostics() })); }
         catch { /* diagnostics cannot overwrite the first native failure */ }
+      }
+      if (failed && launcherIdentityDiagnostic) {
+        try { console.info('[TASK-LAUNCHER-IDENTITY]', JSON.stringify({ scenario: 'npm-cancellation', afterCleanup: true, ...launcherIdentityDiagnostic })); }
+        catch { /* Passive query metadata cannot replace the original failure. */ }
       }
     }
   }
