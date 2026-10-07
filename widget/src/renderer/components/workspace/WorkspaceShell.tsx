@@ -300,7 +300,6 @@ export default function WorkspaceShell({
           if (cancelled) return;
           if (asParent?.success) {
             setRoot(asParent.path || parent);
-            void openFile(ctxPath);
             return;
           }
         }
@@ -309,7 +308,7 @@ export default function WorkspaceShell({
       if (!cancelled && res?.path) setRoot(res.path);
     })();
     return () => { cancelled = true; };
-  }, [open, root, navContext, api, openFile]);
+  }, [open, root, navContext, api]);
 
   // Apply each new navContext handoff, even after root is set. Per-field
   // guards: never replace the user's current root (it would yank the tree
@@ -319,7 +318,9 @@ export default function WorkspaceShell({
   const ctxPath =
     typeof navContext?.path === 'string' ? navContext.path.trim() : '';
   useEffect(() => {
-    if (!open || !ctxPath) return;
+    // Bootstrap must commit its root before openFile captures that root. Join
+    // draft recovery too, so a clean read cannot win over a saved dirty tab.
+    if (!open || !ctxPath || !root || recoveryReady !== root) return;
     if (navContext && appliedHandoffRef.current === navContext) return;
     let cancelled = false;
     (async () => {
@@ -332,12 +333,12 @@ export default function WorkspaceShell({
         setRoot(prev => prev || (asDir.path || ctxPath));
         return;
       }
-      // File path: open it. The bootstrap effect already roots to the parent
-      // if no root is set; if a root is already set we just focus the file.
+      // File path: root and recovery are now established. Existing roots remain
+      // unchanged, and openFile still rejects reads completing after a switch.
       void openFile(ctxPath);
     })();
     return () => { cancelled = true; };
-  }, [open, ctxPath, navContext, api, openFile]);
+  }, [open, root, recoveryReady, ctxPath, navContext, api, openFile]);
 
 
   const closeTab = useCallback((path: string) => {
