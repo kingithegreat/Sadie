@@ -133,7 +133,12 @@ write('runner-layout.json', { repo, owned, runtimeRoot, runtimeWidget, fixtureRo
 fs.writeFileSync(path.join(compiledArtifact, 'manifest.json'), JSON.stringify({ available: false, stage }, null, 2));
 
 try {
-  source = { head: git(['rev-parse', 'HEAD']), tree: git(['rev-parse', 'HEAD^{tree}']), githubSha: process.env.GITHUB_SHA };
+  const commitObject = command('git.exe', ['cat-file', 'commit', 'HEAD'], repo, process.env, true, 30_000);
+  let event;
+  if (process.env.GITHUB_EVENT_PATH) event = JSON.parse(fs.readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+  source = { head: git(['rev-parse', 'HEAD']), tree: git(['rev-parse', 'HEAD^{tree}']), githubSha: process.env.GITHUB_SHA,
+    eventName: process.env.GITHUB_EVENT_NAME, prHead: event?.pull_request?.head?.sha, prBase: event?.pull_request?.base?.sha,
+    parents: commitObject.split('\n\n')[0].split('\n').filter(line => line.startsWith('parent ')).map(line => line.slice(7)), commitObject };
   assert.equal(git(['status', '--porcelain=v1', '--untracked-files=all']), '', 'CI source must be clean before install/build');
   if (source.githubSha) assert.equal(source.head, source.githubSha, 'Checkout must match workflow SHA');
   write('source.json', source);

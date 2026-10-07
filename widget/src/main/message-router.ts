@@ -545,6 +545,16 @@ function getHistory(conversationId: string): ConversationMessage[] {
   return conversationHistory.get(conversationId) || [];
 }
 
+function getProviderHistory(conversationId: string, message: string, currentUserInHistory = false): ConversationMessage[] {
+  const history = getHistory(conversationId);
+  const last = history[history.length - 1];
+  // The IPC chat path records the current turn before routing. Providers append
+  // that turn themselves, so omit only this explicitly recorded final entry.
+  // Direct callers may intentionally repeat a previous prompt and keep it.
+  return currentUserInHistory && last?.role === 'user' && last.content === message
+    ? history.slice(0, -1) : history;
+}
+
 // Exported for potential future use and testing
 export function clearHistory(conversationId: string) {
   conversationHistory.delete(conversationId);
@@ -2113,7 +2123,7 @@ export async function streamFromLLM(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean },
+  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean; currentUserInHistory?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
@@ -2196,7 +2206,7 @@ export async function streamFromLLM(
       }
 
       const controller = new AbortController();
-      const history = getHistory(conversationId);
+      const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
       const customConfig = perConvModel
         ? { ...hydratedCloud, model: perConvModel }
         : hydratedCloud;
@@ -2343,7 +2353,7 @@ export async function streamFromLLM(
     if (codeValidation.valid) {
       console.log(`[HomeBot] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
-      const history = getHistory(conversationId);
+      const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
       // Build system prompt for the actual code model (may differ in size from chatModel)
       const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, cloudGuidelines);
 
@@ -2431,7 +2441,7 @@ export async function streamFromOllamaWithTools(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string },
+  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string; currentUserInHistory?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
@@ -2550,7 +2560,7 @@ export async function streamFromOllamaWithTools(
   // Build messages array for chat API - include conversation history
   // Hydrate from persistent store on first access this session (restores context after restart/switch)
   ensureHydrated(conversationId);
-  const history = getHistory(conversationId);
+  const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
 
   // If this conversation has a custom system prompt, prepend it to the default.
   // Prefer the prompt passed inline via options (from renderer state) to avoid
@@ -4462,6 +4472,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
             {
               hasDocuments: !!(request.documents && request.documents.length > 0),
+              currentUserInHistory: true,
               modelOverride: reqAny.modelOverride,
               conversationPrompt: isAgenticRequest
                 ? [reqAny.conversationPrompt, buildAgenticSystemPrompt()].filter(Boolean).join('\n\n')
@@ -5107,7 +5118,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               },
               requestConfirmation,
               (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride },
+              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride, currentUserInHistory: true },
               (meta) => { resolvedModel = meta.model; }
             );
 
@@ -5232,7 +5243,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             undefined,
             (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-            { modelOverride: reqAny.modelOverride },
+            { modelOverride: reqAny.modelOverride, currentUserInHistory: true },
             (meta) => { fallbackModel = meta.model; }
           );
           activeStreams.set(streamId, { destroy: handler.cancel });
