@@ -9,6 +9,8 @@ export interface WorkspaceWindowsJob {
 }
 export interface WorkspaceApprovedLaunch {
   executable: string; args: string[]; env: NodeJS.ProcessEnv; kind?: 'task'; cwd?: string;
+  /** Main-only Windows PTY mode; no renderer supplies console devices or FDs. */
+  console?: 'attached';
   /** Constructed only by the trusted main snapshot helper, never IPC arguments. */
   adapter?: { kind: 'cross-spawn'; modulePath: string; comspec: string };
 }
@@ -81,6 +83,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       authorized = true; await ready;
       if (typeof launch.executable !== 'string' || !launch.executable || !Array.isArray(launch.args) || launch.args.some(arg => typeof arg !== 'string') || !launch.env || typeof launch.env !== 'object') throw new Error('A main-approved launch is required.');
       if (launch.kind !== undefined && launch.kind !== 'task') throw new Error('The approved launch kind is invalid.');
+      if (launch.console !== undefined && (launch.console !== 'attached' || launch.kind !== undefined || launch.adapter !== undefined)) throw new Error('Attached console handles are restricted to the main-approved terminal profile.');
       // The originating main-owned scope must still hold after readiness.
       validate?.();
       const result = await request('go', { launch });

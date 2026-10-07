@@ -78,7 +78,7 @@ export class WorkspacePtySessions {
     const args = profile.id === 'powershell' || profile.id === 'pwsh' ? ['-NoLogo', '-NoProfile'] : profile.id === 'cmd' ? ['/D'] : [];
     const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete env.ELECTRON_RUN_AS_NODE;
-    const approvedLaunch = snapshotWorkspaceLaunch(profile.executable, args, env);
+    const approvedLaunch = snapshotWorkspaceLaunch(profile.executable, args, env, process.platform === 'win32' ? { console: 'attached' } : {});
     const gate = process.platform === 'win32' ? createWorkspaceProcessGate(env) : undefined;
     const pending: PendingCreate = { owner, cwd, done: undefined as unknown as Promise<WorkspaceTerminalSessionInfo>, promoted: false, released: false };
     this.pendingCreates.add(pending);

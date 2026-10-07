@@ -8,6 +8,8 @@ function bootstrap(adapterPath?: string) {
   const pipe = Object.assign(new EventEmitter(), { write: jest.fn(), end: jest.fn(), setEncoding: jest.fn() });
   const child = Object.assign(new EventEmitter(), { pid: 91 });
   const spawn = jest.fn(() => child);
+  let nextConsoleFd = 40;
+  const consoleFs = { openSync: jest.fn((_device: string, _mode: string) => ++nextConsoleFd), closeSync: jest.fn((_fd: number) => {}) };
   const crossSpawn = jest.fn((_exe: string, _argv: string[], _opts: { env: NodeJS.ProcessEnv }) => child), imports: string[] = [];
   const process = Object.assign(new EventEmitter(), {
     env: { HOMEBOT_IDE_GATE_PIPE: 'hbi-00000000-0000-0000-0000-000000000001', HOMEBOT_IDE_GATE_CAP: 'a'.repeat(64), NODE_OPTIONS: '' },
@@ -16,12 +18,12 @@ function bootstrap(adapterPath?: string) {
   const timers: Array<() => void> = [];
   const connect = jest.fn(() => pipe);
   vm.runInNewContext(WORKSPACE_PROCESS_GATE_SOURCE, {
-    require(name: string) { imports.push(name); if (name === 'node:net') return { connect }; if (name === 'node:child_process') return { spawn }; if (name === adapterPath) return crossSpawn; throw new Error(`Unexpected non-core import: ${name}`); },
+    require(name: string) { imports.push(name); if (name === 'node:net') return { connect }; if (name === 'node:child_process') return { spawn }; if (name === 'node:fs') return consoleFs; if (name === adapterPath) return crossSpawn; throw new Error(`Unexpected non-core import: ${name}`); },
     process, setTimeout(callback: () => void) { timers.push(callback); return 1; }, clearTimeout: jest.fn(),
   });
   const go = (launch: WorkspaceApprovedLaunch = { executable: 'approved-shell', args: ['/D'], env: { NODE_OPTIONS: '--require approved-after-job', HOMEBOT_IDE_GATE_CAP: 'must-be-removed' } }) => pipe.emit('data', Buffer.from(JSON.stringify(launch) + '\n'));
   const accept = () => pipe.emit('data', Buffer.from('accepted\n'));
-  return { pipe, child, process, spawn, crossSpawn, imports, connect, timers, go, accept };
+  return { pipe, child, process, spawn, crossSpawn, consoleFs, imports, connect, timers, go, accept };
 }
 
 describe('fixed process bootstrap before Job assignment', () => {
@@ -37,7 +39,7 @@ describe('fixed process bootstrap before Job assignment', () => {
     expect(f.spawn).not.toHaveBeenCalled();
     expect(f.process.env).not.toHaveProperty('HOMEBOT_IDE_GATE_CAP');
   });
-  it('restores only the snapshotted target environment after GO and preserves TTY stdio', () => {
+  it('restores only the snapshotted target environment after GO and preserves inherited service streams', () => {
     const f = bootstrap(); f.go();
     expect(f.spawn).toHaveBeenCalledWith('approved-shell', ['/D'], { env: { NODE_OPTIONS: '--require approved-after-job' }, stdio: 'inherit', shell: false, windowsHide: true });
     expect(f.pipe.end).not.toHaveBeenCalled(); f.child.emit('spawn');
@@ -45,6 +47,55 @@ describe('fixed process bootstrap before Job assignment', () => {
     expect(f.pipe.end).not.toHaveBeenCalled(); f.accept(); expect(f.pipe.end).toHaveBeenCalled();
     expect(f.process.exit).not.toHaveBeenCalled(); f.process.emit('SIGINT'); f.process.emit('SIGBREAK');
     expect(f.process.exit).not.toHaveBeenCalled();
+  });
+  it('reopens only attached console devices after GO and closes parent copies after spawn', () => {
+    const f = bootstrap();
+    expect(f.consoleFs.openSync).not.toHaveBeenCalled(); expect(f.imports).not.toContain('node:fs');
+    const launch = snapshotWorkspaceLaunch('approved-shell', ['/D'], { TERM: 'xterm-256color' }, { console: 'attached' });
+    f.spawn.mockImplementationOnce(() => {
+      expect(f.consoleFs.closeSync).not.toHaveBeenCalled(); return f.child;
+    });
+    f.go(launch);
+    expect(f.consoleFs.openSync.mock.calls).toEqual([['\\\\.\\CONIN$', 'r+'], ['\\\\.\\CONOUT$', 'r+']]);
+    expect(f.spawn).toHaveBeenCalledWith('approved-shell', ['/D'], { env: { TERM: 'xterm-256color' }, stdio: [41, 42, 42], shell: false, windowsHide: true });
+    expect(f.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]);
+    f.child.emit('spawn'); f.accept();
+    expect(f.pipe.write).toHaveBeenCalledWith('{"type":"spawn","pid":91}\n');
+    expect(f.process.exit).not.toHaveBeenCalled();
+  });
+  it('keeps task and service streams inherited without opening a console', () => {
+    for (const kind of [undefined, 'task'] as const) {
+      const f = bootstrap(); f.go({ executable: 'approved-command', args: [], env: {}, ...(kind ? { kind } : {}) });
+      expect(f.spawn).toHaveBeenCalledWith('approved-command', [], expect.objectContaining({ stdio: 'inherit' }));
+      expect(f.consoleFs.openSync).not.toHaveBeenCalled(); expect(f.consoleFs.closeSync).not.toHaveBeenCalled();
+    }
+  });
+  it('fails closed when attached console input is unavailable without starting a shell', () => {
+    const f = bootstrap(); f.consoleFs.openSync.mockImplementationOnce(() => { throw new Error('no attached console'); });
+    expect(() => f.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
+    expect(f.spawn).not.toHaveBeenCalled(); expect(f.consoleFs.closeSync).not.toHaveBeenCalled();
+    expect(f.pipe.write).not.toHaveBeenCalled();
+  });
+  it('closes a partially opened console if output cannot be opened', () => {
+    const f = bootstrap(); f.consoleFs.openSync.mockImplementationOnce(() => 41).mockImplementationOnce(() => { throw new Error('output unavailable'); });
+    expect(() => f.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
+    expect(f.consoleFs.closeSync.mock.calls).toEqual([[41]]); expect(f.spawn).not.toHaveBeenCalled();
+  });
+  it('closes both parent console copies on synchronous spawn or close failure', () => {
+    const spawnFailure = bootstrap(); spawnFailure.spawn.mockImplementationOnce(() => { throw new Error('spawn refused'); });
+    expect(() => spawnFailure.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
+    expect(spawnFailure.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]);
+    const closeFailure = bootstrap(); closeFailure.consoleFs.closeSync.mockImplementationOnce(() => { throw new Error('close refused'); });
+    expect(() => closeFailure.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
+    expect(closeFailure.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]); expect(closeFailure.pipe.write).not.toHaveBeenCalled();
+  });
+  it('rejects arbitrary console modes and task/adapter console combinations before any device open', () => {
+    for (const fields of [{ console: 'arbitrary-path' }, { console: 'attached', kind: 'task' }, { console: 'attached', adapter: { kind: 'cross-spawn', modulePath: 'untrusted', comspec: 'untrusted' } }]) {
+      const f = bootstrap();
+      expect(() => f.go({ executable: 'approved-shell', args: [], env: {}, ...fields } as WorkspaceApprovedLaunch)).toThrow('exit:125');
+      expect(f.spawn).not.toHaveBeenCalled(); expect(f.consoleFs.openSync).not.toHaveBeenCalled();
+    }
+    expect(() => snapshotWorkspaceLaunch('shell', [], {}, { console: 'attached', adapter: 'cross-spawn' })).toThrow(/console mode/);
   });
   it('uses one handoff and never reconnects or executes a second command', () => {
     const f = bootstrap(); f.go(); expect(() => f.go()).toThrow('exit:125'); expect(f.spawn).toHaveBeenCalledTimes(1); expect(f.connect).toHaveBeenCalledTimes(1);

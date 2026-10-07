@@ -21,11 +21,15 @@ export function createWorkspaceProcessGate(env: NodeJS.ProcessEnv): WorkspacePro
 }
 
 /** Copy approved data before awaits; private bootstrap flags never reach targets. */
-export function snapshotWorkspaceLaunch(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, options: { cwd?: string; adapter?: 'cross-spawn' } = {}): WorkspaceApprovedLaunch {
+export function snapshotWorkspaceLaunch(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, options: { cwd?: string; adapter?: 'cross-spawn'; console?: 'attached' } = {}): WorkspaceApprovedLaunch {
   const targetEnv = { ...env };
   delete targetEnv.HOMEBOT_IDE_GATE_PIPE; delete targetEnv.HOMEBOT_IDE_GATE_CAP;
   if (options.cwd !== undefined && !path.isAbsolute(options.cwd)) throw new Error('The approved target working directory must be absolute.');
   const launch: WorkspaceApprovedLaunch = { executable, args: [...args], env: targetEnv, ...(options.cwd ? { cwd: options.cwd } : {}) };
+  if (options.console !== undefined) {
+    if (options.console !== 'attached' || options.adapter !== undefined) throw new Error('The terminal console mode is invalid.');
+    launch.console = 'attached';
+  }
   if (options.adapter) {
     if (options.adapter !== 'cross-spawn') throw new Error('The launch adapter is not supported.');
     const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
@@ -64,9 +68,11 @@ connection.on('data',value=>{
  received=true;
  let launch;try{launch=JSON.parse(text.slice(0,end));}catch{return process.exit(125);}text='';
  if(!launch||typeof launch.executable!=='string'||!launch.executable||!Array.isArray(launch.args)||launch.args.some(x=>typeof x!=='string')||!launch.env||typeof launch.env!=='object'||Array.isArray(launch.env)) return process.exit(125);
+ if(launch.console!==undefined&&(launch.console!=='attached'||launch.kind!==undefined||launch.adapter!==undefined))return process.exit(125);
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;
  // Root remains alive for the inherited shell's Ctrl+C/Break handling.
  process.on('SIGINT',()=>{});process.on('SIGBREAK',()=>{});
+ const consoleFds=[];let consoleFs,spawnFailed=false;
  try{
   let spawnTarget=spawn;
   if(launch.adapter){
@@ -75,8 +81,25 @@ connection.on('data',value=>{
    // main. No package import runs before the verified Job handoff.
    process.env.comspec=launch.adapter.comspec;spawnTarget=require(launch.adapter.modulePath);
   }
-  child=spawnTarget(launch.executable,launch.args,{env,...(launch.cwd?{cwd:launch.cwd}:{}),stdio:'inherit',shell:false,windowsHide:true});
- }catch{return process.exit(126);}
+  let stdio='inherit';
+  if(launch.console==='attached'){
+   // ConPTY attaches a console, but the core Node bootstrap's CRT standard
+   // descriptors can be redirected to NUL. Reopen only these fixed devices,
+   // after the verified Job GO; never consume paths or FDs from the request.
+   consoleFs=require('node:fs');
+   const devicePrefix=slash+slash+'.'+slash;
+   consoleFds.push(consoleFs.openSync(devicePrefix+'CONIN$','r+'));
+   consoleFds.push(consoleFs.openSync(devicePrefix+'CONOUT$','r+'));
+   stdio=[consoleFds[0],consoleFds[1],consoleFds[1]];
+  }
+  child=spawnTarget(launch.executable,launch.args,{env,...(launch.cwd?{cwd:launch.cwd}:{}),stdio,shell:false,windowsHide:true});
+ }catch{spawnFailed=true;}
+ finally{
+  // spawn duplicates inherited handles synchronously. Close only the parent's
+  // newly opened copies, including partial-open and synchronous spawn failure.
+  for(const fd of consoleFds){try{consoleFs.closeSync(fd);}catch{spawnFailed=true;}}
+ }
+ if(spawnFailed)return process.exit(126);
  child.once('error',()=>process.exit(126));
  child.once('spawn',()=>{
   if(!Number.isSafeInteger(child.pid)||child.pid<=0) return process.exit(126);

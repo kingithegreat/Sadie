@@ -43,7 +43,7 @@ test('stdin, resize and interrupt route only to the owned real PTY interface', a
   const app = await setup();
   if (process.platform === 'win32') {
     expect(app.spawn).toHaveBeenCalledWith(process.execPath, ['-e', expect.stringContaining("require('node:net')")], expect.objectContaining({ cwd: folder, cols: 100, rows: 30, env: expect.objectContaining({ NODE_OPTIONS: '', ELECTRON_RUN_AS_NODE: '1' }) }));
-    expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'cmd.exe', args: ['/D'] }), expect.any(Function));
+    expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'cmd.exe', args: ['/D'], console: 'attached' }), expect.any(Function));
     expect(app.session).toMatchObject({ pid: 12345, shellPid: 23456 });
   } else expect(app.spawn).toHaveBeenCalledWith('cmd.exe', ['/D'], expect.objectContaining({ cwd: folder, cols: 100, rows: 30 }));
   expect(app.spawn.mock.calls[0][2]).toMatchObject({ useConptyDll: false });
