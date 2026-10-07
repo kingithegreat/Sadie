@@ -1,5 +1,32 @@
 # Production local/custom chat acceptance
 
+## Empty SSE heartbeat review correction
+
+Configured review of `14a31cc8` identified that valid empty SSE data events were
+sent to JSON parsing and stopped otherwise healthy custom, Anthropic and Gemini
+replies. Three provider regressions reproduced the error before the fix. The
+shared SSE dispatcher now ignores only assembled payloads with no non-space
+data. Nonempty malformed frames still fail. All 93 cases across transport,
+custom-client and tool-round-trip suites pass after the correction. Native custom
+chat now writes three actual empty heartbeat events before its fragmented first
+answer and records/requires their count; all six user turns and the exact title
+request remain required. Widget/chat acceptance TypeScript and scoped lint pass.
+
+The original local full-suite long-HOME failure is retained. Its short native
+HOME rerun passed all 87 cases in the three affected media suites and recovered
+every one of the 41 originally failing names. The original launcher was lost
+during the sandbox-mode transition before root/docs receipts completed; native
+process inspection confirmed both its guard and qualifier gone, and only its
+exact stale lock was removed. The separate root/docs continuation passed 232
+tests in 18 suites and docs drift checks.
+
+Previous hosted CI had all 25 checks green (5,361 widget and 232 root tests,
+14 overlay cases), plus 2/2 chat and 4/4 setup native acceptance. Those results
+remain historical after this source change. Fresh published-head CI, native
+acceptance, configured review and delivery remain required; auto-merge is held.
+
+## Native acceptance contract
+
 `Chat native acceptance` builds the exact workflow checkout on a disposable
 Windows runner and exercises two native cases through real controls. It reuses
 the first-user fixture's pre-entry transport/process guards, isolated HOME and

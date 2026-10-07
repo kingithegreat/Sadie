@@ -251,6 +251,9 @@ function readSSELines(
     if (!dataLines.length) return;
     const data = dataLines.join('\n');
     dataLines = [];
+    // Compatible services may send an empty data event as a keepalive.
+    // It carries no JSON payload and must not terminate a healthy reply.
+    if (!data.trim()) return;
     onData(data, stop);
   };
   const line = (value: string) => {

@@ -35,6 +35,7 @@ for (const provider of ['local', 'custom'] as const) {
     test.skip(process.platform !== 'win32', 'Requires exact native/launcher Windows identities.');
     const generation: Array<{ body: any; provider: string }> = [];
     const titleRequests: Array<{ body: any; provider: string }> = [];
+    let heartbeatEvents = 0;
     let failureCount = 0;
     const failureControl = { finish: null as (() => void) | null };
     let stopClosed = false;
@@ -71,6 +72,10 @@ for (const provider of ['local', 'custom'] as const) {
           response.setHeader('Content-Type', provider === 'local' ? 'application/x-ndjson' : 'text/event-stream');
           response.setHeader('Cache-Control', 'no-cache');
           if (prompt === firstPrompt) {
+            if (provider === 'custom') {
+              response.write('data:\n\ndata: \r\n\r\ndata: \ndata: \n\n');
+              heartbeatEvents += 3;
+            }
             // Real socket fragments split both a JSON record and a UTF-8 emoji.
             const bytes = Buffer.from(frame(firstAnswer));
             const emoji = bytes.indexOf(Buffer.from('🌈'));
@@ -189,6 +194,7 @@ for (const provider of ['local', 'custom'] as const) {
         .toEqual([firstPrompt, contextPrompt, failurePrompt, failurePrompt, stopPrompt, resumedPrompt]);
       expect(serverErrors).toEqual([]);
       expect(titleRequests).toHaveLength(provider === 'custom' ? 1 : 0);
+      expect(heartbeatEvents).toBe(provider === 'custom' ? 3 : 0);
       proof = await runtime.evidence();
       expect(proof.requests.filter((request: any) => request.method === 'POST' && request.phase === 'chat'
         && request.path === (provider === 'custom' ? '/v1/chat/completions' : '/api/chat')))
@@ -210,7 +216,7 @@ for (const provider of ['local', 'custom'] as const) {
     finally {
       if (!proof) { try { proof = await runtime.evidence(); } catch (error) { failures.push(error); } }
       try {
-        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, titleRequests, stopClosed, serverErrors, proof,
+        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, titleRequests, heartbeatEvents, stopClosed, serverErrors, proof,
           failures: failures.map(error => describeFailure(error)) }, null, 2));
       } catch (error) { failures.push(error); }
       try {

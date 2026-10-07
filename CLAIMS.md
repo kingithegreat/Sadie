@@ -11,8 +11,16 @@ qualified landing through existing PR #478 and a separate current build.
 The active IDE #474, character/rig/art and existing delivered profiles remain
 with their owners. Source import is complete and released to root's serial
 qualification. Four semantic TypeScript checks and whole-widget lint pass.
-Fresh full Jest/native/CI/review/landing and delivery remain pending; original
-overlong isolated-HOME failures are retained as harness evidence.
+At published `14a31cc8`, all 25 hosted checks passed, including 5,361 widget
+tests, 232 root tests, 14 overlays, two native chat and four native setup cases.
+Short-HOME local recovery passed 87 media cases including all 41 original
+failures; separate root/docs checks passed 232 cases and drift validation.
+Configured review found empty SSE keepalives terminating healthy replies.
+Three provider regressions reproduced it; the correction passes 93 related
+tests, widget/chat TypeScript and scoped lint. The actual custom native socket
+now includes three empty data events without reducing any chat/title assertions.
+Fresh corrected-head hosted/native/review/landing and separate delivery remain
+pending; original failures and authenticated evidence are preserved.
 
 
 ## 2026-10-07 — SETUP-MODEL-RETENTION

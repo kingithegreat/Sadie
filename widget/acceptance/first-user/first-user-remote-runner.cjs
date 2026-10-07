@@ -256,6 +256,7 @@ try {
       assert.equal(receipt.generation.length, 6, 'Send/context/error/Retry/Stop/resume must reach six real provider requests');
       assert(receipt.generation.every(request => request.provider === receipt.provider && request.body.stream === true));
       assert.equal(receipt.titleRequests.length, receipt.provider === 'custom' ? 1 : 0, 'Keep the exact auxiliary title request separately');
+      assert.equal(receipt.heartbeatEvents, receipt.provider === 'custom' ? 3 : 0, 'Require actual empty SSE keepalives in the custom provider socket');
       for (const request of receipt.titleRequests) {
         assert.equal(request.provider, 'custom'); assert.equal(request.body.model, 'homebot-chat-fixture');
         assert.equal(request.body.stream, true); assert.equal(request.body.tools, undefined);

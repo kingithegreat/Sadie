@@ -39,6 +39,24 @@ test.each(['custom', 'anthropic', 'google-gemini'] as const)('%s reports a close
   expect(call.onEnd).not.toHaveBeenCalled();
 });
 
+test.each(['custom', 'anthropic', 'google-gemini'] as const)('%s ignores empty SSE heartbeats and keeps the reply usable', async provider => {
+  const call = await start(config(provider));
+  const content = provider === 'anthropic'
+    ? { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Hello after heartbeat' } }
+    : provider === 'google-gemini'
+      ? { candidates: [{ content: { parts: [{ text: 'Hello after heartbeat' }] } }] }
+      : { choices: [{ delta: { content: 'Hello after heartbeat' } }] };
+  call.stream.emit('data', Buffer.from('data:\n\ndata: \r\n\r\ndata: \ndata: \n\n'));
+  expect(call.onError).not.toHaveBeenCalled();
+  expect(call.onEnd).not.toHaveBeenCalled();
+  call.stream.emit('data', Buffer.from(frame(content)));
+  call.stream.emit('data', Buffer.from('data:'));
+  call.stream.emit('end');
+  expect(call.onChunk.mock.calls.flat().join('')).toBe('Hello after heartbeat');
+  expect(call.onEnd).toHaveBeenCalledTimes(1);
+  expect(call.onError).not.toHaveBeenCalled();
+});
+
 test.each(['custom', 'anthropic'] as const)('%s terminal frame releases a provider socket that has not ended', async provider => {
   const call = await start(config(provider));
   const destroy = jest.fn(); Object.assign(call.stream, { destroy });
