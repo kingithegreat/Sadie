@@ -45,7 +45,9 @@ class WindowsOwnedStdio extends StdioClientTransport {
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT;
     if (systemRoot) coreEnv.SystemRoot = systemRoot;
     const gate = createWorkspaceProcessGate(coreEnv);
-    super({ command: gate.executable, args: gate.args, env: gate.env, cwd,
+    const sdkEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(gate.env)) if (typeof value === 'string') sdkEnv[key] = value;
+    super({ command: gate.executable, args: gate.args, env: sdkEnv, cwd,
       stderr: server.stderr, maxBufferSize: server.maxBufferSize });
     this.options = { signal: options.signal, assertCurrent: options.assertCurrent };
     this.approvedLaunch = approved;

@@ -39,7 +39,7 @@ live('owned SDK stdio service contains late descendants after intermediate exit 
   ].join('\n'));
   const owner = createOwnedMcpStdioTransport({ command: process.execPath, args: [server, intermediate, leaf], env, cwd: directory, stderr: 'pipe' });
   const unrelated = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000);console.log("UNRELATED_READY");'], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  owner.transport.stderr?.resume();
+  owner.transport.stderr?.on('data', () => {});
   const events: any[] = [];
   owner.transport.onmessage = message => { events.push(message); };
   try {
