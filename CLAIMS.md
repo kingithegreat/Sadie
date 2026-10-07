@@ -9,9 +9,11 @@ filesystem/recovery modules; `ide_editor_language` owns CodeEditor and language
 modules; `ide_ai_workflows` owns assistant/Changes/proposals/context and scoped
 router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
 main registrations, generated docs, publication and resource-gated verification.
-Current native follow-ups: editor agent owns async PTY readiness, held-worker
-disposal/retry and runtime-admission tests; Files owns passive CI crash diagnostics
-and the async terminal IPC adapter. Root owns the exact beta15 dependency pin,
+Current native follow-ups: the beta15 async PTY/IPC/held-worker fixes and passive
+CI diagnostics are published at49b2. Its native run still failed3/4: task stop
+returned uncertain and quit stayed open; no native crash/OS0 is claimed for that
+fourth main. Files now owns bounded captured-handle task/tree stop confirmation
+and per-identity diagnostics; Editor independently reviews that fix. Root owns
 private runtime provenance, workflow integration and combined-head verification.
 Assistant rule-loading/incomplete-turn and native observer regressions passed at
 d260; its older history-clock fixture and actual native crash remain failed proof.
