@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Script } from 'vm';
 
 jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_TASK_TEST_HOME! }));
 jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_TASK_TEST_PROFILE! } }));
@@ -331,16 +332,23 @@ test('failed task shutdown rejects and retries the retained stopper after its ro
 });
 
 const liveTreeTest = process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;
-liveTreeTest('real npm cancellation terminates its disposable parent and grandchild on Windows', async () => {
-  if (process.platform !== 'win32') return;
-  const pidFile = path.join(project, 'pids.json');
-  fs.writeFileSync(path.join(project, 'spawn-tree.cjs'), [
+function generatedCancellationTreeScript(pidFile: string): string {
+  return [
     "const { spawn } = require('child_process');",
     "const fs = require('fs');",
     "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
     `fs.writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify({ parent: process.pid, parentOfParent: process.ppid, child: child.pid }));`,
     'setInterval(() => {}, 1000);',
-  ].join('\n'));
+  ].join('\n');
+}
+test('the cooked npm cancellation script parses before any native execution', () => {
+  expect(() => new Script(generatedCancellationTreeScript('C:/private fixture/quoted "path"/日本語/pids.json'))).not.toThrow();
+});
+liveTreeTest('real npm cancellation terminates its disposable parent and grandchild on Windows', async () => {
+  if (process.platform !== 'win32') return;
+  const pidFile = path.join(project, 'pids.json');
+  const generated = generatedCancellationTreeScript(pidFile); new Script(generated, { filename: 'spawn-tree.cjs' });
+  fs.writeFileSync(path.join(project, 'spawn-tree.cjs'), generated);
   manifest({ check: 'node spawn-tree.cjs' });
   const controller = new AbortController();
   let npmPid: number | undefined;
@@ -348,18 +356,25 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
   const alive = (pid: number) => {
     try { process.kill(pid, 0); return true; } catch { return false; }
   };
+  const report = (phase: string, fields: Record<string, string | number | boolean | null | undefined> = {}) => console.info('[TASK-NATIVE-FIXTURE]', JSON.stringify({ scenario: 'npm-cancellation', phase, ...fields }));
+  let primary: unknown;
   try {
+    report('invocation-start');
     const running = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
       signal: controller.signal,
       spawnProcess: (command, args, options) => {
         const child = spawn(command, args, options);
         npmPid = child.pid;
+        report('fixed-launcher-created', { pid: npmPid });
         return child;
       },
     });
+    void running.then(result => report('result-settled', { success: result.success, exitCode: result.exitCode, cancelled: result.cancelled, cleanupPending: result.cleanupPending,
+      hasError: !!result.error, errorCategory: /helper did not become ready/.test(result.error || '') ? 'helper-listener-timeout' : /did not confirm its state/.test(result.error || '') ? 'helper-state-timeout' : result.error ? 'other-error' : 'none' }), () => report('result-rejected'));
     for (let attempt = 0; attempt < 100 && !fs.existsSync(pidFile); attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
+    report('marker-wait-ended', { exists: fs.existsSync(pidFile) });
     expect(fs.existsSync(pidFile)).toBe(true);
     pids = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
     expect(npmPid).toBeTruthy();
@@ -370,15 +385,19 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
     expect(alive(pids!.child)).toBe(true);
 
     controller.abort();
+    report('abort-requested');
     await expect(running).resolves.toMatchObject({ success: false, cancelled: true });
     const treePids = [npmPid!, pids!.parentOfParent, pids!.parent, pids!.child];
     for (let attempt = 0; attempt < 50 && treePids.some(alive); attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     for (const pid of treePids) expect(alive(pid)).toBe(false);
-  } finally {
+  } catch (error) { primary = error; throw error; }
+  finally {
     // Keep the real failure and use only main's retained Job/held invocation.
     // A bare observed PID must never become authority after it can be reused.
-    controller.abort(); await closeAllWorkspaceTasks();
+    controller.abort();
+    try { await closeAllWorkspaceTasks(); report('retained-cleanup-confirmed'); }
+    catch (error) { report('retained-cleanup-refused'); if (!primary) throw error; }
   }
 }, 30_000);
