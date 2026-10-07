@@ -72,6 +72,30 @@ describe('creation-gated Windows Job ownership', () => {
     await expect(job.ready).rejects.not.toThrow('private-command-canary');
     fake.child.emit('close', 0);
   });
+  it('retains fixed console launch errno as diagnostic and still refuses admission until exact retained cleanup', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle(); fake.reply({ ok: true }); await attached;
+    const launch = job.authorize({ executable: 'approved-shell', args: [], env: {}, console: 'attached' }); await settle();
+    fake.send({ type: 'phase', phase: 'go', code: 'console-input', nativeCode: 'EACCES', pid: 123, empty: true, ok: true });
+    fake.reply({ ok: false, pid: 123 });
+    await expect(launch).rejects.toThrow('go/console-input (EACCES)');
+    expect(fake.requests().map(request => request.operation)).toEqual(['attach', 'go']);
+    const stopped = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopped;
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    { type: 'launch-error', stage: 'console-input', code: 'EACCES', pid: 123, ok: true },
+    { type: 'phase', phase: 'go', code: 'console-input', nativeCode: 'PRIVATE_CAP_CANARY' },
+    { type: 'phase', phase: 'go', code: 'arbitrary-stage', nativeCode: 'EACCES' },
+    { type: 'phase', phase: 'go', code: 'console-input', nativeCode: 'x'.repeat(5000) },
+  ])('rejects forged, unknown and oversize launch diagnostics without any positive-PID fallback', async packet => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle(); fake.reply({ ok: true }); await attached;
+    const launch = job.authorize({ executable: 'approved-shell', args: [], env: {}, console: 'attached' }); await settle();
+    fake.send(packet); await expect(launch).rejects.not.toThrow('PRIVATE_CAP_CANARY');
+    expect(fake.requests().map(request => request.operation)).toEqual(['attach', 'go']);
+    fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
+  });
 
   it('fails closed when the system Utility import exits without a listener or cleanup receipt', async () => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();

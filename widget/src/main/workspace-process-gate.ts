@@ -47,12 +47,20 @@ const pipe=process.env.HOMEBOT_IDE_GATE_PIPE, capability=process.env.HOMEBOT_IDE
 delete process.env.HOMEBOT_IDE_GATE_PIPE; delete process.env.HOMEBOT_IDE_GATE_CAP;
 if(!/^hbi-[a-f0-9-]{36}$/.test(pipe||'')||! /^[a-f0-9]{64}$/.test(capability||'')) process.exit(125);
 // No project require, profile, npm, or preload runs while this core launcher waits.
-let received=false, child, text='', acknowledged=false, accepted=false, completed;
+let received=false, child, text='', acknowledged=false, accepted=false, completed, failureSent=false;
 const deadline=setTimeout(()=>process.exit(125),10000);
 const slash=String.fromCharCode(92),newline=String.fromCharCode(10);
 const connection=net.connect(slash+slash+'.'+slash+'pipe'+slash+pipe);
 connection.setEncoding('utf8');
 const fail=()=>{ if(!accepted) process.exit(125); };
+const launchFailure=(stage,error)=>{
+ if(failureSent)return;failureSent=true;
+ const allowed=['ENOENT','EACCES','EPERM','ENXIO','EINVAL','EBADF','EIO','ENOTSUP','UNKNOWN'];
+ const code=error&&allowed.includes(error.code)?error.code:'UNKNOWN';
+ // Existing authenticated pipe only. This finite diagnostic cannot qualify
+ // admission, and the original waiting deadline still bounds failed writes.
+ try{connection.write(JSON.stringify({type:'launch-error',stage,code})+newline,()=>process.exit(126));}catch{process.exit(126);}
+};
 connection.on('error',fail); connection.on('end',fail);
 connection.on('connect',()=>connection.write(capability+newline));
 connection.on('data',value=>{
@@ -72,7 +80,7 @@ connection.on('data',value=>{
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;
  // Root remains alive for the inherited shell's Ctrl+C/Break handling.
  process.on('SIGINT',()=>{});process.on('SIGBREAK',()=>{});
- const consoleFds=[];let consoleFs,spawnFailed=false;
+ const consoleFds=[];let consoleFs,spawnError,failedStage,stage='spawn';
  try{
   let spawnTarget=spawn;
   if(launch.adapter){
@@ -88,19 +96,22 @@ connection.on('data',value=>{
    // after the verified Job GO; never consume paths or FDs from the request.
    consoleFs=require('node:fs');
    const devicePrefix=slash+slash+'.'+slash;
+   stage='console-input';
    consoleFds.push(consoleFs.openSync(devicePrefix+'CONIN$','r+'));
+   stage='console-output';
    consoleFds.push(consoleFs.openSync(devicePrefix+'CONOUT$','r+'));
    stdio=[consoleFds[0],consoleFds[1],consoleFds[1]];
   }
+  stage='spawn';
   child=spawnTarget(launch.executable,launch.args,{env,...(launch.cwd?{cwd:launch.cwd}:{}),stdio,shell:false,windowsHide:true});
- }catch{spawnFailed=true;}
+ }catch(error){failedStage=stage;spawnError=error;}
  finally{
   // spawn duplicates inherited handles synchronously. Close only the parent's
   // newly opened copies, including partial-open and synchronous spawn failure.
-  for(const fd of consoleFds){try{consoleFs.closeSync(fd);}catch{spawnFailed=true;}}
+  for(const fd of consoleFds){try{consoleFs.closeSync(fd);}catch(error){if(!failedStage){failedStage='console-close';spawnError=error;}}}
  }
- if(spawnFailed)return process.exit(126);
- child.once('error',()=>process.exit(126));
+ if(failedStage)return launchFailure(failedStage,spawnError);
+ child.once('error',error=>launchFailure('spawn',error));
  child.once('spawn',()=>{
   if(!Number.isSafeInteger(child.pid)||child.pid<=0) return process.exit(126);
   acknowledged=true;connection.write(JSON.stringify({type:'spawn',pid:child.pid})+newline);

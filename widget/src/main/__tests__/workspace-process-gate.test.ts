@@ -5,7 +5,7 @@ import { createWorkspaceProcessGate, snapshotWorkspaceLaunch, WORKSPACE_PROCESS_
 import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 
 function bootstrap(adapterPath?: string) {
-  const pipe = Object.assign(new EventEmitter(), { write: jest.fn(), end: jest.fn(), setEncoding: jest.fn() });
+  const pipe = Object.assign(new EventEmitter(), { write: jest.fn((_line: string, done?: () => void) => { done?.(); return true; }), end: jest.fn(), setEncoding: jest.fn() });
   const child = Object.assign(new EventEmitter(), { pid: 91 });
   const spawn = jest.fn(() => child);
   let nextConsoleFd = 40;
@@ -74,7 +74,7 @@ describe('fixed process bootstrap before Job assignment', () => {
     const f = bootstrap(); f.consoleFs.openSync.mockImplementationOnce(() => { throw new Error('no attached console'); });
     expect(() => f.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
     expect(f.spawn).not.toHaveBeenCalled(); expect(f.consoleFs.closeSync).not.toHaveBeenCalled();
-    expect(f.pipe.write).not.toHaveBeenCalled();
+    expect(f.pipe.write).toHaveBeenCalledWith('{"type":"launch-error","stage":"console-input","code":"UNKNOWN"}\n', expect.any(Function));
   });
   it('closes a partially opened console if output cannot be opened', () => {
     const f = bootstrap(); f.consoleFs.openSync.mockImplementationOnce(() => 41).mockImplementationOnce(() => { throw new Error('output unavailable'); });
@@ -87,7 +87,26 @@ describe('fixed process bootstrap before Job assignment', () => {
     expect(spawnFailure.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]);
     const closeFailure = bootstrap(); closeFailure.consoleFs.closeSync.mockImplementationOnce(() => { throw new Error('close refused'); });
     expect(() => closeFailure.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
-    expect(closeFailure.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]); expect(closeFailure.pipe.write).not.toHaveBeenCalled();
+    expect(closeFailure.consoleFs.closeSync.mock.calls).toEqual([[41], [42]]);
+    expect(closeFailure.pipe.write).toHaveBeenCalledWith('{"type":"launch-error","stage":"console-close","code":"UNKNOWN"}\n', expect.any(Function));
+  });
+  it('reports only finite first-error stage/errno and never copies error paths, env, arguments or capabilities', () => {
+    const f = bootstrap();
+    f.consoleFs.openSync.mockImplementationOnce(() => 41).mockImplementationOnce(() => { throw Object.assign(new Error('PRIVATE_ENV_PATH_ARG_CAP_CANARY'), { code: 'ENOENT' }); });
+    f.consoleFs.closeSync.mockImplementationOnce(() => { throw Object.assign(new Error('cleanup must not replace first error'), { code: 'EBADF' }); });
+    expect(() => f.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' })).toThrow('exit:126');
+    expect(f.pipe.write).toHaveBeenCalledWith('{"type":"launch-error","stage":"console-output","code":"ENOENT"}\n', expect.any(Function));
+    expect(JSON.stringify(f.pipe.write.mock.calls)).not.toContain('PRIVATE_');
+    const unknown = bootstrap(); unknown.spawn.mockImplementationOnce(() => { throw Object.assign(new Error('PRIVATE_ERROR'), { code: 'PRIVATE_CAP_CANARY' }); });
+    expect(() => unknown.go()).toThrow('exit:126');
+    expect(unknown.pipe.write).toHaveBeenCalledWith('{"type":"launch-error","stage":"spawn","code":"UNKNOWN"}\n', expect.any(Function));
+  });
+  it('retains the original waiting deadline if a failed-launch diagnostic cannot flush', () => {
+    const f = bootstrap(); f.pipe.write.mockImplementation(() => true);
+    f.consoleFs.openSync.mockImplementationOnce(() => { throw Object.assign(new Error('unavailable'), { code: 'EACCES' }); });
+    f.go({ executable: 'approved-shell', args: [], env: {}, console: 'attached' });
+    expect(f.spawn).not.toHaveBeenCalled(); expect(f.pipe.end).not.toHaveBeenCalled();
+    expect(f.process.exit).not.toHaveBeenCalled(); expect(() => f.timers[0]()).toThrow('exit:125');
   });
   it('rejects arbitrary console modes and task/adapter console combinations before any device open', () => {
     for (const fields of [{ console: 'arbitrary-path' }, { console: 'attached', kind: 'task' }, { console: 'attached', adapter: { kind: 'cross-spawn', modulePath: 'untrusted', comspec: 'untrusted' } }]) {

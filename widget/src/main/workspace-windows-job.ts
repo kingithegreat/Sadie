@@ -20,11 +20,12 @@ export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
 }
 interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capability: string } }
-type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown };
+type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown; nativeCode?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
 const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
-const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
+const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'console-input', 'console-output', 'console-close', 'spawn', 'unknown']);
+const DIAGNOSTIC_NATIVE_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENXIO', 'EINVAL', 'EBADF', 'EIO', 'ENOTSUP', 'UNKNOWN']);
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
 export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): PendingWorkspaceWindowsJob {
@@ -141,10 +142,10 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       let message: Reply;
       try { const value: unknown = JSON.parse(line); if (!value || typeof value !== 'object') throw new Error(); message = value as Reply; }
       catch { fail('The owned Job helper returned invalid state evidence.'); continue; }
-      if (message.type === 'phase' && typeof message.phase === 'string' && DIAGNOSTIC_PHASES.has(message.phase) && (message.code === undefined || typeof message.code === 'string' && DIAGNOSTIC_CODES.has(message.code))) {
+      if (message.type === 'phase' && typeof message.phase === 'string' && DIAGNOSTIC_PHASES.has(message.phase) && (message.code === undefined || typeof message.code === 'string' && DIAGNOSTIC_CODES.has(message.code)) && (message.nativeCode === undefined || typeof message.nativeCode === 'string' && DIAGNOSTIC_NATIVE_CODES.has(message.nativeCode))) {
         // Observability only: a phase never proves listening, assignment or zero accounting.
         phase = message.phase; phaseObservedAt = Math.max(0, Date.now() - spawnStarted);
-        if (typeof message.code === 'string') diagnosticFailure = `${phase}/${message.code}`;
+        if (typeof message.code === 'string') diagnosticFailure = `${phase}/${message.code}${typeof message.nativeCode === 'string' ? ` (${message.nativeCode})` : ''}`;
         else if (['attach', 'go', 'query', 'stop'].includes(phase)) diagnosticFailure = undefined;
       }
       else if (message.type === 'listening') { clearTimeout(startupTimer); listenResolve(); }
@@ -238,6 +239,12 @@ try {
    if($request.operation -eq 'attach' -and !$attached) { $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true} }
    elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
     $authorized=$true; $ack=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | Microsoft.PowerShell.Utility\\ConvertTo-Json -Compress -Depth 5)))
+    if($ack.type -eq 'launch-error') {
+     if($ack.stage -is [string] -and $ack.code -is [string] -and $ack.stage -in @('console-input','console-output','console-close','spawn') -and $ack.code -in @('ENOENT','EACCES','EPERM','ENXIO','EINVAL','EBADF','EIO','ENOTSUP','UNKNOWN')) {
+      Emit @{type='phase';phase='go';code=[string]$ack.stage;nativeCode=[string]$ack.code}
+      Emit @{type='result';id=$request.id;ok=$false}; continue
+     }; throw 'child'
+    }
     if($ack.type -ne 'spawn' -or $ack.pid -isnot [int] -or $ack.pid -le 0) { throw 'child' }
     $member=[OwnedWindowsJob]::VerifyChild($ack.pid)
     if($member -eq 0 -and $request.launch.kind -eq 'task') {
