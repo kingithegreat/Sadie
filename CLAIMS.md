@@ -67,6 +67,8 @@ This is an active implementation claim, not a completion or verification claim.
 This ownership lasts through PR #474 verification, merge and a separately verified
 merged-main test delivery with a release update in the canonical plan. After those
 conditions are met, this entry is a historical work journal and releases the files.
+Root continues exact-head qualification after49d push green/PR pure timeout/native contract35of37 failure. Test-only5cb corrects canonical mock ownership and adds finite pure phases without deadline/assertion relaxation. Both agents reviewed; root preserved baseline26of28 and current28PASS plus actual33 pure receipt. All failures remain historical evidence; no current native qualification/merge/delivery claim.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make
