@@ -24,6 +24,17 @@
 .widget-first-task span { color: var(--text-secondary, #555); }
 
 @media (max-width: 640px) {
+  .app-container .chat-interface .daily-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .app-container .chat-interface .daily-card {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
   .app-container .chat-interface .input-top {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;

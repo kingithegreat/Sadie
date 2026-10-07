@@ -81,6 +81,16 @@ labels it and explicitly checks its bounds, retaining descendant overflow data.
 The Linux shard3 install failed before tests in onnxruntime-node's external binary
 download (ETIMEDOUT/ENETUNREACH); its log is retained, not counted as a UI result.
 Supplemental acceptance TypeScript passes; fresh whole qualification remains pending.
+Run37554140166 verifies narrow chat scrollWidth560 equals width560 and all composer,
+Send, attachment and guidelines controls fit. Three setup cases pass again.
+The optional activity disclosure needs normal Home scrolling; root's proof now
+scrolls to each secondary disclosure before checking its viewport bounds. Captured
+descendant geometry also shows the joke card extending beyond its clipped message
+container, so narrow daily cards now stack and are bounded to their column.
+Native coverage retains a direct card-clipping regression assertion. All previous
+failed receipts remain preserved; source-agent editing is complete and released to
+root's serial integration, current-head CI/review, final native verification and
+separate delivery. No editing or verification is delegated to an idle agent.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

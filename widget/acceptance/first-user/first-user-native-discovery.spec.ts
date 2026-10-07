@@ -183,13 +183,18 @@ test('post-setup compact discovery and editable draft survive Home navigation in
           }).slice(0, 50) };
       });
       fs.writeFileSync(testInfo.outputPath(`first-user-chat-layout-${theme}.json`), JSON.stringify(chatLayout, null, 2));
+      expect(chatLayout.overflowing.filter(item => typeof item.classes === 'string' && item.classes.includes('daily-card'))).toEqual([]);
       await expect.poll(() => page.locator('.chat-interface').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
       await page.mouse.move(0, 0);
       await page.screenshot({ path: testInfo.outputPath(`first-user-chat-narrow-${theme}.png`) });
       await page.getByRole('button', { name: 'Home', exact: true }).click();
       await visibleControl(page, start, `${theme} narrow Home Start`, 100, 44, bounds);
       for (const label of ['Explore workspaces', 'Check setup and available features', 'Your activity']) {
-        await visibleControl(page, page.locator('summary').filter({ hasText: label }), `${theme} narrow ${label}`, 200, 44, bounds);
+        const disclosure = page.locator('summary').filter({ hasText: label });
+        // Secondary sections deliberately follow the first task in a scrollable
+        // Home panel. Check their actual reachable bounds after user scrolling.
+        await disclosure.scrollIntoViewIfNeeded();
+        await visibleControl(page, disclosure, `${theme} narrow ${label}`, 200, 44, bounds);
       }
       await expect.poll(() => page.locator('.dashboard-container').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
       await page.screenshot({ path: testInfo.outputPath(`first-user-home-narrow-${theme}.png`) });
