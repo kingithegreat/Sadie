@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { Script } from 'vm';
+import { createPendingWorkspaceWindowsJob, type PendingWorkspaceWindowsJob } from '../workspace-windows-job';
 
 jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_TASK_TEST_HOME! }));
 jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_TASK_TEST_PROFILE! } }));
@@ -386,10 +387,13 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
   };
   const report = (phase: string, fields: Record<string, string | number | boolean | null | undefined> = {}) => console.info('[TASK-NATIVE-FIXTURE]', JSON.stringify({ scenario: 'npm-cancellation', phase, ...fields }));
   let primary: unknown;
+  let failed = false;
+  let observedJob: PendingWorkspaceWindowsJob | undefined;
   try {
     report('invocation-start');
     const running = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
       signal: controller.signal,
+      createWindowsJob: options => { observedJob = createPendingWorkspaceWindowsJob(options); return observedJob; },
       spawnProcess: (command, args, options) => {
         const child = spawn(command, args, options);
         npmPid = child.pid;
@@ -420,12 +424,20 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     for (const pid of treePids) expect(alive(pid)).toBe(false);
-  } catch (error) { primary = error; throw error; }
+  } catch (error) { failed = true; primary = error; throw error; }
   finally {
     // Keep the real failure and use only main's retained Job/held invocation.
     // A bare observed PID must never become authority after it can be reused.
     controller.abort();
     try { await closeAllWorkspaceTasks(); report('retained-cleanup-confirmed'); }
-    catch (error) { report('retained-cleanup-refused'); if (!primary) throw error; }
+    catch (error) { failed = true; report('retained-cleanup-refused'); if (!primary) throw error; }
+    finally {
+      // Failure-only and passive: late script entry/normal helper close cannot
+      // turn the original listener failure into a successful task execution.
+      if (failed && observedJob?.getStartupDiagnostics) {
+        try { console.info('[TASK-HELPER-STARTUP]', JSON.stringify({ scenario: 'npm-cancellation', afterCleanup: true, ...observedJob.getStartupDiagnostics() })); }
+        catch { /* diagnostics cannot overwrite the first native failure */ }
+      }
+    }
   }
 }, 30_000);

@@ -43,6 +43,50 @@ describe('creation-gated Windows Job ownership', () => {
     fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
   });
 
+  it('retains delayed entry after the original startup rejection and reports same-helper close without rewriting the first failure', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    fake.child.emit('spawn');
+    let original: unknown;
+    const rejected = job.listening.catch(error => { original = error; });
+    jest.advanceTimersByTime(4500); await rejected;
+    expect(original).toBeInstanceOf(Error); expect((original as Error).message).toContain('Helper phase: unobserved');
+    jest.advanceTimersByTime(100);
+    fake.send({ type: 'phase', phase: 'entry', argv: 'PRIVATE_CANARY', empty: true });
+    fake.send({ type: 'listening' });
+    await expect(job.listening).rejects.toBe(original);
+    const stopped = job.stop(); await settle(); fake.reply({ ok: true, empty: true });
+    jest.advanceTimersByTime(20); fake.child.emit('close', 0); await stopped;
+    expect(job.getStartupDiagnostics!()).toEqual({ spawnObservedMs: 0, startupTimeoutObservedMs: 4500,
+      phases: [{ phase: 'entry', observedMs: 4600 }], close: { observedMs: 4620, outcome: 'zero', exitCode: 0 },
+    });
+    expect((original as Error).message).toContain('Helper phase: unobserved');
+  });
+
+  it('reports no-entry close without inventing readiness or copying a signal string', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    jest.advanceTimersByTime(12); fake.child.emit('spawn');
+    jest.advanceTimersByTime(18); fake.child.emit('close', null, 'PRIVATE_CAP_SIGNAL');
+    await expect(job.listening).rejects.toThrow('closed without verified cleanup');
+    await expect(job.stop()).rejects.toThrow('lost');
+    expect(job.getStartupDiagnostics!()).toEqual({ spawnObservedMs: 12, phases: [], close: { observedMs: 30, outcome: 'signal' } });
+  });
+
+  it('bounds and clones fixed startup observations without copying unknown protocol fields', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    for (let i = 0; i < 20; i++) { jest.advanceTimersByTime(1); fake.send({ type: 'phase', phase: 'compile', cap: 'PRIVATE_CANARY', code: 'unknown' }); }
+    const snapshot = job.getStartupDiagnostics!(); expect(snapshot.phases).toHaveLength(16);
+    expect(snapshot.phases[0]).toEqual({ phase: 'compile', observedMs: 5, code: 'unknown' });
+    snapshot.phases[0].phase = 'MUTATED'; snapshot.phases.length = 0;
+    expect(job.getStartupDiagnostics!().phases).toHaveLength(16);
+    fake.send({ type: 'phase', phase: 'PRIVATE_CANARY' });
+    await expect(job.listening).rejects.toThrow('unknown state evidence');
+    jest.advanceTimersByTime(100_000); fake.send({ type: 'phase', phase: 'stop', code: 'query', nativeCode: 'UNKNOWN', cap: 'PRIVATE_CANARY' });
+    fake.child.emit('close', 5000000000);
+    const final = job.getStartupDiagnostics!(); expect(final.phases.at(-1)).toEqual({ phase: 'stop', observedMs: 60_000, code: 'query', nativeCode: 'UNKNOWN' });
+    expect(final.close).toEqual({ observedMs: 60_000, outcome: 'unknown' });
+    expect(JSON.stringify(final)).not.toMatch(/PRIVATE_CANARY|MUTATED|5000000000/);
+  });
+
   it.each(['encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported'])('keeps %s observations diagnostic-only at the original listener deadline', async phase => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();
     let listening = false; void job.listening.then(() => { listening = true; }, () => {});

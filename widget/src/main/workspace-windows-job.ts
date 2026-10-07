@@ -18,6 +18,14 @@ export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   readonly listening: Promise<void>;
   attach(pid: number, original: WorkspacePtyIdentity): Promise<void>;
   authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
+  /** Observability only; never evidence of readiness, membership or cleanup. */
+  getStartupDiagnostics?(): WorkspaceJobStartupDiagnostics;
+}
+export interface WorkspaceJobStartupDiagnostics {
+  spawnObservedMs?: number;
+  startupTimeoutObservedMs?: number;
+  phases: Array<{ phase: string; observedMs: number; code?: string; nativeCode?: string }>;
+  close?: { observedMs: number; outcome: 'zero' | 'nonzero' | 'signal' | 'unknown' | 'not-started'; exitCode?: number };
 }
 interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capability: string } }
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown; nativeCode?: unknown };
@@ -40,6 +48,13 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
   let nextId = 0, lineBuffer = '';
   let phase = 'unobserved', diagnosticFailure: string | undefined;
   let spawnStarted = Date.now(), phaseObservedAt: number | undefined;
+  let spawnObservedMs: number | undefined, startupTimeoutObservedMs: number | undefined;
+  let observedClose: WorkspaceJobStartupDiagnostics['close'];
+  const observedPhases: WorkspaceJobStartupDiagnostics['phases'] = [];
+  const elapsed = () => {
+    const value = Date.now() - spawnStarted;
+    return Number.isFinite(value) ? Math.max(0, Math.min(60_000, Math.floor(value))) : 60_000;
+  };
   const diagnostic = () => ` Helper phase: ${phase}.${phaseObservedAt === undefined ? '' : ` Observed ${phaseObservedAt}ms after helper spawn began.`}${diagnosticFailure ? ` Last fixed helper error: ${diagnosticFailure}.` : ''}`;
   const pending = new Map<number, { operation: string; resolve(value: Reply): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   const stopRequests = new Set<number>();
@@ -68,6 +83,12 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
   };
   const job: PendingWorkspaceWindowsJob = {
     ready, listening,
+    getStartupDiagnostics: () => ({
+      ...(spawnObservedMs === undefined ? {} : { spawnObservedMs }),
+      ...(startupTimeoutObservedMs === undefined ? {} : { startupTimeoutObservedMs }),
+      phases: observedPhases.map(observation => ({ ...observation })),
+      ...(observedClose ? { close: { ...observedClose } } : {}),
+    }),
     attach: async (pid, original) => {
       if (attached || !Number.isSafeInteger(pid) || pid <= 0 || !original || !/^\d{1,19}$/.test(original.creation) || BigInt(original.creation) <= 0n || !Number.isSafeInteger(original.parent) || original.parent <= 0) {
         const error = new Error('One positive captured native identity is required before Job assignment.'); readyReject(error); throw error;
@@ -119,6 +140,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     },
   };
   if (options.gate && (!/^hbi-[a-f0-9-]{36}$/.test(options.gate.pipeName) || !/^[a-f0-9]{64}$/.test(options.gate.capability))) {
+    observedClose = { observedMs: elapsed(), outcome: 'not-started' };
     closed = true; closeResolve(); fail('The private startup pipe configuration is invalid.'); return job;
   }
   try {
@@ -129,8 +151,12 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     const helperExecutable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     spawnStarted = Date.now();
     child = spawn(helperExecutable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(windowsJobSource(), 'utf16le').toString('base64')], { windowsHide: true, env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch { closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
-  const startupTimer = setTimeout(() => fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.' + diagnostic()), OPERATION_TIMEOUT);
+  } catch { observedClose = { observedMs: elapsed(), outcome: 'not-started' }; closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
+  const startupTimer = setTimeout(() => {
+    startupTimeoutObservedMs = elapsed();
+    fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.' + diagnostic());
+  }, OPERATION_TIMEOUT);
+  child.once('spawn', () => { spawnObservedMs = elapsed(); });
   child.stdin.on('error', () => fail('The owned Job control pipe failed. Cleanup ownership is retained.'));
   child.stdout.on('data', (chunk: Buffer | string) => {
     lineBuffer += chunk.toString();
@@ -145,6 +171,11 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       if (message.type === 'phase' && typeof message.phase === 'string' && DIAGNOSTIC_PHASES.has(message.phase) && (message.code === undefined || typeof message.code === 'string' && DIAGNOSTIC_CODES.has(message.code)) && (message.nativeCode === undefined || typeof message.nativeCode === 'string' && DIAGNOSTIC_NATIVE_CODES.has(message.nativeCode))) {
         // Observability only: a phase never proves listening, assignment or zero accounting.
         phase = message.phase; phaseObservedAt = Math.max(0, Date.now() - spawnStarted);
+        observedPhases.push({ phase, observedMs: elapsed(),
+          ...(typeof message.code === 'string' ? { code: message.code } : {}),
+          ...(typeof message.nativeCode === 'string' ? { nativeCode: message.nativeCode } : {}),
+        });
+        if (observedPhases.length > 16) observedPhases.shift();
         if (typeof message.code === 'string') diagnosticFailure = `${phase}/${message.code}${typeof message.nativeCode === 'string' ? ` (${message.nativeCode})` : ''}`;
         else if (['attach', 'go', 'query', 'stop'].includes(phase)) diagnosticFailure = undefined;
       }
@@ -158,7 +189,13 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
   });
   child.stderr.on('data', () => undefined);
   child.once('error', () => fail('The owned Job helper failed. No cleanup completion was proven.'));
-  child.once('close', code => { clearTimeout(startupTimer); closed = true; closeCode = code; closeResolve(); if (!zeroConfirmed || code !== 0) fail('The owned Job helper closed without verified cleanup.'); });
+  child.once('close', (code, signal) => {
+    const boundedCode = Number.isInteger(code) && code !== null && code >= -2147483648 && code <= 4294967295 ? code : undefined;
+    observedClose = { observedMs: elapsed(), outcome: signal ? 'signal' : boundedCode === 0 ? 'zero' : boundedCode === undefined ? 'unknown' : 'nonzero',
+      ...(boundedCode === undefined ? {} : { exitCode: boundedCode }),
+    };
+    clearTimeout(startupTimer); closed = true; closeCode = code; closeResolve(); if (!zeroConfirmed || code !== 0) fail('The owned Job helper closed without verified cleanup.');
+  });
   child.stdin.write(JSON.stringify({ gate: options.gate || null }) + '\n');
   return job;
 }
