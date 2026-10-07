@@ -8,15 +8,21 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { createRequire } = require('node:module');
 const assert = require('node:assert/strict');
+assert(['', '--chat'].includes(process.argv.slice(2).join(' ')), 'Only the explicit chat acceptance option is supported');
+const chatSuite = process.argv[2] === '--chat';
+const suiteName = chatSuite ? 'chat' : 'first-user';
+const expectedCases = chatSuite ? 2 : 4;
+const expectedChatTitles = ['local chat preserves context, recovers with Retry and stops through real controls',
+  'custom chat preserves context, recovers with Retry and stops through real controls'];
 
 assert.equal(process.platform, 'win32', 'Acceptance requires Windows CIM process identity');
 assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Use only disposable GitHub Actions dependencies');
 const repo = fs.realpathSync(process.env.GITHUB_WORKSPACE || path.resolve(__dirname, '../../..'));
 const widget = path.join(repo, 'widget');
-const acceptance = path.join(widget, 'acceptance', 'first-user');
+const acceptance = path.join(widget, 'acceptance', suiteName);
 const temp = fs.realpathSync(process.env.RUNNER_TEMP);
-const proof = path.join(temp, 'first-user-native-proof');
-const compiledArtifact = path.join(temp, 'first-user-native-compiled');
+const proof = path.join(temp, `${suiteName}-native-proof`);
+const compiledArtifact = path.join(temp, `${suiteName}-native-compiled`);
 // Refuse reuse: a retry/job must have fresh stores and receipts.
 fs.mkdirSync(proof);
 fs.mkdirSync(compiledArtifact);
@@ -205,22 +211,24 @@ try {
   const listed = command(process.execPath, [playwright, 'test', '--config', config, '--list', '--reporter=json', '--workers=1', '--retries=0'], acceptance, discoveryEnv, true, 60_000);
   fs.writeFileSync(path.join(proof, 'discovery.json'), listed);
   const discovered = cases(JSON.parse(listed));
-  assert.equal(discovered.length, 4, 'Discover exactly four native cases');
-  assert.equal(new Set(discovered.map(item => `${item.file}:${item.title}`)).size, 4, 'Cases must be unique');
-  stage = 'native four cases';
+  assert.equal(discovered.length, expectedCases, 'Discover the exact native case count');
+  assert.equal(new Set(discovered.map(item => `${item.file}:${item.title}`)).size, expectedCases, 'Cases must be unique');
+  if (chatSuite) assert.deepEqual(discovered.map(item => item.title).sort(), [...expectedChatTitles].sort(), 'Discover both exact chat scenarios');
+  stage = `native ${expectedCases} cases`;
   nativeStatus = command(process.execPath, [playwright, 'test', '--config', config, '--workers=1', '--retries=0'], acceptance, env, false, 12 * 60_000).status;
   stage = 'native result gate';
   const report = JSON.parse(fs.readFileSync(path.join(proof, 'result.json'), 'utf8'));
   assert.deepEqual({ expected: report.stats.expected, unexpected: report.stats.unexpected, flaky: report.stats.flaky, skipped: report.stats.skipped },
-    { expected: 4, unexpected: 0, flaky: 0, skipped: 0 });
+    { expected: expectedCases, unexpected: 0, flaky: 0, skipped: 0 });
   const executed = cases(report);
-  assert.equal(executed.length, 4);
+  assert.equal(executed.length, expectedCases);
+  if (chatSuite) assert.deepEqual(executed.map(item => item.title).sort(), [...expectedChatTitles].sort(), 'Execute both exact chat scenarios');
   for (const item of executed) {
     assert.equal(item.test.results.length, 1, `${item.title}: no retries`);
     assert.equal(item.test.results[0].status, 'passed', `${item.title}: must execute and pass`);
   }
   const receipts = walk(path.join(proof, 'results')).filter(file => path.posix.basename(file.path) === 'first-user-shutdown.json');
-  assert.equal(receipts.length, 4, 'Each case needs its own strict process disappearance receipt');
+  assert.equal(receipts.length, expectedCases, 'Each case needs its own strict process disappearance receipt');
   for (const file of receipts) {
     const receipt = JSON.parse(fs.readFileSync(path.join(proof, 'results', file.path), 'utf8'));
     assert.equal(receipt.closeOutcome, 'closed'); assert.equal(receipt.forced, false);
@@ -228,6 +236,23 @@ try {
     assert.equal(receipt.nativeProbeSucceeded, true); assert.equal(receipt.launcherProbeSucceeded, true);
     assert.equal(receipt.nativeSameIdentityAlive, false); assert.equal(receipt.launcherSameIdentityAlive, false);
     assert.equal(receipt.safeToCloseServers, true);
+  }
+  if (chatSuite) {
+    const chatProofs = walk(path.join(proof, 'results')).filter(file => path.posix.basename(file.path) === 'chat-request-proof.json');
+    assert.equal(chatProofs.length, 2, 'Each provider needs its own actual request proof');
+    const providers = [];
+    for (const file of chatProofs) {
+      const receipt = JSON.parse(fs.readFileSync(path.join(proof, 'results', file.path), 'utf8'));
+      providers.push(receipt.provider);
+      assert.equal(receipt.generation.length, 6, 'Send/context/error/Retry/Stop/resume must reach six real provider requests');
+      assert(receipt.generation.every(request => request.provider === receipt.provider && request.body.stream === true));
+      assert.equal(receipt.stopClosed, true, 'Stop must close the actual pending provider socket');
+      assert.deepEqual(receipt.serverErrors, []);
+      assert.deepEqual(receipt.proof.rejected, []);
+      assert.equal(receipt.proof.passive.e2e, false, 'The production router must run without E2E mocks');
+      assert.equal(receipt.proof.mainSha256, hash(env.HOMEBOT_FIRST_USER_ENTRY), 'The visible chat must run the frozen compiled entry');
+    }
+    assert.deepEqual(providers.sort(), ['custom', 'local']);
   }
 } catch (error) {
   errors.push(error);
