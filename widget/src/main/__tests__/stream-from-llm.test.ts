@@ -79,6 +79,7 @@ jest.mock('../custom-llm-client', () => ({
 jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
   getSmallModelTools: jest.fn(() => []),
+  getFocusedOllamaTools: jest.fn(() => []),
   getFocusedToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   getAllToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   executeToolBatch: jest.fn(() => Promise.resolve([{ result: { text: '' } }])),
@@ -117,6 +118,8 @@ function resetSettings() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (executeToolBatch as jest.Mock).mockReset().mockResolvedValue([{ result: { text: '' } }]);
+  mockStreamFromCustomLLM.mockReset();
   resetSettings();
   mockValidateCustomLLMConfig.mockReturnValue({ valid: false, error: 'not configured' });
 });
@@ -227,7 +230,10 @@ describe('streamFromLLM', () => {
     });
 
     test('multiple custom tool calls yield one complete followup and one terminal end', async () => {
-      (executeToolBatch as jest.Mock).mockResolvedValueOnce([{ result: 'A' }, { result: 'B' }]);
+      (executeToolBatch as jest.Mock).mockImplementation(async (calls: any[]) =>
+        calls[0]?.name === 'read_file'
+          ? [{ success: true, result: 'A' }, { success: true, result: 'B' }]
+          : [{ result: { text: '' } }]);
       mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
         args[4]('Checking files.');
         args[9]({ id: 'a', name: 'read_file', arguments: { path: 'a' } });
@@ -242,12 +248,17 @@ describe('streamFromLLM', () => {
       await streamFromLLM('read both files', undefined, 'conv-custom-batch',
         cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
       await new Promise<void>(resolve => setImmediate(resolve));
-      expect(executeToolBatch).toHaveBeenCalledTimes(1);
+      const fileBatches = (executeToolBatch as jest.Mock).mock.calls.filter(([calls]) => calls[0]?.name === 'read_file');
+      expect(fileBatches).toHaveLength(1);
+      expect(fileBatches[0][0]).toEqual([
+        { name: 'read_file', arguments: { path: 'a' } },
+        { name: 'read_file', arguments: { path: 'b' } },
+      ]);
       expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
       const followup = mockStreamFromCustomLLM.mock.calls[1][1];
       expect(followup.filter((row: any) => row.role === 'tool')).toEqual([
-        { role: 'tool', content: JSON.stringify({ result: 'A' }), tool_call_id: 'a' },
-        { role: 'tool', content: JSON.stringify({ result: 'B' }), tool_call_id: 'b' },
+        { role: 'tool', content: JSON.stringify({ success: true, result: 'A' }), tool_call_id: 'a' },
+        { role: 'tool', content: JSON.stringify({ success: true, result: 'B' }), tool_call_id: 'b' },
       ]);
       expect(cbs.onEnd).toHaveBeenCalledTimes(1);
       expect(cbs.onError).not.toHaveBeenCalled();
@@ -256,7 +267,8 @@ describe('streamFromLLM', () => {
     test('inline chat guidelines override saved guidelines and survive custom tool synthesis', async () => {
       mockSettings.chatGuidelines = 'Use short paragraphs.';
       (MemoryManager.getConversation as jest.Mock).mockReturnValueOnce({ systemPrompt: 'Use a pirate voice.' });
-      (executeToolBatch as jest.Mock).mockResolvedValueOnce([{ success: true, result: 'read' }]);
+      (executeToolBatch as jest.Mock).mockImplementation(async (calls: any[]) =>
+        calls[0]?.name === 'read_file' ? [{ success: true, result: 'read' }] : []);
       mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
         args[9]({ id: 'a', name: 'read_file', arguments: {} }); void args[5]();
         return Promise.resolve({ cancel: jest.fn() });
@@ -269,6 +281,9 @@ describe('streamFromLLM', () => {
         { conversationPrompt: 'Answer in te reo Māori.' });
       await new Promise<void>(resolve => setImmediate(resolve));
       expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
+      expect(mockStreamFromCustomLLM.mock.calls[1][1]).toContainEqual({
+        role: 'tool', content: JSON.stringify({ success: true, result: 'read' }), tool_call_id: 'a',
+      });
       for (const call of mockStreamFromCustomLLM.mock.calls) {
         expect(call[3]).toContain('## User Guidelines\nUse short paragraphs.\n\nAnswer in te reo Māori.');
         expect(call[3]).not.toContain('Use a pirate voice.');
