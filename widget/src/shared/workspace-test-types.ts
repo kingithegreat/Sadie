@@ -3,4 +3,5 @@ export interface WorkspaceTestRequest { root: string; action: 'list' | 'run' | '
 export interface WorkspaceTestResult {
   success: boolean; error?: string; tests?: WorkspaceDiscoveredTest[]; running?: boolean; output?: string; exitCode?: number | null;
   coveragePath?: string; summary?: { passed: number; failed: number; skipped: number }; note?: string;
+  cleanupPending?: boolean;
 }

@@ -7,7 +7,7 @@ export const WORKSPACE_TEST_CHANNEL = 'homebot:workspace:tests';
 export function registerWorkspaceTestIpc(): void {
   ipcMain.removeHandler(WORKSPACE_TEST_CHANNEL);
   ipcMain.handle(WORKSPACE_TEST_CHANNEL, async (event, request: WorkspaceTestRequest) => {
-    const window = getMainWindow(); const trusted = () => !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
+    const window = getMainWindow(); const trusted = () => !!window && getMainWindow() === window && !window.isDestroyed() && !event.sender.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
     if (!trusted()) return { success: false, error: 'Open Tests in the HomeBot workspace.' };
     try {
       if (request.action === 'run') {
@@ -16,7 +16,7 @@ export function registerWorkspaceTestIpc(): void {
         if (!trusted()) return { success: false, error: 'Test run cancelled because the window closed.' };
         event.sender.once('destroyed', () => { void stopWorkspaceTestRuns(); });
       }
-      return performWorkspaceTests(request);
+      return performWorkspaceTests(request, () => { if (!trusted()) throw new Error('Test run cancelled because the window changed.'); });
     } catch (error) { return { success: false, error: String(error) }; }
   });
 }

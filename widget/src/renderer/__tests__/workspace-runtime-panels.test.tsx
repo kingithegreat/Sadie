@@ -66,6 +66,26 @@ test('test discovery rows open source and run one named test with coverage, with
   await act(async () => fireEvent.click(screen.getByText('Run test'))); expect(workspaceTests).toHaveBeenCalledWith({ root: '/project', action: 'run', file: '/project/math.test.js', testName: 'adds', coverage: true });
   await act(async () => fireEvent.click(screen.getByText('Stop tests'))); expect(workspaceTests).toHaveBeenCalledWith({ root: '/project', action: 'stop' });
 });
+
+test('ended tests keep Stop reachable while cleanup is pending and retain refusal until a confirmed retry', async () => {
+  jest.useFakeTimers();
+  const workspaceTests = jest.fn().mockImplementation(async ({ action }: { action: string }) => action === 'list'
+    ? { success: true, tests: [{ path: '/project/math.test.js', name: 'adds', line: 1, runner: 'node' }] }
+    : action === 'state' ? { success: true, running: false, cleanupPending: true, exitCode: 0 }
+    : { success: false, running: false, cleanupPending: true, error: 'Owned cleanup unconfirmed. Retry Stop.' });
+  (window as any).electron = { workspaceTests };
+  try {
+    await act(async () => render(<WorkspaceTestsPanel root="/project" onOpenFile={jest.fn()} />));
+    await act(async () => { jest.advanceTimersByTime(700); });
+    const stop = screen.getByText('Stop tests'); expect(stop).not.toBeDisabled();
+    expect(screen.getByText('Run test')).toBeDisabled(); expect(screen.getByRole('status')).toHaveTextContent('Cleanup required');
+    await act(async () => fireEvent.click(stop));
+    expect(screen.getByRole('alert')).toHaveTextContent('Owned cleanup unconfirmed'); expect(stop).not.toBeDisabled();
+    workspaceTests.mockResolvedValueOnce({ success: true, running: false, cleanupPending: false });
+    await act(async () => fireEvent.click(stop));
+    expect(stop).toBeDisabled(); expect(screen.getByText('Run test')).not.toBeDisabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  } finally { jest.clearAllTimers(); jest.useRealTimers(); }
+});
 test('a late watch result from the previous project never appears in the new debugger', async () => {
   let finish: (value: any) => void = () => {};
   (window as any).electron = { workspaceDebug: jest.fn(({ action }: { action: string }) => action === 'evaluate' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve({ success: true, running: true, paused: true, frames: [], breakpoints: [] })) };
