@@ -33,7 +33,11 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
     state.irreversibleExit = new Promise(resolve => { finished = resolve; });
     const observe = () => {
       const marker = exitDiagnostics(state.stdout) as any;
-      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce && state.stderr.includes('Waiting for the debugger to disconnect...')) finished();
+      // Node's exit event cannot resume the event loop. This exact main's
+      // PID+nonce marker permits releasing our inspector even when stderr is
+      // quiet; actual held OS exit and captured-child checks remain required.
+      // https://nodejs.org/docs/latest-v24.x/api/process.html#event-exit
+      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) finished();
     };
     const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
     app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
@@ -127,9 +131,10 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
       }
     }
-    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.irreversibleExit.then(() => ({ inspectorWait: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
-    if ('inspectorWait' in exited) {
-      if (!state.inspector) throw new Error('Irreversible main exit is waiting on an inspector whose owned transport could not be verified.');
+    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.irreversibleExit.then(() => ({ mainExitEvent: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    if ('mainExitEvent' in exited) {
+      if (!state.inspector) throw new Error('Main reached its exit event, but its owned transport could not be verified.');
+      receipt.inspectorQualification = { mainPid: state.monitor.info.pid, matchingExitNonce: true, stderrWaitObserved: state.stderr.includes('Waiting for the debugger to disconnect...') };
       receipt.inspectorBeforeClose = state.inspector.status();
       // Installed Playwright's public close gracefully quits, detaches its node
       // inspector and waits; it has no process kill in this custom handler.
