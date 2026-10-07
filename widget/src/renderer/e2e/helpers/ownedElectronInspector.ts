@@ -2,7 +2,7 @@ import type { ElectronApplication } from '@playwright/test';
 import type { ChildProcess } from 'child_process';
 import type { NativeAppMonitor } from './nativeAppProcess';
 
-export interface OwnedElectronInspector { status(): { nodeClosed: boolean; socketState: number }; terminate(): boolean }
+export interface OwnedElectronInspector { status(): { nodeClosed: boolean; socketState: number }; close(): boolean; terminate(): boolean }
 
 /** Audited 1.57.0 Electron custom close only quits app and closes its node WS. */
 export function captureOwnedElectronInspector(app: ElectronApplication, child: ChildProcess, monitor: NativeAppMonitor): OwnedElectronInspector | undefined {
@@ -17,12 +17,24 @@ export function captureOwnedElectronInspector(app: ElectronApplication, child: C
     impl?._nodeConnection === connection && impl?._nodeSession === connection?.rootSession && connection?._transport === transport && transport?._ws === socket &&
     typeof connection?.close === 'function' && typeof connection?._closed === 'boolean' && typeof socket?.terminate === 'function' && Number.isInteger(socket?.readyState);
   if (!owned()) return undefined;
+  let closeRequested = false;
   return {
     status: () => { if (!owned()) throw new Error('Owned Electron inspector identity changed.'); return { nodeClosed: connection._closed, socketState: socket.readyState }; },
+    close: () => {
+      if (!owned()) throw new Error('Owned Electron inspector identity changed.');
+      // Playwright 1.57 CRConnection.close -> WebSocketTransport.close ->
+      // ws.close performs the normal handshake without evaluating app.quit.
+      if (!closeRequested && !connection._closed && (socket.readyState === 1 || socket.readyState === 2)) {
+        closeRequested = true; connection.close(); return true;
+      }
+      return false;
+    },
     terminate: () => {
       if (!owned()) throw new Error('Owned Electron inspector identity changed.');
       // ws.terminate closes this exact debugger socket, not a native process.
-      if (!connection._closed && (socket.readyState === 1 || socket.readyState === 2)) { socket.terminate(); return true; }
+      // An independently closed connection can still retain this same captured
+      // open/closing socket; the bounded fallback revalidates its ownership.
+      if (socket.readyState === 1 || socket.readyState === 2) { socket.terminate(); return true; }
       return false;
     },
   };

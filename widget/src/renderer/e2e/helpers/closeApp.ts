@@ -172,7 +172,22 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       // this exact main has emitted its committed quit marker, no second
       // evaluation belongs in its shutdown. Release only our captured socket;
       // public driver cleanup follows actual held OS exit and tree verification.
-      receipt.ownedInspectorSocketTerminated = state.inspector.terminate();
+      if (Date.now() >= deadline) throw new Error('Original close budget exhausted before inspector release.');
+      receipt.ownedInspectorConnectionCloseRequested = state.inspector.close();
+      const handshakeBudget = Math.min(1000, Math.max(0, Math.floor((deadline - Date.now()) / 4)));
+      receipt.inspectorHandshakeBudgetMs = handshakeBudget;
+      let handshakeTimer: NodeJS.Timeout | undefined;
+      let handshakeExit: NativeAppExit | undefined;
+      try {
+        handshakeExit = await Promise.race([state.monitor.exit, new Promise<undefined>(resolve => {
+          if (handshakeBudget === 0) resolve(undefined);
+          else handshakeTimer = setTimeout(() => resolve(undefined), handshakeBudget);
+        })]);
+      } finally { clearTimeout(handshakeTimer); }
+      if (!handshakeExit && !state.nativeExit) {
+        if (Date.now() >= deadline) throw new Error('Original close budget exhausted during inspector handshake.');
+        receipt.ownedInspectorSocketTerminated = state.inspector.terminate();
+      }
       receipt.inspectorAfterRelease = state.inspector.status();
       receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit after its owned inspector disconnected');
     } else receipt.nativeExit = exited.native;

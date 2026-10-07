@@ -32,6 +32,8 @@ test('a pre-existing no-op reporter and actual uploads refuse configuration',()=
 test('receipt qualification binds reporter parameters and nonce to the held native main and actual quit marker',()=>{
   const record={receipt:{native:{pid:42},productionAtExit:{nonce:'captured-nonce'},localCrashReporter:JSON.parse(JSON.stringify(fixture().run()))}};
   gate.validateLocalCrashReporterReceipts([record]);
+  assert.throws(()=>gate.validateLocalCrashReporterReceipts([]));
+  assert.throws(()=>gate.validateLocalCrashReporterReceipts([record,record,record,record,record]));
   for(const change of [r=>{r.receipt.localCrashReporter.status='failed';},r=>{r.receipt.localCrashReporter.uploadToServer=true;},r=>{r.receipt.localCrashReporter.pid=99;},r=>{r.receipt.localCrashReporter.requestedSubmitURL='https://example.invalid';},r=>{r.receipt.productionAtExit.nonce='other';},r=>{r.receipt.localCrashReporter.parameters.homebot_native_pid='99';}]){
     const r=JSON.parse(JSON.stringify(record));change(r);assert.throws(()=>gate.validateLocalCrashReporterReceipts([r]));
   }

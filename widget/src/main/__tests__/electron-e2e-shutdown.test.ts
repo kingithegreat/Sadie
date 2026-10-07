@@ -242,3 +242,32 @@ test('inspector detachment never converts a nonzero native exit into a passing c
   await expect(closeElectronApp(f.app)).rejects.toThrow('nonzero OS code');
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.graceful).toBe(false);
 });
+
+test('qualified quit first closes the captured connection handshake without another main evaluation or forced socket release', async () => {
+  const f = inspectorFixture();
+  f.connection.close.mockImplementation(() => { f.connection._closed = true; f.socket.readyState = 3; f.finish({ code: 0 }); });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, false);
+  f.app.evaluate.mockImplementation(() => { throw new Error('No main evaluation after committed quit'); });
+  await closeElectronApp(f.app);
+  expect(f.connection.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).not.toHaveBeenCalled();
+  expect(f.monitor.verify).toHaveBeenCalled(); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt).toMatchObject({ graceful: true, ownedInspectorConnectionCloseRequested: true, nativeExit: { code: 0 }, capturedIdentitiesGone: true });
+  expect(receipt.ownedInspectorSocketTerminated).toBeUndefined();
+});
+
+test('a stuck handshake still releases only the captured socket within the original close budget', async () => {
+  jest.useFakeTimers(); const f = inspectorFixture();
+  f.connection.close.mockImplementation(() => { f.connection._closed = true; f.socket.readyState = 2; });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, false);
+  const closing = closeElectronApp(f.app); await jest.advanceTimersByTimeAsync(1000); await closing;
+  expect(f.connection.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).toHaveBeenCalledTimes(1);
+  expect(f.monitor.cleanup).not.toHaveBeenCalled(); expect(f.child.kill).not.toHaveBeenCalled();
+});
+
+test('a successful connection handshake still refuses a nonzero held native exit', async () => {
+  const f = inspectorFixture(); f.connection.close.mockImplementation(() => { f.connection._closed = true; f.socket.readyState = 3; f.finish({ code: 1 }); });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, false);
+  await expect(closeElectronApp(f.app)).rejects.toThrow('nonzero OS code');
+  expect(f.socket.terminate).not.toHaveBeenCalled();
+});

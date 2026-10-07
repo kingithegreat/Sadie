@@ -113,6 +113,7 @@ function validateShutdownReceipts(receipts, expectedCount = 4) {
   });
 }
 function validateLocalCrashReporterReceipts(receipts) {
+  assert.ok(Array.isArray(receipts) && receipts.length > 0 && receipts.length <= 4, 'Missing bounded native reporter receipts.');
   for (const { receipt } of receipts) {
     const reporter = receipt.localCrashReporter;
     assert.equal(reporter?.status, 'started', 'Required local crash reporter was not established.');
