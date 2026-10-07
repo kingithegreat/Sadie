@@ -3,38 +3,46 @@ import * as path from 'path';
 import axios from 'axios';
 import { getSettings } from './config-manager';
 import { canonicalWorkspacePath, validateWorkspaceRoot, withinRoot } from './workspace-context';
+import { checkedTrustedWorkspacePath } from './workspace-trust';
 
 const IGNORE = new Set(['.git', 'node_modules', 'dist', 'out', 'build', '.next', '.venv', '__pycache__']);
 const CODE = /\.(?:ts|tsx|js|jsx|json|py|lua|luau|rs|go|java|cs|c|cpp|h|css|html|md|yml|yaml|sql|sh|ps1)$/i;
+function checkedContextPath(root: string, input: string, directory: boolean) {
+  // A project can be an ancestor of the profile/runtime. Every descendant
+  // still needs the shared protected-folder check before listing or reading.
+  const canonical = checkedTrustedWorkspacePath(root, input);
+  const stat = fs.lstatSync(input), resolved = canonicalWorkspacePath(input);
+  const same = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
+  if (stat.isSymbolicLink() || !withinRoot(root, canonical) || !same(canonical, resolved) || !same(path.resolve(input), resolved) || (directory ? !stat.isDirectory() : !stat.isFile())) throw new Error('Context path is protected, redirected, or outside this project.');
+  return stat;
+}
+function readContextText(root: string, file: string, stat: fs.Stats): string | undefined {
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
+  let body: string;
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size) return;
+    const buffer = Buffer.alloc(stat.size); let bytes = 0;
+    while (bytes < buffer.length) { const count = fs.readSync(descriptor, buffer, bytes, buffer.length - bytes, bytes); if (!count) break; bytes += count; }
+    const finished = fs.fstatSync(descriptor);
+    if (bytes !== stat.size || finished.size !== opened.size || finished.mtimeMs !== opened.mtimeMs) return;
+    body = buffer.toString('utf8');
+  } finally { fs.closeSync(descriptor); }
+  const after = checkedContextPath(root, file, false);
+  if (stat.dev !== after.dev || stat.ino !== after.ino || stat.size !== after.size || stat.mtimeMs !== after.mtimeMs) return;
+  return body;
+}
 export function readWorkspaceRules(rootInput: unknown) {
   const root = validateWorkspaceRoot(rootInput);
   const rules: Array<{ path: string; text: string }> = [];
   // Reserve one result and enough text for a visible incomplete-discovery note.
   let remaining = 39_500, entries = 0, directories = 0, capped = false;
-  const same = (a: string, b: string) => process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b;
-  const checked = (input: string, directory: boolean) => {
-    const stat = fs.lstatSync(input), canonical = canonicalWorkspacePath(input);
-    if (stat.isSymbolicLink() || !withinRoot(root, canonical) || !same(path.resolve(input), canonical) || (directory ? !stat.isDirectory() : !stat.isFile())) throw new Error('Instruction path is redirected or outside this project.');
-    return stat;
-  };
+  const checked = (input: string, directory: boolean) => checkedContextPath(root, input, directory);
   const load = (file: string, subtree?: string) => {
     try {
       const stat = checked(file, false);
       if (stat.size > 100_000 || rules.length >= 29 || remaining <= 0) { capped = true; return; }
-      const descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW || 0));
-      let body: string;
-      try {
-        const opened = fs.fstatSync(descriptor);
-        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size) return;
-        const buffer = Buffer.alloc(stat.size); let bytes = 0;
-        while (bytes < buffer.length) { const count = fs.readSync(descriptor, buffer, bytes, buffer.length - bytes, bytes); if (!count) break; bytes += count; }
-        const finished = fs.fstatSync(descriptor);
-        if (finished.size !== opened.size || finished.mtimeMs !== opened.mtimeMs) return;
-        body = buffer.subarray(0, bytes).toString('utf8');
-      } finally { fs.closeSync(descriptor); }
-      // Recheck after reading: a redirected path must never reach a model.
-      const after = checked(file, false);
-      if (stat.dev !== after.dev || stat.ino !== after.ino) return;
+      const body = readContextText(root, file, stat); if (body === undefined) return;
       const scope = subtree ? `Scoped AGENTS.md: applies only to project directory ${JSON.stringify(subtree + '/')} and its descendants, never to sibling directories. Keep applicable ancestor instructions; this file overrides conflicting ancestor instructions here. A deeper AGENTS.md overrides this file only in that deeper subtree.\n\n` : '';
       const full = scope + body;
       if (full.length > remaining) capped = true;
@@ -92,17 +100,23 @@ export async function searchWorkspaceCode(rootInput: unknown, query: unknown, se
   let files = 0, bytes = 0, capped = false;
   function walk(folder: string, depth: number) {
     if (depth > 12 || files >= 400 || bytes >= 4 * 1024 * 1024) { capped = true; return; }
-    for (const item of fs.readdirSync(folder, { withFileTypes: true })) {
+    let entries: fs.Dirent[];
+    try { checkedContextPath(root, folder, true); entries = fs.readdirSync(folder, { withFileTypes: true }); checkedContextPath(root, folder, true); }
+    catch { return; }
+    for (const item of entries) {
       if (files >= 400 || bytes >= 4 * 1024 * 1024) { capped = true; break; }
       const file = path.join(folder, item.name);
       if (item.isSymbolicLink()) continue;
       if (item.isDirectory()) { if (!IGNORE.has(item.name)) walk(file, depth + 1); continue; }
       if (!CODE.test(item.name) || /^(?:\.env|.*\.(?:pem|key))/.test(item.name)) continue;
-      const canonical = canonicalWorkspacePath(file);
-      if (!withinRoot(root, canonical)) continue;
-      const size = fs.statSync(file).size;
-      if (size > 100_000 || bytes + size > 4 * 1024 * 1024) { capped = true; continue; }
-      const text = fs.readFileSync(file, 'utf8'); if (text.includes('\0')) continue;
+      let stat: fs.Stats, text: string | undefined;
+      try {
+        stat = checkedContextPath(root, file, false);
+        if (stat.size > 100_000 || bytes + stat.size > 4 * 1024 * 1024) { capped = true; continue; }
+        text = readContextText(root, file, stat);
+      } catch { continue; }
+      if (text === undefined || text.includes('\0')) continue;
+      const size = stat.size;
       files++; bytes += size;
       const lines = text.split(/\r?\n/);
       for (let i = 0; i < lines.length; i += 60) {

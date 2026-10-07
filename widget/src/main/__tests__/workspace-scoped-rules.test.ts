@@ -3,7 +3,8 @@ import * as os from 'os';
 import * as path from 'path';
 const nativeFs: typeof import('fs') = jest.requireActual('fs');
 let mockHome: string;
-jest.mock('electron', () => ({ app: { getPath: () => require('path').join(mockHome, 'profile') } }));
+let mockUserData: string;
+jest.mock('electron', () => ({ app: { getPath: () => mockUserData } }));
 jest.mock('../user-paths', () => ({ homeDir: () => mockHome }));
 jest.mock('../window-manager', () => ({ getMainWindow: jest.fn() }));
 jest.mock('../config-manager', () => ({ getSettings: jest.fn(() => ({})) }));
@@ -12,6 +13,7 @@ import { readWorkspaceRules } from '../workspace-code-context';
 let root: string, outside: string;
 beforeEach(() => {
   mockHome = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-rules-'));
+  mockUserData = path.join(mockHome, 'profile');
   root = path.join(mockHome, 'project'); outside = path.join(mockHome, 'other-project');
   fs.mkdirSync(root); fs.mkdirSync(outside);
 });
@@ -93,4 +95,37 @@ test('a file redirected during open is rejected by its held descriptor identity'
   const original = fs.openSync;
   jest.spyOn(nativeFs, 'openSync').mockImplementation(((file: any, flags: any, mode: any) => original(file === instruction ? path.join(outside, 'AGENTS.md') : file, flags, mode)) as any);
   expect(prompt()).not.toContain('OUTSIDE_OPEN_RACE');
+});
+
+test('an ancestor project never lists or opens protected profile instructions', () => {
+  root = mockHome;
+  write('AGENTS.md', 'ALLOWED_ANCESTOR_RULE');
+  const secret = write('profile/AGENTS.md', 'SYNTHETIC_PROFILE_RULE_SECRET');
+  write('profile/deep/AGENTS.md', 'SYNTHETIC_NESTED_PROFILE_RULE_SECRET');
+  write('project/src/AGENTS.md', 'ALLOWED_PROJECT_RULE');
+  const opened = jest.spyOn(nativeFs, 'openSync'), listed = jest.spyOn(nativeFs, 'opendirSync');
+  const rendered = prompt();
+  expect(rendered).toContain('ALLOWED_ANCESTOR_RULE'); expect(rendered).toContain('ALLOWED_PROJECT_RULE');
+  expect(rendered).not.toContain('SYNTHETIC_PROFILE_RULE_SECRET'); expect(rendered).not.toContain('SYNTHETIC_NESTED_PROFILE_RULE_SECRET');
+  expect(opened.mock.calls.some(call => String(call[0]) === secret)).toBe(false);
+  expect(listed.mock.calls.some(call => String(call[0]).startsWith(mockUserData))).toBe(false);
+});
+
+test('direct cursor rule discovery applies protected-folder policy before listing', () => {
+  write('AGENTS.md', 'ALLOWED_ROOT_RULE');
+  mockUserData = path.join(root, '.cursor', 'rules');
+  const secret = write('.cursor/rules/profile.mdc', 'SYNTHETIC_DIRECT_CURSOR_SECRET');
+  const opened = jest.spyOn(nativeFs, 'openSync'), listed = jest.spyOn(nativeFs, 'opendirSync');
+  expect(prompt()).toContain('ALLOWED_ROOT_RULE'); expect(prompt()).not.toContain('SYNTHETIC_DIRECT_CURSOR_SECRET');
+  expect(opened.mock.calls.some(call => String(call[0]) === secret)).toBe(false);
+  expect(listed.mock.calls.some(call => String(call[0]) === mockUserData)).toBe(false);
+});
+
+test('protected rule bytes cannot enter through a same-byte redirected open', () => {
+  const instruction = write('AGENTS.md', 'SYNTHETIC_SAME_BYTE_RULE');
+  const secret = path.join(mockUserData, 'AGENTS.md'); fs.mkdirSync(mockUserData); fs.writeFileSync(secret, 'SYNTHETIC_SAME_BYTE_RULE');
+  const original = nativeFs.openSync;
+  jest.spyOn(nativeFs, 'openSync').mockImplementation(((file: any, flags: any, mode: any) => original(file === instruction ? secret : file, flags, mode)) as any);
+  expect(prompt()).not.toContain('SYNTHETIC_SAME_BYTE_RULE');
+  expect(fs.readFileSync(secret, 'utf8')).toBe('SYNTHETIC_SAME_BYTE_RULE');
 });

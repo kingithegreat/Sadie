@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+const nativeFs: typeof import('fs') = jest.requireActual('fs');
 let mockUserData: string;
 let mockConfiguredRoot: string;
 let mockWindow: any;
@@ -32,7 +33,7 @@ describe('IDE request authority, review and recovery effects', () => {
     fs.mkdirSync(rootA); fs.mkdirSync(rootB); mockUserData = path.join(directory, 'profile'); mockConfiguredRoot = rootA;
     __clearProposals(); jest.clearAllMocks();
   });
-  afterEach(() => fs.rmSync(directory, { recursive: true, force: true }));
+  afterEach(() => { jest.restoreAllMocks(); fs.rmSync(directory, { recursive: true, force: true }); });
   const approved = (root: string, sender = 1) => {
     const plan = prepareWorkspacePlan(root, 'Change the intended file and review its diff.', sender);
     approveWorkspacePlan(root, plan.id, sender);
@@ -203,5 +204,41 @@ describe('IDE request authority, review and recovery effects', () => {
     expect(semantic.mode).toBe('local semantic + keyword search'); expect(semantic.matches.some(match => match.text.includes('bicycle'))).toBe(true);
     expect(axios.post).toHaveBeenCalledWith(expect.stringContaining('/api/embeddings'), expect.objectContaining({ model: 'nomic-embed-text' }), expect.anything());
     fs.unlinkSync(path.join(rootA, 'vehicle.ts')); expect((await searchWorkspaceCode(rootA, 'bicycle')).matches).toEqual([]);
+  });
+  test('ancestor codebase keyword and semantic scans exclude protected profile bytes before read or embedding', async () => {
+    fs.mkdirSync(mockUserData); const secret = path.join(mockUserData, 'user-settings.json');
+    fs.writeFileSync(secret, JSON.stringify({ marker: 'SYNTHETIC_PROFILE_CODEBASE_SECRET', mcpEnvironment: 'SYNTHETIC_MCP_ENV_SECRET' }));
+    fs.writeFileSync(path.join(rootA, 'allowed.ts'), 'const allowedProjectMarker = 1;');
+    const opened = jest.spyOn(nativeFs, 'openSync'), listed = jest.spyOn(nativeFs, 'readdirSync');
+    const keyword = await searchWorkspaceCode(directory, 'SYNTHETIC_PROFILE_CODEBASE_SECRET');
+    expect(keyword.matches).toEqual([]); expect(keyword.files).toBe(1);
+    (axios.get as jest.Mock).mockResolvedValue({ data: { models: [{ name: 'nomic-embed-text:latest' }] } });
+    (axios.post as jest.Mock).mockResolvedValue({ data: { embedding: [1, 0] } });
+    const semantic = await searchWorkspaceCode(directory, 'allowedProjectMarker', true);
+    expect(semantic.matches.some(match => match.text.includes('allowedProjectMarker'))).toBe(true);
+    expect(JSON.stringify(semantic)).not.toContain('SYNTHETIC_PROFILE_CODEBASE_SECRET');
+    expect(JSON.stringify((axios.post as jest.Mock).mock.calls)).not.toContain('SYNTHETIC_MCP_ENV_SECRET');
+    expect(opened.mock.calls.some(call => String(call[0]) === secret)).toBe(false);
+    expect(listed.mock.calls.some(call => String(call[0]) === mockUserData)).toBe(false);
+    expect(fs.readFileSync(secret, 'utf8')).toContain('SYNTHETIC_PROFILE_CODEBASE_SECRET');
+  });
+  test('codebase scans preserve synthetic protected system directories and their allowed siblings', async () => {
+    const prior = process.env.ProgramData, protectedRoot = path.join(rootA, 'protected-system');
+    fs.mkdirSync(protectedRoot); fs.writeFileSync(path.join(protectedRoot, 'config.json'), 'SYNTHETIC_SYSTEM_CODEBASE_SECRET');
+    fs.writeFileSync(path.join(rootA, 'allowed.ts'), 'const allowedSystemSibling = 1;');
+    process.env.ProgramData = protectedRoot;
+    try {
+      expect((await searchWorkspaceCode(rootA, 'SYNTHETIC_SYSTEM_CODEBASE_SECRET')).matches).toEqual([]);
+      expect((await searchWorkspaceCode(rootA, 'allowedSystemSibling')).matches[0].text).toContain('allowedSystemSibling');
+      expect(fs.readFileSync(path.join(protectedRoot, 'config.json'), 'utf8')).toBe('SYNTHETIC_SYSTEM_CODEBASE_SECRET');
+    } finally { if (prior === undefined) delete process.env.ProgramData; else process.env.ProgramData = prior; }
+  });
+  test('codebase held reads reject a same-byte file redirected to a protected profile', async () => {
+    fs.mkdirSync(mockUserData); const file = path.join(rootA, 'allowed.ts'), secret = path.join(mockUserData, 'secret.ts');
+    fs.writeFileSync(file, 'const syntheticRedirectMarker = 1;'); fs.writeFileSync(secret, 'const syntheticRedirectMarker = 1;');
+    const original = nativeFs.openSync;
+    jest.spyOn(nativeFs, 'openSync').mockImplementation(((input: any, flags: any, mode: any) => original(input === file ? secret : input, flags, mode)) as any);
+    expect((await searchWorkspaceCode(rootA, 'syntheticRedirectMarker')).matches).toEqual([]);
+    expect(fs.readFileSync(secret, 'utf8')).toBe('const syntheticRedirectMarker = 1;');
   });
 });
