@@ -44,4 +44,26 @@ test('refuses unrelated scripts, unsupported runtimes, invalid breakpoints, and 
   expect((await call('breakpoint', { file, line: -1 })).success).toBe(false);
   expect((await call('evaluate', { expression: '1 + 1' })).error).toMatch(/Start|Pause/);
 });
+test('a program exiting without Stop clears installed points; restart installs and hits a fresh breakpoint', async () => {
+  // Self-termination exercises the real child exit event while its inspector is
+  // connected, without a Stop request or a test-owned kill of the child PID.
+  fs.writeFileSync(file, 'let count = 1;\ncount += 2;\nif (process.argv.includes("--end-without-stop")) process.kill(process.pid);\nconsole.log("RESTART", count);\nsetInterval(() => {}, 1000);\n');
+  const first = await call('start', { file, args: ['--end-without-stop'] }); expect(first.success).toBe(true);
+  const firstPid = first.pid!; expect(Number.isInteger(firstPid)).toBe(true);
+  await waitForPaused();
+  const installed = await call('breakpoint', { file, line: 2 }); expect(installed.success).toBe(true); expect(installed.breakpoints).toEqual([{ path: file, line: 2 }]);
+  expect((await call('resume')).success).toBe(true); await waitForPaused(2);
+  expect((await call('resume')).success).toBe(true);
+  let ended = await call('state');
+  for (let attempt = 0; ended.running && attempt < 100; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
+  expect(ended).toEqual(expect.objectContaining({ success: true, running: false, paused: false, frames: [], breakpoints: [] }));
+  expect(() => process.kill(firstPid, 0)).toThrow();
+  const second = await call('start', { file }); expect(second.success).toBe(true); expect(second.pid).not.toBe(firstPid); expect(second.breakpoints).toEqual([]);
+  await waitForPaused();
+  const fresh = await call('breakpoint', { file, line: 4 }); expect(fresh.success).toBe(true); expect(fresh.breakpoints).toEqual([{ path: file, line: 4 }]);
+  expect((await call('resume')).success).toBe(true); const paused = await waitForPaused(4); expect(paused.frames?.[0]?.path).toBe(file);
+  expect((await call('evaluate', { expression: 'count' })).value).toBe('3');
+  const secondPid = second.pid!; expect((await call('stop')).running).toBe(false); expect(() => process.kill(secondPid, 0)).toThrow();
+  console.info(JSON.stringify({ debuggerRestartProof: { firstPid, exitedWithoutStop: true, emptyPointsAfterExit: true, secondPid, freshBreakpointLine: 4, watchValue: 3, stoppedSecondChildGone: true } }));
+});
 jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));

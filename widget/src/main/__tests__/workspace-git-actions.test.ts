@@ -4,8 +4,11 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { performWorkspaceGitAction, gitWorkspaceConfirmation } from '../workspace-git-actions';
 import { gitWorkspaceStage } from '../workspace-git';
+// These fixtures launch real Git subprocesses; allow bounded Windows startup
+// beyond Jest's five-second default and bound each individual Git command.
+jest.setTimeout(30_000);
 let root: string;
-const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true, timeout: 15_000 });
 const action = (action: Parameters<typeof performWorkspaceGitAction>[0]['action'], extra = {}) => performWorkspaceGitAction({ folder: root, action, ...extra });
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.homedir(), 'hb-git-actions-'));

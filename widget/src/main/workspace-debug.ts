@@ -28,6 +28,10 @@ class DebugSession {
   private scripts = new Map<string, string>();
   private points = new Map<string, { path: string; line: number; id: string }>();
   constructor(root: string) { this.root = root; }
+  private rejectRequests(message: string): void {
+    for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error(message)); }
+    this.requests.clear();
+  }
   async start(file: string, args: string[]) {
     if (this.child) throw new Error('Stop the current debug session first.');
     this.child = spawn(process.execPath, ['--inspect-brk=127.0.0.1:0', '--', file, ...args], { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
@@ -39,18 +43,30 @@ class DebugSession {
       child.stderr!.on('data', chunk => { stderr = (stderr + chunk).slice(-16_384); this.output = (this.output + chunk).slice(-256_000); const match = stderr.match(/Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9-]+)/); if (match) { clearTimeout(timeout); resolve(match[1]); } });
       child.stdout!.on('data', chunk => { this.output = (this.output + chunk).slice(-256_000); });
       child.once('error', error => { clearTimeout(timeout); reject(error); });
-      child.once('exit', () => { clearTimeout(timeout); if (!this.socket) reject(new Error('The program exited before the debugger connected.')); if (this.child === child) { this.child = null; this.paused = false; this.frames = []; this.socket?.close(); this.socket = null; } });
+      child.once('exit', () => {
+        clearTimeout(timeout);
+        if (!this.socket) reject(new Error('The program exited before the debugger connected.'));
+        if (this.child === child) {
+          const endedSocket = this.socket;
+          this.child = null; this.socket = null; this.paused = false; this.frames = [];
+          // Breakpoint/script IDs belong to this inspector connection. A later
+          // Start must not advertise points that were never installed there.
+          this.points.clear(); this.scripts.clear(); this.rejectRequests('The debug program exited.');
+          endedSocket?.close();
+        }
+      });
     });
     this.socket = new WebSocket(url);
     const socket = this.socket;
     socket.addEventListener('message', event => {
+      if (this.socket !== socket) return;
       let message: any; try { message = JSON.parse(String(event.data)); } catch { return; }
       if (message.id) { const pending = this.requests.get(message.id); if (!pending) return; this.requests.delete(message.id); clearTimeout(pending.timer); if (message.error) pending.reject(new Error(message.error.message || 'Debugger request failed.')); else pending.resolve(message.result); }
       else if (message.method === 'Debugger.scriptParsed') this.scripts.set(message.params.scriptId, message.params.url);
       else if (message.method === 'Debugger.paused') { this.paused = true; this.frames = message.params.callFrames || []; }
       else if (message.method === 'Debugger.resumed') { this.paused = false; this.frames = []; }
     });
-    socket.addEventListener('close', () => { for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error('Debugger disconnected.')); } this.requests.clear(); });
+    socket.addEventListener('close', () => { if (this.socket === socket) this.rejectRequests('Debugger disconnected.'); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Debugger connection timed out.')), 5000); socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true }); socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('The debugger connection failed.')); }, { once: true }); });
     await this.command('Runtime.enable'); await this.command('Debugger.enable'); await this.command('Runtime.runIfWaitingForDebugger');
   }
@@ -92,11 +108,11 @@ class DebugSession {
   }
   async stop(): Promise<void> {
     this.socket?.close(); this.socket = null;
-    for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error('Debug session stopped.')); } this.requests.clear();
+    this.rejectRequests('Debug session stopped.');
     const child = this.child;
     if (child) await stopWorkspaceChild(child);
     if (this.child === child) this.child = null;
-    this.paused = false; this.frames = []; this.points.clear();
+    this.paused = false; this.frames = []; this.points.clear(); this.scripts.clear();
   }
 }
 const sessions = new Map<string, DebugSession>();
