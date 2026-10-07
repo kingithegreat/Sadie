@@ -556,7 +556,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
         onChunk('\n\n_[Reply reached the model’s output limit. Ask to continue.]_');
       }
     };
-    if (/application\/json/i.test(response.headers?.['content-type'] || '')) {
+    if (/application\/json/i.test(String(response.headers?.['content-type'] || ''))) {
       const decoder = new StringDecoder('utf8');
       let body = '';
       stream.on('data', (chunk: Buffer) => { body += decoder.write(chunk); });
