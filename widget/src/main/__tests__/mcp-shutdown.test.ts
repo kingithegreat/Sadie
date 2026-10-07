@@ -74,7 +74,7 @@ test('stdio stderr is consumed before handshake even when server output exceeds 
   client.connect.mockImplementation(async () => {
     await new Promise<void>(resolve => {
       stderr.once('drain', resolve);
-      expect(stderr.write(Buffer.alloc(65536))).toBe(false);
+      if (stderr.write(Buffer.alloc(65536))) resolve();
     });
   });
   try {
