@@ -3,10 +3,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 let mockProfile: string, mockHome: string;
+const mockOpenedPaths = new Map<number, string>();
 jest.mock('electron', () => ({ app: { getPath: () => mockProfile } }));
 jest.mock('../user-paths', () => ({ homeDir: () => mockHome }));
 jest.mock('../window-manager', () => ({ getMainWindow: () => null }));
 jest.mock('child_process', () => ({ exec: jest.fn(() => { throw new Error('External search is forbidden in this fixture'); }) }));
+// Native handle-path querying has separate real Windows qualification. These
+// registry/ALS controls inject its contract while using real opened files.
+jest.mock('../opened-file-paths', () => ({ queryOpenedFilePaths: async (fds: number[]) => fds.map(fd => mockOpenedPaths.get(fd)) }));
 import { currentWorkspace, runWorkspaceRequest } from '../workspace-context';
 import { registerTool, getTool, getAllToolDefinitions } from '../tools/registry';
 import { diffTextDef, diffFilesDef, diffTextHandler, diffFilesHandler } from '../tools/diff';
@@ -16,6 +20,10 @@ jest.setTimeout(15_000);
 let directory: string, a: string, b: string;
 const disposers: (() => void)[] = [];
 beforeEach(() => {
+  const open = fs.promises.open.bind(fs.promises); mockOpenedPaths.clear();
+  jest.spyOn(fs.promises, 'open').mockImplementation(async (...args: Parameters<typeof open>) => {
+    const handle = await open(...args); mockOpenedPaths.set(handle.fd, fs.realpathSync(String(args[0]))); return handle;
+  });
   // A unique owned folder under home also exercises normal chat's existing
   // home boundary when the runner's TEMP is independently redirected.
   directory = fs.mkdtempSync(path.join(os.homedir(), 'hbi-read-')); mockHome = directory;
@@ -114,4 +122,16 @@ test('normal chat retains home file comparison and the existing external filenam
   const result = await invoke('find_files', { query: '*.ts', path: a });
   expect(result).toMatchObject({ success: true, result: { engine: 'powershell', count: 1 } });
   expect(execute).toHaveBeenCalledTimes(2);
+});
+
+test('unsupported IDE platforms omit only file diffs while normal chat and text diffs stay available', async () => {
+  const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  Object.defineProperty(process, 'platform', { ...descriptor, value: 'darwin' });
+  try {
+    expect(getAllToolDefinitions().map(def => def.name)).toContain('diff_files');
+    await inProject(a, async () => {
+      const names = getAllToolDefinitions().map(def => def.name);
+      expect(names).not.toContain('diff_files'); expect(names).toEqual(expect.arrayContaining(['diff_text', 'find_files']));
+    });
+  } finally { Object.defineProperty(process, 'platform', descriptor); }
 });

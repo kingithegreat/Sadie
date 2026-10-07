@@ -80,6 +80,11 @@ export function registerOwnedTool(owner: ModuleToolOwner, definition: ToolDefini
 }
 
 export function getToolOwner(name: string): ModuleToolOwner | undefined { return owners.get(name); }
-export function getAllToolDefinitions(): ToolDefinition[] { return [...entries.values()].map(entry => entry.definition); }
+export function getAllToolDefinitions(): ToolDefinition[] {
+  // IDE file comparison needs actual opened-object containment. Do not offer
+  // a path-only substitute on platforms without a supported handle query.
+  const secureDiffAvailable = !currentWorkspace() || process.platform === 'win32' || process.platform === 'linux';
+  return [...entries.values()].map(entry => entry.definition).filter(definition => secureDiffAvailable || definition.name !== 'diff_files');
+}
 export function hasTool(name: string): boolean { return entries.has(name); }
 export function getTool(name: string): RegisteredTool | undefined { return entries.get(name); }
