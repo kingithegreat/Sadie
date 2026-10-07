@@ -29,6 +29,25 @@ function hashTree(root, prefix = '') {
   }
   return result.sort((a, b) => a.path.localeCompare(b.path));
 }
+function validateCompiledInventory(rows, mainSource) {
+  assert.ok(Array.isArray(rows) && rows.length > 0, 'Missing complete compiled inventory.');
+  const seen = new Set();
+  for (const row of rows) {
+    assert.ok(typeof row.path === 'string' && !row.path.includes('\\') && !row.path.startsWith('/')
+      && row.path.split('/').every(part => part && part !== '.' && part !== '..'), 'Invalid compiled inventory path.');
+    assert.ok(!seen.has(row.path), 'Duplicate compiled inventory path.'); seen.add(row.path);
+    assert.ok(Number.isSafeInteger(row.bytes) && row.bytes >= 0, 'Invalid compiled byte count.');
+    assert.match(row.sha256, /^[a-f0-9]{64}$/);
+  }
+  for (const required of ['main/index.js', 'preload/index.js', 'renderer/index.html', 'main/assets/OwnedWindowsJob.dll'])
+    assert.ok(seen.has(required), 'Required compiled product file missing: ' + required);
+  const markers = [...mainSource.matchAll(/HOMEBOT_OWNED_WINDOWS_JOB_ASSET_V1:([a-f0-9]{64})/g)];
+  assert.equal(markers.length, 1, 'Built main must pin exactly one Windows Job assembly identity.');
+  const asset = rows.find(row => row.path === 'main/assets/OwnedWindowsJob.dll');
+  assert.ok(asset.bytes > 0 && asset.bytes <= 1024 * 1024, 'Windows Job assembly size is invalid.');
+  assert.equal(asset.sha256, markers[0][1], 'Built main and Windows Job assembly hashes differ.');
+  return { compiledFiles: rows.length, windowsJobAssembly: { ...asset }, pinnedAssemblySha256: markers[0][1] };
+}
 function validateResults(report, expectedCases = EXPECTED_CASES) {
   assert.ok(report && report.stats && report.config, 'Missing Playwright report.');
   for (const [key, value] of Object.entries({ expected: expectedCases.length, unexpected: 0, skipped: 0, flaky: 0 })) assert.equal(report.stats[key], value, 'Playwright stats.' + key);
@@ -180,7 +199,7 @@ async function run() {
     for (const folder of Object.values(roots)) assert.ok(within(source, fs.realpathSync.native(folder)), 'Native dependency escaped this private checkout.');
     const nativeSnapshot = () => Object.fromEntries(Object.entries(roots).map(([key, root]) => [key, { root, files: hashTree(root) }]));
     before = { compiled: hashTree(path.join(widget, 'out')), native: nativeSnapshot() };
-    assert.equal(before.compiled.length, 79, 'Fresh build must contain the exact 79 compiled files.');
+    proof.compiledProduct = validateCompiledInventory(before.compiled, fs.readFileSync(path.join(widget, 'out/main/index.js'), 'utf8'));
     for (const required of [path.join(roots.rootSqlite, 'build/Release/better_sqlite3.node'), path.join(roots.widgetSqlite, 'build/Release/better_sqlite3.node'), path.join(roots.pty, 'prebuilds/win32-x64/conpty.node'), path.join(roots.pty, 'prebuilds/win32-x64/conpty_console_list.node'), path.join(roots.pty, 'lib/worker/conoutSocketWorker.js')]) assert.ok(fs.statSync(required).isFile(), 'Required private native binding/worker missing: ' + required);
     proof.before = before; fs.writeFileSync(path.join(output, 'before-hashes.json'), JSON.stringify(before, null, 2));
     fs.mkdirSync(runtime.widget, { recursive: true }); copyFiles(path.join(widget, 'out'), path.join(runtime.widget, 'out')); fs.copyFileSync(path.join(widget, 'package.json'), path.join(runtime.widget, 'package.json'));
@@ -201,7 +220,7 @@ async function run() {
     env.HOMEBOT_NATIVE_ZERO_RETRY_TEST_DIR = e2e; env.HOMEBOT_NATIVE_ZERO_RETRY_OUTPUT = output;
     const config = path.join(widget, 'playwright.ide-native-zero-retry.config.cjs'); proof.config = { path: config, sha256: hash(config) };
     const args = [path.join(widget, 'node_modules/@playwright/test/cli.js'), 'test', '--config', config, '--workers=1', '--retries=0', '--repeat-each=1']; proof.args = args;
-    check('Exact PR checkout, pinned dependencies, all79 frozen bytes and complete native hash inventory prepared');
+    check('Exact PR checkout, pinned dependencies, complete frozen build and pinned Job assembly prepared');
     persist();
     const result = cp.spawnSync(process.execPath, args, { cwd: runtime.widget, env, encoding: 'utf8', windowsHide: true, timeout: 330000, maxBuffer: 32 * 1024 * 1024 });
     fs.writeFileSync(path.join(output, 'output.log'), (result.stdout || '') + (result.stderr || ''));
@@ -237,5 +256,5 @@ async function run() {
     persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true }));
   }
 }
-module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
+module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateCompiledInventory, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
 if (require.main === module) void run();

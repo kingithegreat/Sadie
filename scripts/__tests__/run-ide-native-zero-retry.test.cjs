@@ -75,6 +75,21 @@ test('complete tree inventory catches byte changes and refuses a linked subtree'
     const target = path.join(temp, 'owned-target'); fs.mkdirSync(target); fs.symlinkSync(target, path.join(tree, 'link'), process.platform === 'win32' ? 'junction' : 'dir'); assert.throws(() => gate.hashTree(tree), /link|junction/);
   } finally { assert.equal(path.dirname(path.resolve(temp)), path.resolve(os.tmpdir()), 'Only this freshly allocated temp child may be removed.'); fs.rmSync(temp, { recursive: true, force: true }); }
 });
+test('compiled inventory freezes every file and binds the required Job assembly to built main', () => {
+  const digest = 'a'.repeat(64), main = 'const identity="HOMEBOT_OWNED_WINDOWS_JOB_ASSET_V1:' + digest + '";';
+  const rows = ['main/index.js', 'preload/index.js', 'renderer/index.html', 'main/assets/OwnedWindowsJob.dll', 'renderer/assets/arbitrary-new-chunk.js']
+    .map(file => ({ path: file, bytes: 12, sha256: digest }));
+  const verified = gate.validateCompiledInventory(rows, main);
+  assert.equal(verified.compiledFiles, 5); assert.equal(verified.pinnedAssemblySha256, digest);
+  assert.deepEqual(verified.windowsJobAssembly, rows[3]);
+  assert.throws(() => gate.validateCompiledInventory(rows.filter(row => !row.path.endsWith('.dll')), main), /missing/);
+  assert.throws(() => gate.validateCompiledInventory(rows, main.replace(digest, 'b'.repeat(64))), /hashes differ/);
+  assert.throws(() => gate.validateCompiledInventory(rows, ''), /exactly one/);
+  assert.throws(() => gate.validateCompiledInventory(rows, main + main), /exactly one/);
+  assert.throws(() => gate.validateCompiledInventory([...rows, rows[0]], main), /Duplicate/);
+  assert.throws(() => gate.validateCompiledInventory([...rows, { path: '../outside.js', bytes: 1, sha256: digest }], main), /Invalid/);
+  assert.throws(() => gate.validateCompiledInventory(rows.map(row => row.path.endsWith('.dll') ? { ...row, bytes: 0 } : row), main), /size/);
+});
 test('generated bootstrap parses and contains path isolation without settings/consent/provider writes', () => {
   const source = gate.isolationEntry(privateRoot, path.dirname(path.dirname(path.dirname(main))), main);
   new vm.Script(source); assert.ok(source.includes("app.setPath(key,value)")); assert.ok(source.includes('require(main)'));
