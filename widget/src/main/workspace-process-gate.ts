@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'crypto';
+import * as path from 'path';
 import type { WorkspaceApprovedLaunch } from './workspace-windows-job';
 
 export interface WorkspaceProcessGate {
@@ -20,10 +21,19 @@ export function createWorkspaceProcessGate(env: NodeJS.ProcessEnv): WorkspacePro
 }
 
 /** Copy approved data before awaits; private bootstrap flags never reach targets. */
-export function snapshotWorkspaceLaunch(executable: string, args: readonly string[], env: NodeJS.ProcessEnv): WorkspaceApprovedLaunch {
+export function snapshotWorkspaceLaunch(executable: string, args: readonly string[], env: NodeJS.ProcessEnv, options: { cwd?: string; adapter?: 'cross-spawn' } = {}): WorkspaceApprovedLaunch {
   const targetEnv = { ...env };
   delete targetEnv.HOMEBOT_IDE_GATE_PIPE; delete targetEnv.HOMEBOT_IDE_GATE_CAP;
-  return { executable, args: [...args], env: targetEnv };
+  if (options.cwd !== undefined && !path.isAbsolute(options.cwd)) throw new Error('The approved target working directory must be absolute.');
+  const launch: WorkspaceApprovedLaunch = { executable, args: [...args], env: targetEnv, ...(options.cwd ? { cwd: options.cwd } : {}) };
+  if (options.adapter) {
+    if (options.adapter !== 'cross-spawn') throw new Error('The launch adapter is not supported.');
+    const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+    const comspec = process.env.comspec || process.env.ComSpec || process.env.COMSPEC || (systemRoot && path.win32.join(systemRoot, 'System32', 'cmd.exe'));
+    if (!comspec || !path.win32.isAbsolute(comspec)) throw new Error('The main Windows command interpreter is unavailable.');
+    launch.adapter = { kind: 'cross-spawn', modulePath: require.resolve('cross-spawn'), comspec };
+  }
+  return launch;
 }
 
 export const WORKSPACE_PROCESS_GATE_SOURCE = `
@@ -55,7 +65,16 @@ connection.on('data',value=>{
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;
  // Root remains alive for the inherited shell's Ctrl+C/Break handling.
  process.on('SIGINT',()=>{});process.on('SIGBREAK',()=>{});
- try{child=spawn(launch.executable,launch.args,{env,stdio:'inherit',shell:false,windowsHide:true});}catch{return process.exit(126);}
+ try{
+  let spawnTarget=spawn;
+  if(launch.adapter){
+   if(launch.adapter.kind!=='cross-spawn'||typeof launch.adapter.modulePath!=='string'||typeof launch.adapter.comspec!=='string')return process.exit(126);
+   // The absolute application anchor and parent comspec were snapshotted in
+   // main. No package import runs before the verified Job handoff.
+   process.env.comspec=launch.adapter.comspec;spawnTarget=require(launch.adapter.modulePath);
+  }
+  child=spawnTarget(launch.executable,launch.args,{env,...(launch.cwd?{cwd:launch.cwd}:{}),stdio:'inherit',shell:false,windowsHide:true});
+ }catch{return process.exit(126);}
  child.once('error',()=>process.exit(126));
  child.once('spawn',()=>{
   if(!Number.isSafeInteger(child.pid)||child.pid<=0) return process.exit(126);

@@ -404,6 +404,7 @@ async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runne
   const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
   const startedAt = Date.now();
   let output = '', child: ChildProcess | undefined, cancelled = false, timedOut = false, released = false;
+  let executionAuthorized = false;
   let childEnded = false, exitCode: number | null = null, stopPending: Promise<boolean> | undefined;
   let startupError: string | undefined, timer: NodeJS.Timeout | undefined;
   let resolveExit!: () => void;
@@ -437,7 +438,15 @@ async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runne
     // Queue after startup is assigned, including an immediately fired AbortSignal.
     const operation = Promise.resolve().then(async () => {
       await startup.catch(() => undefined);
-      const results = await Promise.allSettled([job.stop(), waitExit()]);
+      const exactLauncherCleanup = (async () => {
+        // This native ChildProcess handle belongs to our fixed bootstrap. Before
+        // GO it cannot contain package code, so cleanup may join it independently
+        // of a failed assignment. Once GO may have been sent, retain the Job's
+        // descendant authority and never substitute a leader-only kill.
+        if (!executionAuthorized && child && !childEnded) child.kill();
+        await waitExit();
+      })();
+      const results = await Promise.allSettled([job.stop(), exactLauncherCleanup]);
       const proven = results.every(value => value.status === 'fulfilled');
       if (proven && activeTasks.get(current.projectDir) === active) activeTasks.delete(current.projectDir);
       return proven;
@@ -492,6 +501,7 @@ async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runne
       if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');
       assertWorkspaceRuntimeOpen();
       if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed before execution. Review the task again.');
+      executionAuthorized = true;
     }); released = true;
   })();
   void startup.catch(async error => {

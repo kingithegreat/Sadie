@@ -1,11 +1,13 @@
 import { EventEmitter } from 'events';
 import * as vm from 'vm';
 import { createWorkspaceProcessGate, snapshotWorkspaceLaunch, WORKSPACE_PROCESS_GATE_SOURCE } from '../workspace-process-gate';
+import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 
-function bootstrap() {
+function bootstrap(adapterPath?: string) {
   const pipe = Object.assign(new EventEmitter(), { write: jest.fn(), end: jest.fn() });
   const child = Object.assign(new EventEmitter(), { pid: 91 });
   const spawn = jest.fn(() => child);
+  const crossSpawn = jest.fn((_exe: string, _argv: string[], _opts: { env: NodeJS.ProcessEnv }) => child), imports: string[] = [];
   const process = Object.assign(new EventEmitter(), {
     env: { HOMEBOT_IDE_GATE_PIPE: 'hbi-00000000-0000-0000-0000-000000000001', HOMEBOT_IDE_GATE_CAP: 'a'.repeat(64), NODE_OPTIONS: '' },
     exit: jest.fn((code: number) => { throw new Error(`exit:${code}`); }),
@@ -13,12 +15,12 @@ function bootstrap() {
   const timers: Array<() => void> = [];
   const connect = jest.fn(() => pipe);
   vm.runInNewContext(WORKSPACE_PROCESS_GATE_SOURCE, {
-    require(name: string) { if (name === 'node:net') return { connect }; if (name === 'node:child_process') return { spawn }; throw new Error(`Unexpected non-core import: ${name}`); },
+    require(name: string) { imports.push(name); if (name === 'node:net') return { connect }; if (name === 'node:child_process') return { spawn }; if (name === adapterPath) return crossSpawn; throw new Error(`Unexpected non-core import: ${name}`); },
     process, setTimeout(callback: () => void) { timers.push(callback); return 1; }, clearTimeout: jest.fn(),
   });
-  const go = (launch = { executable: 'approved-shell', args: ['/D'], env: { NODE_OPTIONS: '--require approved-after-job', HOMEBOT_IDE_GATE_CAP: 'must-be-removed' } }) => pipe.emit('data', Buffer.from(JSON.stringify(launch) + '\n'));
+  const go = (launch: WorkspaceApprovedLaunch = { executable: 'approved-shell', args: ['/D'], env: { NODE_OPTIONS: '--require approved-after-job', HOMEBOT_IDE_GATE_CAP: 'must-be-removed' } }) => pipe.emit('data', Buffer.from(JSON.stringify(launch) + '\n'));
   const accept = () => pipe.emit('data', Buffer.from('accepted\n'));
-  return { pipe, child, process, spawn, connect, timers, go, accept };
+  return { pipe, child, process, spawn, crossSpawn, imports, connect, timers, go, accept };
 }
 
 describe('fixed process bootstrap before Job assignment', () => {
@@ -72,5 +74,20 @@ describe('fixed process bootstrap before Job assignment', () => {
     const args = ['run-script', 'test'], env = { NODE_OPTIONS: 'approved', HOMEBOT_IDE_GATE_CAP: 'private' };
     const launch = snapshotWorkspaceLaunch('approved-node', args, env); args[1] = 'other'; env.NODE_OPTIONS = 'changed';
     expect(launch).toEqual({ executable: 'approved-node', args: ['run-script', 'test'], env: { NODE_OPTIONS: 'approved' } });
+  });
+  it('resolves the application adapter in main, imports it only after GO, and preserves service cwd/SDK environment', () => {
+    const old = process.env.comspec; process.env.comspec = 'C:\\Windows\\System32\\cmd.exe';
+    try {
+      const env = { SDK_CANARY: 'copied', NODE_OPTIONS: 'target-only', ELECTRON_RUN_AS_NODE: '0' };
+      const launch = snapshotWorkspaceLaunch('approved-service.cmd', ['argument'], env, { cwd: process.cwd(), adapter: 'cross-spawn' });
+      expect(launch.kind).toBeUndefined(); expect(launch.adapter?.modulePath).toBe(require.resolve('cross-spawn'));
+      const f = bootstrap(launch.adapter!.modulePath);
+      expect(f.imports).toEqual(['node:net', 'node:child_process']); env.SDK_CANARY = 'changed';
+      f.go(launch);
+      expect(f.imports.at(-1)).toBe(launch.adapter!.modulePath); expect(f.spawn).not.toHaveBeenCalled();
+      expect(f.crossSpawn).toHaveBeenCalledWith('approved-service.cmd', ['argument'], expect.objectContaining({ cwd: process.cwd(), env: { SDK_CANARY: 'copied', NODE_OPTIONS: 'target-only', ELECTRON_RUN_AS_NODE: '0' }, stdio: 'inherit', shell: false }));
+      expect((f.process.env as Record<string, string>).comspec).toBe('C:\\Windows\\System32\\cmd.exe');
+      expect(f.crossSpawn.mock.calls[0][2].env).not.toHaveProperty('comspec');
+    } finally { if (old === undefined) delete process.env.comspec; else process.env.comspec = old; }
   });
 });

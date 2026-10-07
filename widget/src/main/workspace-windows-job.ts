@@ -7,7 +7,11 @@ export interface WorkspaceWindowsJob {
   queryEmpty(): Promise<boolean>;
   stop(): Promise<void>;
 }
-export interface WorkspaceApprovedLaunch { executable: string; args: string[]; env: NodeJS.ProcessEnv; kind?: 'task' }
+export interface WorkspaceApprovedLaunch {
+  executable: string; args: string[]; env: NodeJS.ProcessEnv; kind?: 'task'; cwd?: string;
+  /** Constructed only by the trusted main snapshot helper, never IPC arguments. */
+  adapter?: { kind: 'cross-spawn'; modulePath: string; comspec: string };
+}
 export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   readonly listening: Promise<void>;
   attach(pid: number, original: WorkspacePtyIdentity): Promise<void>;

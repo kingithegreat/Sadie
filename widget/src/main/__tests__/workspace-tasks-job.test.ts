@@ -7,7 +7,7 @@ import * as path from 'path';
 import { workspacePtyLifecycle } from '../workspace-pty-identity';
 import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_JOB_TASK_HOME! }));
-jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_JOB_TASK_HOME! } }));
+jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_JOB_TASK_PROFILE! } }));
 import { executeWorkspacePackageTask, prepareWorkspacePackageTask, stopWorkspaceTask, closeAllWorkspaceTasks } from '../workspace-tasks';
 
 let home: string, project: string;
@@ -15,6 +15,7 @@ const owned: ReturnType<typeof fixture>[] = [];
 const original = { creation: '639269357577651780', parent: process.pid };
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'hbi-job-task-')); process.env.HOMEBOT_JOB_TASK_HOME = home;
+  process.env.HOMEBOT_JOB_TASK_PROFILE = path.join(home, 'profile');
   project = path.join(home, 'project'); fs.mkdirSync(project); fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ scripts: { check: 'echo approved' } }));
   jest.spyOn(workspacePtyLifecycle, 'capture').mockResolvedValue(original);
 });
@@ -27,6 +28,7 @@ function fixture() {
   const child = Object.assign(new EventEmitter(), { pid: 4501, exitCode: null, signalCode: null, stdout: new PassThrough(), stderr: new PassThrough() }) as unknown as ChildProcess;
   let ended = false;
   const finish = () => { if (!ended) { ended = true; child.emit('close', 0); } };
+  child.kill = jest.fn(() => { finish(); return true; });
   const job = { listening: Promise.resolve(), ready: Promise.resolve(), attach: jest.fn(async () => {}),
     authorize: jest.fn(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => { validate?.(); return 4502; }),
     queryEmpty: jest.fn(async () => true), stop: jest.fn(async () => { finish(); }) };
@@ -89,4 +91,13 @@ test('quit joins pending assignment, fences its later GO, and waits for Job clea
   await settle(); expect(complete).toBe(false); assigned();
   await closing; await expect(run).resolves.toMatchObject({ success: false, cancelled: true, cleanupPending: false });
   expect(app.job.authorize).not.toHaveBeenCalled(); expect(app.job.stop).toHaveBeenCalledTimes(1);
+  expect(app.child.kill).toHaveBeenCalledTimes(1);
+});
+
+test('failed assignment joins its exact unreleased launcher even while Job cleanup remains uncertain', async () => {
+  const app = fixture(); app.job.attach.mockRejectedValueOnce(new Error('assignment failed'));
+  app.job.stop.mockRejectedValueOnce(new Error('Job unverified'));
+  await expect(app.run()).resolves.toMatchObject({ success: false, cleanupPending: true, error: 'assignment failed' });
+  expect(app.child.kill).toHaveBeenCalledTimes(1); expect(app.job.authorize).not.toHaveBeenCalled();
+  expect(await stopWorkspaceTask('owner:task')).toBe(true);
 });
