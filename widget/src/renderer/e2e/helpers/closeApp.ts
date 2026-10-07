@@ -7,7 +7,7 @@ import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ow
 import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
 export const CLOSE_BUDGET_MS = 20_000;
-interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; irreversibleExit: Promise<void>; exitEventObserved?: boolean; inspector?: OwnedElectronInspector }
+interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; committedQuit: Promise<void>; quitEventObserved?: boolean; inspector?: OwnedElectronInspector }
 const states = new WeakMap<ElectronApplication, Promise<State>>();
 const pendingApps = new Set<ElectronApplication>();
 const closings = new WeakMap<ElectronApplication, Promise<number>>();
@@ -30,23 +30,23 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
   const pending = (async () => {
     const child = app.process(); const state = { stderr: '', stdout: '', entry, exitNonce: randomUUID() } as State;
     let finished!: () => void;
-    state.irreversibleExit = new Promise(resolve => { finished = resolve; });
+    state.committedQuit = new Promise(resolve => { finished = resolve; });
     const observe = () => {
       const marker = exitDiagnostics(state.stdout) as any;
-      // Node's exit event cannot resume the event loop. This exact main's
-      // PID+nonce marker permits releasing our inspector even when stderr is
-      // quiet; actual held OS exit and captured-child checks remain required.
-      // https://nodejs.org/docs/latest-v24.x/api/process.html#event-exit
-      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) { state.exitEventObserved = true; finished(); }
+      // This exact main's committed Electron quit permits releasing only our
+      // inspector. Electron also emits process 'exit' from app 'quit', before
+      // native teardown: neither event proves held OS exit or child cleanup.
+      // https://github.com/electron/electron/blob/v42.8.1/lib/browser/init.ts#L35-L40
+      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) { state.quitEventObserved = true; finished(); }
     };
     const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
     app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
     child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); observe(); });
     child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); observe(); });
-    const info = await app.evaluate(({ dialog }, exitNonce) => {
+    const info = await app.evaluate(({ app, dialog }, exitNonce) => {
       const cp = (process as any).getBuiltinModule('child_process');
       const log = (global as any).__homebotE2eShutdown = { helpers: [] as unknown[], refusals: [] as unknown[] };
-      process.once('exit', () => {
+      app.once('quit', () => {
         const final = {
           pid: process.pid, nonce: exitNonce,
           helpers: log.helpers.slice(-12).map((value: any) => ({ ...value, stdout: value.stdout?.slice(0, 2048), stderr: value.stderr?.slice(0, 512), error: value.error ? { ...value.error, message: value.error.message?.slice(0, 512) } : null })),
@@ -127,11 +127,11 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       if (!state.nativeExit) {
         const owned = state;
         // A marker can arrive before close starts or during either evaluation.
-        // Never wait for an event loop that has already irreversibly exited.
+        // Never re-enter quit through a main that has committed to quitting.
         const whileRunnable = async <T>(evaluate: () => Promise<T>): Promise<{ value: T } | { finished: true }> => {
-          if (owned.exitEventObserved || owned.nativeExit) return { finished: true };
+          if (owned.quitEventObserved || owned.nativeExit) return { finished: true };
           const finished = Promise.race([
-            owned.irreversibleExit.then(() => ({ finished: true as const })),
+            owned.committedQuit.then(() => ({ finished: true as const })),
             owned.monitor.exit.then(() => ({ finished: true as const })),
           ]);
           return bounded(Promise.race([
@@ -155,13 +155,13 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         }
       }
     }
-    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.irreversibleExit.then(() => ({ mainExitEvent: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
-    if ('mainExitEvent' in exited) {
-      if (!state.inspector) throw new Error('Main reached its exit event, but its owned transport could not be verified.');
+    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.committedQuit.then(() => ({ mainQuitEvent: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    if ('mainQuitEvent' in exited) {
+      if (!state.inspector) throw new Error('Main committed to quit, but its owned transport could not be verified.');
       receipt.inspectorQualification = { mainPid: state.monitor.info.pid, matchingExitNonce: true, stderrWaitObserved: state.stderr.includes('Waiting for the debugger to disconnect...') };
       receipt.inspectorBeforeClose = state.inspector.status();
       // Playwright 1.57's public close first evaluates app.quit() again. Once
-      // this exact main has emitted its irreversible exit marker, no second
+      // this exact main has emitted its committed quit marker, no second
       // evaluation belongs in its shutdown. Release only our captured socket;
       // public driver cleanup follows actual held OS exit and tree verification.
       receipt.ownedInspectorSocketTerminated = state.inspector.terminate();
@@ -192,7 +192,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     if (state) {
       receipt.stderr = state.stderr; receipt.stdout = state.stdout;
       receipt.productionAtExit = exitDiagnostics(state.stdout);
-      if (!state.exitEventObserved && !state.nativeExit) {
+      if (!state.quitEventObserved && !state.nativeExit) {
         try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
       }
       persist();
