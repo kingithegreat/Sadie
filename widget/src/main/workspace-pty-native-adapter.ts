@@ -13,6 +13,7 @@ export interface OwnedPtyProcess {
 type NativePty = OwnedPtyProcess & EventEmitter & {
   _pty: number;
   _agent: {
+    _ptyNative: { kill(id: number, useConptyDll: boolean): void };
     readonly innerPid: number;
     onError(callback: (error: Error) => void): { dispose(): void };
     _pendingPtyInfo?: unknown;
@@ -33,9 +34,42 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
   const connection = agent?._conoutSocketWorker;
   const worker = connection?._worker;
   const baton = native._pty;
-  const hasWorker = !!worker && typeof worker.once === 'function' && typeof worker.threadId === 'number';
-  const compatible = hasWorker && typeof connection.dispose === 'function' && typeof connection.onReady === 'function' && typeof agent.onError === 'function' && typeof agent._clearConnectionTimeout === 'function' && Number.isInteger(baton);
   const incompatible = new Error('The installed terminal package does not support verified startup and owned worker cleanup.');
+  const nativeKill = binding.kill;
+  let consoleClosed = false;
+  let observesVendorClose = false;
+  const closeConsole = () => {
+    if (!observesVendorClose || !Number.isInteger(baton)) throw incompatible;
+    if (consoleClosed) return;
+    nativeKill.call(binding, baton, false);
+    // Only a successfully observed call owns this receipt. Vendor errors are
+    // swallowed before onError, so that event alone cannot prove native close.
+    consoleClosed = true;
+  };
+  // beta.15 closes the console itself before reporting failed connection or
+  // worker startup. Interpose only THIS agent's binding reference, leaving the
+  // shared addon untouched; later owned cleanup must not close its HPCON twice.
+  const vendorBinding = agent && Object.getOwnPropertyDescriptor(agent, '_ptyNative');
+  if (vendorBinding?.value === binding && vendorBinding.writable === true && typeof nativeKill === 'function') {
+    try {
+      const facade = Object.create(null) as typeof binding;
+      for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(binding))) {
+        if (name === 'kill') continue;
+        const original = descriptor.value;
+        Object.defineProperty(facade, name, typeof original === 'function'
+          ? { ...descriptor, value: (...args: unknown[]) => Reflect.apply(original, binding, args) }
+          : descriptor);
+      }
+      Object.defineProperty(facade, 'kill', { value: (id: number, useConptyDll: boolean) => {
+        if (id !== baton || useConptyDll !== false) throw incompatible;
+        closeConsole();
+      } });
+      Object.defineProperty(agent, '_ptyNative', { ...vendorBinding, value: facade });
+      observesVendorClose = agent._ptyNative === facade;
+    } catch { /* Unknown immutable agent binding cannot grant a close receipt. */ }
+  }
+  const hasWorker = !!worker && typeof worker.once === 'function' && typeof worker.threadId === 'number';
+  const compatible = observesVendorClose && hasWorker && typeof connection.dispose === 'function' && typeof connection.onReady === 'function' && typeof agent.onError === 'function' && typeof agent._clearConnectionTimeout === 'function' && Number.isInteger(baton);
   // An incompatible spawn still has ownership: return a failed ready adapter so
   // the manager retains and joins its available captured worker on cleanup.
   let workerExited = hasWorker && worker.threadId === -1;
@@ -65,7 +99,6 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
   const clearReady = () => { readyListener?.dispose(); errorListener?.dispose(); };
   void ready.then(clearReady, clearReady);
   let killing: Promise<void> | undefined;
-  let consoleClosed = false;
   let disposal: Promise<void> | undefined;
   let disposeFailed = false;
   return {
@@ -84,9 +117,7 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
       let termination: Promise<number> | undefined;
       try {
         if (!consoleClosed) {
-          if (!Number.isInteger(baton)) throw incompatible;
-          binding.kill(baton, false);
-          consoleClosed = true;
+          closeConsole();
         }
       } catch (error) { failure = error; }
       try {
