@@ -343,6 +343,7 @@ function taskTreeStopper(child: ChildProcess, platform: NodeJS.Platform): () => 
       const result = await stopWorkspacePtyTree(child.pid, original, receipt);
       if (result.receipt) receipt = result.receipt;
       attempted ||= result.attempted;
+      if (!result.stopped && result.diagnostics?.length) console.error('[HomeBot-TaskStop]', JSON.stringify(result.diagnostics));
       // Natural exit is sufficient only when no tree mutation was attempted.
       // A partial Stop must verify every retained descendant, even root-gone.
       return result.stopped || (!attempted && !receipt && (child.exitCode !== null || child.signalCode !== null));
