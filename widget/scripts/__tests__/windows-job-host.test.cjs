@@ -2,6 +2,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
 const sourceFile=path.resolve(__dirname,'../../native/OwnedWindowsJobHost.cs');
 const control=`
+using System;
+using System.IO;
 public sealed class HostFake:IHomeBotJobRuntime {
  public System.Collections.Generic.List<string> Calls=new System.Collections.Generic.List<string>();
  public System.Web.Script.Serialization.JavaScriptSerializer Codec=new System.Web.Script.Serialization.JavaScriptSerializer();
