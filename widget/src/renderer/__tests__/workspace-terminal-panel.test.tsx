@@ -116,12 +116,30 @@ test('passive resize diagnostics preserve exact requests, minimum-size suppressi
   await waitFor(() => expect(read()).toMatchObject({ emulatorCols: 56, requestCols: 56, requestOutcome: 'success' }));
   await act(async () => first({ success: false, error: 'private old error' }));
   expect(read().requestOutcome).toBe('success');
-  act(() => emulators[0].resize({ cols: 56, rows: 4 }));
-  expect(resize).toHaveBeenCalledTimes(2); expect(read().requestOutcome).toBe('below-minimum');
+  act(() => emulators[0].resize({ cols: 56, rows: 0 }));
+  expect(resize).toHaveBeenCalledTimes(2); expect(read().requestOutcome).toBe('invalid-size');
   act(() => emulators[0].resize({ cols: 55, rows: 15 }));
   await waitFor(() => expect(read().requestOutcome).toBe('transport-error'));
   expect(JSON.stringify(read())).not.toContain('private');
   expect(resize).toHaveBeenNthCalledWith(2, { sessionId: 's1', cols: 56, rows: 15 });
+});
+
+test('a fitted short pane forwards 89 to 56 columns at four rows while invalid sizes never reach IPC', async () => {
+  const resize = jest.fn(async () => ({ success: true }));
+  (window as any).electron = {
+    workspaceTerminalProfiles: async () => ({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] }),
+    workspaceTerminalCreate: async () => ({ success: true, session: { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 0, output: '' } }),
+    workspaceTerminalResize: resize, workspaceTerminalClose: async () => ({ success: true }),
+  };
+  render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await screen.findByRole('tab', { name: '1: cmd' });
+  act(() => emulators[0].resize({ cols: 89, rows: 4 }));
+  act(() => emulators[0].resize({ cols: 56, rows: 4 }));
+  act(() => emulators[0].resize({ cols: 2, rows: 1 }));
+  expect(resize.mock.calls).toEqual([[{ sessionId: 's1', cols: 89, rows: 4 }], [{ sessionId: 's1', cols: 56, rows: 4 }], [{ sessionId: 's1', cols: 2, rows: 1 }]]);
+  for (const [cols, rows] of [[0, 4], [56, 0], [NaN, 4], [56, Infinity], [2.5, 4], [56, 1.5], [501, 4], [56, 201]]) act(() => emulators[0].resize({ cols, rows }));
+  expect(resize).toHaveBeenCalledTimes(3);
+  expect(JSON.parse(screen.getByRole('region', { name: 'Interactive cmd terminal' }).getAttribute('data-terminal-fit')!).requestOutcome).toBe('invalid-size');
 });
 
 test.each(['live', 'before-create'])('a %s exit cleanup refusal is displayed immediately and retains exact Close retry', async timing => {

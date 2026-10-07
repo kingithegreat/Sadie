@@ -47,9 +47,10 @@ function TerminalPane({ session, visible, focusRequest, onError }: { session: Cl
     const input = terminal.onData(data => { void Promise.resolve(api?.workspaceTerminalWrite?.({ sessionId: session.info.sessionId, data })).then((r: any) => { if (alive && !r?.success) onError(r?.error || 'Terminal input failed.'); }).catch(e => report(e, 'Terminal input failed.')); });
     const size = terminal.onResize(({ cols, rows }) => {
       const sequence = ++resizeSequence;
+      const valid = Number.isInteger(cols) && Number.isInteger(rows) && cols >= 2 && cols <= 500 && rows >= 1 && rows <= 200;
       observe({ emulatorCols: terminal.cols, emulatorRows: terminal.rows, requestCols: cols, requestRows: rows, resizeSequence: sequence,
-        requestOutcome: cols >= 20 && rows >= 5 ? 'pending' : 'below-minimum' });
-      if (cols >= 20 && rows >= 5) void Promise.resolve(api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows })).then((r: any) => {
+        requestOutcome: valid ? 'pending' : 'invalid-size' });
+      if (valid) void Promise.resolve(api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows })).then((r: any) => {
         if (alive && sequence === resizeSequence) observe({ requestOutcome: r?.success ? 'success' : 'rejected' });
         if (alive && !r?.success) onError(r?.error || 'Terminal resize failed.');
       }).catch(e => { if (alive && sequence === resizeSequence) observe({ requestOutcome: 'transport-error' }); report(e, 'Terminal resize failed.'); });

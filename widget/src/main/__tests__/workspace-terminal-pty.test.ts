@@ -55,6 +55,21 @@ test('stdin, resize and interrupt route only to the owned real PTY interface', a
   await app.manager.close(7, app.session.sessionId);
 });
 
+test('small fitted consoles forward changed columns at four rows and refuse invalid dimensions before native resize', async () => {
+  const app = await setup();
+  app.manager.resize(7, app.session.sessionId, 89, 4);
+  app.manager.resize(7, app.session.sessionId, 56, 4);
+  app.manager.resize(7, app.session.sessionId, 2, 1);
+  expect(app.pty.resize.mock.calls).toEqual([[89, 4], [56, 4], [2, 1]]);
+  for (const [cols, rows] of [[0, 4], [56, 0], [1, 4], [NaN, 4], [56, Infinity], [2.5, 4], [56, 1.5], [501, 4], [56, 201]]) {
+    expect(() => app.manager.resize(7, app.session.sessionId, cols, rows)).toThrow('Terminal size');
+  }
+  expect(app.pty.resize).toHaveBeenCalledTimes(3);
+  expect(() => app.manager.resize(8, app.session.sessionId, 56, 4)).toThrow('different window');
+  expect(app.pty.resize).toHaveBeenCalledTimes(3);
+  await app.manager.close(7, app.session.sessionId);
+});
+
 test('a delayed exit callback cannot claim Close succeeded or trigger a raw PID kill', async () => {
   jest.useFakeTimers();
   const app = await setup(false, false);

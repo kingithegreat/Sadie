@@ -43,7 +43,7 @@ export function workspaceTerminalProfiles(): WorkspaceTerminalProfile[] {
 }
 
 function dimensions(cols = 100, rows = 30): { cols: number; rows: number } {
-  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || cols > 500 || rows < 5 || rows > 200) throw new Error('Terminal size must be 20–500 columns and 5–200 rows.');
+  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 2 || cols > 500 || rows < 1 || rows > 200) throw new Error('Terminal size must be 2–500 columns and 1–200 rows.');
   return { cols, rows };
 }
 

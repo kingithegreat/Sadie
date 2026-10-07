@@ -144,7 +144,7 @@ export async function recordTerminalFailure(page: Page, projectDir: string, test
             const n = value[key]; if (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 1_000_000) result[key] = n;
           }
           if (['hidden', 'returned', 'threw'].includes(String(value.fitOutcome))) result.fitOutcome = String(value.fitOutcome);
-          if (['pending', 'below-minimum', 'success', 'rejected', 'transport-error'].includes(String(value.requestOutcome))) result.requestOutcome = String(value.requestOutcome);
+          if (['pending', 'invalid-size', 'success', 'rejected', 'transport-error'].includes(String(value.requestOutcome))) result.requestOutcome = String(value.requestOutcome);
         } catch { /* Unqualified DOM is never authority or raw diagnostic output. */ }
         return result;
       }),
