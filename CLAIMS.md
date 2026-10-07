@@ -22,8 +22,11 @@ Failed/unknown setup or helper loss retains ownership/refusal. No completion cla
 Editor additionally owns an independent failure-only Windows wait-chain diagnostic
 module and its controlled tests; root owns its qualified shutdown-helper callsite.
 No memory dump, debugger attach, process suspension or guessed-PID termination.
-Editor then plans retained MCP stdio transport containment using public SDK APIs
+Editor owns retained MCP stdio transport containment using public SDK APIs
 and the shared fixed pre-execution gate; root owns existing MCP client/quit wiring.
+Editor also owns Tests runner Job reservation, admission, retained cleanup and
+focused/native fixtures. Root owns Tests shared result/UI and final sender-frame
+IPC fences, including visible retryable cleanup after natural runner exit.
 Files remains sole owner of shared Job/gate modules while completing task/PTY
 integration, including task-only short-command completion evidence. Root's MCP
 stderr drain fixes a separately reproduced backpressure defect; native hang cause
