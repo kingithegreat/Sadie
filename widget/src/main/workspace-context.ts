@@ -118,7 +118,7 @@ export function workspaceStreamHandler(handler: (event: any, request: any) => Pr
     }
   };
 }
-const READ_TOOLS = new Set(['list_directory', 'read_file', 'get_file_info', 'search_files', 'grep_code', 'project_tree', 'analyze_file', 'search_code', 'codebase_search', 'git_status', 'git_diff', 'git_log', 'git_branches', 'web_search', 'fetch_url', 'rag_query', 'memory_search', 'memory_recall', 'recall_memory']);
+const READ_TOOLS = new Set(['list_directory', 'read_file', 'get_file_info', 'search_files', 'diff_text', 'diff_files', 'find_files', 'grep_code', 'project_tree', 'analyze_file', 'search_code', 'codebase_search', 'git_status', 'git_diff', 'git_log', 'git_branches', 'web_search', 'fetch_url', 'rag_query', 'memory_search', 'memory_recall', 'recall_memory']);
 /** The registry calls this for single, batch, and bridge tool dispatch. */
 export function workspaceToolError(name: string): string | undefined {
   const context = currentWorkspace();

@@ -11,6 +11,8 @@ import * as os from 'os';
 import * as path from 'path';
 import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { currentWorkspace, workspaceToolError } from '../workspace-context';
+import { checkedTrustedWorkspacePath } from '../workspace-trust';
 
 const HOME_DIR = os.homedir();
 
@@ -47,18 +49,19 @@ export const diffFilesDef: ToolDefinition = {
   name: 'diff_files',
   description:
     'Compare two files and return a unified diff. ' +
-    'Both paths must be inside the user home directory.',
+    'In the IDE, both paths must be inside the active project; relative paths resolve there. ' +
+    'In HomeBot chat, both paths must be inside the user home directory.',
   category: 'utility',
   parameters: {
     type: 'object',
     properties: {
       file_a: {
         type: 'string',
-        description: 'Absolute path to the first (original) file'
+        description: 'First (original) file path; relative to the active project in the IDE, otherwise absolute'
       },
       file_b: {
         type: 'string',
-        description: 'Absolute path to the second (modified) file'
+        description: 'Second (modified) file path; relative to the active project in the IDE, otherwise absolute'
       },
       context_lines: {
         type: 'number',
@@ -188,6 +191,8 @@ function computeDiff(
 
 export const diffTextHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const denied = workspaceToolError('diff_text');
+    if (denied) return { success: false, error: denied };
     const original = String(args.original ?? '');
     const modified = String(args.modified ?? '');
     const contextLines = Math.min(Math.max(0, Number(args.context_lines) || 3), 10);
@@ -201,10 +206,15 @@ export const diffTextHandler: ToolHandler = async (args): Promise<ToolResult> =>
 
 export const diffFilesHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
-    const fileA = path.resolve(String(args.file_a || ''));
-    const fileB = path.resolve(String(args.file_b || ''));
+    const denied = workspaceToolError('diff_files');
+    if (denied) return { success: false, error: denied };
+    const workspace = currentWorkspace();
+    // Validate both sides before either read. A mixed in/out-of-project diff
+    // cannot read its first side and then discover the second is forbidden.
+    const fileA = workspace ? checkedTrustedWorkspacePath(workspace.root, args.file_a) : path.resolve(String(args.file_a || ''));
+    const fileB = workspace ? checkedTrustedWorkspacePath(workspace.root, args.file_b) : path.resolve(String(args.file_b || ''));
 
-    for (const p of [fileA, fileB]) {
+    for (const p of workspace ? [] : [fileA, fileB]) {
       if (!isWithinHomeDir(p, HOME_DIR)) {
         return { success: false, error: `File path must be within home directory: ${p}` };
       }
