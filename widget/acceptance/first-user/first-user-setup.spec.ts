@@ -128,18 +128,51 @@ async function finishLocalAndChat(fixture: NativeFixture, testInfo: TestInfo) {
 test('production first-run reuses installed3B and first HTTP greeting uses that model after runtime acknowledgement', async ({}, testInfo) => {
   test.skip(process.env.HOMEBOT_FIRST_USER_NATIVE !== '1', 'Opt-in private first-user proof');
   test.setTimeout(120_000);
-  const fixture = await openFirstUserFixture({ testInfo, firstRun: true, inventory: 'installed' });
+  const fixture = await openFirstUserFixture({ testInfo, firstRun: true, inventory: 'installed', holdSecondSettingsResponse: true });
   const errors: unknown[] = [];
   try {
     const wizard = await openWizard(fixture, testInfo);
+    await expect.poll(async () => {
+      const race = await fixture.settingsReadRace();
+      return { registrations: race?.registrations, heldRead: race?.heldRead,
+        firstDelivered: race?.reads[0]?.deliveredModel, secondCaptured: race?.reads[1]?.capturedModel,
+        secondDelivered: race?.reads[1]?.deliveredModel, released: race?.released };
+    }).toEqual({ registrations: 1, heldRead: 2, firstDelivered: 'qwen2.5:7b',
+      secondCaptured: 'qwen2.5:7b', secondDelivered: null, released: false });
     await wizard.getByRole('button', { name: /On this PC/ }).click();
+    await expect(fixture.page.getByText('Ollama is ready!', { exact: true })).toBeVisible();
+    const model = fixture.page.getByRole('combobox', { name: 'Select chat model' });
+    await expect(model).toHaveValue('qwen2.5:7b');
+    await model.selectOption('qwen2.5:3b');
+    await expect(model).toHaveValue('qwen2.5:3b');
+    await fixture.releaseSettingsRead();
+    await expect.poll(async () => (await fixture.settingsReadRace())?.reads[1]?.deliveredModel).toBe('qwen2.5:7b');
+    // Exercise another real bridge read, then give the renderer frames to
+    // process prop effects. This is not a formal IPC ordering guarantee.
+    expect((await fixture.page.evaluate(() => window.electron.getSettings())).chatModel).toBe('qwen2.5:7b');
+    await fixture.page.evaluate(() => new Promise<void>(resolve => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    }));
+    await expect(model).toHaveValue('qwen2.5:3b');
     await finishLocalAndChat(fixture, testInfo);
+    const race = await fixture.settingsReadRace();
+    expect(race).toMatchObject({ registrations: 1, heldRead: 2, released: true, releaseCount: 1 });
+    expect(race.reads[0].senderId).toBe(race.reads[1].senderId);
+    expect(race.reads[1]).toMatchObject({ held: true, capturedModel: 'qwen2.5:7b', deliveredModel: 'qwen2.5:7b' });
     expect(fixture.fixture.requests.filter(request => request.path === '/api/pull')).toEqual([]);
     await assertGuard(fixture);
     await fixture.page.screenshot({ path: testInfo.outputPath('setup-first-message.png') });
   } catch (error) {
     errors.push(error);
   } finally {
+    // An assertion before normal release must not leave a fixture-owned IPC
+    // response pending during the unchanged native shutdown procedure.
+    try {
+      const race = await fixture.settingsReadRace();
+      if (race?.heldRead === 2 && !race.released) await fixture.releaseSettingsRead();
+    } catch (error) {
+      errors.push(error);
+    }
     await finishEvidenceAndClose(fixture, testInfo, errors);
   }
 });

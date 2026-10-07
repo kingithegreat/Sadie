@@ -116,6 +116,313 @@ function held<T>() {
   return { promise, resolve, reject };
 }
 
+test.each([
+  { inventory: ['qwen2.5:3b'], selected: 'qwen2.5:3b', explicit: false },
+  { inventory: ['qwen2.5:3b', 'llama3.2:3b'], selected: 'llama3.2:3b', explicit: true },
+])('a late mount settings read preserves the installed setup choice $selected (explicit: $explicit)', async ({ inventory, selected, explicit }) => {
+  const electron = (window as any).electron;
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: inventory.map(name => ({ name })) });
+  const staleSettings = clone(initialSettings);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+
+  await act(async () => { render(<App />); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ }));
+  await screen.findByText('Ollama is ready!');
+  const choice = screen.getByRole('combobox', { name: 'Select chat model' });
+  if (explicit) fireEvent.change(choice, { target: { value: selected } });
+  expect(choice).toHaveValue(selected);
+
+  // The earlier App settings request completes after inventory verification
+  // and the user's choice. It must not replace that choice with the absent 7B.
+  await act(async () => { lateRead.resolve(staleSettings); });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ firstRun: false, chatModel: selected, codeModel: selected, uncensoredMode: false, useCustomLLM: false });
+  expect(electron.pullModelStream).not.toHaveBeenCalled();
+  expect(electron.downloadOllama).not.toHaveBeenCalled();
+  expect(runtimeUncensored).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+});
+
+test('a mount settings read arriving after Finish preserves the selected context window for the first real send', async () => {
+  const electron = (window as any).electron;
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'llama3.2:3b' }] });
+  const staleSettings = clone(initialSettings);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+
+  await act(async () => { render(<App />); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ }));
+  await screen.findByText('Ollama is ready!');
+  expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('llama3.2:3b');
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ firstRun: false, chatModel: 'llama3.2:3b', codeModel: 'llama3.2:3b' });
+  expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+
+  // Its settings snapshot predates the completed choice. The real context
+  // counter must continue using the selected 128K model after it arrives.
+  await act(async () => { lateRead.resolve(staleSettings); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message HomeBot' }), { target: { value: 'Hello' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = sendStreamMessage.mock.calls[0][0];
+  try {
+    // The real request leaves model choice to persisted main settings when
+    // routing is off; it does not carry a fabricated chatModel packet field.
+    expect(request).toMatchObject({ message: 'Hello', conversation_id: 'setup-conversation' });
+    expect(request.modelOverride).toBeUndefined();
+    expect(persisted.chatModel).toBe('llama3.2:3b');
+    expect(runtimeUncensored).toBe(false);
+    expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
+  } finally {
+    act(() => { endStream?.({ streamId: request.streamId, cancelled: false }); });
+  }
+});
+
+test('an unchanged mount read still applies the model returned by the actual settings bridge', async () => {
+  persisted.firstRun = false;
+  const lateRead = held<typeof persisted>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  expect(screen.queryByRole('dialog', { name: 'Welcome to HomeBot' })).toBeNull();
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  // No choice or save has superseded this read. Its model must reach the real
+  // counter; suppressing every mount read would leave the previous 32K limit.
+  persisted.chatModel = 'llama3.2:3b';
+  await act(async () => { lateRead.resolve(clone(persisted)); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a registered model fallback supersedes an earlier mount settings read', async () => {
+  persisted.firstRun = false;
+  const staleSettings = clone(persisted);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+  const fallbackSubscription = jest.fn((_callback: (data: { from: string; to: string }) => void) => jest.fn());
+  (window as any).electron.onModelFallback = fallbackSubscription;
+  await act(async () => { render(<App />); });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  expect(fallbackSubscription).toHaveBeenCalledTimes(1);
+  const onFallback = fallbackSubscription.mock.calls[0][0];
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  // Deliver the event through the callback installed by the actual App effect.
+  // No settings save in the renderer is needed for this newer model decision.
+  persisted.chatModel = 'llama3.2:3b';
+  act(() => { onFallback({ from: 'qwen2.5:7b', to: 'llama3.2:3b' }); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { lateRead.resolve(staleSettings); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a startup fallback survives the primary settings snapshot while conversation loading is pending', async () => {
+  persisted.theme = 'light';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const fallbackSubscription = jest.fn((_callback: (data: { from: string; to: string }) => void) => jest.fn());
+  (window as any).electron.onModelFallback = fallbackSubscription;
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:get-settings')).toHaveLength(2);
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  persisted.chatModel = 'llama3.2:3b';
+  act(() => { fallbackSubscription.mock.calls[0][0]({ from: 'qwen2.5:7b', to: 'llama3.2:3b' }); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  // The initial snapshot still owns unrelated configuration and first-run
+  // intent; ignoring the entire boot snapshot would lose these fields.
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('the post-subscription settings model survives an older primary boot snapshot', async () => {
+  persisted.theme = 'light';
+  const oldSettings = clone(persisted);
+  persisted.chatModel = 'llama3.2:3b';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let reads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++reads === 1) return oldSettings;
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(reads).toBe(2);
+  const root = screen.getByTestId('homebot-app-root');
+  const counter = document.querySelector('.token-counter');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  expect(counter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(counter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a full settings save before boot hydration supersedes the entire older snapshot', async () => {
+  persisted.firstRun = false;
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  expect(persisted.theme).toBe('light');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(1);
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(screen.queryByRole('dialog', { name: 'Welcome to HomeBot' })).toBeNull();
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a rejected settings save still hydrates the original first-run configuration', async () => {
+  persisted.theme = 'light';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:save-settings') throw new Error('Configuration was not saved');
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('Configuration was not saved');
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect(persisted.firstRun).toBe(true);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a rejected save allows the pending newer startup model reply to finish', async () => {
+  persisted.firstRun = false;
+  const oldSettings = clone(persisted);
+  persisted.chatModel = 'llama3.2:3b';
+  const newerRead = held<typeof persisted>();
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let reads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings') return ++reads === 1 ? oldSettings : newerRead.promise;
+    if (channel === 'homebot:save-settings') throw new Error('Configuration was not saved');
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(reads).toBe(2);
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('Configuration was not saved');
+  await act(async () => {
+    conversations.resolve({ success: true, data: { conversations: [] } });
+    newerRead.resolve(clone(persisted));
+  });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+  expect(document.querySelector('.token-counter')).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect(persisted.chatModel).toBe('llama3.2:3b');
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('startup model replies wait for a pending save and recover after its rejected acknowledgement', async () => {
+  persisted.firstRun = false;
+  const oldSettings = clone(persisted);
+  persisted.chatModel = 'llama3.2:3b';
+  const newerRead = held<typeof persisted>();
+  const saveAck = held<{ success: false; error: string }>();
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let reads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings') return ++reads === 1 ? oldSettings : newerRead.promise;
+    if (channel === 'homebot:save-settings') return saveAck.promise;
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(reads).toBe(2);
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  await act(async () => {
+    conversations.resolve({ success: true, data: { conversations: [] } });
+    newerRead.resolve(clone(persisted));
+  });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  expect(document.querySelector('.token-counter')).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+  expect(within(panel).getByRole('button', { name: 'Saving…' })).toBeDisabled();
+  await act(async () => { saveAck.resolve({ success: false, error: 'Configuration was not saved' }); });
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('Configuration was not saved');
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(document.querySelector('.token-counter')).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect(persisted.chatModel).toBe('llama3.2:3b');
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
 async function startDownloadAndReturnToLocal() {
   const electron = (window as any).electron;
   const pull = held<{ success: boolean; error?: string }>();
