@@ -25,6 +25,17 @@ old trace mode loses the original trace and the new mode retains it. Local
 build/GUI remain below the 5 GiB disk floor. Current-head hosted tests, configured
 review, landing and a separate updated test copy are still required.
 
+The follow-up also guards App's earlier mount read after a setup/settings save
+starts or a newer model fallback arrives. Its actual context counter reproduced
+the post-Finish corruption (128K selected, stale read restored 32K); a positive
+unchanged-read control remains supported. Exact old App controls pass the normal
+read and fail the newer-fallback case, with current source bytes restored.
+Final source checks pass 114 tests in four suites, TypeScript and scoped lint
+(zero errors, four existing warnings). Native run37604035128 passed four cases
+without retries at the older9d81 head, including the real held7B/read/select3B/
+saved3B/HTTP3B chain. That evidence is preserved and does not qualify the new
+App source; fresh hosted/native/configured review are required for the follow-up.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make

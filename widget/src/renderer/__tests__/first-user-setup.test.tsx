@@ -152,6 +152,110 @@ test.each([
   expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
 });
 
+test('a mount settings read arriving after Finish preserves the selected context window for the first real send', async () => {
+  const electron = (window as any).electron;
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'llama3.2:3b' }] });
+  const staleSettings = clone(initialSettings);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+
+  await act(async () => { render(<App />); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ }));
+  await screen.findByText('Ollama is ready!');
+  expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('llama3.2:3b');
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ firstRun: false, chatModel: 'llama3.2:3b', codeModel: 'llama3.2:3b' });
+  expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+
+  // Its settings snapshot predates the completed choice. The real context
+  // counter must continue using the selected 128K model after it arrives.
+  await act(async () => { lateRead.resolve(staleSettings); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message HomeBot' }), { target: { value: 'Hello' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = sendStreamMessage.mock.calls[0][0];
+  try {
+    // The real request leaves model choice to persisted main settings when
+    // routing is off; it does not carry a fabricated chatModel packet field.
+    expect(request).toMatchObject({ message: 'Hello', conversation_id: 'setup-conversation' });
+    expect(request.modelOverride).toBeUndefined();
+    expect(persisted.chatModel).toBe('llama3.2:3b');
+    expect(runtimeUncensored).toBe(false);
+    expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
+  } finally {
+    act(() => { endStream?.({ streamId: request.streamId, cancelled: false }); });
+  }
+});
+
+test('an unchanged mount read still applies the model returned by the actual settings bridge', async () => {
+  persisted.firstRun = false;
+  const lateRead = held<typeof persisted>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  expect(screen.queryByRole('dialog', { name: 'Welcome to HomeBot' })).toBeNull();
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  // No choice or save has superseded this read. Its model must reach the real
+  // counter; suppressing every mount read would leave the previous 32K limit.
+  persisted.chatModel = 'llama3.2:3b';
+  await act(async () => { lateRead.resolve(clone(persisted)); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a registered model fallback supersedes an earlier mount settings read', async () => {
+  persisted.firstRun = false;
+  const staleSettings = clone(persisted);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+  const fallbackSubscription = jest.fn((_callback: (data: { from: string; to: string }) => void) => jest.fn());
+  (window as any).electron.onModelFallback = fallbackSubscription;
+  await act(async () => { render(<App />); });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  expect(fallbackSubscription).toHaveBeenCalledTimes(1);
+  const onFallback = fallbackSubscription.mock.calls[0][0];
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  // Deliver the event through the callback installed by the actual App effect.
+  // No settings save in the renderer is needed for this newer model decision.
+  persisted.chatModel = 'llama3.2:3b';
+  act(() => { onFallback({ from: 'qwen2.5:7b', to: 'llama3.2:3b' }); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { lateRead.resolve(staleSettings); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
 async function startDownloadAndReturnToLocal() {
   const electron = (window as any).electron;
   const pull = held<{ success: boolean; error?: string }>();

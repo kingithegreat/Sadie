@@ -271,6 +271,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     n8nUrl: 'http://localhost:5678',
     widgetHotkey: 'Ctrl+Shift+Space'
   });
+  const settingsMutationGenerationRef = useRef(0);
   const [isHydrated, setIsHydrated] = useState(false);
   // What the ROUTER says would answer right now — the header displays this,
   // never its own derivation. `settings.chatModel` as the header source is
@@ -687,6 +688,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     const modelFbUnsub = window.electron.onModelFallback?.((data) => {
+      settingsMutationGenerationRef.current += 1;
       addToast(
         `Model "${data.from}" not installed — switched to "${data.to}"`,
         'warning',
@@ -704,11 +706,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     // Re-read settings after subscribing to catch any model fallback that fired before mount
+    const settingsRefreshGeneration = settingsMutationGenerationRef.current;
+    let settingsRefreshActive = true;
     window.electron.getSettings?.().then(s => {
-      if (s?.chatModel) setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
-    });
+      if (settingsRefreshActive && settingsRefreshGeneration === settingsMutationGenerationRef.current && s?.chatModel) {
+        setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
+      }
+    }).catch(() => {});
 
     return () => {
+      settingsRefreshActive = false;
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
@@ -810,6 +817,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Save user settings to main process
    */
   const saveSettings = useCallback(async (newSettings: SharedSettings) => {
+    // An earlier read must not restore its model after a newer setup/settings
+    // choice starts saving, including while its acknowledgement is pending.
+    settingsMutationGenerationRef.current += 1;
     const updated = await window.electron.saveSettings(newSettings);
     setSettings(prev => ({ ...prev, ...updated }));
   }, []);
