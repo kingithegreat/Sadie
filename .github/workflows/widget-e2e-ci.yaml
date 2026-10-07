@@ -73,6 +73,14 @@ jobs:
       - name: Install widget dependencies
         timeout-minutes: 10
         run: npm ci --prefix widget
+      # Electron 42 has no npm install hook. Resolving a missing binary inside
+      # the first UI case otherwise invokes an unbounded synchronous installer.
+      - name: Check Electron preparation contracts
+        timeout-minutes: 2
+        run: node --test widget/scripts/__tests__/prepare-electron-runtime.test.cjs
+      - name: Prepare pinned Electron runtime
+        timeout-minutes: 10
+        run: node widget/scripts/prepare-electron-runtime.cjs
       - name: Cache Playwright binaries
         uses: actions/cache@v3
         with:
