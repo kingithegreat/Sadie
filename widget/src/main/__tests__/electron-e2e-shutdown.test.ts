@@ -112,15 +112,17 @@ function inspectorFixture() {
   };
   return { ...f, socket, connection, impl, exiting };
 }
-test.each([false, true])('qualified irreversible exit (stderr wait=%s) first uses public driver close while still requiring native OS exit', async stderrWait => {
-  const f = inspectorFixture(); f.app.close.mockImplementation(async () => { f.socket.readyState = 3; f.finish({ code: 0 }); });
+test.each([false, true])('qualified irreversible exit (stderr wait=%s) releases the held socket before public close can reenter quit', async stderrWait => {
+  const f = inspectorFixture(); let nativeExited = false;
+  f.socket.terminate.mockImplementation(() => { f.socket.readyState = 3; nativeExited = true; f.finish({ code: 0 }); });
+  f.app.close.mockImplementation(async () => { expect(nativeExited).toBe(true); expect(f.monitor.verify).toHaveBeenCalled(); });
   await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, stderrWait);
   await closeElectronApp(f.app);
-  expect(f.app.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).not.toHaveBeenCalled(); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+  expect(f.app.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.monitor.cleanup).not.toHaveBeenCalled();
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt).toMatchObject({ graceful: true, nativeExit: { code: 0 }, inspectorQualification: { mainPid: 100, matchingExitNonce: true, stderrWaitObserved: stderrWait }, capturedIdentitiesGone: true });
 });
-test.each([false, true])('qualified exit (stderr wait=%s) can terminate only the held inspector websocket after its graceful handshake stalls', async stderrWait => {
+test.each([false, true])('qualified exit (stderr wait=%s) releases only the held inspector websocket and still requires actual OS0', async stderrWait => {
   const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, stderrWait);
   await closeElectronApp(f.app);
   expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.child.kill).not.toHaveBeenCalled(); expect(f.monitor.cleanup).not.toHaveBeenCalled();

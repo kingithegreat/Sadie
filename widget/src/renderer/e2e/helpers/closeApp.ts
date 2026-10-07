@@ -110,7 +110,6 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
   const receipt: Record<string, unknown> = { label, started: new Date(started).toISOString() };
   const artifact = path.resolve('test-results', `electron-shutdown-${process.pid}-${started}.json`);
   let state: State | undefined, tree: WorkspacePtyStopReceipt | undefined;
-  let driverClose: Promise<void> | undefined;
   const persist = () => { fs.mkdirSync(path.dirname(artifact), { recursive: true }); fs.writeFileSync(artifact, JSON.stringify(receipt, null, 2)); };
   try {
     if (!states.has(app)) throw new Error('Electron shutdown identity was not prepared at launch.');
@@ -136,11 +135,12 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       if (!state.inspector) throw new Error('Main reached its exit event, but its owned transport could not be verified.');
       receipt.inspectorQualification = { mainPid: state.monitor.info.pid, matchingExitNonce: true, stderrWaitObserved: state.stderr.includes('Waiting for the debugger to disconnect...') };
       receipt.inspectorBeforeClose = state.inspector.status();
-      // Installed Playwright's public close gracefully quits, detaches its node
-      // inspector and waits; it has no process kill in this custom handler.
-      driverClose = Promise.resolve().then(() => app.close()); void driverClose.catch(() => {});
-      const detached = await bounded(Promise.race([state.monitor.exit.then(() => true), new Promise<boolean>(resolve => setTimeout(() => resolve(false), 250))]), deadline - Date.now(), 'Owned inspector disconnect exceeded close budget');
-      if (!detached) { receipt.inspectorAfterPublicClose = state.inspector.status(); receipt.ownedInspectorSocketTerminated = state.inspector.terminate(); }
+      // Playwright 1.57's public close first evaluates app.quit() again. Once
+      // this exact main has emitted its irreversible exit marker, no second
+      // evaluation belongs in its shutdown. Release only our captured socket;
+      // public driver cleanup follows actual held OS exit and tree verification.
+      receipt.ownedInspectorSocketTerminated = state.inspector.terminate();
+      receipt.inspectorAfterRelease = state.inspector.status();
       receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit after its owned inspector disconnected');
     } else receipt.nativeExit = exited.native;
     receipt.productionAtExit = exitDiagnostics(state.stdout);
@@ -158,8 +158,7 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       if (deadline - Date.now() <= 200) throw new Error('Captured owned processes remain alive after native main exit within the close budget.');
       await new Promise(resolve => setTimeout(resolve, 200));
     }
-    if (driverClose) await bounded(driverClose, deadline - Date.now(), 'Public Playwright close did not settle after actual native exit');
-    else if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
+    if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
     receipt.elapsed = Date.now() - started; receipt.graceful = true; persist();
     console.log(`[E2E-CLOSE] ${JSON.stringify({ label, artifact, native: receipt.native, nativeExit: receipt.nativeExit, elapsed: receipt.elapsed, graceful: true })}`);
     return Date.now() - started;
