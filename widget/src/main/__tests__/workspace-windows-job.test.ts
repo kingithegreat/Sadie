@@ -33,14 +33,47 @@ describe('creation-gated Windows Job ownership', () => {
 
   it('spawns only the verified compiled host with zero argv even with hostile lookup environment', async () => {
     const fake = helper();
-    delete process.env.SystemRoot;
     const env = { PATH: 'C:\\project', SystemRoot: 'C:\\project', PRIVATE_CANARY: 'private-env' };
     const job = createPendingWorkspaceWindowsJob({ env });
     expect(verifiedWorkspaceWindowsJobRuntime).toHaveBeenCalledWith();
-    expect(spawnMock).toHaveBeenCalledWith(runtime.host, [], { windowsHide: true, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    const childEnv = spawnMock.mock.calls[0][2].env;
+    expect(childEnv).toMatchObject({ SystemRoot: 'C:\\Windows', windir: 'C:\\Windows' });
+    expect(Object.keys(childEnv).every(key => ['SystemRoot', 'windir', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP'].includes(key))).toBe(true);
+    expect(spawnMock).toHaveBeenCalledWith(runtime.host, [], { windowsHide: true, env: childEnv, stdio: ['pipe', 'pipe', 'pipe'] });
     expect(fake.child.stdin.write).toHaveBeenCalledTimes(1);
     fake.send({ type: 'listening' });
     const stopping = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopping;
+  });
+
+  it('isolates inherited and target CLR loaders while preserving the approved target environment in GO', async () => {
+    const fake = helper();
+    const keys = ['COR_ENABLE_PROFILING', 'COR_PROFILER_PATH', 'COMPLUS_AppDomainManagerAssembly', 'APPDOMAIN_MANAGER_ASM', 'DOTNET_STARTUP_HOOKS', 'NODE_OPTIONS', 'ELECTRON_RUN_AS_NODE', 'PROVIDER_KEY'];
+    const previous = keys.map(key => process.env[key]);
+    try {
+      for (const key of keys) process.env[key] = 'parent-private-canary';
+      const target = Object.fromEntries(keys.map(key => [key, 'approved-target-canary']));
+      const job = createPendingWorkspaceWindowsJob({ env: { ...target, HOME: 'C:\\owned\\home', TEMP: 'C:\\owned\\temp', PATH: 'C:\\request', SystemRoot: 'C:\\request', HOMEBOT_IDE_GATE_CAP: 'private-cap' }, gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+      const childEnv = spawnMock.mock.calls[0][2].env;
+      expect(childEnv.HOME).toBe('C:\\owned\\home'); expect(childEnv.TEMP).toBe('C:\\owned\\temp'); expect(childEnv.SystemRoot).toBe('C:\\Windows');
+      for (const key of [...keys, 'PATH', 'HOMEBOT_IDE_GATE_CAP']) expect(childEnv[key]).toBeUndefined();
+      fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle(); fake.reply({ ok: true }); await attached;
+      const launching = job.authorize({ executable: 'C:\\approved.exe', args: [], env: target }); await settle();
+      expect(fake.requests().at(-1).launch.env).toEqual(target);
+      fake.reply({ ok: true, pid: 91 }); await launching;
+      const stopped = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopped;
+    } finally { keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; }); }
+  });
+
+  it.each(['relative', 'C:\\owned\nprofile', 'C:\\' + 'x'.repeat(4096)])('refuses invalid host-only private paths before a child exists', async HOME => {
+    helper(); const job = createPendingWorkspaceWindowsJob({ env: { HOME } });
+    await expect(job.listening).rejects.toThrow('could not start'); await job.stop();
+    expect(spawnMock).not.toHaveBeenCalled(); expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBe(true);
+  });
+
+  it('does not take the Windows installation from options when main installation is invalid', async () => {
+    helper(); process.env.SystemRoot = 'relative';
+    const job = createPendingWorkspaceWindowsJob({ env: { SystemRoot: 'C:\\request' } });
+    await expect(job.listening).rejects.toThrow('could not start'); await job.stop(); expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('task child capture binds its parent to main and resolves only a strict native identity result', async () => {

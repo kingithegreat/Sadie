@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import * as path from 'path';
 import { verifiedWorkspaceWindowsJobRuntime } from './workspace-windows-job-asset';
 import type { WorkspacePtyIdentity } from './workspace-pty-identity';
 
@@ -38,6 +39,24 @@ const MAX_LINE = 4096;
 const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'setup', 'setup-read', 'utility-import', 'utility-imported', 'compile', 'asset-load', 'asset-loaded', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
 const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'console-input', 'console-output', 'console-close', 'spawn', 'unknown']);
 const DIAGNOSTIC_NATIVE_CODES = new Set(['ENOENT', 'EACCES', 'EPERM', 'ENXIO', 'EINVAL', 'EBADF', 'EIO', 'ENOTSUP', 'UNKNOWN']);
+
+/** The control host starts CLR before Main/assignment. Target loader/profiler,
+ * executable lookup and provider settings must never reach that bootstrap.
+ * Only main's OS installation and main-owned private store paths are needed. */
+function hostEnvironment(options: JobOptions): NodeJS.ProcessEnv {
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
+  if (typeof systemRoot !== 'string' || !path.win32.isAbsolute(systemRoot) || /[\0\r\n]/.test(systemRoot) || systemRoot.length > 4096) throw new Error('The main Windows system installation is unavailable.');
+  const environment: NodeJS.ProcessEnv = { SystemRoot: systemRoot, windir: systemRoot };
+  for (const key of ['HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP']) {
+    // These options are main-only; production MCP derives them from the SDK's
+    // safe default environment, and cold controls supply their owned profile.
+    const value = options.env?.[key] ?? process.env[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || value.length > 4096 || /[\0\r\n]/.test(value) || !path.win32.isAbsolute(value)) throw new Error('The main-owned control host profile path is invalid.');
+    environment[key] = value;
+  }
+  return environment;
+}
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
 export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): PendingWorkspaceWindowsJob {
@@ -180,7 +199,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     if (!encodedPath || encodedPath.length > 8192 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('The fixed product setup is invalid.');
     setup = [encodedPath, asset.sha256, options.gate?.pipeName || '', options.gate?.capability || ''].join('\n') + '\n';
     spawnStarted = Date.now();
-    child = spawn(asset.host, [], { windowsHide: true, env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
+    child = spawn(asset.host, [], { windowsHide: true, env: hostEnvironment(options), stdio: ['pipe', 'pipe', 'pipe'] });
   } catch { observedClose = { observedMs: elapsed(), outcome: 'not-started' }; closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
   const startupTimer = setTimeout(() => {
     startupTimeoutObservedMs = elapsed();
