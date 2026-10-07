@@ -193,10 +193,11 @@ function startup() {
   const stopped = jest.fn(async () => true);
   const force = jest.fn(async (): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: false }));
   const job = { listening: Promise.resolve(), ready: Promise.resolve(), attach: jest.fn(async () => {}), authorize: jest.fn(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => { validate?.(); return 23456; }), queryEmpty: jest.fn(async () => true), stop: jest.fn(async () => {}) };
-  const manager = new WorkspacePtySessions(() => pty, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force, () => job);
+  const createPty = jest.fn(() => pty);
+  const manager = new WorkspacePtySessions(createPty, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force, () => job);
   const create = () => manager.create(7, { projectDir: folder }, jest.fn());
   const connected = () => { pty.pid = 12345; ready.resolve(); };
-  return { manager, create, connected, pty, ready, killed, workerExit, capture, stopped, force, job };
+  return { manager, create, connected, pty, ready, killed, workerExit, capture, stopped, force, job, createPty };
 }
 
 test('startup reserves all four slots, waits for positive PID and LIST waits for that same project creation', async () => {
@@ -231,9 +232,19 @@ test('quit admission closing during startup never publishes a ghost session or c
   setWorkspaceRuntimeClosing(true);
   expect(() => app.create()).toThrow(/closing/);
   const closing = app.manager.closeAll();
+  if (process.platform === 'win32') {
+    // Closing wins while startup is awaiting the already-owned Job's listener.
+    // No PTY worker has been created, so waiting for its kill would deadlock the probe.
+    await refusal; await closing;
+    expect(app.createPty).not.toHaveBeenCalled(); expect(app.pty.kill).not.toHaveBeenCalled();
+    expect(app.job.stop).toHaveBeenCalledTimes(1);
+    expect(app.job.attach).not.toHaveBeenCalled(); expect(app.job.authorize).not.toHaveBeenCalled();
+    expect(app.capture).not.toHaveBeenCalled(); expect(app.force).not.toHaveBeenCalled();
+    expect(await app.manager.list(7, folder)).toEqual([]);
+    return;
+  }
   app.connected(); await app.killed.promise;
-  if (process.platform === 'win32') expect(app.capture).not.toHaveBeenCalled();
-  else expect(app.capture).toHaveBeenCalledWith(12345);
+  expect(app.capture).toHaveBeenCalledWith(12345);
   expect(app.capture).not.toHaveBeenCalledWith(0);
   expect(app.force).not.toHaveBeenCalled();
   app.workerExit.resolve(); await refusal; await closing;

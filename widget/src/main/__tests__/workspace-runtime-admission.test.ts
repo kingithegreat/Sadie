@@ -7,6 +7,7 @@ import { WorkspacePtySessions } from '../workspace-terminal-pty';
 import { performWorkspaceDebug, stopWorkspaceDebuggers } from '../workspace-debug';
 import { performWorkspaceTests, stopWorkspaceTestRuns } from '../workspace-tests';
 import { executeWorkspacePackageTask, prepareWorkspacePackageTask } from '../workspace-tasks';
+import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 
 jest.mock('electron', () => ({ app: { getPath: () => require('os').tmpdir() } }));
 jest.mock('child_process', () => ({ ...jest.requireActual('child_process'), spawn: jest.fn(() => { throw new Error('Unexpected process spawn'); }) }));
@@ -29,8 +30,11 @@ function terminalFixture() {
   let exited!: (event: { exitCode: number }) => void;
   const pty = { pid: 12345, write: jest.fn(), resize: jest.fn(), kill: jest.fn(() => exited({ exitCode: 0 })), onData: jest.fn(() => ({ dispose: jest.fn() })), onExit: jest.fn(callback => { exited = callback; return { dispose: jest.fn() }; }) };
   const create = jest.fn(() => pty);
-  const sessions = new WorkspacePtySessions(create, () => [{ id: 'cmd', label: 'Fixture shell', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped: async () => true }, async () => ({ stopped: true, attempted: false }));
-  return { create, sessions, pty };
+  const createJob = jest.fn(() => ({ listening: Promise.resolve(), ready: Promise.resolve(), attach: jest.fn(async () => {}),
+    authorize: jest.fn(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => { validate?.(); return 23456; }),
+    queryEmpty: jest.fn(async () => true), stop: jest.fn(async () => {}) }));
+  const sessions = new WorkspacePtySessions(create, () => [{ id: 'cmd', label: 'Fixture shell', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped: async () => true }, async () => ({ stopped: true, attempted: false }), createJob);
+  return { create, sessions, pty, createJob };
 }
 
 test('whole-quit admission rejects valid new runtime requests before any process spawner is reached', async () => {
@@ -43,6 +47,7 @@ test('whole-quit admission rejects valid new runtime requests before any process
   expect(await performWorkspaceTests({ root, action: 'run', file: path.join(root, 'sample.test.js') })).toMatchObject({ success: false, error: expect.stringMatching(/HomeBot is closing/) });
   expect(await executeWorkspacePackageTask(snapshot, { spawnProcess: taskSpawner })).toMatchObject({ success: false, error: expect.stringMatching(/HomeBot is closing/) });
   expect(terminal.create).not.toHaveBeenCalled(); expect(taskSpawner).not.toHaveBeenCalled(); expect(spawn).not.toHaveBeenCalled();
+  expect(terminal.createJob).not.toHaveBeenCalled();
   // Inspection remains reachable while starts are paused.
   expect((await performWorkspaceTests({ root, action: 'list' })).tests).toHaveLength(1);
   expect((await performWorkspaceDebug({ root, action: 'state' })).running).toBe(false);
@@ -59,4 +64,12 @@ test('existing runtime cleanup still works while closing and refusal can admit a
   const second = await terminal.sessions.create(7, { projectDir: root, profileId: 'cmd' }, jest.fn());
   expect(terminal.create).toHaveBeenCalledTimes(2);
   await terminal.sessions.close(7, second.sessionId);
+  if (process.platform === 'win32') {
+    expect(terminal.createJob).toHaveBeenCalledTimes(2);
+    for (const entry of terminal.createJob.mock.results) {
+      expect(entry.value.attach).toHaveBeenCalledWith(12345, expect.objectContaining({ creation: '638953000000000000' }));
+      expect(entry.value.authorize).toHaveBeenCalledTimes(1); expect(entry.value.stop).toHaveBeenCalledTimes(1);
+    }
+  } else expect(terminal.createJob).not.toHaveBeenCalled();
+  expect(spawn).not.toHaveBeenCalled();
 });
