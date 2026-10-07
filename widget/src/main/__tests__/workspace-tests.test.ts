@@ -43,6 +43,29 @@ test.each(['vitest', '@jest/globals', 'node:test'])('explicit %s imports retain 
   expect(discoverWorkspaceTests(root)[0].runner).toBe(runner === '@jest/globals' ? 'jest' : runner === 'node:test' ? 'node' : 'vitest');
   expect(command.args[0]).toBe(runner === '@jest/globals' ? path.join(root, 'node_modules/jest/bin/jest.js') : runner === 'node:test' ? '--test' : path.join(root, 'node_modules/vitest/vitest.mjs'));
 });
+test.each([
+  { source: 'const {test}=require("@jest/globals");', configured: false, runner: 'jest' },
+  { source: 'const test=require("@jest/globals").test;', configured: false, runner: 'jest' },
+  { source: 'const {test}=require("vitest");', configured: true, runner: 'vitest' },
+  { source: 'const {test}=require("node:test");', configured: true, runner: 'node' },
+  { source: 'import {test} from "vitest"; const jestGlobals=require("@jest/globals");', configured: true, runner: 'vitest' },
+  { source: '// require("@jest/globals")\n', configured: false, runner: 'vitest' },
+  { source: 'const text="require(\'@jest/globals\')";', configured: false, runner: 'vitest' },
+  { source: 'const moduleName="@jest/globals";const {test}=require(moduleName);', configured: false, runner: 'vitest' },
+  { source: 'const entry=require.resolve("@jest/globals");', configured: false, runner: 'vitest' },
+  { source: 'const {test}=loader.require("@jest/globals");', configured: false, runner: 'vitest' },
+])('selects $runner from static CommonJS calls without executing project code: $source', ({ source, configured, runner }) => {
+  bothInstalled(root);
+  if (configured) fs.writeFileSync(path.join(root, 'jest.config.js'), 'throw new Error("Never load configuration");');
+  fs.writeFileSync(file, `${source}\ntest("configured globals", () => {});throw new Error("Never execute test module");`);
+  expect(discoverWorkspaceTests(root)[0].runner).toBe(runner);
+  const command = prepareWorkspaceTestCommand({ root, action: 'run', file, testName: 'configured globals' });
+  expect(command.cwd).toBe(root);
+  expect(command.args).toEqual(runner === 'jest'
+    ? [path.join(root, 'node_modules/jest/bin/jest.js'), '--runInBand', '--watch=false', '--runTestsByPath', file, '--testNamePattern', '^configured globals$']
+    : runner === 'node' ? ['--test', '--test-name-pattern', '^configured globals$', file]
+    : [path.join(root, 'node_modules/vitest/vitest.mjs'), 'run', file, '-t', '^configured globals$']);
+});
 test('nearest package config and command cwd are used without inheriting another monorepo package config', () => {
   bothInstalled(root); fs.writeFileSync(path.join(root, 'jest.config.js'), 'throw new Error("Parent config");');
   const packageRoot = path.join(root, 'packages', 'ui'); bothInstalled(packageRoot);

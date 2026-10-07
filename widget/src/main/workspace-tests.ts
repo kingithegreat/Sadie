@@ -53,7 +53,13 @@ function runnerFor(root: string, file: string, content: string): WorkspaceDiscov
     }
   }
   if (explicit) return explicit;
-  const findRequire = (node: ts.Node) => { if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' && node.arguments[0] && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === 'node:test') explicit = 'node'; ts.forEachChild(node, findRequire); };
+  const findRequire = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+      const module = node.arguments[0].text;
+      if (module === 'node:test') explicit = 'node'; else if (module === 'vitest') explicit = 'vitest'; else if (module === '@jest/globals') explicit = 'jest';
+    }
+    ts.forEachChild(node, findRequire);
+  };
   findRequire(source); if (explicit) return explicit;
   const { directory, manifest } = nearestPackage(root, file); const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
   // Explicit Jest configuration identifies global Jest tests even when
