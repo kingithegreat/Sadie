@@ -73,11 +73,10 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       finally {
         spy.mockRestore();
         const directory = path.resolve(process.cwd(), '..', 'artifacts', 'ide-native-zero-retry');
-        fs.mkdirSync(directory, { recursive: true });
         const receipt = { scenario: sdkGate ? 'sdk-safe-private-profile-with-gate' : 'full-environment-without-gate', pid: held?.pid,
           home, listening, closeCode, closeSignal, elapsedMs: Date.now() - started, observations: observations.slice(0, 40), failure: originalFailure ? String(originalFailure) : undefined,
           scope: 'Same held ChildProcess helper; no bootstrap/target, no attach/GO, original operation deadlines. Timing is diagnostic only.' };
-        try { fs.writeFileSync(path.join(directory, `pending-job-observation-${sdkGate ? 'sdk-gate' : 'plain'}.json`), JSON.stringify(receipt, null, 2), { flag: 'wx' }); }
+        try { fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, `pending-job-observation-${sdkGate ? 'sdk-gate' : 'plain'}.json`), JSON.stringify(receipt, null, 2), { flag: 'wx' }); }
         catch (error) { if (!originalFailure) throw error; console.error('Pending Job diagnostic receipt failed:', String(error)); }
       }
     }
