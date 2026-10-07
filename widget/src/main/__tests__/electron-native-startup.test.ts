@@ -78,6 +78,7 @@ test.each([
   ['missing held creation', { heldCreation: undefined }],
   ['different held creation', { heldCreation: '639269214771582940' }],
   ['zero creation', { creation: '0', heldCreation: '0' }],
+  ['zero held creation with positive CIM creation', { creation: '1', heldCreation: '0' }],
 ] as const)('rejects %s without native ownership or cleanup authority', async (name, changes) => {
   const f = fixture();
   const failed = expect(monitorNativeApp(f.info, f.native, f.entry)).rejects.toThrow(/Invalid native/);

@@ -83,7 +83,7 @@ export async function monitorNativeApp(info: NativeAppInfo, child: ChildProcess,
         if (line.startsWith('ready:')) {
           const value = JSON.parse(line.slice(6));
           if (value.pid !== info.pid || value.ppid !== info.ppid || typeof value.execPath !== 'string' || path.win32.normalize(value.execPath).toLowerCase() !== path.win32.normalize(info.execPath).toLowerCase() || typeof value.entry !== 'string' || path.resolve(value.entry).toLowerCase() !== path.resolve(entry).toLowerCase()) throw new Error('Invalid native startup identity receipt');
-          if (typeof value.creation !== 'string' || typeof value.heldCreation !== 'string' || !/^\d{1,19}$/.test(value.creation) || !/^\d{1,19}$/.test(value.heldCreation) || BigInt(value.creation) <= 0n || BigInt(value.creation) / 10n !== BigInt(value.heldCreation) / 10n) throw new Error('Invalid native creation receipt');
+          if (typeof value.creation !== 'string' || typeof value.heldCreation !== 'string' || !/^\d{1,19}$/.test(value.creation) || !/^\d{1,19}$/.test(value.heldCreation) || BigInt(value.creation) <= 0n || BigInt(value.heldCreation) <= 0n || BigInt(value.creation) / 10n !== BigInt(value.heldCreation) / 10n) throw new Error('Invalid native creation receipt');
           creation = value.creation; readyResolve();
         }
         if (line.startsWith('exit:')) { const value = JSON.parse(line.slice(5)); if (!creation || value.creation !== creation || !Number.isInteger(value.code)) throw new Error('Invalid native exit receipt'); exited = true; exitResolve(value); }
