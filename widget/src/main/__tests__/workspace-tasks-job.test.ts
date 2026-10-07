@@ -65,7 +65,7 @@ test('a foreign or malformed helper identity never authorizes the task and joins
   }
 });
 test('an already-ended ChildProcess is rejected before helper capture', async () => {
-  const app = fixture(), attachChild = jest.fn(async () => original); Object.assign(app.job, { attachChild }); app.child.exitCode = 0;
+  const app = fixture(), attachChild = jest.fn(async () => original); Object.assign(app.job, { attachChild }); Object.defineProperty(app.child, 'exitCode', { value: 0 });
   await expect(app.run()).resolves.toMatchObject({ success: false }); expect(attachChild).not.toHaveBeenCalled(); expect(app.job.authorize).not.toHaveBeenCalled();
 });
 test('exit or cancellation while native capture is pending prevents later GO', async () => {
