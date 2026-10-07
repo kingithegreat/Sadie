@@ -13,8 +13,11 @@ export async function runMcpLiveFixtureCleanupControl(mode: 'primary' | 'cleanup
     { method: 'fixture/tree', params: { leafPid: 222, intermediatePid: 333 } },
     { method: 'fixture/ended', params: { code: 0, signal: null } },
   ];
-  const unrelated = Object.assign(new EventEmitter(), { pid: 444, exitCode: null as number | null, signalCode: null, stdout: new EventEmitter(),
-    kill() { this.exitCode = 0; this.emit('close', 0); return true; } });
+  class HeldChild extends EventEmitter {
+    pid = 444; exitCode: number | null = null; signalCode = null; stdout = new EventEmitter();
+    kill() { this.exitCode = 0; this.emit('close', 0); return true; }
+  }
+  const unrelated = new HeldChild();
   const owner = { cleanupScope: 'windows-job', transport: { stderr: new EventEmitter(), onmessage: undefined as undefined | ((message: any) => void),
     async start() { if (mode === 'primary') throw primary; events.forEach(event => owner.transport.onmessage?.(event)); } },
     async close() { closeCalls++; if (mode === 'primary' || (mode === 'cleanup-only' && closeCalls > 1)) throw secondary; } };
