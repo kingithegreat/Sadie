@@ -56,6 +56,8 @@ interface OwnedServer {
   client: Client;
   cancellation: AbortController;
   toolDisposers: Array<() => void>;
+  version: number;
+  registerTool: (name: string, definition: any, handler: any) => void | (() => void);
   closeTransport?: () => Promise<void>;
   closing?: Promise<void>;
 }
@@ -65,6 +67,8 @@ const ownedServers = new Set<OwnedServer>();
 const connectionVersions = new Map<string, number>();
 let shutdownSignal = new AbortController();
 let shutdownPromise: Promise<void> | undefined;
+let refusedQuitCandidates: OwnedServer[] = [];
+let restoring: { lifecycle: AbortSignal; promise: Promise<void> } | undefined;
 
 const MCP_CONNECT_TIMEOUT = 15_000;
 const MCP_MAX_RETRIES = 2;
@@ -329,7 +333,7 @@ async function connectServer(
     transport = new SSEClientTransport(new URL(config.url));
   }
 
-  const owned: OwnedServer = { config, client, cancellation, closeTransport, toolDisposers: [] };
+  const owned: OwnedServer = { config, client, cancellation, closeTransport, toolDisposers: [], version, registerTool };
   ownedServers.add(owned);
   try {
     await withTimeout(
@@ -587,6 +591,10 @@ export function discoverExternalMcpServers(): void {
  */
 export function shutdownMcpServers(): Promise<void> {
   if (!shutdownPromise) {
+    // Only fully connected servers qualify for a later explicit Keep open.
+    // A new quit replaces this snapshot and aborts any previous restoration.
+    const connectedClients = new Set(connectedServers.map(server => server.client));
+    refusedQuitCandidates = [...ownedServers].filter(server => connectedClients.has(server.client));
     shutdownSignal.abort();
     connectedServers.length = 0;
     // Join every bounded attempt. Refusal keeps ownership and allows another
@@ -609,6 +617,32 @@ export function resumeMcpServersAfterRefusedQuit(): void {
     // Uncertain transports stay owned until their exact cleanup succeeds.
     shutdownSignal = new AbortController();
   }
+}
+
+/** Restore cleaned, still-enabled servers only after an explicit Keep open. */
+export function restoreMcpServersAfterRefusedQuit(): Promise<void> {
+  const lifecycle = shutdownSignal.signal;
+  if (lifecycle.aborted || shutdownPromise) return Promise.resolve();
+  if (restoring?.lifecycle === lifecycle) return restoring.promise;
+  const candidates = refusedQuitCandidates;
+  refusedQuitCandidates = [];
+  const operation = (async () => {
+    const results = await Promise.allSettled(candidates.map(async server => {
+      assertRunning(lifecycle);
+      // Failed cleanup retains the original authority. Restoration must never
+      // retry/discard it or replace an explicitly changed named generation.
+      if (ownedServers.has(server) || connectionVersions.get(server.config.name) !== server.version) return;
+      const config = loadMcpConfig().servers.find(saved => saved.name === server.config.name);
+      if (!config || config.enabled === false) return;
+      await connectServer(config, server.registerTool, server.version, lifecycle);
+    }));
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  })();
+  const owner = { lifecycle, promise: operation };
+  restoring = owner;
+  void operation.finally(() => { if (restoring === owner) restoring = undefined; }).catch(() => {});
+  return operation;
 }
 
 /**
