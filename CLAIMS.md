@@ -71,6 +71,8 @@ Root continues exact-head qualification after49d push green/PR pure timeout/nati
 
 Root integrated selected-to-selected crash metadata refusal e40 and fixture-only task admission categories ae3d after independent review. Root29 Node +9 limited actual-source controls pass; original1372 PR npm marker failure preserved with first error unknown. Exact1372 native2/4/1 and push widget passed; fresh combined qualification/merge/normal-profile delivery remain unfinished.
 
+Root source pins Electron42.11.11/Node24.19.0 with upstream inspector null-socket guards after exact d76 symbols and source provenance. Root owns runtime/lock/native-CI pins; shared42.8.1 remains protected. Editor independently reviews runtime pin; Files retains exact fault/source evidence. Current30 diagnostic +9 native-gate Node controls and33 actual pure framing controls pass, but fresh full CI/native/review/merge and private normal-profile delivery remain unfinished.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make
