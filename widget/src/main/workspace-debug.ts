@@ -22,7 +22,7 @@ interface InspectorFrame { callFrameId: string; functionName: string; url: strin
 interface OwnedDebugProgram {
   child: ChildProcess; identity: Promise<WorkspacePtyIdentity | null | undefined>;
   ended: boolean; executed: boolean; job?: WorkspaceWindowsJob;
-  stopping?: Promise<void>; error?: string;
+  stopping?: Promise<void>; stopRequested?: boolean; error?: string;
   exit: Promise<void>; resolveExit(): void;
 }
 function groupGone(pid: number): boolean {
@@ -151,6 +151,7 @@ class DebugSession {
       if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
     }
     if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. No project code was run.');
+    if (program.stopRequested) throw new Error('Debugger startup was stopped. No project code was run.');
     assertWorkspaceRuntimeOpen();
     program.executed = true;
     await initialize('Runtime.runIfWaitingForDebugger');
@@ -179,13 +180,21 @@ class DebugSession {
   }
   private stopProgram(program: OwnedDebugProgram): Promise<void> {
     if (!this.ownedPrograms.has(program.child)) return Promise.resolve();
+    // Per-project Stop may race assignment independently of global cleanup.
+    // Fence the awaited startup before either cleanup operation can suspend.
+    program.stopRequested = true;
     if (program.stopping) return program.stopping;
     const operation = (async () => {
       if (process.platform === 'win32' && program.job) {
-        await program.job.stop();
         // Assignment can reject before the leader joined the Job. Project code
-        // was never released; its exact startup ChildProcess still owns cleanup.
-        if (!program.executed && !program.ended) await stopWorkspaceChild(program.child);
+        // was never released; clean the held startup ChildProcess independently
+        // even when retained Job cleanup refuses. Both outcomes remain required.
+        const cleanup = await Promise.allSettled([
+          Promise.resolve().then(() => program.job!.stop()),
+          !program.executed && !program.ended ? Promise.resolve().then(() => stopWorkspaceChild(program.child)) : Promise.resolve(),
+        ]);
+        const failure = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (failure) throw failure.reason;
         await waitForOwnedExit(program);
       } else if (!program.executed) {
         // inspect-brk has not released project code, so there are no project

@@ -243,7 +243,8 @@ test('assignment rejection never releases project code; failed cleanup retains t
   rejectReady(new Error('Birth-checked Job assignment failed.'));
   expect((await starting).error).toMatch(/Owned Job cleanup still pending/);
   expect(socket.sent.map(text => JSON.parse(text).method)).not.toContain('Runtime.runIfWaitingForDebugger');
-  expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true }));
+  expect(await call('state')).toEqual(expect.objectContaining({ running: false, cleanupPending: true }));
+  expect(stopWorkspaceChild).toHaveBeenCalledWith(child); // Job refusal cannot strand gated startup.
   job.stop.mockImplementationOnce(async () => { child.emit('exit', 0); });
   expect((await call('stop')).success).toBe(true); expect(job.stop).toHaveBeenCalledTimes(2); expect(createWorkspaceWindowsJob).toHaveBeenCalledTimes(1);
 });
@@ -256,4 +257,19 @@ test('uncertain retained Job query keeps the completed inspector attached until 
   expect(socket.readyState).toBe(ControlledSocket.OPEN);
   expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true, error: 'Job helper query is uncertain.' }));
   expect((await call('stop')).success).toBe(true); expect(jobs[0].stop).toHaveBeenCalledTimes(1);
+});
+
+test('per-project Stop fences pending assignment before either cleanup finishes, preventing project-code release', async () => {
+  let ready!: () => void; let finishJob!: () => void; let finishChild!: () => void;
+  const job = { ready: new Promise<void>(resolve => { ready = resolve; }), queryEmpty: jest.fn(), stop: jest.fn(() => new Promise<void>(resolve => { finishJob = resolve; })) };
+  (createWorkspaceWindowsJob as jest.Mock).mockReturnValueOnce(job);
+  const starting = call('start', { file }); const child = children[0];
+  child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open(); await tick();
+  (stopWorkspaceChild as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { finishChild = () => { child.emit('exit', 0); resolve(); }; }));
+  const stopping = call('stop'); await tick(); expect(job.stop).toHaveBeenCalledTimes(1); expect(stopWorkspaceChild).toHaveBeenCalledWith(child);
+  ready(); await tick(); // Both cleanup operations still pending and child still owned/alive.
+  expect(socket.sent.map(text => JSON.parse(text).method)).not.toContain('Runtime.runIfWaitingForDebugger');
+  finishChild(); finishJob(); expect((await stopping).success).toBe(true);
+  expect((await starting).error).toMatch(/startup was stopped.*No project code/);
+  expect((await call('state')).cleanupPending).not.toBe(true); expect(job.stop).toHaveBeenCalledTimes(1);
 });
