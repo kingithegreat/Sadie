@@ -35,14 +35,21 @@ const envelopeCheck=script.slice(script.indexOf('  if($request.id -isnot'),scrip
 assert(envelopeCheck.includes('foreach($key in $request.Keys)'));
 const badEnvelopes=[{id:'1',operation:'query'},{id:1.5,operation:'query'},{id:true,operation:'query'},{id:0,operation:'query'},
  {id:-1,operation:'query'},{id:2147483648,operation:'query'},{id:1,operation:['query']},{id:1,operation:'query',extra:'ignored?'}];
-let pure=`[Console]::Out.WriteLine('PHASE:fixture-entered');$ErrorActionPreference='Stop';$PSModuleAutoLoadingPreference='None';$errors=$null;$tokens=$null;[Management.Automation.Language.Parser]::ParseFile('${(out+'/generated.ps1').replace(/'/g,"''")}',[ref]$tokens,[ref]$errors)|Microsoft.PowerShell.Core\\Out-Null;if($errors.Count){throw 'parse'};[Console]::Out.WriteLine('PHASE:generated-parsed');[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes('${dll.replace(/'/g,"''")}'));[Console]::Out.WriteLine('PHASE:managed-loaded');\n${setupReader}\n`;
-pure+=`[Console]::Out.WriteLine('PHASE:input-start');[void](ReadSetupLine 8192);[void](ReadSetupLine 64);[void](ReadSetupLine 40);[void](ReadSetupLine 64);$peek=[Console]::In.Peek();$realLine=ReadSetupLine 131072 $true;if($realLine -cne '{"id":1,"operation":"stop"}'){throw 'actual host reader'};[Console]::Out.WriteLine('PASS:actual host bounded Read obtains queued request');\n`;
+// Diagnostic origins: parent includes host startup, host precedes fixture load,
+// and fixture precedes parsing/setup. None changes the outer admission budget.
+let pure=`$hbiFramingFixtureClock=[Diagnostics.Stopwatch]::StartNew();
+function WriteFixedPhase([string]$phase) {
+ if($phase -cnotin @('fixture-entered','generated-parsed','managed-loaded','input-start','positive-decoded','positive-first-parsed','positive-types-checked','positive-encoded','positive-second-parsed')){throw 'diagnostic phase'}
+ [Console]::Out.WriteLine('PHASE:'+$phase+'|parentMs='+[Math]::Min(60000,[Math]::Max(0,[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()-$global:hbiFramingParentEpoch))+'|hostMs='+[Math]::Min(60000,$global:hbiFramingHostClock.ElapsedMilliseconds)+'|fixtureMs='+[Math]::Min(60000,$hbiFramingFixtureClock.ElapsedMilliseconds))
+}
+WriteFixedPhase 'fixture-entered';$ErrorActionPreference='Stop';$PSModuleAutoLoadingPreference='None';$errors=$null;$tokens=$null;[Management.Automation.Language.Parser]::ParseFile('${(out+'/generated.ps1').replace(/'/g,"''")}',[ref]$tokens,[ref]$errors)|Microsoft.PowerShell.Core\\Out-Null;if($errors.Count){throw 'parse'};WriteFixedPhase 'generated-parsed';[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes('${dll.replace(/'/g,"''")}'));WriteFixedPhase 'managed-loaded';\n${setupReader}\n`;
+pure+=`WriteFixedPhase 'input-start';[void](ReadSetupLine 8192);[void](ReadSetupLine 64);[void](ReadSetupLine 40);[void](ReadSetupLine 64);$peek=[Console]::In.Peek();$realLine=ReadSetupLine 131072 $true;if($realLine -cne '{"id":1,"operation":"stop"}'){throw 'actual host reader'};[Console]::Out.WriteLine('PASS:actual host bounded Read obtains queued request');\n`;
 for(const c of cases)pure+=`$packet=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(c.packet)}'));[Console]::SetIn([IO.StringReader]::new($packet));$accepted=$false;try{${setupBody};$accepted=$true}catch{[Console]::Out.WriteLine('CONTROL-ERROR:'+$_.Exception.Message)};if($accepted -ne $${c.ok}){throw 'setup control ${c.name}'};[Console]::Out.WriteLine('PASS:setup ${c.name}');\n`;
-pure+=`$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(jsonPositive)}'));[Console]::Out.WriteLine('PHASE:positive-decoded');
-$value=[OwnedWindowsJob]::ParseFrame($json);[Console]::Out.WriteLine('PHASE:positive-first-parsed');
-if($value.id -isnot [int] -or $value.id -ne 1 -or $value.launch.args[2] -cne 'é🌿'){throw 'types'};[Console]::Out.WriteLine('PHASE:positive-types-checked');
-$encoded=[OwnedWindowsJob]::EncodeFrame($value);[Console]::Out.WriteLine('PHASE:positive-encoded');
-$again=[OwnedWindowsJob]::ParseFrame($encoded);[Console]::Out.WriteLine('PHASE:positive-second-parsed');
+pure+=`$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(jsonPositive)}'));WriteFixedPhase 'positive-decoded';
+$value=[OwnedWindowsJob]::ParseFrame($json);WriteFixedPhase 'positive-first-parsed';
+if($value.id -isnot [int] -or $value.id -ne 1 -or $value.launch.args[2] -cne 'é🌿'){throw 'types'};WriteFixedPhase 'positive-types-checked';
+$encoded=[OwnedWindowsJob]::EncodeFrame($value);WriteFixedPhase 'positive-encoded';
+$again=[OwnedWindowsJob]::ParseFrame($encoded);WriteFixedPhase 'positive-second-parsed';
 if($again.launch.args[0] -cne '' -or $again.launch.env.RULE -cne 'é'){throw 'roundtrip'};[Console]::Out.WriteLine('PASS:managed typed nested launch roundtrip');\n`;
 for(let i=0;i<negatives.length;i++)pure+=`$line=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(negatives[i])}'));$accepted=$false;try{[void][OwnedWindowsJob]::ParseFrame($line);$accepted=$true}catch{};if($accepted){throw 'negative ${i}'};[Console]::Out.WriteLine('PASS:managed invalid frame ${i}');\n`;
 for(let i=0;i<badEnvelopes.length;i++)pure+=`$request=[OwnedWindowsJob]::ParseFrame([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(JSON.stringify(badEnvelopes[i]))}')));$accepted=$false;try{${envelopeCheck};$accepted=$true}catch{};if($accepted){throw 'envelope ${i}'};[Console]::Out.WriteLine('PASS:managed invalid request ${i}');\n`;
@@ -50,8 +57,9 @@ pure+=`[Console]::SetIn([IO.StringReader]::new(''));if($null -ne (ReadSetupLine 
 fs.writeFileSync(out+'/pure.ps1','\uFEFF'+pure);
 // Match the product EncodedCommand host. The immutable large pure fixture stays
 // at its exact private path rather than exceeding Windows' argv length limit.
-const invocation="[Console]::Out.WriteLine('PHASE:host-invoked'); & '"+path.win32.normalize(out+'/pure.ps1').replace(/'/g,"''")+"'";
-const exe=path.win32.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),pureStarted=Date.now(),r=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',Buffer.from(invocation,'utf16le').toString('base64')],{windowsHide:true,timeout:8000,encoding:'utf8',maxBuffer:32768,input:'warm\nhash\n\n\n{"id":1,"operation":"stop"}\n'});
+const pureStarted=Date.now();
+const invocation="$global:hbiFramingParentEpoch="+pureStarted+";$global:hbiFramingHostClock=[Diagnostics.Stopwatch]::StartNew();[Console]::Out.WriteLine('PHASE:host-invoked|parentMs='+[Math]::Min(60000,[Math]::Max(0,[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()-$global:hbiFramingParentEpoch))+'|hostMs='+[Math]::Min(60000,$global:hbiFramingHostClock.ElapsedMilliseconds)+'|fixtureMs=0'); & '"+path.win32.normalize(out+'/pure.ps1').replace(/'/g,"''")+"'";
+const exe=path.win32.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),r=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',Buffer.from(invocation,'utf16le').toString('base64')],{windowsHide:true,timeout:8000,encoding:'utf8',maxBuffer:32768,input:'warm\nhash\n\n\n{"id":1,"operation":"stop"}\n'});
 const pureDiagnostic=phaseDiagnostic('pure',r,pureStarted);assert(!r.error&&r.status===0&&!r.signal,JSON.stringify(pureDiagnostic));
 const checks=r.stdout.split(/\r?\n/).filter(l=>l.startsWith('PASS:'));assert.equal(checks.length,cases.length+negatives.length+badEnvelopes.length+5);
 fs.writeFileSync(out+'/proof.json',JSON.stringify({sourceHead:cp.execFileSync('git',['-C',root,'rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim(),hashes:{source:sha(fs.readFileSync(sourceFile)),managed:sha(fs.readFileSync(managed)),generated:sha(script),assembly:sha(fs.readFileSync(dll))},compiler:inputs.compiler,references:inputs.references,checks,passed:checks.length,scope:'Fixed compiler and generated PS parser, bounded setup/managed JSON pure methods only. No Create/Attach/Stop/PInvoke/Job/PTY/project/native app execution.'},null,2));console.log(JSON.stringify({out,passed:checks.length}));
