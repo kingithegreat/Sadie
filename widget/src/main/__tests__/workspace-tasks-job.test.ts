@@ -47,6 +47,32 @@ test('Windows executes only a fixed bootstrap, then main-approved target after i
   expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'approved-node.exe', args: ['approved-npm.js', 'run-script', 'check'], kind: 'task' }), expect.any(Function));
   app.finish(); await expect(run).resolves.toMatchObject({ success: true, cleanupPending: false, exitCode: 0 });
 });
+test('a partial UTF8 environment overlay inherits npm discovery PATH and reaches the approved target', async () => {
+  const bin = path.join(home, 'fixed-node-bin'), npmCli = path.join(bin, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  fs.mkdirSync(path.dirname(npmCli), { recursive: true });
+  fs.writeFileSync(path.join(bin, 'node.exe'), 'unused mocked executable'); fs.writeFileSync(npmCli, '// unused mocked CLI');
+  const saved = { PATH: process.env.PATH, Path: process.env.Path, ProgramFiles: process.env.ProgramFiles };
+  process.env.PATH = bin; process.env.Path = bin; delete process.env.ProgramFiles;
+  try {
+    const app = fixture(), canary = '\u4e00\ud83d\udd27\u00e9';
+    const run = executeWorkspacePackageTask(prepareWorkspacePackageTask(project, 'check'), {
+      taskId: 'owner:env-overlay', platform: 'win32', env: { HOMEBOT_UTF8_JOB_CANARY: canary },
+      spawnProcess: app.spawn, createWindowsJob: app.factory, longRunning: true,
+    });
+    await settle();
+    expect(app.job.authorize).toHaveBeenCalledTimes(1);
+    const launch = app.job.authorize.mock.calls[0][0];
+    expect({ executable: launch.executable, args: launch.args, inheritedPath: launch.env.Path || launch.env.PATH, canary: launch.env.HOMEBOT_UTF8_JOB_CANARY }).toEqual({
+      executable: fs.realpathSync.native(path.join(bin, 'node.exe')),
+      args: [fs.realpathSync.native(npmCli), 'run-script', 'check'],
+      inheritedPath: bin, canary,
+    });
+    expect(app.spawn).toHaveBeenCalledWith(process.execPath, expect.any(Array), expect.objectContaining({ env: expect.objectContaining({ NODE_OPTIONS: '', ELECTRON_RUN_AS_NODE: '1' }) }));
+    app.finish(); await expect(run).resolves.toMatchObject({ success: true, exitCode: 0, cleanupPending: false });
+  } finally {
+    for (const key of ['PATH', 'Path', 'ProgramFiles'] as const) { if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key]; }
+  }
+});
 
 test('a completed launcher retains background ownership and exact-task Stop retry survives root exit', async () => {
   const app = fixture(); app.job.queryEmpty.mockResolvedValue(false);

@@ -534,7 +534,9 @@ export async function executeWorkspacePackageTask(
 
   let runner: WorkspaceNpmRunner;
   try {
-    runner = options.runner || resolveWorkspaceNpmRunner(options.env, options.platform);
+    // Environment options are an overlay for execution. Resolve npm against
+    // that same environment so a canary/setting alone cannot erase PATH.
+    runner = options.runner || resolveWorkspaceNpmRunner({ ...process.env, ...options.env }, options.platform);
   } catch (error) {
     return { success: false, error: failMessage(error) };
   }

@@ -16,12 +16,13 @@ function generatedTaskScripts(project: string): Record<string, string> {
   return {
     'instant.cjs': `require('fs').appendFileSync(${JSON.stringify(path.join(project, 'instant-marker.txt'))}, 'ran-once:' + process.env.HOMEBOT_UTF8_JOB_CANARY + '\\n');`,
     'grandchild.cjs': `require('fs').writeFileSync(${JSON.stringify(path.join(project, 'grandchild.json'))},JSON.stringify({pid:process.pid,parent:process.ppid}));setInterval(()=>{},1000);`,
-    'intermediate.cjs': `setTimeout(()=>{const c=require('child_process').spawn(process.execPath,[${JSON.stringify(path.join(project, 'grandchild.cjs'))}],{stdio:'ignore'});c.once('spawn',()=>{c.unref();setTimeout(()=>process.exit(0),300);});},500);`,
-    'launch.cjs': `const c=require('child_process').spawn(process.execPath,[${JSON.stringify(path.join(project, 'intermediate.cjs'))}],{stdio:'ignore'});c.once('exit',code=>{require('fs').writeFileSync(${JSON.stringify(path.join(project, 'intermediate-exited.txt'))},String(code));});`,
+    'intermediate.cjs': `setTimeout(()=>{const c=require('child_process').spawn(process.execPath,[${JSON.stringify(path.join(project, 'grandchild.cjs'))}],{stdio:'ignore',detached:true});c.once('spawn',()=>{c.unref();setTimeout(()=>process.exit(0),300);});},500);`,
+    'launch.cjs': `const c=require('child_process').spawn(process.execPath,[${JSON.stringify(path.join(project, 'intermediate.cjs'))}],{stdio:'ignore',detached:true});c.once('exit',code=>{require('fs').writeFileSync(${JSON.stringify(path.join(project, 'intermediate-exited.txt'))},String(code));});`,
   };
 }
 function errorCategory(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error || '');
+  if (/Node\.js with npm was not found on PATH|npm was not found on PATH/.test(message)) return 'npm-runner-unavailable';
   if (/helper did not become ready/.test(message)) return 'helper-listener-timeout';
   if (/did not confirm its state/.test(message)) return 'helper-state-timeout';
   if (/assignment|peer verification/.test(message)) return 'assignment-or-peer-refused';
@@ -39,6 +40,21 @@ test('all cooked native task scripts parse without execution, including a quoted
   expect(Object.keys(scripts)).toHaveLength(4);
   for (const [name, source] of Object.entries(scripts)) expect(() => new Script(source, { filename: name })).not.toThrow();
   expect(() => new Script(scripts['instant.cjs'].replace('\\n', '\n'))).toThrow('Invalid or unexpected token');
+});
+test('the background fixture detaches both descendant levels from Node parent-exit lifetime while retaining the outer Job', () => {
+  const scripts = generatedTaskScripts('C:/private fixture');
+  for (const name of ['intermediate.cjs', 'launch.cjs']) {
+    const child = { once: jest.fn(), unref: jest.fn() }, spawnChild = jest.fn(() => child);
+    new Script(scripts[name], { filename: name }).runInNewContext({
+      require(module: string) { if (module === 'child_process') return { spawn: spawnChild }; throw new Error('Unexpected fixture dependency.'); },
+      process: { execPath: 'fixed-node', exit: jest.fn() }, setTimeout(callback: () => void) { callback(); return 1; },
+    });
+    expect(spawnChild).toHaveBeenCalledTimes(1);
+    expect(spawnChild).toHaveBeenCalledWith('fixed-node', [expect.stringContaining(name === 'intermediate.cjs' ? 'grandchild.cjs' : 'intermediate.cjs')], { stdio: 'ignore', detached: true });
+  }
+  // Detached from libuv's auxiliary parent-lifetime Job is not breakaway from
+  // our production no-breakaway Job. Native alive-before/Stop/gone controls
+  // below remain the authority qualification; this callback only checks bytes.
 });
 async function waitFor(check: () => boolean | Promise<boolean>, milliseconds = 10000): Promise<void> {
   const end = Date.now() + milliseconds;
