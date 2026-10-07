@@ -11,6 +11,14 @@ router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
 main registrations, generated docs, publication and resource-gated verification.
 Current debugger follow-ups: Editor owns active-session capacity, retained child
 cleanup authority, pre-detach capture and reachable cleanupPending Stop UI.
+Fresh b2b configured review found a late-child race beyond single snapshots.
+Files owns new creation-gated Windows Job/helper and fixed bootstrap/gate modules,
+plus their task/PTY integrations and focused tests; Editor owns debug Job admission,
+retention and cleanup integration/tests. They agree the retained Job API directly;
+root owns serial integration, existing contracts/index/packaging and verification.
+Assignment must precede project/shell execution; cleanup requires retained Job
+ActiveProcesses zero, never a Job wait signal or reconstructed PID ancestry.
+Failed/unknown setup or helper loss retains ownership/refusal. No completion claim.
 Files' read-only Windows captured-tree API is integrated in root; only successful
 same-live-root capture grants a receipt. Root owns native shutdown helper ordering
 and eight mocked actual-source controls; native qualification remains pending.
