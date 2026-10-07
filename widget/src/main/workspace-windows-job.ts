@@ -21,7 +21,7 @@ interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capab
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
-const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
 const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
@@ -168,14 +168,18 @@ export function createWorkspaceWindowsJob(pid: number, original: WorkspacePtyIde
 function windowsJobSource(): string {
   return `[Console]::Out.WriteLine('{"type":"phase","phase":"entry"}'); [Console]::Out.Flush()
 $ErrorActionPreference='Stop'
+$PSModuleAutoLoadingPreference='None'
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding"}'); [Console]::Out.Flush()
 $inputEncoding=[System.Text.UTF8Encoding]::new($false)
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-constructed"}'); [Console]::Out.Flush()
 [Console]::InputEncoding=$inputEncoding
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-set"}'); [Console]::Out.Flush()
-function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
+[Console]::Out.WriteLine('{"type":"phase","phase":"utility-import"}'); [Console]::Out.Flush()
+Microsoft.PowerShell.Core\\Import-Module -Name ([System.IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
+[Console]::Out.WriteLine('{"type":"phase","phase":"utility-imported"}'); [Console]::Out.Flush()
+function Emit($value) { [Console]::Out.WriteLine(($value | Microsoft.PowerShell.Utility\\ConvertTo-Json -Compress)); [Console]::Out.Flush() }
 [Console]::Out.WriteLine('{"type":"phase","phase":"compile"}'); [Console]::Out.Flush()
-Add-Type -TypeDefinition @'
+Microsoft.PowerShell.Utility\\Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
 public static class OwnedWindowsJob {
  [StructLayout(LayoutKind.Sequential)] struct BasicLimit { public long PerProcess,PerJob; public uint Flags; public UIntPtr MinWorking,MaxWorking; public uint ActiveLimit; public UIntPtr Affinity; public uint Priority,Scheduling; }
@@ -215,7 +219,7 @@ public static class OwnedWindowsJob {
 }
 '@
 try {
- $initial=ConvertFrom-Json -InputObject ([Console]::In.ReadLine())
+ $initial=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([Console]::In.ReadLine())
  Emit @{type='phase';phase='create'}
  [OwnedWindowsJob]::Create()
  if($initial.gate) { Emit @{type='phase';phase='listen'}; [OwnedWindowsJob]::Listen([string]$initial.gate.pipeName) }
@@ -224,17 +228,17 @@ try {
  while($true) {
   Emit @{type='phase';phase='command'}
   $line=[Console]::In.ReadLine(); if($null -eq $line) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }
-  if($line.Length -gt 131072) { throw 'input' }; $request=ConvertFrom-Json -InputObject $line
+  if($line.Length -gt 131072) { throw 'input' }; $request=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject $line
   if($request.id -isnot [int] -or $request.id -le 0) { throw 'request' }
   try {
    if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation} }
    if($request.operation -eq 'attach' -and !$attached) { $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true} }
    elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
-    $authorized=$true; $ack=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | ConvertTo-Json -Compress -Depth 5)))
+    $authorized=$true; $ack=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | Microsoft.PowerShell.Utility\\ConvertTo-Json -Compress -Depth 5)))
     if($ack.type -ne 'spawn' -or $ack.pid -isnot [int] -or $ack.pid -le 0) { throw 'child' }
     $member=[OwnedWindowsJob]::VerifyChild($ack.pid)
     if($member -eq 0 -and $request.launch.kind -eq 'task') {
-     $done=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::ReadCompletion())
+     $done=Microsoft.PowerShell.Utility\\ConvertFrom-Json -InputObject ([OwnedWindowsJob]::ReadCompletion())
      if($done.type -ne 'completed' -or $done.pid -ne $ack.pid -or $done.exitCode -isnot [int] -or ![OwnedWindowsJob]::CompletedTarget()) { throw 'completion' }
     } elseif($member -ne 1) { throw 'membership' }
     [OwnedWindowsJob]::Accept(); [OwnedWindowsJob]::ReleaseGate(); Emit @{type='result';id=$request.id;ok=$true;pid=$ack.pid}

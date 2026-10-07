@@ -43,7 +43,7 @@ describe('creation-gated Windows Job ownership', () => {
     fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
   });
 
-  it.each(['encoding', 'encoding-constructed', 'encoding-set'])('keeps %s observations diagnostic-only at the original listener deadline', async phase => {
+  it.each(['encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported'])('keeps %s observations diagnostic-only at the original listener deadline', async phase => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();
     let listening = false; void job.listening.then(() => { listening = true; }, () => {});
     fake.send({ type: 'phase', phase, empty: true, ok: true }); await settle();
@@ -71,6 +71,15 @@ describe('creation-gated Windows Job ownership', () => {
     await expect(job.listening).rejects.toThrow('unknown state evidence');
     await expect(job.ready).rejects.not.toThrow('private-command-canary');
     fake.child.emit('close', 0);
+  });
+
+  it('fails closed when the system Utility import exits without a listener or cleanup receipt', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    fake.send({ type: 'phase', phase: 'utility-import' }); fake.child.emit('close', 1);
+    await expect(job.listening).rejects.toThrow('closed without verified cleanup');
+    await expect(job.ready).rejects.toThrow('closed without verified cleanup');
+    await expect(job.stop()).rejects.toThrow('lost');
+    expect(fake.requests()).toHaveLength(0); expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps cleanup authority after failed assignment and never authorizes a launch', async () => {
