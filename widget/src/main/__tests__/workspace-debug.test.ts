@@ -59,7 +59,9 @@ test('a program exiting without Stop clears installed points; restart installs a
   expect((await call('resume')).success).toBe(true); await waitForPaused(2);
   expect((await call('resume')).success).toBe(true);
   let ended = await call('state');
-  for (let attempt = 0; ended.running && attempt < 100; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
+  // Allow the existing 4,500ms read-only capture bound to finish before the
+  // same natural-leader-exit assertions; this changes only fixture polling.
+  for (let attempt = 0; ended.running && attempt < 200; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
   expect(ended).toEqual(expect.objectContaining({ success: true, running: false, paused: false, frames: [], breakpoints: [] }));
   expect(ended.output).toContain('RESTART 3');
   expect(() => process.kill(firstPid, 0)).toThrow();
