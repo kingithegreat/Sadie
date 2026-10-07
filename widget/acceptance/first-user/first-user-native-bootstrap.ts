@@ -31,7 +31,7 @@ function sameProcess(expected: ProcessIdentity, actual: ProcessIdentity | null) 
     && actual.CreationDate === expected.CreationDate && actual.ExecutablePath?.toLowerCase() === expected.ExecutablePath.toLowerCase();
 }
 
-function describeFailure(error: any, seen = new WeakSet<object>()): unknown {
+export function describeFailure(error: any, seen = new WeakSet<object>()): unknown {
   if (!error || typeof error !== 'object') return { message: String(error) };
   if (seen.has(error)) return { message: 'Repeated error reference' };
   seen.add(error);
@@ -197,6 +197,10 @@ export async function openFirstUserFixture(options: {
   const settingsPath = path.join(profile, 'config', 'user-settings.json');
   fs.writeFileSync(settingsPath, JSON.stringify({ firstRun: options.firstRun !== false, uncensoredMode: options.firstRun !== false,
     chatModel: options.firstRun === false ? CHAT_MODEL : 'qwen2.5:7b', theme: 'dark', useCustomLLM: false,
+    // Chat qualification starts from an already configured PC. Otherwise the
+    // real startup GPU detection replaces this chosen 3B model with its profile
+    // default before Send. Ordinary first-user setup keeps detecting hardware.
+    ...(options.chatHandler ? { hardwareProfile: '4gb' } : {}),
     modelRoutingMode: 'off', morningBriefing: false, moaEnabled: false, telemetryEnabled: false,
     ollamaUrl, n8nUrl, projectPath: projects }));
   const guard = path.join(root, 'guard.cjs');

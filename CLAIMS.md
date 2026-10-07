@@ -1089,3 +1089,11 @@ chat, review and landing remain pending. The dedicated native fixtures do not
 contact owner providers or prove response quality. See
 `tasks/chat-local-custom-20261007.md` and the preserved private A/B receipts.
 Preserve active wizard-retention, IDE, character and existing delivery owners.
+
+## Chat hosted fixture corrections
+
+Local chat agent owns private `claude/chat-native-fix-20261007` from `7738834d`:
+chat-only hardware seed, scoped custom Connect, preserved nested failure and
+merge-source receipts, and ordinary IPC current-user duplicate correction with
+local/custom regression controls. No shared profile/dependency mutations or
+local native/heavy launch. Root retains integration, publication and qualification.

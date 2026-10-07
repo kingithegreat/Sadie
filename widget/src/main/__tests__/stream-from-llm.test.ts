@@ -86,7 +86,7 @@ jest.mock('../tools', () => ({
 }));
 
 // ── Import after all mocks ──────────────────────────────────────────────────
-import { streamFromLLM } from '../message-router';
+import { streamFromLLM, addToHistory, clearHistory } from '../message-router';
 import { executeToolBatch } from '../tools';
 import { MemoryManager } from '../memory-manager';
 
@@ -170,6 +170,25 @@ describe('streamFromLLM', () => {
       );
       expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(1);
       expect(typeof handle.cancel).toBe('function');
+    });
+
+    test.each([true, false])('cloud history omits only the explicitly recorded current turn (marker=%s)', async currentUserInHistory => {
+      const conversationId = 'cloud-current-turn';
+      const prompt = 'explain closures';
+      clearHistory(conversationId);
+      addToHistory(conversationId, 'user', prompt);
+      addToHistory(conversationId, 'assistant', 'An earlier explanation.');
+      addToHistory(conversationId, 'user', prompt);
+      const cbs = callbacks();
+      await streamFromLLM(prompt, undefined, conversationId,
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError,
+        undefined, undefined, { currentUserInHistory });
+      const history = mockStreamFromCustomLLM.mock.calls[0][1];
+      expect(history.map((message: any) => message.content)).toEqual(currentUserInHistory
+        ? [prompt, 'An earlier explanation.']
+        : [prompt, 'An earlier explanation.', prompt]);
+      expect(mockStreamFromCustomLLM.mock.calls[0][0]).toBe(prompt);
+      clearHistory(conversationId);
     });
 
     test('plain greeting does not give an unoffered tool call an execution callback', async () => {

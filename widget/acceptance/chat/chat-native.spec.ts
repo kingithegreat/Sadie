@@ -1,6 +1,6 @@
 import { test, expect, type Locator } from '@playwright/test';
 import * as fs from 'node:fs';
-import { openFirstUserFixture } from '../first-user/first-user-native-bootstrap';
+import { describeFailure, openFirstUserFixture } from '../first-user/first-user-native-bootstrap';
 
 const firstPrompt = 'The secret phrase is Tui-47. Acknowledge it.';
 const contextPrompt = 'Repeat the secret phrase from our previous turn.';
@@ -41,6 +41,8 @@ for (const provider of ['local', 'custom'] as const) {
           if (actualProvider !== provider) throw Error('Chat reached the wrong provider.');
           const prompt = body.messages.filter((message: any) => message.role === 'user').at(-1)?.content;
           if (![firstPrompt, contextPrompt, failurePrompt, stopPrompt, resumedPrompt].includes(prompt)) throw Error('Unexpected generation prompt.');
+          expect(body.messages.filter((message: any) => message.role === 'user' && message.content === prompt),
+            'The current user turn must be sent exactly once').toHaveLength(1);
           const frame = (content: string, done = false) => provider === 'local'
             ? JSON.stringify({ model: 'qwen2.5:3b', message: { role: 'assistant', content }, done }) + '\n'
             : 'data: ' + JSON.stringify({ choices: [{ index: 0, delta: { content }, finish_reason: done ? 'stop' : null }] }) + '\n\n';
@@ -101,10 +103,11 @@ for (const provider of ['local', 'custom'] as const) {
       if (provider === 'custom') {
         await page.getByRole('button', { name: 'Settings', exact: true }).click();
         const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-        await settings.getByRole('combobox', { name: 'Cloud API provider', exact: true }).selectOption('custom');
-        await settings.getByPlaceholder('https://your-api.com/v1', { exact: true }).fill(runtime.customUrl!);
-        await settings.getByRole('button', { name: 'Connect', exact: true }).click();
-        await expect(settings.getByRole('button', { name: customModel, exact: true })).toBeVisible();
+        const cloud = settings.locator('.custom-llm-section');
+        await cloud.getByRole('combobox', { name: 'Cloud API provider', exact: true }).selectOption('custom');
+        await cloud.getByPlaceholder('https://your-api.com/v1', { exact: true }).fill(runtime.customUrl!);
+        await cloud.getByRole('button', { name: 'Connect', exact: true }).click();
+        await expect(cloud.getByRole('button', { name: customModel, exact: true })).toBeVisible();
         await expect(settings.getByTestId('privacy-switch')).toBeEnabled();
         await settings.getByTestId('privacy-switch').check();
         await expect(settings.getByText('Allowed to use the online AI', { exact: true })).toBeVisible();
@@ -115,6 +118,7 @@ for (const provider of ['local', 'custom'] as const) {
         expect(saved.customLLM).toMatchObject({ provider: 'custom', model: customModel, apiUrl: runtime.customUrl, enabled: true });
         expect(saved.customLLM?.apiKey || '').toBe('');
       }
+      if (provider === 'local') expect((await page.evaluate(() => window.electron.getSettings())).chatModel).toBe('qwen2.5:3b');
       expect(generation).toEqual([]);
       await runtime.setPhase('chat');
       const composer = page.getByRole('textbox', { name: 'Message HomeBot', exact: true });
@@ -178,7 +182,8 @@ for (const provider of ['local', 'custom'] as const) {
     finally {
       if (!proof) { try { proof = await runtime.evidence(); } catch (error) { failures.push(error); } }
       try {
-        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, stopClosed, serverErrors, proof }, null, 2));
+        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, stopClosed, serverErrors, proof,
+          failures: failures.map(error => describeFailure(error)) }, null, 2));
       } catch (error) { failures.push(error); }
       try {
         const receipt = await runtime.close();
@@ -187,6 +192,10 @@ for (const provider of ['local', 'custom'] as const) {
           launcherSameIdentityAlive: false, safeToCloseServers: true });
       } catch (error) { failures.push(error); }
     }
-    if (failures.length) throw new AggregateError(failures, `${provider} production chat acceptance failed`);
+    if (failures.length) {
+      const details = failures.map(error => describeFailure(error));
+      fs.writeFileSync(testInfo.outputPath('chat-failures.json'), JSON.stringify(details, null, 2));
+      throw new AggregateError(failures, `${provider} production chat acceptance failed: ${failures.map(error => (error as any)?.message || String(error)).join('; ')}`);
+    }
   });
 }

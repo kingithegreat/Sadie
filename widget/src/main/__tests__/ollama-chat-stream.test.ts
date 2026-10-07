@@ -26,7 +26,7 @@ jest.mock('../tools/web', () => ({ setSearxngUrl: jest.fn(), setTavilyApiKey: je
 jest.mock('../tools/enrichment', () => ({ enrichNbaGames: jest.fn(), enrichWeather: jest.fn(), enrichGenericQuery: jest.fn() }));
 jest.mock('../stream-proxy-client', () => ({ __esModule: true, default: jest.fn() }));
 
-import { streamFromOllamaWithTools, setUncensoredMode, clearHistory } from '../message-router';
+import { streamFromOllamaWithTools, setUncensoredMode, clearHistory, addToHistory } from '../message-router';
 import { executeToolBatch } from '../tools';
 import { getSettings } from '../config-manager';
 import { OLLAMA_CHAT_MODEL } from '../router/model-size';
@@ -52,6 +52,27 @@ async function start(message = 'Explain how rainbows form') {
   await tick();
   return { stream, ...callbacks, ...handle };
 }
+
+test.each([true, false])('only omits an explicitly recorded current turn (marker=%s), preserving earlier repeated prompts', async currentUserInHistory => {
+  const prompt = 'Explain how rainbows form';
+  addToHistory('local-stream-test', 'user', prompt);
+  addToHistory('local-stream-test', 'assistant', 'An earlier explanation.');
+  addToHistory('local-stream-test', 'user', prompt);
+  const stream = new PassThrough();
+  post.mockResolvedValueOnce({ data: stream });
+  const callbacks = { onChunk: jest.fn(), onToolCall: jest.fn(), onToolResult: jest.fn(), onEnd: jest.fn(), onError: jest.fn() };
+  await streamFromOllamaWithTools(prompt, undefined, 'local-stream-test',
+    callbacks.onChunk, callbacks.onToolCall, callbacks.onToolResult, callbacks.onEnd, callbacks.onError,
+    undefined, undefined, { currentUserInHistory });
+  await tick();
+  const turns = post.mock.calls[0][1].messages.filter((message: any) => message.role !== 'system');
+  expect(turns.map((message: any) => message.content)).toEqual(currentUserInHistory
+    ? [prompt, 'An earlier explanation.', prompt]
+    : [prompt, 'An earlier explanation.', prompt, prompt]);
+  stream.end(record('A complete new explanation.', true));
+  await tick();
+  expect(callbacks.onEnd).toHaveBeenCalledTimes(1);
+});
 
 test('preserves records split across chunks, combined records, and split UTF-8 bytes', async () => {
   const state = await start();
