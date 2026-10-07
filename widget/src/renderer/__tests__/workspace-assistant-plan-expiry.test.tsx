@@ -13,6 +13,7 @@ beforeEach(() => {
     workspaceAiPreparePlan: jest.fn(async () => ({ success: true, id: `plan-${++sequence}`, text: 'Review current changes.', expires: now + TTL })),
     workspaceAiApprovePlan: jest.fn(async (_root: string, id: string) => ({ success: true, id, expires: now + TTL })),
     subscribeToStream: jest.fn((_id: string, stream: any) => { callbacks = stream; return jest.fn(); }), sendStreamMessage: jest.fn(async () => undefined), cancelStream: jest.fn(),
+    workspaceAiRules: jest.fn(async () => ({ success: true, rules: [] })),
   };
   (window as any).electron = api;
 });

@@ -31,6 +31,7 @@ describe('WorkspaceAssistantPanel', () => {
       subscribeToStream: jest.fn((_id: string, h: any) => { handlers = h; return jest.fn(); }),
       sendStreamMessage: jest.fn(async (req: any) => { sent.push(req); }),
       cancelStream: jest.fn(),
+      workspaceAiRules: jest.fn(async () => ({ success: true, rules: [] })),
       workspaceList: jest.fn(async () => ({ success: true, entries: [{ name: 'src', isDirectory: true }] })),
     };
   });
@@ -46,6 +47,7 @@ describe('WorkspaceAssistantPanel', () => {
     fireEvent.change(screen.getByLabelText('Add context'), { target: { value: 'file:C:/proj/app.ts' } });
     expect(screen.getByRole('list', { name: 'Attached context' })).toHaveTextContent('app.ts');
     fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'What does beta do?' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
 
     expect(sent).toHaveLength(1);
@@ -64,6 +66,7 @@ describe('WorkspaceAssistantPanel', () => {
     render(<WorkspaceAssistantPanel root="C:/proj" files={files} activePath={null} onClose={jest.fn()} />);
     fireEvent.change(screen.getByLabelText('Add context'), { target: { value: 'folder:C:/proj' } });
     fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'Overview?' } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
     await act(async () => { fireEvent.keyDown(screen.getByLabelText('Ask the assistant'), { key: 'Enter', ctrlKey: true }); });
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].message).toContain('Folder: C:/proj\nContains:\n- src/');

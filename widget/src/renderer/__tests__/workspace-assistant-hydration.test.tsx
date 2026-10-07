@@ -11,6 +11,7 @@ beforeEach(() => {
     workspaceAiSession: jest.fn(async () => ({ success: true, turns: [] })), workspaceAiSaveSession: jest.fn(async () => ({ success: true })),
     sendStreamMessage: jest.fn(async () => undefined), cancelStream: jest.fn(), deleteConversation: jest.fn(async () => ({ success: true })),
     subscribeToStream: jest.fn((_id: string, callbacks: any) => { stream = callbacks; return jest.fn(); }),
+    workspaceAiRules: jest.fn(async () => ({ success: true, rules: [] })),
   };
   (window as any).electron = api;
 });
@@ -87,6 +88,7 @@ test('expired hydration can Retry and its late original response cannot replace 
 test('ephemeral assistant without recovery or save APIs stays usable and cannot write durable history', async () => {
   delete api.workspaceAiSession; delete api.workspaceAiSaveSession;
   render(panel()); fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'ephemeral question' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled());
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
   expect(api.sendStreamMessage).toHaveBeenCalledTimes(1);
   act(() => { stream.onStreamChunk({ chunk: 'ephemeral answer' }); stream.onStreamEnd(); });
