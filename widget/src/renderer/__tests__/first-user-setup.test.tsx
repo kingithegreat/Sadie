@@ -256,6 +256,105 @@ test('a registered model fallback supersedes an earlier mount settings read', as
   expect(sendStreamMessage).not.toHaveBeenCalled();
 });
 
+test('a startup fallback survives the primary settings snapshot while conversation loading is pending', async () => {
+  persisted.theme = 'light';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const fallbackSubscription = jest.fn((_callback: (data: { from: string; to: string }) => void) => jest.fn());
+  (window as any).electron.onModelFallback = fallbackSubscription;
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:get-settings')).toHaveLength(2);
+  const tokenCounter = document.querySelector('.token-counter');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 32,768'));
+
+  persisted.chatModel = 'llama3.2:3b';
+  act(() => { fallbackSubscription.mock.calls[0][0]({ from: 'qwen2.5:7b', to: 'llama3.2:3b' }); });
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(tokenCounter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  // The initial snapshot still owns unrelated configuration and first-run
+  // intent; ignoring the entire boot snapshot would lose these fields.
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(0);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('the post-subscription settings model survives an older primary boot snapshot', async () => {
+  persisted.theme = 'light';
+  const oldSettings = clone(persisted);
+  persisted.chatModel = 'llama3.2:3b';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let reads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++reads === 1) return oldSettings;
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  expect(reads).toBe(2);
+  const root = screen.getByTestId('homebot-app-root');
+  const counter = document.querySelector('.token-counter');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  expect(counter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(counter).toHaveAttribute('title', expect.stringContaining('of 131,072'));
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a full settings save before boot hydration supersedes the entire older snapshot', async () => {
+  persisted.firstRun = false;
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  expect(persisted.theme).toBe('light');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect((ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:save-settings')).toHaveLength(1);
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(screen.queryByRole('dialog', { name: 'Welcome to HomeBot' })).toBeNull();
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('a rejected settings save still hydrates the original first-run configuration', async () => {
+  persisted.theme = 'light';
+  const conversations = held<{ success: true; data: { conversations: [] } }>();
+  (window as any).electron.loadConversations.mockReturnValueOnce(conversations.promise);
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:save-settings') throw new Error('Configuration was not saved');
+    return invoke(channel, value);
+  });
+  await act(async () => { render(<App />); });
+  const root = screen.getByTestId('homebot-app-root');
+  expect(root).not.toHaveAttribute('data-hydrated', 'true');
+  fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
+  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
+  await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
+  expect(await within(panel).findByRole('alert')).toHaveTextContent('Configuration was not saved');
+  await act(async () => { conversations.resolve({ success: true, data: { conversations: [] } }); });
+  expect(root).toHaveAttribute('data-hydrated', 'true');
+  expect(root).toHaveAttribute('data-theme', 'light');
+  expect(await screen.findByRole('dialog', { name: 'Welcome to HomeBot' })).toBeInTheDocument();
+  expect(persisted.firstRun).toBe(true);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
+});
+
 async function startDownloadAndReturnToLocal() {
   const electron = (window as any).electron;
   const pull = held<{ success: boolean; error?: string }>();

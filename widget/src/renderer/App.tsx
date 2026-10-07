@@ -272,6 +272,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     widgetHotkey: 'Ctrl+Shift+Space'
   });
   const settingsMutationGenerationRef = useRef(0);
+  const settingsSavedGenerationRef = useRef(0);
   const [isHydrated, setIsHydrated] = useState(false);
   // What the ROUTER says would answer right now — the header displays this,
   // never its own derivation. `settings.chatModel` as the header source is
@@ -497,6 +498,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // Load settings and conversation on boot
   useEffect(() => {
     let mounted = true;
+    const bootModelGeneration = settingsMutationGenerationRef.current;
+    const bootSaveGeneration = settingsSavedGenerationRef.current;
     (async () => {
       try {
         // Load settings and conversations in parallel for faster boot
@@ -504,7 +507,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           window.electron.getSettings(),
           window.electron.loadConversations?.(),
         ]);
-        if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
+        if (mounted && loaded) setSettings(prev => {
+          if (bootSaveGeneration !== settingsSavedGenerationRef.current) return prev;
+          // A startup fallback or the post-subscription refresh owns its newer
+          // model, while the initial read still supplies other saved settings.
+          return {
+            ...prev, ...loaded,
+            ...(bootModelGeneration !== settingsMutationGenerationRef.current && prev.chatModel ? { chatModel: prev.chatModel } : {}),
+          };
+        });
         // Check connection status on boot
         window.electron.checkConnection?.().then(c => {
           if (mounted && c) setStatus(c);
@@ -710,6 +721,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     let settingsRefreshActive = true;
     window.electron.getSettings?.().then(s => {
       if (settingsRefreshActive && settingsRefreshGeneration === settingsMutationGenerationRef.current && s?.chatModel) {
+        settingsMutationGenerationRef.current += 1;
         setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
       }
     }).catch(() => {});
@@ -821,6 +833,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // choice starts saving, including while its acknowledgement is pending.
     settingsMutationGenerationRef.current += 1;
     const updated = await window.electron.saveSettings(newSettings);
+    // Only an acknowledged full save owns unrelated settings. A failed save
+    // must still allow the original first-run/theme configuration to hydrate.
+    settingsSavedGenerationRef.current += 1;
     setSettings(prev => ({ ...prev, ...updated }));
   }, []);
 

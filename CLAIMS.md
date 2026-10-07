@@ -50,6 +50,20 @@ requires a fresh qualifying check. This claim ends at integration/delivery;
 canonical Drive records final qualification and release without another source
 commit. Other owners retain their scopes.
 
+Configured review then found the primary boot Promise.all could restore its
+old model while conversation loading was pending. Root reproduced the actual
+App/preload counter reverting from 128K to 32K. The final guard preserves newer
+fallback/secondary-refresh model decisions while hydrating unrelated initial
+fields; only an acknowledged full save supersedes the whole boot snapshot.
+Four real App/preload/UI controls cover pending-boot fallback, newer refresh,
+successful Settings save and rejected save. Previous source yields three
+expected failures and one rejection positive; final source passes all 118
+focused assertions in four suites, widget TypeScript and scoped lint with four
+existing warnings. Exact source restoration and all original review/failure
+evidence are retained. Independent final read-only review found no blocker.
+Source is frozen again; final-head hosted/native/configured review and delivery
+must finish before this integration claim is released in canonical Drive.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make
