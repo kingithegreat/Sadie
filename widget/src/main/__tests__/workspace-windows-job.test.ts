@@ -173,7 +173,8 @@ describe('creation-gated Windows Job ownership', () => {
     expect(source).toContain('limits.Basic.Flags=0x2000');
     expect(source).toContain('QueryInformationJobObject(job,1'); expect(source).toContain('return Account().Active==0');
     expect(source).not.toContain('Get-CimInstance'); expect(source).not.toContain('TerminateProcess');
-    expect(source).toContain('[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)');
+    expect(source).toContain('$inputEncoding=[System.Text.UTF8Encoding]::new($false)');
+    expect(source).toContain('[Console]::InputEncoding=$inputEncoding');
   });
 
   it('rechecks main-owned authority after readiness and cannot send GO when that fence rejects', async () => {
