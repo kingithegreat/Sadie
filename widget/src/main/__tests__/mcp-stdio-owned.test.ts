@@ -28,9 +28,9 @@ jest.mock('../workspace-process-gate', () => ({
 }));
 jest.mock('../workspace-pty-identity', () => ({ workspacePtyLifecycle: { capture: jest.fn() } }));
 
-function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void, reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+function deferred() {
+  let resolve!: () => void, reject!: (error: unknown) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
   return { promise, resolve, reject };
 }
 const factory = createPendingWorkspaceWindowsJob as jest.Mock;
