@@ -42,6 +42,7 @@ live('owned SDK stdio service contains late descendants after intermediate exit 
   owner.transport.stderr?.on('data', () => {});
   const events: any[] = [];
   owner.transport.onmessage = message => { events.push(message); };
+  let primaryFailure = false;
   try {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Unrelated live control failed readiness.')), 4000);
@@ -67,10 +68,17 @@ live('owned SDK stdio service contains late descendants after intermediate exit 
       intermediatePid: tree.intermediatePid, leafPid: tree.leafPid, leafCreation: leafIdentity!.creation,
       unrelatedPid: unrelated.pid, intermediateEnded: true, leafAliveBeforeStop: true, jobCloseConfirmed: true,
       leafGoneAfterStop: true, unrelatedAliveAfterStop: true } }));
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
   } finally {
     // Never guessed descendant/PID cleanup: retain exact owner and separately
     // held unrelated ChildProcess. Cleanup failure keeps this fixture failed.
-    await Promise.all([owner.close(), stopHeldChild(unrelated)]);
-    fs.rmSync(directory, { recursive: true, force: true });
+    const cleanup = await Promise.allSettled([owner.close(), stopHeldChild(unrelated)]);
+    const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failures.length) {
+      console.error(JSON.stringify({ ownedMcpCleanupFailure: failures.map(result => String(result.reason)), primaryFailurePreserved: primaryFailure, fixtureRetained: directory }));
+      if (!primaryFailure) throw failures[0].reason;
+    } else fs.rmSync(directory, { recursive: true, force: true });
   }
 }, 45_000);
