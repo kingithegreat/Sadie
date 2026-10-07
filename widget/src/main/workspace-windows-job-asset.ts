@@ -44,8 +44,9 @@ function resolveIdentity(): { assembly: string; host: string; sha256: string; ho
     assembly = path.resolve(mainDirectory, 'assets', 'OwnedWindowsJob.dll');
     host = path.resolve(mainDirectory, 'assets', 'OwnedWindowsJobHost.exe');
     if (typeof HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY !== 'undefined') {
-      if (!HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY.startsWith(hostMarker)) throw new Error('The managed Job host build identity is invalid.');
-      hostExpected = HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY.slice(hostMarker.length);
+      const hostIdentity = HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY;
+      if (!hostIdentity.startsWith(hostMarker)) throw new Error('The managed Job host build identity is invalid.');
+      hostExpected = hostIdentity.slice(hostMarker.length);
     }
   } else {
     // Explicit source layout is required; a missing build define in out cannot
