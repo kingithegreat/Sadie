@@ -69,6 +69,8 @@ merged-main test delivery with a release update in the canonical plan. After tho
 conditions are met, this entry is a historical work journal and releases the files.
 Root continues exact-head qualification after49d push green/PR pure timeout/native contract35of37 failure. Test-only5cb corrects canonical mock ownership and adds finite pure phases without deadline/assertion relaxation. Both agents reviewed; root preserved baseline26of28 and current28PASS plus actual33 pure receipt. All failures remain historical evidence; no current native qualification/merge/delivery claim.
 
+Root integrated selected-to-selected crash metadata refusal e40 and fixture-only task admission categories ae3d after independent review. Root29 Node +9 limited actual-source controls pass; original1372 PR npm marker failure preserved with first error unknown. Exact1372 native2/4/1 and push widget passed; fresh combined qualification/merge/normal-profile delivery remain unfinished.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make
