@@ -45,8 +45,11 @@ test('interactive terminal retains a late grandchild after its parents exit and 
     const panel = page.getByRole('region', { name: 'Interactive terminal', exact: true });
     await panel.getByRole('combobox', { name: 'Shell profile' }).selectOption('cmd');
     await panel.getByRole('button', { name: 'New terminal', exact: true }).click();
-    const input = panel.getByRole('region', { name: 'Interactive cmd terminal' }).locator('.xterm-helper-textarea');
-    await expect(input).toBeVisible();
+    const terminal = panel.getByRole('region', { name: 'Interactive cmd terminal' });
+    await expect(terminal).toBeVisible();
+    // xterm intentionally makes its keyboard helper zero-sized and transparent.
+    const input = terminal.locator('.xterm-helper-textarea');
+    await expect(input).toBeAttached(); await input.focus(); await expect(input).toBeFocused();
     const command = async (file: string, suffix = '') => { await input.focus(); await input.pressSequentially(`"${process.execPath}" "${path.join(project, file)}"${suffix}`); await input.press('Enter'); };
     await command('stdin.cjs'); await expect.poll(() => fs.existsSync(ttyMarker)).toBe(true);
     const initialTty = JSON.parse(fs.readFileSync(ttyMarker, 'utf8')); expect(initialTty.stdin).toBe(true); expect(initialTty.stdout).toBe(true);
