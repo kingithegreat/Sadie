@@ -59,7 +59,12 @@ function stopOwnedProcess(identity: ProcessIdentity) {
 
 export async function openFirstUserFixture(options: {
   testInfo: TestInfo; firstRun?: boolean; inventory?: 'installed' | 'missing'; entry?: string;
+  holdSecondSettingsResponse?: boolean;
 }) {
+  if (options.holdSecondSettingsResponse) {
+    expect(options.firstRun).toBe(true);
+    expect(options.inventory).toBe('installed');
+  }
   const entry = options.entry || process.env.HOMEBOT_FIRST_USER_ENTRY!;
   const runtimeRoot = process.env.HOMEBOT_FIRST_USER_RUNTIME_ROOT!;
   expect(path.isAbsolute(entry)).toBe(true);
@@ -82,9 +87,15 @@ export async function openFirstUserFixture(options: {
   const initialRag = fs.existsSync(roots.ragIndex) ? createHash('sha256').update(fs.readFileSync(roots.ragIndex)).digest('hex') : null;
   const model = { name: CHAT_MODEL, size: 2000000000, modified_at: '2026-10-07T00:00:00Z',
     details: { family: 'qwen2', families: ['qwen2'], parameter_size: '3B' } };
+  // Keep the initial 7B choice installed for the response race. Otherwise the
+  // real main startup validation may switch it to 3B before either read.
+  const installed = options.holdSecondSettingsResponse
+    ? [model, { ...model, name: 'qwen2.5:7b', size: 4700000000,
+      details: { ...model.details, parameter_size: '7B' } }]
+    : [model];
   const fixture = {
     phase: 'setup' as Phase,
-    inventory: options.inventory === 'missing' ? [] as typeof model[] : [model],
+    inventory: options.inventory === 'missing' ? [] as typeof model[] : installed,
     requests: [] as RecordEntry[], rejected: [] as RecordEntry[],
     pendingPull: null as http.ServerResponse | null,
     completePull() {
@@ -194,6 +205,39 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
   // UI assets are file URLs. All renderer HTTP is denied in this first-user fixture.
   state.rendererDenied.push({method:details.method,url:details.url});callback({cancel:true});
 });});
+if(${options.holdSecondSettingsResponse === true}){
+  const race=state.settingsReadRace={registrations:0,totalReads:0,reads:[],heldRead:null,released:false,releaseCount:0};
+  let releaseHeld;
+  globalThis.firstUserReleaseSettingsRead=function(){
+    if(!releaseHeld||race.released)throw Error('No unreleased settings response is held');
+    race.released=true;race.releaseCount++;
+    const release=releaseHeld;releaseHeld=undefined;release();
+  };
+  // Install before production applyIpcHandlePatch captures ipcMain.handle.
+  // Preserve the real listener, receiver and arguments; delay only its reply.
+  const originalHandle=electron.ipcMain.handle;
+  electron.ipcMain.handle=function(channel,listener){
+    if(channel!=='homebot:get-settings')return Reflect.apply(originalHandle,this,[channel,listener]);
+    race.registrations++;
+    if(race.registrations!==1)throw Error('Settings race requires one original registration');
+    return Reflect.apply(originalHandle,this,[channel,async function(...args){
+      const index=++race.totalReads;
+      if(index>16)throw Error('Settings race read receipt exceeded its budget');
+      const record={index,senderId:args[0]?.sender?.id??null,capturedModel:null,deliveredModel:null,held:index===2};
+      race.reads.push(record);
+      const result=await Reflect.apply(listener,this,args);
+      record.capturedModel=result?.chatModel??null;
+      let delivered=result;
+      if(index===2){
+        delivered=JSON.parse(JSON.stringify(result));
+        race.heldRead=index;
+        await new Promise(resolve=>{releaseHeld=resolve;});
+      }
+      record.deliveredModel=delivered?.chatModel??null;
+      return delivered;
+    }]);
+  };
+}
 `);
   // A bootstrap entry preserves module imports and production handlers; guard
   // installs first, unlike an app.evaluate performed after startup writes.
@@ -376,9 +420,27 @@ const electron=require('electron');electron.app.whenReady().then(()=>{electron.s
       return { roots, passive, nativeIdentity, launcherIdentity, mainSha256: createHash('sha256').update(fs.readFileSync(entry)).digest('hex'), initialRag, currentRag,
         transport: state, requests: fixture.requests, rejected: fixture.rejected };
     }
-    return { app, page, fixture, roots, settingsPath, ollamaUrl, setPhase, evidence, close };
+    async function settingsReadRace() {
+      return app!.evaluate(() => (globalThis as any).firstUserGuard.settingsReadRace ?? null);
+    }
+    async function releaseSettingsRead() {
+      await app!.evaluate(() => {
+        const release = (globalThis as any).firstUserReleaseSettingsRead;
+        if (typeof release !== 'function') throw new Error('Settings response race is not enabled');
+        release();
+      });
+    }
+    return { app, page, fixture, roots, settingsPath, ollamaUrl, setPhase, evidence, close, settingsReadRace, releaseSettingsRead };
   } catch (error) {
     const failures: unknown[] = [error];
+    if (app && options.holdSecondSettingsResponse) {
+      try {
+        await app.evaluate(() => {
+          const race = (globalThis as any).firstUserGuard?.settingsReadRace;
+          if (race?.heldRead === 2 && !race.released) (globalThis as any).firstUserReleaseSettingsRead();
+        });
+      } catch (releaseError) { failures.push(releaseError); }
+    }
     try { await close(); } catch (cleanupError) { failures.push(cleanupError); }
     try {
       // Playwright's JSON reporter does not serialize AggregateError.errors.

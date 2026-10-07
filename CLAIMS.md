@@ -1,5 +1,30 @@
 # Work Claims
 
+## 2026-10-07 — SETUP-MODEL-RETENTION
+
+Codex root coordinates the carry-on setup follow-up from main `ce53a7db` in
+`.homebot/setup-model-retention-20261007`, branch
+`claude/setup-model-retention-20261007`. The setup agent owns FirstRunModal and
+its focused setup tests; root owns first-attempt trace retention, serial guarded
+checks, hosted review, publication and delivery. A late mount settings read can
+replace the wizard's verified installed model without clearing its ready state.
+Two actual App/preload regressions are prepared; baseline execution is pending
+the resource guard. The original Windows Skip overlay timeout is still
+unexplained: its archive retains only a successful retry trace, no original
+failure screenshot. No production timeout or acknowledgement gate is relaxed.
+IDE #474 and the character-preview owner retain their separate scopes; accepted
+test copies, shared dependencies and owner profiles are preserved.
+
+Source editing is frozen: both real App baseline cases saved the wrong 7B model;
+the correction passes all 108 focused tests in three suites, widget TypeScript,
+scoped lint and supplemental native TypeScript. Native discovery lists the same
+four cases; the installed-model case now delays an original 7B settings reply
+after an explicit 3B choice, retaining actual save/mode/HTTP handlers and closure
+oracles. A deliberate no-browser failed-first/passed-retry control proves the
+old trace mode loses the original trace and the new mode retains it. Local
+build/GUI remain below the 5 GiB disk floor. Current-head hosted tests, configured
+review, landing and a separate updated test copy are still required.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make

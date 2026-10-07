@@ -116,6 +116,42 @@ function held<T>() {
   return { promise, resolve, reject };
 }
 
+test.each([
+  { inventory: ['qwen2.5:3b'], selected: 'qwen2.5:3b', explicit: false },
+  { inventory: ['qwen2.5:3b', 'llama3.2:3b'], selected: 'llama3.2:3b', explicit: true },
+])('a late mount settings read preserves the installed setup choice $selected (explicit: $explicit)', async ({ inventory, selected, explicit }) => {
+  const electron = (window as any).electron;
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: inventory.map(name => ({ name })) });
+  const staleSettings = clone(initialSettings);
+  const lateRead = held<typeof staleSettings>();
+  const invoke = (ipcRenderer.invoke as jest.Mock).getMockImplementation()!;
+  let settingsReads = 0;
+  (ipcRenderer.invoke as jest.Mock).mockImplementation(async (channel, value) => {
+    if (channel === 'homebot:get-settings' && ++settingsReads === 2) return lateRead.promise;
+    return invoke(channel, value);
+  });
+
+  await act(async () => { render(<App />); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  expect(settingsReads).toBeGreaterThanOrEqual(2);
+  fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ }));
+  await screen.findByText('Ollama is ready!');
+  const choice = screen.getByRole('combobox', { name: 'Select chat model' });
+  if (explicit) fireEvent.change(choice, { target: { value: selected } });
+  expect(choice).toHaveValue(selected);
+
+  // The earlier App settings request completes after inventory verification
+  // and the user's choice. It must not replace that choice with the absent 7B.
+  await act(async () => { lateRead.resolve(staleSettings); });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ firstRun: false, chatModel: selected, codeModel: selected, uncensoredMode: false, useCustomLLM: false });
+  expect(electron.pullModelStream).not.toHaveBeenCalled();
+  expect(electron.downloadOllama).not.toHaveBeenCalled();
+  expect(runtimeUncensored).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+});
+
 async function startDownloadAndReturnToLocal() {
   const electron = (window as any).electron;
   const pull = held<{ success: boolean; error?: string }>();
