@@ -686,10 +686,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   }, [conversationId]);
 
   // Helper to update a persisted message
-  const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>) => {
-    if (!conversationId) return;
+  const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>, convIdOverride?: string) => {
+    const convId = convIdOverride || conversationId;
+    if (!convId) return;
     try {
-      await window.electron.updateMessage?.(conversationId, messageId, updates);
+      await window.electron.updateMessage?.(convId, messageId, updates);
     } catch (err) {
       console.error('Failed to update persisted message:', err);
     }
@@ -1089,7 +1090,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, []);
 
-  const subscribeToStream = useCallback((streamId: string, assistantId: string) => {
+  const subscribeToStream = useCallback((streamId: string, assistantId: string, requestConversationId: string) => {
+    // A newly created request can subscribe before its conversation ID reaches
+    // React state. Terminal persistence belongs to the request's captured ID.
     // prevent double subscription
     if (streamSubsRef.current.has(streamId)) return;
 
@@ -1160,12 +1163,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             };
 
             // Persist the final message content
-            if (conversationId) {
-              updatePersistedMessage(assistantId, {
-                content: updatedMsg.content,
-                streamingState: nextState,
-              });
-            }
+            updatePersistedMessage(assistantId, {
+              content: updatedMsg.content,
+              streamingState: nextState,
+              error: !!updatedMsg.error,
+            }, requestConversationId);
             
             return updatedMsg;
           });
@@ -1225,13 +1227,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             };
             
             // Persist the error state
-            if (conversationId) {
-              updatePersistedMessage(assistantId, {
-                content: updatedMsg.content,
-                streamingState: "error",
-                error: true,
-              });
-            }
+            updatePersistedMessage(assistantId, {
+              content: updatedMsg.content,
+              streamingState: "error",
+              error: true,
+            }, requestConversationId);
             
             return updatedMsg;
           });
@@ -1247,7 +1247,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
-  }, [unsubscribeStream, conversationId, updatePersistedMessage]);
+  }, [unsubscribeStream, updatePersistedMessage]);
 
   const rememberRetryRequest = useCallback((assistantId: string, request: HomeBotRequestWithImages) => {
     retainRetryRequest(retryRequestsRef.current, assistantId, request);
@@ -1473,7 +1473,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
     setMessages(prev => [...prev, assistantPlaceholder]);
     persistMessage(assistantPlaceholder, activeConvId ?? undefined);
-    subscribeToStream(assistantId, assistantId);
+    subscribeToStream(assistantId, assistantId, streamRequest.conversation_id);
 
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
@@ -1643,13 +1643,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       return;
     }
 
-    subscribeToStream(assistantId, assistantId);
+    const retryConversationId = originalRequest?.conversation_id || conversationId || 'default';
+    subscribeToStream(assistantId, assistantId, retryConversationId);
 
     try {
       logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
       try { (window as any).homebotCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({
-        ...(originalRequest || { user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content }),
+        ...(originalRequest || { user_id: 'desktop_user', conversation_id: retryConversationId, message: prevUser.content }),
         message: prevUser.content,
         streamId: assistantId,
         timestamp: new Date().toISOString(),

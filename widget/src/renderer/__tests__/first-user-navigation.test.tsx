@@ -795,6 +795,86 @@ test('rapid guideline edits after acknowledged deletion share one replacement an
   expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
 });
 
+test.each(['finished', 'cancelled', 'error'] as const)('the first reply after active deletion persists its %s content to the actual replacement and survives selection reload', async terminalState => {
+  await mountReady();
+  await deleteActiveA();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('first-reply-replacement') }));
+  typeDraft('Please provide a detailed first reply in the replacement conversation after the original chat is deleted.');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('first-reply-replacement');
+  const handlers = bridge.subscribeToStream.mock.calls[0][1];
+  const content = `Replacement reply preserved as ${terminalState}.`;
+  await act(async () => { handlers.onStreamChunk({ streamId: request.streamId, chunk: content }); });
+  await act(async () => {
+    if (terminalState === 'error') handlers.onStreamError({ streamId: request.streamId, error: 'Fixture stream refused.' });
+    else handlers.onStreamEnd({ streamId: request.streamId, cancelled: terminalState === 'cancelled' });
+  });
+  await waitFor(() => expect(conversations.get(request.conversation_id)?.messages.find(row => row.id === request.streamId)).toEqual(expect.objectContaining({
+    role: 'assistant', content, streamingState: terminalState, error: terminalState === 'error',
+  })));
+  expect(bridge.updateMessage.mock.calls.filter(call => call[1] === request.streamId)).toEqual([
+    [request.conversation_id, request.streamId, expect.objectContaining({ content, streamingState: terminalState })],
+  ]);
+  expect(conversations.has('A')).toBe(false);
+  expect(conversations.get('B')!.messages).toEqual([expect.objectContaining({ id: 'reply-B', content: 'Saved reply from B.' })]);
+  await choose('B');
+  await expectActive('B');
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByText(conversations.get(request.conversation_id)!.title));
+  await waitFor(() => expect(backendActive).toBe(request.conversation_id));
+  expect(await screen.findByText(content)).toBeInTheDocument();
+  expect(document.querySelector(`[data-message-id="${request.streamId}"]`)).toHaveAttribute('data-state', terminalState);
+  expect(screen.queryByRole('button', { name: /stop generating/i })).toBeNull();
+});
+
+test('Retry of a replacement chat reply keeps original document bytes and persists completion to that same replacement', async () => {
+  await mountReady();
+  await deleteActiveA();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('retry-replacement') }));
+  typeDraft('Summarize the original attached notes in this replacement conversation without dropping their contents.');
+  await attach('replacement-retry.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const original = bridge.sendStreamMessage.mock.calls[0][0];
+  const firstHandlers = bridge.subscribeToStream.mock.calls[0][1];
+  await act(async () => { firstHandlers.onStreamChunk({ streamId: original.streamId, chunk: 'Original partial replacement reply.' }); });
+  await act(async () => { firstHandlers.onStreamError({ streamId: original.streamId, error: 'Fixture interrupted stream.' }); });
+  await waitFor(() => expect(conversations.get('retry-replacement')?.messages.find(row => row.id === original.streamId)?.streamingState).toBe('error'));
+  await choose('B');
+  await expectActive('B');
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByText(conversations.get('retry-replacement')!.title));
+  await waitFor(() => expect(backendActive).toBe('retry-replacement'));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(2));
+  const retry = bridge.sendStreamMessage.mock.calls[1][0];
+  expect(retry.conversation_id).toBe(original.conversation_id);
+  expect(retry.streamId).toBe(original.streamId);
+  expect(retry.retry).toBe(true);
+  expect(retry.message).toBe(original.message);
+  expect(retry.documents).toEqual(original.documents);
+  const retryHandlers = bridge.subscribeToStream.mock.calls[1][1];
+  await act(async () => { retryHandlers.onStreamChunk({ streamId: retry.streamId, chunk: 'Completed replacement reply after Retry.' }); });
+  await act(async () => { retryHandlers.onStreamEnd({ streamId: retry.streamId, cancelled: false }); });
+  await waitFor(() => expect(conversations.get('retry-replacement')?.messages.find(row => row.id === retry.streamId)).toEqual(expect.objectContaining({
+    content: 'Completed replacement reply after Retry.', streamingState: 'finished', error: false,
+  })));
+  expect(conversations.get('retry-replacement')!.messages.filter(row => row.role === 'user')).toHaveLength(1);
+  expect(bridge.updateMessage.mock.calls.filter(call => call[1] === retry.streamId).every(call => call[0] === 'retry-replacement')).toBe(true);
+  expect(conversations.has('A')).toBe(false);
+  expect(conversations.get('B')!.messages).toEqual([expect.objectContaining({ id: 'reply-B', content: 'Saved reply from B.' })]);
+  await choose('B');
+  await expectActive('B');
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByText(conversations.get('retry-replacement')!.title));
+  await waitFor(() => expect(backendActive).toBe('retry-replacement'));
+  expect(await screen.findByText('Completed replacement reply after Retry.')).toBeInTheDocument();
+  expect(document.querySelector(`[data-message-id="${retry.streamId}"]`)).toHaveAttribute('data-state', 'finished');
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+});
+
 test('guideline adoption keeps the same nonempty composer and document recoverable without a null-ID ghost draft', async () => {
   await mountReady();
   await deleteActiveA();
