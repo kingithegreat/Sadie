@@ -57,16 +57,18 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   const [recovering, setRecovering] = useState(true);
   const [recoveryFailed, setRecoveryFailed] = useState(false);
   const [recoveryAttempt, setRecoveryAttempt] = useState(0);
+  const [profilesFailed, setProfilesFailed] = useState(false);
   const sessionsRef = useRef(sessions); sessionsRef.current = sessions;
   const pending = useRef(new Map<string, WorkspaceTerminalEvent[]>());
   const alive = useRef(true);
-  const creation = useRef(false);
+  const creation = useRef<Promise<void> | null>(null);
   const generation = useRef(0);
   const api = (window as any).electron;
-  const create = useCallback(async (profile?: string, requestFocus = true) => {
-    if (creation.current) return;
+  const create = useCallback((profile?: string, requestFocus = true): Promise<void> => {
+    if (creation.current) return creation.current;
     const startedGeneration = generation.current;
-    creation.current = true; setCreating(true); setError('');
+    setCreating(true); setError('');
+    const job = (async () => {
     try {
       const result = await api?.workspaceTerminalCreate?.({ projectDir: projectPath, profileId: profile || profileId || undefined, cols: 100, rows: 30 });
       if (!result?.success || !result.session) throw new Error(result?.error || 'Interactive terminal is unavailable in this build.');
@@ -77,13 +79,31 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       sessionsRef.current = [...sessionsRef.current, next]; setSessions(sessionsRef.current); setActive(info.sessionId);
       if (requestFocus) setFocusRequest(prev => ({ sessionId: info.sessionId, sequence: prev.sequence + 1 }));
     } catch (e: any) { if (alive.current && startedGeneration === generation.current) setError(e?.message || 'Could not open an interactive terminal.'); }
-    finally { creation.current = false; if (alive.current && startedGeneration === generation.current) setCreating(false); }
+    finally { if (alive.current && startedGeneration === generation.current) setCreating(false); }
+    })();
+    creation.current = job;
+    const release = () => { if (creation.current === job) creation.current = null; };
+    void job.then(release, release);
+    return job;
   }, [api, projectPath, profileId]);
+  const loadProfiles = useCallback(async () => {
+    const startedGeneration = generation.current;
+    try {
+      const result = await api?.workspaceTerminalProfiles?.();
+      if (!alive.current || startedGeneration !== generation.current) return;
+      if (!result?.success) throw new Error(result?.error || 'No shell profiles are available.');
+      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || ''); setProfilesFailed(false);
+      setError(sessionsRef.current.find(session => session.info.closeError)?.info.closeError || '');
+      if (!sessionsRef.current.length) void create(result.profiles?.[0]?.id, false);
+    } catch (error: unknown) {
+      if (alive.current && startedGeneration === generation.current) { setProfilesFailed(true); setError(error instanceof Error ? error.message : 'Could not load shell profiles.'); }
+    }
+  }, [api, create]);
   useEffect(() => {
     alive.current = true;
     generation.current++;
     let cancelled = false;
-    sessionsRef.current = []; setSessions([]); setActive(''); setCreating(false); setRecovering(true); setRecoveryFailed(false); setError('');
+    sessionsRef.current = []; setSessions([]); setActive(''); setCreating(false); setRecovering(true); setRecoveryFailed(false); setProfilesFailed(false); setError('');
     const off = api?.onWorkspaceTerminalEvent?.((event: WorkspaceTerminalEvent) => {
       if (!sessionsRef.current.some(s => s.info.sessionId === event.sessionId)) {
         if (!pending.current.has(event.sessionId) && pending.current.size >= 8) return;
@@ -92,6 +112,10 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       setSessions(prev => { const next = prev.map(s => s.info.sessionId === event.sessionId ? { ...s, events: boundedEvents([...s.events, event]), ...(event.type === 'exit' ? { exited: true, exitCode: event.exitCode } : {}) } : s); sessionsRef.current = next; return next; });
     });
     void (async () => {
+      // A late shell belongs to its original project. Join its cleanup before
+      // snapshotting this generation or starting this project's bootstrap.
+      await creation.current;
+      if (cancelled) return;
       const recovered = api?.workspaceTerminalList ? await api.workspaceTerminalList({ projectDir: projectPath }) : { success: true, sessions: [] };
       if (cancelled) return;
       if (!recovered?.success) { setRecoveryFailed(true); throw new Error(recovered?.error || 'Could not recover retained terminals. Retry before opening another shell.'); }
@@ -103,11 +127,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       sessionsRef.current = restored; setSessions(restored); setActive(restored[0]?.info.sessionId || '');
       const retainedError = restored.find(session => session.info.closeError)?.info.closeError;
       if (retainedError) setError(retainedError);
-      const result = await api?.workspaceTerminalProfiles?.();
-      if (cancelled) return;
-      if (!result?.success) { setError(result?.error || 'No shell profiles are available.'); return; }
-      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || '');
-      if (!restored.length) void create(result.profiles?.[0]?.id, false);
+      await loadProfiles();
     })().catch((e: unknown) => { if (!cancelled) { setRecoveryFailed(true); setError(e instanceof Error ? e.message : 'Could not recover terminal sessions.'); } })
       .finally(() => { if (!cancelled) setRecovering(false); });
     return () => {
@@ -127,6 +147,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
     if (!alive.current || startedGeneration !== generation.current) return;
     if (!result?.success) { setError(result?.error || 'Could not close that terminal.'); return; }
     const next = sessionsRef.current.filter(s => s.info.sessionId !== id); sessionsRef.current = next; setSessions(next); setActive(next[0]?.info.sessionId || '');
+    setError(next.find(session => session.info.closeError)?.info.closeError || '');
     } catch (e: unknown) { if (alive.current && startedGeneration === generation.current) setError(e instanceof Error ? e.message : 'Could not close that terminal.'); }
   };
   const interrupt = async () => { try { const r = await api?.workspaceTerminalInterrupt?.({ sessionId: active }); if (alive.current && !r?.success) setError(r?.error || 'Interrupt failed.'); } catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : 'Interrupt failed.'); } };
@@ -134,8 +155,9 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   return <section className="terminal-panel" aria-label="Interactive terminal" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
     <header style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 4 }}>
       <strong>Terminal</strong><select aria-label="Shell profile" value={profileId} onChange={e => setProfileId(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select>
-      <button onClick={() => { void create(); }} disabled={recovering || recoveryFailed || creating || sessions.length >= 4 || !profileId}>{creating ? 'Opening…' : 'New terminal'}</button>
+      <button onClick={() => { void create(); }} disabled={recovering || recoveryFailed || profilesFailed || creating || sessions.length >= 4 || !profileId}>{creating ? 'Opening…' : 'New terminal'}</button>
       {recoveryFailed && <button onClick={() => setRecoveryAttempt(value => value + 1)}>Retry terminal recovery</button>}
+      {profilesFailed && <button onClick={() => { void loadProfiles(); }}>Retry shell profiles</button>}
       <button disabled={!current || current.exited} onClick={() => { void interrupt(); }}>Interrupt (Ctrl+C)</button>
       {onSendToChat && <button disabled={!current} onClick={() => { if (current) onSendToChat(excerptForModel(current.info.output + current.events.map(e => e.data || '').join(''), { maxLines: 100, maxChars: 20000 })); }}>Attach output to assistant</button>}
       <button aria-label="Close terminal panel" onClick={onClose}>Close panel</button>

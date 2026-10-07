@@ -1092,6 +1092,7 @@ export interface ElectronAPI {
   workspaceDebug?: (request: WorkspaceDebugRequest) => Promise<WorkspaceDebugResult>;
   workspaceTests?: (request: WorkspaceTestRequest) => Promise<WorkspaceTestResult>;
   workspaceTerminalProfiles?: () => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalList?: (request: { projectDir: string }) => Promise<WorkspaceTerminalResult>;
   workspaceTerminalCreate?: (request: WorkspaceTerminalCreateRequest) => Promise<WorkspaceTerminalResult>;
   workspaceTerminalWrite?: (request: { sessionId: string; data: string }) => Promise<WorkspaceTerminalResult>;
   workspaceTerminalResize?: (request: { sessionId: string; cols: number; rows: number }) => Promise<WorkspaceTerminalResult>;

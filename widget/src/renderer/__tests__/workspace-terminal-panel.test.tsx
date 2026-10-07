@@ -112,6 +112,45 @@ test.each(['refused', 'rejected'])('panel reopen recovers a %s Close with its tr
   fireEvent.click(screen.getByLabelText('Close terminal 1'));
   await waitFor(() => expect(screen.queryByRole('tab', { name: '1: cmd' })).not.toBeInTheDocument());
   expect(close).toHaveBeenCalledTimes(2); expect(close).toHaveBeenLastCalledWith({ sessionId: 's1' });
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a project switch joins a late create before bootstrapping the new project', async () => {
+  let complete!: (result: any) => void;
+  const create = jest.fn().mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }))
+    .mockResolvedValue({ success: true, session: { sessionId: 's2', profileId: 'cmd', cwd: 'C:/other', pid: 43, seq: 0, output: 'new project' } });
+  const list = jest.fn(async () => ({ success: true, sessions: [] }));
+  const close = jest.fn(async () => ({ success: true }));
+  (window as any).electron = {
+    workspaceTerminalProfiles: async () => ({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] }),
+    workspaceTerminalList: list, workspaceTerminalCreate: create, workspaceTerminalClose: close,
+  };
+  const view = render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  view.rerender(<WorkspaceTerminalPanel projectPath="C:/other" onClose={jest.fn()} />);
+  expect(screen.getByText('New terminal')).toBeDisabled(); expect(list).toHaveBeenCalledTimes(1);
+  await act(async () => complete({ success: true, session: { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 0, output: 'old project' } }));
+  await screen.findByRole('tab', { name: '1: cmd' });
+  expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
+  expect(create).toHaveBeenCalledTimes(2); expect(create).toHaveBeenLastCalledWith(expect.objectContaining({ projectDir: 'C:/other' }));
+  expect(emulators).toHaveLength(1); expect(emulators[0].write).toHaveBeenCalledWith('new project');
+  expect(emulators[0].write).not.toHaveBeenCalledWith('old project');
+});
+
+test('retrying shell profiles preserves an already recovered terminal and its close controls', async () => {
+  const retained = { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 1, output: 'retained output' };
+  const profiles = jest.fn().mockRejectedValueOnce(Error('profiles disconnected')).mockResolvedValue({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] });
+  const close = jest.fn(async () => ({ success: true })); const create = jest.fn();
+  (window as any).electron = { workspaceTerminalProfiles: profiles, workspaceTerminalList: async () => ({ success: true, sessions: [retained] }), workspaceTerminalCreate: create, workspaceTerminalClose: close };
+  render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await screen.findByRole('tab', { name: '1: cmd' }); expect(await screen.findByRole('alert')).toHaveTextContent('profiles disconnected');
+  expect(screen.queryByText('Retry terminal recovery')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('Retry shell profiles'));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(close).not.toHaveBeenCalled(); expect(create).not.toHaveBeenCalled(); expect(emulators).toHaveLength(1);
+  fireEvent.click(screen.getByLabelText('Close terminal 1'));
+  await waitFor(() => expect(screen.queryByRole('tab', { name: '1: cmd' })).not.toBeInTheDocument());
+  expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
 });
 
 test('project switches recover only that project and a failed recovery cannot start another shell', async () => {
