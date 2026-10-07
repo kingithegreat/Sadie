@@ -40,6 +40,12 @@ function mountApp() {
       alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space',
     }),
     saveSettings: jest.fn().mockResolvedValue(undefined),
+    loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+    createConversation: jest.fn().mockResolvedValue({ success: true, data: {
+      id: 'leaked-tool-call-conversation', title: 'Leak detector test', messages: [],
+      createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z', messageCount: 0,
+    } }),
+    setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
     sendStreamMessage: jest.fn((payload: any) => { streamId = payload.streamId; return Promise.resolve(); }),
     onMessage: jest.fn(() => jest.fn()),
     sendMessage: jest.fn(),
@@ -50,6 +56,8 @@ function mountApp() {
   return {
     ...utils,
     send: async (text: string) => {
+      await waitFor(() => expect(utils.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
+      await waitFor(() => expect((window as any).electron.setActiveConversation).toHaveBeenCalledWith('leaked-tool-call-conversation'));
       const textarea = utils.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
       fireEvent.change(textarea, { target: { value: text } });
       fireEvent.click(utils.getByText('Send'));

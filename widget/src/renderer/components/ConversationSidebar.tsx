@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useConfirmDestructive } from './ConfirmDestructive';
 import ConversationSearch from './ConversationSearch';
 import { ContextMenu, useContextMenu } from './ContextMenu';
@@ -21,7 +21,7 @@ interface ConversationSidebarProps {
   currentConversationId: string | null;
   onSelectConversation: (id: string, messageId?: string) => void;
   onNewConversation: () => void;
-  onDeleteConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => { success: boolean; error?: string } | Promise<{ success: boolean; error?: string }>;
 }
 
 const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
@@ -43,6 +43,8 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
   const [showArchived, setShowArchived] = useState(false);
   const [sortBy, setSortBy] = useState<'recent' | 'created' | 'name'>('recent');
   const [compactStatus, setCompactStatus] = useState<Record<string, string>>({});
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
+  const deletingRef = useRef(new Set<string>());
   const { menu, showContextMenu, closeContextMenu } = useContextMenu();
   // Load conversations
   const loadConversations = useCallback(async () => {
@@ -123,6 +125,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (deletingRef.current.has(id)) return;
     // Was the browser's native confirm(): a blocking OS dialog that looks
     // nothing like the app, says only "Delete this conversation?", and does not
     // mention that the messages go with it.
@@ -139,9 +142,19 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
         </p>
       ),
       confirmLabel: 'Delete it',
-      onConfirm: () => {
-        onDeleteConversation(id);
-        setConversations(prev => prev.filter(c => c.id !== id));
+      onConfirm: async () => {
+        if (deletingRef.current.has(id)) return;
+        deletingRef.current.add(id);
+        setDeleteErrors(prev => { const next = { ...prev }; delete next[id]; return next; });
+        try {
+          const result = await onDeleteConversation(id);
+          if (!result?.success) throw new Error(result?.error || 'Could not delete this conversation. Please try again.');
+          setConversations(prev => prev.filter(c => c.id !== id));
+        } catch (error) {
+          setDeleteErrors(prev => ({ ...prev, [id]: error instanceof Error ? error.message : 'Could not delete this conversation. Please try again.' }));
+        } finally {
+          deletingRef.current.delete(id);
+        }
       },
     });
   };
@@ -461,6 +474,7 @@ const ConversationSidebar: React.FC<ConversationSidebarProps> = ({
                   <>
                     <div className="conv-info">
                       <div className="conv-title">{conv.title || 'Untitled'}</div>
+                      {deleteErrors[conv.id] && <p role="alert">{deleteErrors[conv.id]}</p>}
                       <div className="conv-meta" title={formatFullDate(conv.updatedAt)}>
                         <span className="conv-msg-count">{conv.messageCount || 0}</span>
                         <span className="conv-time">{formatDate(conv.updatedAt)}</span>

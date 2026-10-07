@@ -685,6 +685,8 @@ export function MessageBubble({
   message,
   onCancel,
   onRetry,
+  onOpenSettings,
+  onReattach,
   onBookmark,
   onReact,
   onEdit,
@@ -693,6 +695,8 @@ export function MessageBubble({
   message: ChatMessage;
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
+  onOpenSettings?: () => void;
+  onReattach?: (kind: 'images' | 'documents') => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -991,12 +995,22 @@ export function MessageBubble({
                               onSwitched={() => onRetry(message.id!)}
                             />
                           )}
-                          {message.recoveryHint.action !== 'reattach-document' && (
+                          {message.recoveryHint.action === 'check-settings' && onOpenSettings && (
+                            <button className="message-action-btn" onClick={onOpenSettings}>
+                              <Icon name="settings" /> Open Settings
+                            </button>
+                          )}
+                          {(message.recoveryHint.action === 'reattach-image' || message.recoveryHint.action === 'reattach-document') && onReattach && (
+                            <button className="message-action-btn" onClick={() => onReattach(message.recoveryHint?.action === 'reattach-image' ? 'images' : 'documents')}>
+                              <Icon name="paperclip" /> {message.recoveryHint.action === 'reattach-image' ? 'Reattach images' : 'Reattach document'}
+                            </button>
+                          )}
+                          {message.recoveryHint.action !== 'reattach-document' && message.recoveryHint.action !== 'reattach-image' && (
                             <button
                               className="message-action-btn"
                               onClick={() => onRetry(message.id!)}
                             >
-                              <Icon name="refresh" /> {message.recoveryHint.actionLabel || 'Retry'}
+                              <Icon name="refresh" /> Retry
                             </button>
                           )}
                         </div>
