@@ -7,7 +7,7 @@ import { Script } from 'vm';
 jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_REAL_JOB_TASK_HOME! }));
 jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_REAL_JOB_TASK_PROFILE! } }));
 import { executeWorkspacePackageTask, prepareWorkspacePackageTask, stopWorkspaceTask, closeAllWorkspaceTasks } from '../workspace-tasks';
-import { workspacePtyLifecycle } from '../workspace-pty-identity';
+import { queryWorkspacePtyIdentity, workspacePtyLifecycle } from '../workspace-pty-identity';
 
 const nativeTest = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;
 jest.setTimeout(45_000);
@@ -38,7 +38,7 @@ test('all cooked native task scripts parse without execution, including a quoted
   const scripts = generatedTaskScripts('C:/private fixture/quoted "path"/日本語');
   expect(Object.keys(scripts)).toHaveLength(4);
   for (const [name, source] of Object.entries(scripts)) expect(() => new Script(source, { filename: name })).not.toThrow();
-  expect(() => new Script(scripts['instant.cjs'].replace('\\n', '\n'))).toThrow(SyntaxError);
+  expect(() => new Script(scripts['instant.cjs'].replace('\\n', '\n'))).toThrow('Invalid or unexpected token');
 });
 async function waitFor(check: () => boolean | Promise<boolean>, milliseconds = 10000): Promise<void> {
   const end = Date.now() + milliseconds;
@@ -92,11 +92,15 @@ nativeTest('late grandchild remains in the same retained Job after both parents 
     await waitFor(() => fs.existsSync(marker) && fs.existsSync(parentGone));
     markerReady = true;
     const descendant = JSON.parse(fs.readFileSync(marker, 'utf8')) as { pid: number; parent: number };
-    const identity = await workspacePtyLifecycle.capture(descendant.pid);
-    identityState = identity === undefined ? 'unknown' : identity === null ? 'absent' : 'captured';
+    // Passive observation permits arbitrary descendants. capture() deliberately
+    // permits only this process's direct children and cannot qualify this probe.
+    // The retained Job remains the sole authority used by Stop.
+    const identity = await queryWorkspacePtyIdentity(descendant.pid);
+    identityState = identity === undefined ? 'unknown' : identity === null ? 'absent' : 'observed';
     observedIdentity = { pid: descendant.pid, parent: descendant.parent, creation: identity?.creation };
     expect(identity).toBeTruthy(); expect(identity!.parent).toBe(descendant.parent);
-    expect(await workspacePtyLifecycle.capture(descendant.parent)).toBeNull();
+    expect(BigInt(identity!.creation)).toBeGreaterThan(0n);
+    expect(await queryWorkspacePtyIdentity(descendant.parent)).toBeNull();
     const result = await run;
     expect(result).toMatchObject({ success: true, exitCode: 0, cleanupPending: true });
     expect(await workspacePtyLifecycle.stopped(descendant.pid, identity)).toBe(false);

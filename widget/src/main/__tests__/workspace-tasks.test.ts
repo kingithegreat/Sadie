@@ -26,6 +26,7 @@ function manifest(scripts: Record<string, unknown>) {
 }
 
 beforeEach(() => {
+  jest.useRealTimers();
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-task-home-'));
   process.env.HOMEBOT_TASK_TEST_HOME = home;
   process.env.HOMEBOT_TASK_TEST_PROFILE = path.join(home, 'profile');
@@ -35,7 +36,7 @@ beforeEach(() => {
   manifest({ precheck: 'echo pre', check: 'tsc --noEmit', postcheck: 'echo post' });
 });
 
-afterEach(() => fs.rmSync(home, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }));
+afterEach(() => { jest.useRealTimers(); fs.rmSync(home, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 }); });
 
 test('lists only bounded string scripts from a canonical in-home project', () => {
   manifest({ check: 'tsc', ignored: 12 });
@@ -346,6 +347,7 @@ test('the cooked npm cancellation script parses before any native execution', ()
 });
 liveTreeTest('real npm cancellation terminates its disposable parent and grandchild on Windows', async () => {
   if (process.platform !== 'win32') return;
+  jest.useRealTimers();
   const pidFile = path.join(project, 'pids.json');
   const generated = generatedCancellationTreeScript(pidFile); new Script(generated, { filename: 'spawn-tree.cjs' });
   fs.writeFileSync(path.join(project, 'spawn-tree.cjs'), generated);
