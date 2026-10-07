@@ -99,11 +99,26 @@ test('completion preserves descendant cleanup authority and Stop leaves an unrel
   const unrelated = spawn(process.execPath, ['-e', 'console.log("UNRELATED_READY");setInterval(() => {},1000)'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
   try {
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Unrelated positive control did not start.')), 5000); unrelated.stdout!.once('data', () => { clearTimeout(timer); resolve(); }); unrelated.once('error', error => { clearTimeout(timer); reject(error); }); });
-    fs.writeFileSync(file, 'const { spawn } = require("child_process");\nconst descendant = spawn(process.execPath, ["-e", "setInterval(() => {},1000)"], { stdio: "ignore" });\ndescendant.unref();\nconsole.log("DESCENDANT", descendant.pid);\nsetTimeout(() => console.log("PARENT_FINISHED"), 150);\n');
+    // A spawn-assigned PID and unref alone do not establish that a descendant
+    // has started its event loop or can survive its Windows console leader.
+    // Observe actual readiness, then detach it from Windows console lifetime.
+    // POSIX keeps the descendant in the debugger-owned detached process group.
+    fs.writeFileSync(file, [
+      'const { spawn } = require("child_process");',
+      'const descendant = spawn(process.execPath, ["-e", "setInterval(() => {},1000);console.log(\\\"DESCENDANT_READY\\\");"], { detached: process.platform === "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });',
+      'let ready = false; let diagnostics = ""; let output = "";',
+      'descendant.stderr.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-2048); });',
+      'const timeout = setTimeout(() => { descendant.kill(); throw new Error("Descendant readiness timed out: " + diagnostics); }, 5000);',
+      'descendant.once("error", error => { clearTimeout(timeout); throw error; });',
+      'descendant.once("exit", (code, signal) => { if (!ready) { clearTimeout(timeout); throw new Error("Descendant exited before readiness: " + code + "/" + signal + " " + diagnostics); } });',
+      'descendant.stdout.on("data", chunk => { output = (output + chunk).slice(-1024); if (!ready && output.includes("DESCENDANT_READY")) { ready = true; clearTimeout(timeout); process.kill(descendant.pid, 0); console.log("DESCENDANT_READY", descendant.pid); console.log("DESCENDANT", descendant.pid); descendant.stdout.destroy(); descendant.stderr.destroy(); descendant.unref(); setTimeout(() => console.log("PARENT_FINISHED"), 150); } });',
+    ].join('\n') + '\n');
     const started = await call('start', { file }); expect(started.success).toBe(true); await waitForPaused(); expect((await call('resume')).success).toBe(true);
     let ended = await call('state');
-    for (let attempt = 0; ended.running && attempt < 200; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
-    expect(ended.running).toBe(false); expect(ended.output).toContain('PARENT_FINISHED');
+    // Allow the fixture's 5s readiness bound plus the production helper's 4.5s
+    // capture bound; the suite's explicit 30s test timeout remains unchanged.
+    for (let attempt = 0; ended.running && attempt < 400; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
+    expect(ended.running).toBe(false); expect(ended.output).toContain('PARENT_FINISHED'); expect(ended.output).toContain('DESCENDANT_READY');
     const match = /DESCENDANT (\d+)/.exec(ended.output || ''); expect(match).not.toBeNull(); const descendantPid = Number(match![1]);
     expect(descendantPid).toBeGreaterThan(0); expect(descendantPid).not.toBe(unrelated.pid);
     if (process.platform === 'win32') { expect(ended.cleanupPending).toBe(true); expect(() => process.kill(descendantPid, 0)).not.toThrow(); }
