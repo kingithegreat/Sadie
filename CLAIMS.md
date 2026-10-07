@@ -43,6 +43,13 @@ private runtime provenance, workflow integration and combined-head verification.
 Assistant rule-loading/incomplete-turn and native observer regressions passed at
 d260; its older history-clock fixture and actual native crash remain failed proof.
 The original AI lane is unavailable; no overlapping source work is assigned.
+Current follow-ups: Editor owns bounded diff computation and actual opened-file
+containment, including registry availability and four opt-in real Windows cases.
+Files owns immutable managed Job preparation shared by product dev/build/Jest,
+fixed hash-bound runtime loading and Windows packaging validation. Root owns
+CI flags, complete built/native/delivery inventories, exact-head publication and
+independent evidence verification. Terminal resize correction is integrated;
+fresh task/terminal/file-handle qualification, merge and delivery are unfinished.
 See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
 No shared dependency rebuild/install; no existing delivered build modifications.
 One guarded test/build at a time. Other sessions' processes and held PRs preserved.
