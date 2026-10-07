@@ -13,10 +13,10 @@ const message = error => String(error?.message || error).slice(0, 1024);
 function parseSelectedMinidump(read, fileBytes) {
   if (typeof read !== 'function' || !Number.isSafeInteger(fileBytes) || fileBytes < 32) throw Error('Minidump metadata file bound invalid');
   const range = (offset, size) => { if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0 || offset > fileBytes - size) throw Error('Minidump RVA/size outside file'); };
-  const forbidden = [], selected = [];
+  const forbidden = [], selected = [], declared = [];
   const overlaps = (a, b) => a.size > 0 && b.size > 0 && a.offset < b.offset + b.size && b.offset < a.offset + a.size;
-  const exclude = (offset, size) => { range(offset, size); const r = { offset, size }; if (selected.some(s => overlaps(s, r))) throw Error('Minidump selected metadata overlaps excluded data'); forbidden.push(r); };
-  const readRange = (offset, size) => { range(offset, size); const r = { offset, size }; if (forbidden.some(f => overlaps(r, f))) throw Error('Minidump selected metadata overlaps excluded data'); if (selected.some(s => overlaps(r, s))) throw Error('Minidump selected metadata overlaps selected data'); selected.push(r); return read(offset, size); };
+  const exclude = (offset, size) => { range(offset, size); const r = { offset, size }; if (selected.some(s => overlaps(s, r)) || declared.some(s => overlaps(s, r))) throw Error('Minidump selected metadata overlaps excluded data'); forbidden.push(r); };
+  const readRange = (offset, size, owner) => { range(offset, size); const r = { offset, size }; if (forbidden.some(f => overlaps(r, f))) throw Error('Minidump selected metadata overlaps excluded data'); if (selected.some(s => overlaps(r, s)) || declared.some(s => s !== owner && overlaps(r, s))) throw Error('Minidump selected metadata overlaps selected data'); selected.push(r); return read(offset, size); };
   const header = readRange(0, 32);
   if (header.toString('ascii', 0, 4) !== 'MDMP' || (header.readUInt32LE(4) & 0xffff) !== 42899) throw Error('Minidump signature/version invalid');
   const count = header.readUInt32LE(8), directory = header.readUInt32LE(12);
@@ -28,9 +28,17 @@ function parseSelectedMinidump(read, fileBytes) {
     if ([4, 6, 15].includes(type)) { if (streams.has(type)) throw Error('Duplicate selected minidump stream'); streams.set(type, { rva, size }); }
     else exclude(rva, size);
   }
+  // Validate entire directory-declared extents before any selected stream read.
+  // Unread padding cannot alias another stream, header/directory or external name.
+  for (const stream of streams.values()) {
+    stream.offset = stream.rva;
+    if (selected.some(s => overlaps(stream, s)) || declared.some(s => overlaps(stream, s))) throw Error('Minidump declared stream overlaps selected data');
+    if (forbidden.some(s => overlaps(stream, s))) throw Error('Minidump declared stream overlaps excluded data');
+    declared.push(stream);
+  }
   const exception = streams.get(6);
   if (!exception || exception.size < 168) throw Error('Minidump exception stream missing/truncated');
-  const e = readRange(exception.rva, 168), parameters = e.readUInt32LE(32);
+  const e = readRange(exception.rva, 168, exception), parameters = e.readUInt32LE(32);
   if (parameters > 15) throw Error('Minidump exception parameter count invalid');
   // Validate the referenced context range without reading context/stack/memory.
   exclude(e.readUInt32LE(164), e.readUInt32LE(160));
@@ -39,9 +47,9 @@ function parseSelectedMinidump(read, fileBytes) {
   const modules = streams.get(4);
   if (modules) {
     if (modules.size < 4) throw Error('Minidump module list truncated');
-    const moduleCount = readRange(modules.rva, 4).readUInt32LE(0);
+    const moduleCount = readRange(modules.rva, 4, modules).readUInt32LE(0);
     if (moduleCount > LIMITS.modules || modules.size < 4 + moduleCount * 108) throw Error('Minidump module count invalid');
-    const records = readRange(modules.rva + 4, moduleCount * 108); let match;
+    const records = readRange(modules.rva + 4, moduleCount * 108, modules); let match;
     for (let index = 0; index < moduleCount; index++) {
       const m = index * 108, base = records.readBigUInt64LE(m), size = BigInt(records.readUInt32LE(m + 8));
       if (address >= base && address - base < size) {
@@ -62,7 +70,7 @@ function parseSelectedMinidump(read, fileBytes) {
   const misc = streams.get(15);
   if (misc) {
     if (misc.size < 24) throw Error('Minidump MiscInfo bound invalid');
-    const info = readRange(misc.rva, 24);
+    const info = readRange(misc.rva, 24, misc);
     if (info.readUInt32LE(0) < 24 || info.readUInt32LE(0) > misc.size) throw Error('Minidump MiscInfo bound invalid');
     const flags = info.readUInt32LE(4);
     if (flags & 1) result.processId = info.readUInt32LE(8);

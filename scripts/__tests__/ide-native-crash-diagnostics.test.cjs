@@ -210,3 +210,31 @@ test('selected metadata refuses forged selected-stream, name, header and directo
   }
   const normal = diagnostics.summarizeMinidump(dump()); assert.equal(normal.faultModule.name, 'module.node'); assert.equal(diagnostics.associateDump(normal, identity).status, 'candidate');
 });
+
+test('declared selected extents cannot alias streams or external references through unread padding', () => {
+  const cases = [
+    { name: 'Exception padding contains module and MiscInfo', descriptor: 36, size: 500 },
+    { name: 'module padding contains MiscInfo', descriptor: 48, size: 250 },
+    { name: 'Exception padding contains external module name', descriptor: 36, size: 400, moveStreams: true },
+    { name: 'Exception padding contains excluded context', descriptor: 36, size: 176, context: true },
+    { name: 'Exception padding contains nonselected stream', descriptor: 36, size: 176, extraStream: true },
+  ];
+  for (const c of cases) {
+    let bytes = dump();
+    if (c.moveStreams) {
+      const expanded = Buffer.alloc(1200); bytes.copy(expanded);
+      bytes.copy(expanded, 700, 256, 368); bytes.copy(expanded, 900, 480, 504);
+      expanded.writeUInt32LE(700, 52); expanded.writeUInt32LE(900, 64); bytes = expanded;
+    }
+    bytes.writeUInt32LE(c.size, c.descriptor);
+    if (c.context) { bytes.writeUInt32LE(8, 240); bytes.writeUInt32LE(248, 244); }
+    if (c.extraStream) { bytes.writeUInt32LE(4, 8); bytes.writeUInt32LE(5, 68); bytes.writeUInt32LE(8, 72); bytes.writeUInt32LE(248, 76); }
+    const calls = [];
+    assert.throws(() => diagnostics.parseSelectedMinidump((offset, size) => { calls.push({ offset, size }); return bytes.subarray(offset, offset + size); }, bytes.length), /overlaps selected|overlaps excluded/, c.name);
+    if (!c.context && !c.moveStreams) assert(calls.every(r => r.offset < 80), c.name + ': refuse before selected stream reads');
+    if (c.moveStreams) assert(!calls.some(r => r.offset === 380), 'Refuse module-name read in unread declared padding');
+    if (c.context) assert(!calls.some(r => r.offset === 248), 'Never read excluded context');
+  }
+  const padded = dump(); padded.writeUInt32LE(176, 36);
+  assert.deepEqual(diagnostics.summarizeMinidump(padded), diagnostics.summarizeMinidump(dump()));
+});
