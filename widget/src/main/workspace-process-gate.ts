@@ -59,7 +59,7 @@ connection.on('data',value=>{
  }
  text+=value.toString(); if(text.length>131072) return process.exit(125);
  const end=text.indexOf(newline); if(end<0) return;
- received=true;clearTimeout(deadline);
+ received=true;
  let launch;try{launch=JSON.parse(text.slice(0,end));}catch{return process.exit(125);}text='';
  if(!launch||typeof launch.executable!=='string'||!launch.executable||!Array.isArray(launch.args)||launch.args.some(x=>typeof x!=='string')||!launch.env||typeof launch.env!=='object'||Array.isArray(launch.env)) return process.exit(125);
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;

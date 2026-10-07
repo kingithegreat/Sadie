@@ -91,6 +91,32 @@ test('input, resize, interrupt and close transport errors remain retryable', asy
   view.unmount(); await act(async () => {});
 });
 
+test.each(['live', 'before-create'])('a %s exit cleanup refusal is displayed immediately and retains exact Close retry', async timing => {
+  let listener!: (event: any) => void; let complete!: (result: any) => void;
+  const close = jest.fn().mockResolvedValueOnce({ success: false, error: 'Job still unverified' }).mockResolvedValueOnce({ success: true });
+  (window as any).electron = {
+    workspaceTerminalProfiles: async () => ({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] }),
+    workspaceTerminalCreate: () => new Promise(resolve => { complete = resolve; }),
+    workspaceTerminalClose: close,
+    onWorkspaceTerminalEvent: (fn: any) => { listener = fn; return jest.fn(); },
+  };
+  render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await waitFor(() => expect(complete).toBeDefined());
+  const ended = { sessionId: 's1', seq: 2, type: 'exit', exitCode: 0, closeError: 'Owned background programs remain. Select Close.' };
+  if (timing === 'before-create') act(() => listener(ended));
+  await act(async () => complete({ success: true, session: { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 0, output: '' } }));
+  if (timing === 'live') act(() => listener(ended));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Owned background programs remain');
+  expect(screen.getByRole('tab', { name: '1: cmd (exited)' })).toBeInTheDocument();
+  expect(screen.getByText('Interrupt (Ctrl+C)')).toBeDisabled();
+  fireEvent.click(screen.getByLabelText('Close terminal 1'));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Job still unverified'));
+  fireEvent.click(screen.getByLabelText('Close terminal 1'));
+  await waitFor(() => expect(screen.queryByRole('tab')).not.toBeInTheDocument());
+  expect(close.mock.calls).toEqual([[{ sessionId: 's1' }], [{ sessionId: 's1' }]]);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
 test.each(['refused', 'rejected'])('panel reopen recovers a %s Close with its transcript and retry control', async mode => {
   const retained = { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 3, output: 'important output\r\n', closeError: 'Process-tree exit remains unconfirmed' };
   let exists = false;

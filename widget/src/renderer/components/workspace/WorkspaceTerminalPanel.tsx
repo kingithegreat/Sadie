@@ -6,6 +6,11 @@ import { excerptForModel } from '../../../shared/ansi';
 import type { WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../../../shared/workspace-terminal-types';
 
 interface ClientSession { info: WorkspaceTerminalSessionInfo; events: WorkspaceTerminalEvent[]; exited?: boolean; exitCode?: number }
+function restoreSession(info: WorkspaceTerminalSessionInfo, events: WorkspaceTerminalEvent[]): ClientSession {
+  const ended = [...events].reverse().find(event => event.type === 'exit');
+  const snapshot = ended ? { ...info, exited: true, exitCode: ended.exitCode, closeError: ended.closeError || info.closeError } : info;
+  return { info: snapshot, events, exited: snapshot.exited, exitCode: snapshot.exitCode };
+}
 // A panel can remount while IPC startup is still returning. Join that operation
 // across component instances so old cleanup cannot close a newly recovered tab.
 const pendingCreations = new WeakMap<object, Promise<void>>();
@@ -79,8 +84,9 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       if (!alive.current || startedGeneration !== generation.current) { await api?.workspaceTerminalClose?.({ sessionId: result.session.sessionId }); return; }
       const info = result.session as WorkspaceTerminalSessionInfo;
       const events = (pending.current.get(info.sessionId) || []).filter(e => e.seq > info.seq); pending.current.delete(info.sessionId);
-      const next = { info, events, exited: events.some(e => e.type === 'exit') };
+      const next = restoreSession(info, events);
       sessionsRef.current = [...sessionsRef.current, next]; setSessions(sessionsRef.current); setActive(info.sessionId);
+      if (next.info.closeError) setError(next.info.closeError);
       if (requestFocus) setFocusRequest(prev => ({ sessionId: info.sessionId, sequence: prev.sequence + 1 }));
     } catch (e: any) { if (alive.current && startedGeneration === generation.current) setError(e?.message || 'Could not open an interactive terminal.'); }
     finally { if (alive.current && startedGeneration === generation.current) setCreating(false); }
@@ -117,7 +123,8 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
         if (!pending.current.has(event.sessionId) && pending.current.size >= 8) return;
         pending.current.set(event.sessionId, boundedEvents([...(pending.current.get(event.sessionId) || []), event])); return;
       }
-      setSessions(prev => { const next = prev.map(s => s.info.sessionId === event.sessionId ? { ...s, events: boundedEvents([...s.events, event]), ...(event.type === 'exit' ? { exited: true, exitCode: event.exitCode } : {}) } : s); sessionsRef.current = next; return next; });
+      setSessions(prev => { const next = prev.map(s => s.info.sessionId === event.sessionId ? restoreSession(s.info, boundedEvents([...s.events, event])) : s); sessionsRef.current = next; return next; });
+      if (event.type === 'exit' && event.closeError) setError(event.closeError);
     });
     void (async () => {
       // A late shell belongs to its original project. Join its cleanup before
@@ -130,7 +137,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       const restored: ClientSession[] = (recovered.sessions || []).map((info: WorkspaceTerminalSessionInfo) => {
         const events = (pending.current.get(info.sessionId) || []).filter(event => event.seq > info.seq);
         pending.current.delete(info.sessionId);
-        return { info, events, exited: info.exited || events.some(event => event.type === 'exit'), exitCode: info.exitCode };
+        return restoreSession(info, events);
       });
       sessionsRef.current = restored; setSessions(restored); setActive(restored[0]?.info.sessionId || '');
       const retainedError = restored.find(session => session.info.closeError)?.info.closeError;

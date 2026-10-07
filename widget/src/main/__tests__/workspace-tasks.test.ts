@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
-import { execFileSync, spawn, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -377,12 +377,8 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
     }
     for (const pid of treePids) expect(alive(pid)).toBe(false);
   } finally {
-    if (!pids && fs.existsSync(pidFile)) pids = JSON.parse(fs.readFileSync(pidFile, 'utf8'));
-    const targets = [npmPid, pids?.parentOfParent, pids?.parent, pids?.child].filter((pid): pid is number => !!pid);
-    for (const pid of targets) {
-      if (alive(pid)) {
-        try { execFileSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' }); } catch { /* root runner reports exact survivor */ }
-      }
-    }
+    // Keep the real failure and use only main's retained Job/held invocation.
+    // A bare observed PID must never become authority after it can be reused.
+    controller.abort(); await closeAllWorkspaceTasks();
   }
 }, 30_000);

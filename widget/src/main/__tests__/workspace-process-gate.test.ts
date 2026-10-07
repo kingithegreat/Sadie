@@ -67,6 +67,7 @@ describe('fixed process bootstrap before Job assignment', () => {
     expect(malformed.spawn).not.toHaveBeenCalled();
     const large = bootstrap(); expect(() => large.pipe.emit('data', Buffer.from('x'.repeat(131073)))).toThrow('exit:125');
     const timeout = bootstrap(); expect(() => timeout.timers[0]()).toThrow('exit:125');
+    const unaccepted = bootstrap(); unaccepted.go(); unaccepted.child.emit('spawn'); expect(() => unaccepted.timers[0]()).toThrow('exit:125');
     const disconnected = bootstrap(); expect(() => disconnected.pipe.emit('end')).toThrow('exit:125');
     expect(disconnected.connect).toHaveBeenCalledTimes(1);
   });
