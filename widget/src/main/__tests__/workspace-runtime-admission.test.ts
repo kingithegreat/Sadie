@@ -29,7 +29,7 @@ function terminalFixture() {
   let exited!: (event: { exitCode: number }) => void;
   const pty = { pid: 12345, write: jest.fn(), resize: jest.fn(), kill: jest.fn(() => exited({ exitCode: 0 })), onData: jest.fn(() => ({ dispose: jest.fn() })), onExit: jest.fn(callback => { exited = callback; return { dispose: jest.fn() }; }) };
   const create = jest.fn(() => pty);
-  const sessions = new WorkspacePtySessions(create, () => [{ id: 'cmd', label: 'Fixture shell', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped: async () => true });
+  const sessions = new WorkspacePtySessions(create, () => [{ id: 'cmd', label: 'Fixture shell', executable: 'cmd.exe' }], { capture: async () => ({ creation: '638953000000000000', parent: process.pid }), stopped: async () => true }, async () => ({ stopped: true, attempted: false }));
   return { create, sessions, pty };
 }
 
