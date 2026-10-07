@@ -98,7 +98,9 @@ jobs:
       - name: Install Playwright browsers
         timeout-minutes: 10
         working-directory: widget
-        run: npx playwright install --with-deps
+        # Electron owns its browser; readiness page fixtures use default Chromium.
+        # Avoid installing unused Firefox/WebKit and their Linux dependency trees.
+        run: npx playwright install --with-deps chromium
       - name: Prepare Playwright artifact directories
         run: |
           node -e "const fs = require('fs'); const dirs = ['playwright-report/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','traces/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}','test-results/videos/${{ matrix.os }}/shard-${{ matrix.shardIndex }}-of-${{ matrix.totalShards }}']; dirs.forEach(d => { try { fs.mkdirSync('widget/' + d, { recursive: true }) } catch(e){} });"
