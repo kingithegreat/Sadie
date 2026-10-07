@@ -42,8 +42,9 @@ async function setup(autoExit = true, confirmed = true, captured?: { original: W
 test('stdin, resize and interrupt route only to the owned real PTY interface', async () => {
   const app = await setup();
   if (process.platform === 'win32') {
-    expect(app.spawn).toHaveBeenCalledWith(process.execPath, ['-e', expect.stringContaining("require('node:net')")], expect.objectContaining({ cwd: folder, cols: 100, rows: 30, env: expect.objectContaining({ NODE_OPTIONS: '', ELECTRON_RUN_AS_NODE: '1' }) }));
-    expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'cmd.exe', args: ['/D'], console: 'attached' }), expect.any(Function));
+    expect(app.spawn).toHaveBeenCalledWith(path.win32.join(process.env.SystemRoot || process.env.SYSTEMROOT!, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', expect.any(String)], expect.objectContaining({ cwd: folder, cols: 100, rows: 30, env: expect.objectContaining({ NODE_OPTIONS: '' }) }));
+    expect(app.spawn.mock.calls[0][2].env).not.toHaveProperty('ELECTRON_RUN_AS_NODE');
+    expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'cmd.exe', args: ['/D'], cwd: folder, console: 'attached' }), expect.any(Function));
     expect(app.session).toMatchObject({ pid: 12345, shellPid: 23456 });
   } else expect(app.spawn).toHaveBeenCalledWith('cmd.exe', ['/D'], expect.objectContaining({ cwd: folder, cols: 100, rows: 30 }));
   expect(app.spawn.mock.calls[0][2]).toMatchObject({ useConptyDll: false });

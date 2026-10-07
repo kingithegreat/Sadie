@@ -8,7 +8,8 @@ import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-
 import { checkedWorkspacePath } from './workspace-files';
 import { ownedWindowsPty, type OwnedPtyProcess } from './workspace-pty-native-adapter';
 import { createPendingWorkspaceWindowsJob, type PendingWorkspaceWindowsJob } from './workspace-windows-job';
-import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
+import { snapshotWorkspaceLaunch } from './workspace-process-gate';
+import { createWorkspaceTerminalGate } from './workspace-terminal-gate';
 import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../shared/workspace-terminal-types';
 
 type PtyProcess = OwnedPtyProcess;
@@ -78,8 +79,8 @@ export class WorkspacePtySessions {
     const args = profile.id === 'powershell' || profile.id === 'pwsh' ? ['-NoLogo', '-NoProfile'] : profile.id === 'cmd' ? ['/D'] : [];
     const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete env.ELECTRON_RUN_AS_NODE;
-    const approvedLaunch = snapshotWorkspaceLaunch(profile.executable, args, env, process.platform === 'win32' ? { console: 'attached' } : {});
-    const gate = process.platform === 'win32' ? createWorkspaceProcessGate(env) : undefined;
+    const approvedLaunch = snapshotWorkspaceLaunch(profile.executable, args, env, process.platform === 'win32' ? { cwd, console: 'attached' } : {});
+    const gate = process.platform === 'win32' ? createWorkspaceTerminalGate(env) : undefined;
     const pending: PendingCreate = { owner, cwd, done: undefined as unknown as Promise<WorkspaceTerminalSessionInfo>, promoted: false, released: false };
     this.pendingCreates.add(pending);
     pending.done = (async () => {
