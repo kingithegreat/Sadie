@@ -147,10 +147,55 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
   test('cleanCodeReplacement strips opening/closing markdown code fences', () => {
     const wrapped = '```typescript\nconst result = add(1, 2);\n```';
-    expect(cleanCodeReplacement(wrapped)).toBe('const result = add(1, 2);');
+    expect(cleanCodeReplacement(wrapped)).toBe('const result = add(1, 2);\n');
 
     const clean = 'const result = add(1, 2);';
     expect(cleanCodeReplacement(clean)).toBe('const result = add(1, 2);');
+  });
+
+  test.each([
+    ['indented Python', '    return value\n'],
+    ['indented JavaScript with trailing spaces', '\tconsole.log(value);  \n'],
+    ['leading and final blank lines', '\n  const value = 1;\n\n'],
+    ['whitespace-only source', ' \t\n'],
+    ['an incomplete fence', '```python\n    return value\n'],
+    ['a fence embedded in source', 'const markdown = "```";\n'],
+    ['a fence preceded by explanation', 'Replacement:\n```python\n    return value\n```\n'],
+    ['a fence followed by explanation', '```python\n    return value\n```\nExplanation.'],
+  ])('unfenced %s is preserved exactly', (_name, raw) => {
+    expect(cleanCodeReplacement(raw)).toBe(raw);
+  });
+
+  test.each([
+    ['Python indentation and final newline', '```python\n    return value\n```\n', '    return value\n'],
+    ['JavaScript trailing spaces and blank lines', '```javascript\n\tconsole.log(value);  \n\n```', '\tconsole.log(value);  \n\n'],
+    ['CRLF and whitespace outside the envelope', ' \n```python\r\n    return value  \r\n\r\n```\r\n \t', '    return value  \r\n\r\n'],
+    ['a longer outer fence containing shorter fences', '````markdown\n```\ninner\n```\n````\n', '```\ninner\n```\n'],
+    ['empty fenced content', '```typescript\n```\n', ''],
+  ])('complete fence removes only its envelope: %s', (_name, raw, source) => {
+    expect(cleanCodeReplacement(raw)).toBe(source);
+  });
+
+  test.each([
+    { name: 'plain Python block', language: 'python', original: 'def greet():\n    return "old"\nprint("done")\n', target: '    return "old"\n', source: '    return "new"\n', response: '    return "new"\n' },
+    { name: 'plain JavaScript statement', language: 'javascript', original: 'function greet() {\n  console.log("old");\n}\n', target: '  console.log("old");\n', source: '  console.log("new");\n', response: '  console.log("new");\n' },
+    { name: 'fenced Python block', language: 'python', original: 'def greet():\n    return "old"\nprint("done")\n', target: '    return "old"\n', source: '    return "new"\n', response: '```python\n    return "new"\n```\n' },
+  ])('streamed $name keeps indentation/newline through preview, Accept and Undo', async ({ language, original, target, source, response }) => {
+    let callbacks: any;
+    (window as any).electron = { sendStreamMessage: jest.fn().mockResolvedValue(undefined), subscribeToStream: jest.fn((_id, handlers) => { callbacks = handlers; return jest.fn(); }), cancelStream: jest.fn() };
+    const onChange = jest.fn();
+    const { container } = render(<CodeEditor root="/project" value={original} language={language} onChange={onChange} onSave={jest.fn()} />);
+    const view = viewOf(container); const from = original.indexOf(target); expect(from).toBeGreaterThan(0);
+    act(() => { view.dispatch({ selection: { anchor: from, head: from + target.length } }); view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'replace this statement' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    const split = Math.floor(response.length / 2);
+    act(() => { callbacks.onStreamChunk({ chunk: response.slice(0, split) }); callbacks.onStreamChunk({ chunk: response.slice(split) }); callbacks.onStreamEnd(); });
+    expect(screen.getByTestId('code-inline-diff-preview')).toBeInTheDocument(); expect(view.state.doc.toString()).toBe(original);
+    fireEvent.click(screen.getByTestId('inline-edit-accept-btn'));
+    const expected = original.slice(0, from) + source + original.slice(from + target.length);
+    expect(view.state.doc.toString()).toBe(expected); expect(onChange).toHaveBeenLastCalledWith(expected);
+    act(() => { expect(undo(view)).toBe(true); }); expect(view.state.doc.toString()).toBe(original);
   });
 
   test('computeSimpleLineDiff calculates adds, removes, and equal lines', () => {

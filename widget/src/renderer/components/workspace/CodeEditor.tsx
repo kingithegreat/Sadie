@@ -110,17 +110,16 @@ CRITICAL RULES:
 4. Output the complete replacement snippet that will directly replace the CURRENT CODE in the file.`;
 }
 
-/** Strips markdown code fences if the model generated them despite instructions. */
+/** Removes only a complete Markdown fence envelope; replacement source stays exact. */
 export function cleanCodeReplacement(raw: string): string {
-  let text = raw.trim();
-  const match = text.match(/^```[a-zA-Z0-9_-]*\r?\n([\s\S]*?)(?:\r?\n```)?$/);
-  if (match) {
-    return match[1];
-  }
-  if (text.startsWith('```') && text.endsWith('```')) {
-    text = text.slice(3, -3).trim();
-  }
-  return text;
+  const opening = raw.match(/^[ \t\r\n]*(`{3,})[^\r\n`]*\r?\n/);
+  if (!opening) return raw;
+  const body = raw.slice(opening[0].length);
+  const closing = body.match(/(^|\n)[ \t]*(`{3,})[ \t]*(?:\r?\n[ \t]*)*$/);
+  if (!closing || closing[2].length < opening[1].length) return raw;
+  // The newline before the closing fence belongs to the source. Removing it
+  // would join the replacement's last statement to the following editor line.
+  return body.slice(0, closing.index! + closing[1].length);
 }
 
 export interface InlineDiffLine {
