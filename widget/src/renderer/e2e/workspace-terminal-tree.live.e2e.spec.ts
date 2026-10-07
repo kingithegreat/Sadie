@@ -3,7 +3,8 @@ import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
 import { closeElectronApp } from './helpers/closeApp';
-import { terminalTreeSources, validateTerminalSources, recordTerminalFailure, terminalDiagnosticText, settleTerminalCleanup } from './helpers/terminalTreeFixture';
+import { terminalTreeSources, validateTerminalSources, recordTerminalFailure, terminalDiagnosticText, settleTerminalCleanup,
+  captureTerminalViewport, chooseTerminalViewportBounds, terminalViewportResizeApplied, normalizeTerminalWindow, resizeTerminalWindow, type TerminalViewportAttempt } from './helpers/terminalTreeFixture';
 import { spawn, type ChildProcess } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -39,6 +40,7 @@ test('interactive terminal retains a late grandchild after its parents exit and 
   let unrelatedReady = false; unrelated.stdout!.on('data', data => { if (data.toString().includes('UNRELATED_READY')) unrelatedReady = true; });
   unrelated.on('error', () => {}); // Readiness must still succeed; no unhandled fixture spawn rejection.
   let closed = false, failed = false;
+  const geometry: TerminalViewportAttempt = {};
   try {
     await expect.poll(() => unrelatedReady).toBe(true);
     await waitForAppReady(page); await dismissFirstRun(page); await page.locator('[aria-label="Workspace"]').first().click();
@@ -53,7 +55,21 @@ test('interactive terminal retains a late grandchild after its parents exit and 
     const command = async (file: string, suffix = '') => { await input.focus(); await input.pressSequentially(`"${process.execPath}" "${path.join(project, file)}"${suffix}`); await input.press('Enter'); };
     await command('stdin.cjs'); await expect.poll(() => fs.existsSync(ttyMarker)).toBe(true);
     const initialTty = JSON.parse(fs.readFileSync(ttyMarker, 'utf8')); expect(initialTty.stdin).toBe(true); expect(initialTty.stdout).toBe(true);
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.isVisible())!.setSize(1750, 1050));
+    geometry.initial = await captureTerminalViewport(app, page, 'Interactive cmd terminal');
+    if (geometry.initial.isMaximized || geometry.initial.isFullScreen) {
+      await normalizeTerminalWindow(app, geometry.initial.windowId);
+      await expect.poll(async () => {
+        geometry.before = await captureTerminalViewport(app, page, 'Interactive cmd terminal');
+        return !geometry.before.isMaximized && !geometry.before.isFullScreen;
+      }).toBe(true);
+    } else geometry.before = geometry.initial;
+    const beforeGeometry = geometry.before!;
+    geometry.requested = chooseTerminalViewportBounds(beforeGeometry);
+    await resizeTerminalWindow(app, beforeGeometry.windowId, geometry.requested);
+    await expect.poll(async () => {
+      geometry.after = await captureTerminalViewport(app, page, 'Interactive cmd terminal');
+      return terminalViewportResizeApplied(beforeGeometry, geometry.requested!, geometry.after);
+    }).toBe(true);
     await expect.poll(() => JSON.parse(fs.readFileSync(ttyMarker, 'utf8')).columns).not.toBe(initialTty.columns);
     // A second native stdin message lets the actual process report its resized console.
     await input.pressSequentially('NATIVE_STDIN'); await input.press('Enter');
@@ -86,12 +102,12 @@ test('interactive terminal retains a late grandchild after its parents exit and 
     await expect(panel.getByRole('tab', { name: /cmd/ })).toHaveCount(0); expect(alive(descendant.pid)).toBe(false);
     expect(await workspacePtyLifecycle.stopped(descendant.pid, descendantIdentity)).toBe(true);
     expect(unrelated.exitCode).toBeNull(); expect(unrelated.signalCode).toBeNull(); expect(hashes()).toEqual(before);
-    fs.writeFileSync(testInfo.outputPath('terminal-job-proof.json'), JSON.stringify({ session, descendant, descendantIdentity, backgroundRoot, bothParentsGone: true, intermediateGone: true, descendantGone: true, unrelatedPid: unrelated.pid, unrelatedAlive: true, stdin: resized, fixtureHashes: before }, null, 2));
+    fs.writeFileSync(testInfo.outputPath('terminal-job-proof.json'), JSON.stringify({ session, descendant, descendantIdentity, backgroundRoot, bothParentsGone: true, intermediateGone: true, descendantGone: true, unrelatedPid: unrelated.pid, unrelatedAlive: true, stdin: resized, geometry, fixtureHashes: before }, null, 2));
     await closeElectronApp(app, 'retained terminal Job fixture'); closed = true;
   } catch (error) {
     failed = true;
     // Diagnostics cannot replace the original functional assertion or its deadline.
-    try { await recordTerminalFailure(page, project, testInfo); } catch (diagnosticError) {
+    try { await recordTerminalFailure(page, project, testInfo, geometry); } catch (diagnosticError) {
       try { fs.writeFileSync(testInfo.outputPath('terminal-diagnostic-error.json'), JSON.stringify({ error: terminalDiagnosticText(String(diagnosticError)) })); } catch { /* Preserve the original failure even if artifacts cannot be written. */ }
     }
     throw error;

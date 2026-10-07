@@ -1,7 +1,84 @@
-import type { Page, TestInfo } from '@playwright/test';
+import type { ElectronApplication, Page, TestInfo } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Script } from 'vm';
+
+interface Rectangle { x: number; y: number; width: number; height: number }
+export interface TerminalViewportGeometry {
+  windowId: number;
+  bounds: Rectangle;
+  contentBounds: Rectangle;
+  workArea: Rectangle;
+  minimumSize: [number, number];
+  isMaximized: boolean;
+  isFullScreen: boolean;
+  viewport: { width: number; height: number };
+  terminalWidth: number;
+}
+export interface TerminalViewportAttempt {
+  initial?: TerminalViewportGeometry;
+  before?: TerminalViewportGeometry;
+  requested?: Rectangle;
+  after?: TerminalViewportGeometry;
+}
+
+/** Select a real, observable horizontal resize inside the existing work area. */
+export function chooseTerminalViewportBounds(before: TerminalViewportGeometry): Rectangle {
+  const { bounds, workArea, minimumSize } = before;
+  const values = [bounds.x, bounds.y, bounds.width, bounds.height, workArea.x, workArea.y, workArea.width, workArea.height, ...minimumSize];
+  if (values.some(value => !Number.isFinite(value)) || before.isMaximized || before.isFullScreen) throw new Error('The fixture needs measured normal-window geometry before resizing.');
+  const minWidth = Math.max(1, minimumSize[0]), minHeight = Math.max(1, minimumSize[1]);
+  if (minWidth > workArea.width || minHeight > workArea.height) throw new Error('The native minimum size exceeds the available work area.');
+  const step = Math.max(80, Math.min(240, Math.floor((workArea.width - minWidth) / 3)));
+  const candidates = [bounds.width - step, bounds.width + step, minWidth, workArea.width];
+  const width = candidates.find(value => value >= minWidth && value <= workArea.width && Math.abs(value - bounds.width) >= 40);
+  if (width === undefined) throw new Error('The work area cannot provide an observable native width change.');
+  const height = Math.max(minHeight, Math.min(bounds.height, workArea.height));
+  return { x: Math.max(workArea.x, Math.min(bounds.x, workArea.x + workArea.width - width)),
+    y: Math.max(workArea.y, Math.min(bounds.y, workArea.y + workArea.height - height)), width, height };
+}
+
+/** A request is not a resize receipt; all three observed surfaces must change. */
+export function terminalViewportResizeApplied(before: TerminalViewportGeometry, requested: Rectangle, after: TerminalViewportGeometry): boolean {
+  return after.windowId === before.windowId && !after.isMaximized && !after.isFullScreen && after.bounds.width === requested.width
+    && after.contentBounds.width !== before.contentBounds.width && after.viewport.width !== before.viewport.width
+    && Number.isFinite(after.terminalWidth) && after.terminalWidth > 0 && after.terminalWidth !== before.terminalWidth;
+}
+
+export async function captureTerminalViewport(app: ElectronApplication, page: Page, regionName: string): Promise<TerminalViewportGeometry> {
+  // Public Playwright binding identifies this Page's actual BrowserWindow.
+  // Never select some other visible auxiliary window.
+  const handle = await app.browserWindow(page);
+  let windowId: number;
+  try { windowId = await handle.evaluate(window => window.id); } finally { await handle.dispose(); }
+  const [native, viewport, terminal] = await Promise.all([
+    app.evaluate(({ BrowserWindow, screen }, id) => {
+      const window = BrowserWindow.fromId(id); if (!window || window.isDestroyed()) throw new Error('The actual fixture window is unavailable.');
+      const bounds = window.getBounds(), minimum = window.getMinimumSize();
+      return { windowId: id, bounds, contentBounds: window.getContentBounds(), workArea: screen.getDisplayMatching(bounds).workArea,
+        minimumSize: [minimum[0], minimum[1]] as [number, number], isMaximized: window.isMaximized(), isFullScreen: window.isFullScreen() };
+    }, windowId),
+    page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
+    page.getByRole('region', { name: regionName, exact: true }).boundingBox(),
+  ]);
+  if (!terminal) throw new Error('The actual terminal region has no measured bounds.');
+  return { ...native, viewport, terminalWidth: terminal.width };
+}
+
+export async function normalizeTerminalWindow(app: ElectronApplication, windowId: number): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, id) => {
+    const window = BrowserWindow.fromId(id); if (!window || window.isDestroyed()) throw new Error('The actual fixture window is unavailable.');
+    if (window.isFullScreen()) window.setFullScreen(false);
+    if (window.isMaximized()) window.unmaximize();
+  }, windowId);
+}
+
+export async function resizeTerminalWindow(app: ElectronApplication, windowId: number, bounds: Rectangle): Promise<void> {
+  await app.evaluate(({ BrowserWindow }, request) => {
+    const window = BrowserWindow.fromId(request.windowId); if (!window || window.isDestroyed()) throw new Error('The actual fixture window is unavailable.');
+    window.setBounds(request.bounds, false);
+  }, { windowId, bounds });
+}
 
 export function terminalTreeSources(project: string) {
   const file = (name: string) => JSON.stringify(path.join(project, name));
@@ -50,7 +127,7 @@ export async function settleTerminalCleanup(operations: Promise<unknown>[], pres
   if (!preservePrimaryFailure) throw refused[0].reason;
 }
 
-export async function recordTerminalFailure(page: Page, projectDir: string, testInfo: TestInfo): Promise<void> {
+export async function recordTerminalFailure(page: Page, projectDir: string, testInfo: TestInfo, geometry?: TerminalViewportAttempt): Promise<void> {
   const metadata = bounded(page.evaluate(async root => {
     const panel = document.querySelector('[aria-label="Interactive terminal"]');
     const ui = {
@@ -77,5 +154,5 @@ export async function recordTerminalFailure(page: Page, projectDir: string, test
     .then(() => ({ screenshot: 'terminal-failure.png', canvasMasked: true }))
     .catch(error => ({ screenshotError: terminalDiagnosticText(String(error)) }));
   const [state, visual] = await Promise.all([metadata, screenshot]);
-  fs.writeFileSync(testInfo.outputPath('terminal-failure.json'), JSON.stringify({ failureOnly: true, ...state, ...visual }, null, 2));
+  fs.writeFileSync(testInfo.outputPath('terminal-failure.json'), JSON.stringify({ failureOnly: true, ...state, ...visual, ...(geometry ? { geometry } : {}) }, null, 2));
 }
