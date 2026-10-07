@@ -187,3 +187,29 @@ test('cleanup preserves the exact primary failure and cleanup-only refusal still
   await expect(settleTerminalCleanup([Promise.reject(refusal)], false, () => {})).rejects.toBe(refusal);
   await expect(settleTerminalCleanup([Promise.resolve()], false, () => {})).resolves.toBeUndefined();
 });
+
+test('actual failure capture bounds finite fit snapshots and excludes forged fields and oversized DOM packets', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hbi-terminal-fit-'));
+  const globals = globalThis as unknown as { document?: unknown; window?: unknown };
+  const previousDocument = globals.document, previousWindow = globals.window;
+  try {
+    const valid = { hostWidth: 422, emulatorCols: 56, requestCols: 56, requestRows: 15, resizeSequence: 2, requestOutcome: 'success', fitOutcome: 'returned', secret: 'private-secret' };
+    const panel = { querySelectorAll: (selector: string) => selector === '[data-terminal-fit]' ? [
+      { dataset: { terminalFit: JSON.stringify(valid) } },
+      { dataset: { terminalFit: JSON.stringify({ hostWidth: 2_000_000, requestCols: -1, fitOutcome: 'private-secret', requestOutcome: 'forged' }) } },
+      { dataset: { terminalFit: 'x'.repeat(1025) } },
+    ] : [] };
+    globals.document = { querySelector: () => panel, querySelectorAll: () => [] };
+    globals.window = { electron: { workspaceTerminalList: async () => ({ success: true, sessions: [] }) } };
+    const page = { evaluate: async (callback: (root: string) => unknown, root: string) => callback(root),
+      screenshot: async () => Buffer.from('controlled screenshot'), locator: (selector: string) => selector } as unknown as Page;
+    await recordTerminalFailure(page, directory, { outputPath: (name: string) => path.join(directory, name) } as TestInfo);
+    const receipt = JSON.parse(fs.readFileSync(path.join(directory, 'terminal-failure.json'), 'utf8'));
+    const { secret: _secret, ...expected } = valid;
+    expect(receipt.ui.fit).toEqual([expected, {}, {}]);
+    expect(JSON.stringify(receipt)).not.toContain('private-secret');
+  } finally {
+    globals.document = previousDocument; globals.window = previousWindow;
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

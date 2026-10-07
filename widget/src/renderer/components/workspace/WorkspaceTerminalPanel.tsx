@@ -29,13 +29,41 @@ function TerminalPane({ session, visible, focusRequest, onError }: { session: Cl
   useEffect(() => {
     if (!host.current) return;
     let alive = true;
+    // Passive, finite geometry only. The failure fixture reads this snapshot;
+    // none of these fields grants IPC authority or proves native console size.
+    let fitCount = 0, resizeSequence = 0;
+    const observation: Record<string, number | string> = {};
+    const observe = (fields: Record<string, number | string>) => {
+      for (const [key, value] of Object.entries(fields)) {
+        if (typeof value === 'string') observation[key] = value;
+        else if (Number.isFinite(value) && value >= 0 && value <= 1_000_000) observation[key] = Math.floor(value);
+      }
+      if (alive && host.current) host.current.dataset.terminalFit = JSON.stringify(observation);
+    };
     const report = (error: unknown, fallback: string) => { if (alive) onError(error instanceof Error ? error.message : fallback); };
     const terminal = new Terminal({ cursorBlink: true, scrollback: 5000, fontFamily: 'Consolas, monospace', fontSize: 13 });
     const addon = new FitAddon(); terminal.loadAddon(addon); terminal.open(host.current);
     emulator.current = terminal; fit.current = addon; terminal.write(session.info.output);
     const input = terminal.onData(data => { void Promise.resolve(api?.workspaceTerminalWrite?.({ sessionId: session.info.sessionId, data })).then((r: any) => { if (alive && !r?.success) onError(r?.error || 'Terminal input failed.'); }).catch(e => report(e, 'Terminal input failed.')); });
-    const size = terminal.onResize(({ cols, rows }) => { if (cols >= 20 && rows >= 5) void Promise.resolve(api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows })).then((r: any) => { if (alive && !r?.success) onError(r?.error || 'Terminal resize failed.'); }).catch(e => report(e, 'Terminal resize failed.')); });
-    const resize = new ResizeObserver(() => { if (host.current?.getBoundingClientRect().width) { try { addon.fit(); } catch { /* next resize */ } } });
+    const size = terminal.onResize(({ cols, rows }) => {
+      const sequence = ++resizeSequence;
+      observe({ emulatorCols: terminal.cols, emulatorRows: terminal.rows, requestCols: cols, requestRows: rows, resizeSequence: sequence,
+        requestOutcome: cols >= 20 && rows >= 5 ? 'pending' : 'below-minimum' });
+      if (cols >= 20 && rows >= 5) void Promise.resolve(api?.workspaceTerminalResize?.({ sessionId: session.info.sessionId, cols, rows })).then((r: any) => {
+        if (alive && sequence === resizeSequence) observe({ requestOutcome: r?.success ? 'success' : 'rejected' });
+        if (alive && !r?.success) onError(r?.error || 'Terminal resize failed.');
+      }).catch(e => { if (alive && sequence === resizeSequence) observe({ requestOutcome: 'transport-error' }); report(e, 'Terminal resize failed.'); });
+    });
+    const fitTerminal = () => {
+      const bounds = host.current?.getBoundingClientRect();
+      if (!bounds?.width) { observe({ fitOutcome: 'hidden' }); return; }
+      fitCount = Math.min(1_000_000, fitCount + 1);
+      try {
+        addon.fit();
+        observe({ fitCount, fitOutcome: 'returned', hostWidth: bounds.width, hostHeight: bounds.height, emulatorCols: terminal.cols, emulatorRows: terminal.rows });
+      } catch { observe({ fitCount, fitOutcome: 'threw', hostWidth: bounds.width, hostHeight: bounds.height }); /* next resize */ }
+    };
+    const resize = new ResizeObserver(fitTerminal);
     resize.observe(host.current);
     return () => { alive = false; resize.disconnect(); input.dispose(); size.dispose(); terminal.dispose(); emulator.current = null; fit.current = null; };
   // Each PTY owns one emulator; hiding tabs does not destroy it.

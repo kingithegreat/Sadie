@@ -1,6 +1,7 @@
 /** @jest-environment jsdom */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 const emulators: any[] = [];
+const observedResize: Array<() => void> = [];
 jest.mock('@xterm/xterm', () => ({ Terminal: class {
   textarea?: HTMLTextAreaElement;
   write = jest.fn(); open = jest.fn((host: HTMLElement) => { this.textarea = document.createElement('textarea'); this.textarea.className = 'xterm-helper-textarea'; host.append(this.textarea); });
@@ -12,7 +13,7 @@ jest.mock('@xterm/xterm', () => ({ Terminal: class {
 } }));
 jest.mock('@xterm/addon-fit', () => ({ FitAddon: class { fit = jest.fn(); } }));
 import WorkspaceTerminalPanel from '../components/workspace/WorkspaceTerminalPanel';
-beforeEach(() => { emulators.length = 0; (global as any).ResizeObserver = class { observe() {} disconnect() {} }; });
+beforeEach(() => { emulators.length = 0; observedResize.length = 0; (global as any).ResizeObserver = class { constructor(callback: () => void) { observedResize.push(callback); } observe() {} disconnect() {} }; });
 test('interactive tabs route stdin/interrupt, avoid replaying startup output, and close all owned sessions', async () => {
   let listener!: (event: any) => void; let serial = 0;
   const write = jest.fn(async () => ({ success: true })); const close = jest.fn(async () => ({ success: true })); const interrupt = jest.fn(async () => ({ success: true }));
@@ -89,6 +90,38 @@ test('input, resize, interrupt and close transport errors remain retryable', asy
   fireEvent.click(screen.getByLabelText('Close terminal 1')); await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('close disconnected'));
   expect(screen.getByRole('tab', { name: '1: cmd' })).toBeInTheDocument();
   view.unmount(); await act(async () => {});
+});
+
+test('passive resize diagnostics preserve exact requests, minimum-size suppression and latest outcome without raw errors', async () => {
+  let first!: (value: unknown) => void;
+  const resize = jest.fn().mockImplementationOnce(() => new Promise(resolve => { first = resolve; }))
+    .mockResolvedValueOnce({ success: true }).mockRejectedValueOnce(new Error('private error content'));
+  (window as any).electron = {
+    workspaceTerminalProfiles: async () => ({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] }),
+    workspaceTerminalCreate: async () => ({ success: true, session: { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 0, output: '' } }),
+    workspaceTerminalResize: resize, workspaceTerminalClose: async () => ({ success: true }),
+  };
+  render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await screen.findByRole('tab', { name: '1: cmd' });
+  const pane = screen.getByRole('region', { name: 'Interactive cmd terminal' });
+  const read = () => JSON.parse(pane.getAttribute('data-terminal-fit')!);
+  Object.assign(emulators[0], { cols: 89, rows: 15 });
+  jest.spyOn(pane, 'getBoundingClientRect').mockReturnValue({ width: 656, height: 220 } as DOMRect);
+  act(() => observedResize[0]());
+  expect(read()).toMatchObject({ fitCount: 1, fitOutcome: 'returned', hostWidth: 656, hostHeight: 220, emulatorCols: 89 });
+  act(() => emulators[0].resize({ cols: 89, rows: 15 }));
+  expect(read()).toMatchObject({ emulatorCols: 89, requestCols: 89, requestRows: 15, requestOutcome: 'pending' });
+  Object.assign(emulators[0], { cols: 56, rows: 15 });
+  act(() => emulators[0].resize({ cols: 56, rows: 15 }));
+  await waitFor(() => expect(read()).toMatchObject({ emulatorCols: 56, requestCols: 56, requestOutcome: 'success' }));
+  await act(async () => first({ success: false, error: 'private old error' }));
+  expect(read().requestOutcome).toBe('success');
+  act(() => emulators[0].resize({ cols: 56, rows: 4 }));
+  expect(resize).toHaveBeenCalledTimes(2); expect(read().requestOutcome).toBe('below-minimum');
+  act(() => emulators[0].resize({ cols: 55, rows: 15 }));
+  await waitFor(() => expect(read().requestOutcome).toBe('transport-error'));
+  expect(JSON.stringify(read())).not.toContain('private');
+  expect(resize).toHaveBeenNthCalledWith(2, { sessionId: 's1', cols: 56, rows: 15 });
 });
 
 test.each(['live', 'before-create'])('a %s exit cleanup refusal is displayed immediately and retains exact Close retry', async timing => {

@@ -134,13 +134,27 @@ export async function recordTerminalFailure(page: Page, projectDir: string, test
       alerts: Array.from(document.querySelectorAll('[role="alert"]')).map(node => (node.textContent || '').slice(0, 4096)).slice(0, 8),
       tabs: Array.from(panel?.querySelectorAll('[role="tab"]') || []).map(node => (node.textContent || '').slice(0, 128)).slice(0, 8),
       xterm: Array.from(panel?.querySelectorAll('.xterm-rows') || []).map(node => (node.textContent || '').slice(-8192)).slice(0, 4),
+      fit: Array.from(panel?.querySelectorAll('[data-terminal-fit]') || []).slice(0, 4).map(node => {
+        const result: Record<string, number | string> = {};
+        const raw = (node as HTMLElement).dataset.terminalFit || '';
+        if (raw.length > 1024) return result;
+        try {
+          const value = JSON.parse(raw) as Record<string, unknown>;
+          for (const key of ['fitCount', 'hostWidth', 'hostHeight', 'emulatorCols', 'emulatorRows', 'requestCols', 'requestRows', 'resizeSequence']) {
+            const n = value[key]; if (typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 1_000_000) result[key] = n;
+          }
+          if (['hidden', 'returned', 'threw'].includes(String(value.fitOutcome))) result.fitOutcome = String(value.fitOutcome);
+          if (['pending', 'below-minimum', 'success', 'rejected', 'transport-error'].includes(String(value.requestOutcome))) result.requestOutcome = String(value.requestOutcome);
+        } catch { /* Unqualified DOM is never authority or raw diagnostic output. */ }
+        return result;
+      }),
     };
     const api = (window as unknown as { electron: { workspaceTerminalList(request: { projectDir: string }): Promise<unknown> } }).electron;
     return { ui, result: await api.workspaceTerminalList({ projectDir: root }) };
   }, projectDir), 2500).then(({ ui, result }) => {
     const response = result as { success?: boolean; error?: string; sessions?: Array<Record<string, unknown>> };
     return {
-      ui: { alerts: ui.alerts.map(terminalDiagnosticText), tabs: ui.tabs.map(terminalDiagnosticText), xterm: ui.xterm.map(terminalDiagnosticText) },
+      ui: { alerts: ui.alerts.map(terminalDiagnosticText), tabs: ui.tabs.map(terminalDiagnosticText), xterm: ui.xterm.map(terminalDiagnosticText), fit: ui.fit },
       list: { success: response.success, error: terminalDiagnosticText(response.error), sessions: (response.sessions || []).slice(0, 4).map(session => ({
         profileId: session.profileId, pid: session.pid, shellPid: session.shellPid,
         exited: session.exited, exitCode: session.exitCode,
