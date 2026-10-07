@@ -203,7 +203,7 @@ async function run() {
     proof.sourceHead = head;
     const req = createRequire(path.join(widget, 'package.json'));
     const versions = { electron: req('electron/package.json').version, playwright: req('playwright-core/package.json').version, pty: req('node-pty/package.json').version };
-    assert.deepEqual(versions, { electron: '42.8.1', playwright: '1.57.0', pty: '1.2.0-beta.15' }); proof.versions = versions;
+    assert.deepEqual(versions, { electron: '42.11.11', playwright: '1.57.0', pty: '1.2.0-beta.15' }); proof.versions = versions;
     for (const folder of [path.join(source, 'node_modules'), path.join(widget, 'node_modules')]) assert.ok(!fs.lstatSync(folder).isSymbolicLink(), 'CI dependency install must be private and real, not a shared junction.');
     const roots = {
       rootSqlite: path.join(source, 'node_modules', 'better-sqlite3'), widgetSqlite: path.join(widget, 'node_modules', 'better-sqlite3'),

@@ -80,11 +80,11 @@ jobs:
       - name: Rebuild SQLite against pinned Electron in both trees
         shell: pwsh
         run: |
-          node widget/node_modules/@electron/rebuild/lib/cli.js --force --version 42.8.1 --only better-sqlite3 --module-dir .
+          node widget/node_modules/@electron/rebuild/lib/cli.js --force --version 42.11.11 --only better-sqlite3 --module-dir .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Push-Location widget
           try {
-            node node_modules/@electron/rebuild/lib/cli.js --force --version 42.8.1 --only better-sqlite3 --module-dir .
+            node node_modules/@electron/rebuild/lib/cli.js --force --version 42.11.11 --only better-sqlite3 --module-dir .
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           } finally { Pop-Location }
 

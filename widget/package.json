@@ -96,7 +96,7 @@
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "css-loader": "^6.8.1",
-    "electron": "42.8.1",
+    "electron": "42.11.11",
     "electron-builder": "^26.15.7",
     "electron-reload": "^2.0.0-alpha.1",
     "electron-vite": "^5.0.0",
