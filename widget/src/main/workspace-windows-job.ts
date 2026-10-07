@@ -21,7 +21,7 @@ interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capab
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
-const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
 const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
@@ -169,7 +169,10 @@ function windowsJobSource(): string {
   return `[Console]::Out.WriteLine('{"type":"phase","phase":"entry"}'); [Console]::Out.Flush()
 $ErrorActionPreference='Stop'
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding"}'); [Console]::Out.Flush()
-[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
+$inputEncoding=[System.Text.UTF8Encoding]::new($false)
+[Console]::Out.WriteLine('{"type":"phase","phase":"encoding-constructed"}'); [Console]::Out.Flush()
+[Console]::InputEncoding=$inputEncoding
+[Console]::Out.WriteLine('{"type":"phase","phase":"encoding-set"}'); [Console]::Out.Flush()
 function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
 [Console]::Out.WriteLine('{"type":"phase","phase":"compile"}'); [Console]::Out.Flush()
 Add-Type -TypeDefinition @'

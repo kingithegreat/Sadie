@@ -43,6 +43,17 @@ describe('creation-gated Windows Job ownership', () => {
     fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
   });
 
+  it.each(['encoding', 'encoding-constructed', 'encoding-set'])('keeps %s observations diagnostic-only at the original listener deadline', async phase => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    let listening = false; void job.listening.then(() => { listening = true; }, () => {});
+    fake.send({ type: 'phase', phase, empty: true, ok: true }); await settle();
+    expect(listening).toBe(false); expect(fake.requests()).toHaveLength(0);
+    const rejected = expect(job.listening).rejects.toThrow(`Helper phase: ${phase}`);
+    jest.advanceTimersByTime(4499); await settle(); expect(listening).toBe(false);
+    jest.advanceTimersByTime(1); await rejected;
+    fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
+  });
+
   it('keeps fixed helper errors diagnostic-only and requires a real zero response even after a stop phase', async () => {
     const fake = helper(); const job = createWorkspaceWindowsJob(90, identity);
     fake.send({ type: 'listening' }); await settle(); fake.reply({ ok: true }); await job.ready;

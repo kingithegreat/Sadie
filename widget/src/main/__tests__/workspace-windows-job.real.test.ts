@@ -35,7 +35,7 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
         for (;;) {
           const newline = buffered.indexOf('\n'); if (newline < 0) break;
           const line = buffered.slice(0, newline); buffered = buffered.slice(newline + 1);
-          try { const value = JSON.parse(line); if (value.type === 'phase' && ['entry', 'encoding', 'compile', 'create', 'listen', 'command', 'stop'].includes(value.phase)) {
+          try { const value = JSON.parse(line); if (value.type === 'phase' && ['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'compile', 'create', 'listen', 'command', 'stop'].includes(value.phase)) {
             phases.push(value.phase); observations.push({ event: 'phase', phase: value.phase, elapsedMs: Date.now() - started });
           } }
           catch { /* The production reader, not this passive observation, owns validity. */ }
