@@ -135,6 +135,34 @@ test('document Retry resends the original file bytes without requiring an unnece
   expect(screen.queryByRole('button', { name: 'Reattach document' })).toBeNull();
 });
 
+test('retry retention counts both composer image strings and evicts the older request without sending an incomplete retry', async () => {
+  const imageData = 'A'.repeat(6 * 1024 * 1024);
+  (resizeImageFile as jest.Mock).mockResolvedValue({
+    filename: 'photo.png', mimeType: 'image/png', data: imageData,
+    url: `data:image/png;base64,${imageData}`, size: 4.5 * 1024 * 1024,
+  });
+  await mountReady();
+  await attachPhoto();
+  await send('Explain the first photo.');
+  await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(1));
+  const first = sendStreamMessage.mock.calls[0][0] as SentRequest;
+  act(() => { handlers.get(first.streamId)!.onStreamError({ streamId: first.streamId, error: 'First provider failure.' }); });
+
+  await attachPhoto();
+  await send('Explain the second photo.');
+  await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(2));
+  const second = sendStreamMessage.mock.calls[1][0] as SentRequest;
+  act(() => { handlers.get(second.streamId)!.onStreamError({ streamId: second.streamId, error: 'Second provider failure.' }); });
+  await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: 'Retry' })[0]); });
+  expect(await screen.findByText('Reattach the original image and send your request again.')).toBeInTheDocument();
+  expect(sendStreamMessage).toHaveBeenCalledTimes(2);
+
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+  await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(3));
+  expect(sendStreamMessage.mock.calls[2][0]).toEqual({ ...second, timestamp: expect.any(String), retry: true });
+  expect(sendStreamMessage.mock.calls[2][0].images).toEqual(second.images);
+});
+
 test('editing a failed request changes Retry wording while retaining its original document bytes', async () => {
   await mountReady();
   await attachDocument();

@@ -5,6 +5,7 @@ import { chatIdeaToJobInput } from '../shared/chat-idea';
 import ChatInterface from "./components/ChatInterface";
 import { createEmptyComposerDraft, type ComposerDraft } from './components/InputBox';
 import { prepareInactiveDraftRetention } from './utils/composerDraftBudget';
+import { retainRetryRequest } from './utils/retryRequestBudget';
 import './styles/first-user.css';
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
@@ -1116,18 +1117,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   }, [unsubscribeStream, conversationId, updatePersistedMessage]);
 
   const rememberRetryRequest = useCallback((assistantId: string, request: HomeBotRequestWithImages) => {
-    const payloadSize = (item: HomeBotRequestWithImages) => (item.message?.length || 0) +
-      (item.images || []).reduce((total, image) => total + (image.data || image.base64 || image.dataUrl || '').length, 0) +
-      (item.documents || []).reduce((total, document) => total + document.data.length, 0);
-    if (payloadSize(request) > 32 * 1024 * 1024) return;
-    retryRequestsRef.current.set(assistantId, request);
-    let retainedSize = Array.from(retryRequestsRef.current.values()).reduce((total, item) => total + payloadSize(item), 0);
-    while (retryRequestsRef.current.size > 8 || retainedSize > 32 * 1024 * 1024) {
-      const oldest = retryRequestsRef.current.keys().next().value;
-      if (!oldest) break;
-      retainedSize -= payloadSize(retryRequestsRef.current.get(oldest)!);
-      retryRequestsRef.current.delete(oldest);
-    }
+    retainRetryRequest(retryRequestsRef.current, assistantId, request);
   }, []);
 
   const preserveStoppedSubmission = useCallback((scope: SubmissionScope, message = 'This request was not sent because you changed conversations. Its draft is kept in the original conversation.') => {
