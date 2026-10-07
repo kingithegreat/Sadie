@@ -21,7 +21,7 @@ interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capab
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
-const DIAGNOSTIC_PHASES = new Set(['compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
 const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
@@ -36,7 +36,8 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
   let stopping: Promise<void> | undefined;
   let nextId = 0, lineBuffer = '';
   let phase = 'unobserved', diagnosticFailure: string | undefined;
-  const diagnostic = () => ` Helper phase: ${phase}.${diagnosticFailure ? ` Last fixed helper error: ${diagnosticFailure}.` : ''}`;
+  let spawnStarted = Date.now(), phaseObservedAt: number | undefined;
+  const diagnostic = () => ` Helper phase: ${phase}.${phaseObservedAt === undefined ? '' : ` Observed ${phaseObservedAt}ms after helper spawn began.`}${diagnosticFailure ? ` Last fixed helper error: ${diagnosticFailure}.` : ''}`;
   const pending = new Map<number, { operation: string; resolve(value: Reply): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   const stopRequests = new Set<number>();
   const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -122,6 +123,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
     if (!systemRoot || !path.win32.isAbsolute(systemRoot)) throw new Error('The Windows system installation path is unavailable.');
     const helperExecutable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+    spawnStarted = Date.now();
     child = spawn(helperExecutable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(windowsJobSource(), 'utf16le').toString('base64')], { windowsHide: true, env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch { closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
   const startupTimer = setTimeout(() => fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.' + diagnostic()), OPERATION_TIMEOUT);
@@ -138,7 +140,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       catch { fail('The owned Job helper returned invalid state evidence.'); continue; }
       if (message.type === 'phase' && typeof message.phase === 'string' && DIAGNOSTIC_PHASES.has(message.phase) && (message.code === undefined || typeof message.code === 'string' && DIAGNOSTIC_CODES.has(message.code))) {
         // Observability only: a phase never proves listening, assignment or zero accounting.
-        phase = message.phase;
+        phase = message.phase; phaseObservedAt = Math.max(0, Date.now() - spawnStarted);
         if (typeof message.code === 'string') diagnosticFailure = `${phase}/${message.code}`;
         else if (['attach', 'go', 'query', 'stop'].includes(phase)) diagnosticFailure = undefined;
       }
@@ -164,10 +166,12 @@ export function createWorkspaceWindowsJob(pid: number, original: WorkspacePtyIde
 }
 
 function windowsJobSource(): string {
-  return `$ErrorActionPreference='Stop'
+  return `[Console]::Out.WriteLine('{"type":"phase","phase":"entry"}'); [Console]::Out.Flush()
+$ErrorActionPreference='Stop'
+[Console]::Out.WriteLine('{"type":"phase","phase":"encoding"}'); [Console]::Out.Flush()
 [Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
 function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
-Emit @{type='phase';phase='compile'}
+[Console]::Out.WriteLine('{"type":"phase","phase":"compile"}'); [Console]::Out.Flush()
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
 public static class OwnedWindowsJob {
