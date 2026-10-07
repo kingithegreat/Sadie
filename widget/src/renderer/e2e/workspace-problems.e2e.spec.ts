@@ -86,7 +86,19 @@ test('closing HomeBot stops an approved running watch task and its owned childre
     await page.getByRole('button', { name: 'Run', exact: true }).click();
     await page.getByRole('button', { name: 'Confirm', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeEnabled();
-    await expect(page.locator('.ws-problems-output pre')).toContainText('WATCH_READY', { timeout: 30_000 });
+    try {
+      await expect(page.locator('.ws-problems-output pre')).toContainText('WATCH_READY', { timeout: 30_000 });
+    } catch (error) {
+      // The harmless fixture's surfaced launch refusal is diagnostic only.
+      // Preserve the original readiness failure even if the page has closed.
+      await Promise.allSettled([
+        page.screenshot({ path: testInfo.outputPath('watch-readiness-failure.png'), timeout: 1500 }),
+        page.locator('.ws-problems').innerText({ timeout: 1500 }).then(text => {
+          fs.writeFileSync(testInfo.outputPath('watch-readiness-failure.txt'), text.slice(0, 16_000));
+        }),
+      ]);
+      throw error;
+    }
     const taskPid = Number(fs.readFileSync(pidFile, 'utf8'));
     expect(taskPid).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath('watch-before-quit.png') });

@@ -77,7 +77,7 @@ test('completed background cleanup restores reachable Stop and refuses Run until
   await screen.findByRole('button', { name: 'Stop' });
   expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Job state unknown');
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Job state unknown'));
   await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
   await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument());
