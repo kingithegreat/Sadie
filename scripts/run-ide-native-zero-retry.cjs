@@ -4,6 +4,7 @@
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const cp = require('node:child_process'), crypto = require('node:crypto');
 const assert = require('node:assert/strict'), { createRequire } = require('node:module');
+const { attachCrashDiagnostics } = require('./ide-native-crash-diagnostics.cjs');
 const EXPECTED_CASES = [
   { file: 'overlay.e2e.spec.ts', title: 'the app shuts down when it is asked to' },
   { file: 'overlay.e2e.spec.ts', title: 'Workspace opens as a real overlay and closes with Escape' },
@@ -166,7 +167,7 @@ async function run() {
     proof.sourceHead = head;
     const req = createRequire(path.join(widget, 'package.json'));
     const versions = { electron: req('electron/package.json').version, playwright: req('playwright-core/package.json').version, pty: req('node-pty/package.json').version };
-    assert.deepEqual(versions, { electron: '42.8.1', playwright: '1.57.0', pty: '1.1.0' }); proof.versions = versions;
+    assert.deepEqual(versions, { electron: '42.8.1', playwright: '1.57.0', pty: '1.2.0-beta.15' }); proof.versions = versions;
     for (const folder of [path.join(source, 'node_modules'), path.join(widget, 'node_modules')]) assert.ok(!fs.lstatSync(folder).isSymbolicLink(), 'CI dependency install must be private and real, not a shared junction.');
     const roots = {
       rootSqlite: path.join(source, 'node_modules', 'better-sqlite3'), widgetSqlite: path.join(widget, 'node_modules', 'better-sqlite3'),
@@ -226,7 +227,11 @@ async function run() {
       // positively owned cleanup, which remains a failed shutdown in receipts.
     }
     process.exitCode = 1;
-  } finally { proof.finished = new Date().toISOString(); persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true })); }
+  } finally {
+    proof.finished = new Date().toISOString();
+    await attachCrashDiagnostics(proof, { privateRoot: runtime?.root, output, started: proof.started, finished: proof.finished, shutdownDirectory: runtime && path.join(runtime.widget, 'test-results'), env });
+    persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true }));
+  }
 }
 module.exports = { EXPECTED_CASES, PATH_KEYS, hashTree, validateResults, validateShutdownReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
 if (require.main === module) void run();
