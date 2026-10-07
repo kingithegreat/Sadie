@@ -158,6 +158,10 @@ try {
   electronExecutable=fs.realpathSync(widgetRequire('electron'));
   assert(within(fs.realpathSync(path.join(widget,'node_modules/electron')),electronExecutable),'Electron must come from the disposable widget package');
   git(['diff', '--exit-code', 'HEAD', '--']);
+  stage = 'acceptance TypeScript';
+  resourcePreflight('acceptance-types');
+  command(process.execPath, [binary(path.join(widget, 'node_modules', 'typescript'), 'tsc'),
+    '--project', path.join(acceptance, 'tsconfig.json'), '--noEmit'], widget, env, false, 5 * 60_000);
   stage = 'build';
   resourcePreflight('build');
   command(process.execPath, [binary(path.join(widget, 'node_modules', 'electron-vite'), 'electron-vite'), 'build'], widget, env, false, 5 * 60_000);
