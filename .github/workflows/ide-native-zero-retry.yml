@@ -110,7 +110,7 @@ jobs:
       # controls, so a new control stage is not a cold-start warmup.
       - name: Managed framing parser and pure controls
         if: always() && steps.native_compile.outcome == 'success'
-        run: node --test widget/scripts/__tests__/windows-job-managed-framing.test.cjs
+        run: node --test widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs
 
       - name: Upload all gate proof and failure artifacts
         if: always()

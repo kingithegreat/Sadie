@@ -107,14 +107,16 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Managed helper build contracts
-        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
+        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
 
       - name: Preserve managed framing proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: managed-framing-${{ github.event_name }}-${{ github.sha }}
-          path: artifacts/ide-native-zero-retry/managed-framing-*/
+          path: |
+            artifacts/ide-native-zero-retry/managed-framing-*/
+            artifacts/ide-native-zero-retry/task-attachment-controls-*/
           if-no-files-found: warn
           retention-days: 7
 
