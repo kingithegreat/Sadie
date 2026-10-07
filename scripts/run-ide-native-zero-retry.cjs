@@ -39,14 +39,19 @@ function validateCompiledInventory(rows, mainSource) {
     assert.ok(Number.isSafeInteger(row.bytes) && row.bytes >= 0, 'Invalid compiled byte count.');
     assert.match(row.sha256, /^[a-f0-9]{64}$/);
   }
-  for (const required of ['main/index.js', 'preload/index.js', 'renderer/index.html', 'main/assets/OwnedWindowsJob.dll'])
+  for (const required of ['main/index.js', 'preload/index.js', 'renderer/index.html', 'main/assets/OwnedWindowsJob.dll', 'main/assets/OwnedWindowsJobHost.exe'])
     assert.ok(seen.has(required), 'Required compiled product file missing: ' + required);
   const markers = [...mainSource.matchAll(/HOMEBOT_OWNED_WINDOWS_JOB_ASSET_V1:([a-f0-9]{64})/g)];
   assert.equal(markers.length, 1, 'Built main must pin exactly one Windows Job assembly identity.');
   const asset = rows.find(row => row.path === 'main/assets/OwnedWindowsJob.dll');
   assert.ok(asset.bytes > 0 && asset.bytes <= 1024 * 1024, 'Windows Job assembly size is invalid.');
   assert.equal(asset.sha256, markers[0][1], 'Built main and Windows Job assembly hashes differ.');
-  return { compiledFiles: rows.length, windowsJobAssembly: { ...asset }, pinnedAssemblySha256: markers[0][1] };
+  const hostMarkers = [...mainSource.matchAll(/HOMEBOT_OWNED_WINDOWS_JOB_HOST_V1:([a-f0-9]{64})/g)];
+  assert.equal(hostMarkers.length, 1, 'Built main must pin exactly one Windows Job host identity.');
+  const host = rows.find(row => row.path === 'main/assets/OwnedWindowsJobHost.exe');
+  assert.ok(host.bytes >= 512 && host.bytes <= 1024 * 1024, 'Windows Job host size is invalid.');
+  assert.equal(host.sha256, hostMarkers[0][1], 'Built main and Windows Job host hashes differ.');
+  return { compiledFiles: rows.length, windowsJobAssembly: { ...asset }, pinnedAssemblySha256: markers[0][1], windowsJobHost: { ...host }, pinnedHostSha256: hostMarkers[0][1] };
 }
 function validateResults(report, expectedCases = EXPECTED_CASES) {
   assert.ok(report && report.stats && report.config, 'Missing Playwright report.');
