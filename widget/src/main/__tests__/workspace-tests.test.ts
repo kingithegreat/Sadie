@@ -16,8 +16,11 @@ test('AST discovery excludes commented tests and identifies suite names, runners
   expect(prepareWorkspaceTestCommand({ root, action: 'run', file, testName: 'math adds correctly' }).args).toContain('^math adds correctly$');
 });
 test('runs one selected actual Node test, reports a nonzero pass count and collects coverage output', async () => {
-  expect((await performWorkspaceTests({ root, action: 'run', file, testName: 'math adds correctly', coverage: true })).running).toBe(true);
+  const started = await performWorkspaceTests({ root, action: 'run', file, testName: 'math adds correctly', coverage: true });
+  expect(started.success).toBe(true); expect(started.running || started.exitCode === 0).toBe(true);
   const result = await finishRun(); expect(result.exitCode).toBe(0); expect(result.summary?.passed).toBeGreaterThan(0); expect(result.output).toMatch(/coverage|file.*line/i);
+  if (process.platform === 'win32') expect(result.cleanupPending).toBe(true);
+  expect(await performWorkspaceTests({ root, action: 'stop' })).toMatchObject({ success: true, running: false, cleanupPending: false });
   console.info(JSON.stringify({ selectedTestProof: { selected: 'math adds correctly', exitCode: result.exitCode, ...result.summary, coverageOutput: /coverage|file.*line/i.test(result.output || '') } }));
 });
 test('Stop terminates an owned long-running test and reports user cancellation', async () => {

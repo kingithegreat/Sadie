@@ -226,6 +226,10 @@ export async function performWorkspaceTests(request: WorkspaceTestRequest, asser
       if (!identity) throw new Error('The test bootstrap native identity could not be verified.');
       admitted(); await run.job.attach(child.pid!, identity); await run.job.ready; admitted();
       const launch = snapshotWorkspaceLaunch(process.execPath, prepared.args, env, { cwd: prepared.cwd });
+      // Node --test, Jest --watch=false and Vitest run are finite commands.
+      // The shared task admission still requires the exact completed-target
+      // ACK and retained Job accounting when a fast target has already exited.
+      launch.kind = 'task';
       await run.job.authorize(launch, () => { admitted(); run.released = true; });
     }
     run.starting = false;

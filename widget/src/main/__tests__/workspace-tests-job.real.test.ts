@@ -26,6 +26,7 @@ live('naturally ended Node test runner retains late descendants until Stop confi
     'await new Promise((resolve,reject)=>{child.once("error",reject);child.once("exit",code=>{if(code!==0)reject(Error("intermediate failed"));else {console.log("INTERMEDIATE_ENDED "+child.pid);resolve();}});});});',
   ].join('\n'));
   const unrelated = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000);console.log("UNRELATED_READY");'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
+  let primaryFailure = false;
   try {
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Unrelated readiness failed.')), 4000); unrelated.stdout!.once('data', () => { clearTimeout(timer); resolve(); }); unrelated.once('error', error => { clearTimeout(timer); reject(error); }); });
     expect((await performWorkspaceTests({ root, action: 'run', file })).success).toBe(true);
@@ -42,13 +43,20 @@ live('naturally ended Node test runner retains late descendants until Stop confi
     expect(() => process.kill(unrelated.pid!, 0)).not.toThrow();
     console.info(JSON.stringify({ ownedTestRunnerTreeProof: { leafPid, leafCreation: identity!.creation, naturallyEnded: true, executedPasses: result.summary?.passed,
       cleanupPendingBeforeStop: true, leafAliveBeforeStop: true, jobStopConfirmed: true, leafGoneAfterStop: true, unrelatedPid: unrelated.pid, unrelatedAliveAfterStop: true } }));
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
   } finally {
-    await Promise.all([stopWorkspaceTestRuns(), new Promise<void>((resolve, reject) => {
+    const cleanup = await Promise.allSettled([stopWorkspaceTestRuns(), new Promise<void>((resolve, reject) => {
       if (unrelated.exitCode !== null || unrelated.signalCode !== null) { resolve(); return; }
       const timer = setTimeout(() => reject(new Error('Held unrelated control did not close.')), 4000);
       unrelated.once('close', () => { clearTimeout(timer); resolve(); });
       try { unrelated.kill(); } catch (error) { clearTimeout(timer); reject(error); }
     })]);
-    fs.rmSync(root, { recursive: true, force: true });
+    const failures = cleanup.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failures.length) {
+      console.error(JSON.stringify({ ownedTestRunnerCleanupFailure: failures.map(result => String(result.reason)), primaryFailurePreserved: primaryFailure, fixtureRetained: root }));
+      if (!primaryFailure) throw failures[0].reason;
+    } else fs.rmSync(root, { recursive: true, force: true });
   }
 }, 45_000);

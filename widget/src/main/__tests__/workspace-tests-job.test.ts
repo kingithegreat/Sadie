@@ -38,7 +38,18 @@ test('test runner code is released only by retained Job readiness and final send
   const validate = jest.fn(); expect((await performWorkspaceTests({ root, action: 'run', file }, validate)).success).toBe(true);
   expect((spawn as jest.Mock).mock.calls[0][0]).toBe('fixed-core.exe');
   expect(job.attach).toHaveBeenCalledWith(1234, { creation: '639269400760538180', parent: process.pid });
-  expect(job.authorize.mock.calls[0][0].kind).toBeUndefined(); expect(validate).toHaveBeenCalled();
+  expect(job.authorize.mock.calls[0][0].kind).toBe('task'); expect(validate).toHaveBeenCalled();
+});
+test('a finite runner completed during admission retains its output and cleanup authority', async () => {
+  job.authorize.mockImplementation(async (launch: { kind?: string }, validate: () => void) => {
+    expect(launch.kind).toBe('task'); validate();
+    child.stdout.emit('data', Buffer.from('# pass 1\n# fail 0\n'));
+    child.exitCode = 0; child.emit('close', 0);
+    return 2345;
+  });
+  expect(await call('run')).toMatchObject({ success: true, running: false, exitCode: 0, summary: { passed: 1 }, cleanupPending: true });
+  expect(job.stop).not.toHaveBeenCalled();
+  expect(await call('stop')).toMatchObject({ success: true, cleanupPending: false });
 });
 test('natural leader close preserves Job authority and Stop failure remains visible/retryable', async () => {
   await call('run'); child.stdout.emit('data', Buffer.from('# pass 1\n# fail 0\n')); child.exitCode = 0; child.emit('close', 0);
