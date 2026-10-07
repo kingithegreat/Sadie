@@ -12,6 +12,11 @@ const contextAnswer = 'The secret phrase from our previous turn is Tui-47.';
 const recoveredAnswer = 'The Retry succeeded and this response is complete.';
 const resumedAnswer = 'Hello again. Chat remains usable after Stop.';
 const customModel = 'homebot-chat-fixture';
+const conversationTitle = 'Secret Phrase Memory Check';
+const titleMessages = [
+  { role: 'system', content: 'Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.' },
+  { role: 'user', content: `User: ${firstPrompt}\nAssistant: ${firstAnswer}\nTitle:` },
+];
 
 async function paintedControl(control: Locator) {
   await expect(control).toBeVisible();
@@ -29,6 +34,7 @@ for (const provider of ['local', 'custom'] as const) {
     test.skip(process.env.HOMEBOT_FIRST_USER_NATIVE !== '1', 'Opt-in isolated compiled production runtime.');
     test.skip(process.platform !== 'win32', 'Requires exact native/launcher Windows identities.');
     const generation: Array<{ body: any; provider: string }> = [];
+    const titleRequests: Array<{ body: any; provider: string }> = [];
     let failureCount = 0;
     const failureControl = { finish: null as (() => void) | null };
     let stopClosed = false;
@@ -36,9 +42,21 @@ for (const provider of ['local', 'custom'] as const) {
     const runtime = await openFirstUserFixture({ testInfo, firstRun: false, inventory: 'installed',
       customModel: provider === 'custom' ? customModel : undefined,
       chatHandler: async ({ body, response, provider: actualProvider }) => {
-        generation.push({ body, provider: actualProvider });
         try {
           if (actualProvider !== provider) throw Error('Chat reached the wrong provider.');
+          // The ordinary first exchange also starts best-effort title creation.
+          // Recognize only its exact fixture-bound transcript, keep its actual
+          // HTTP request separately, and still require all six user chat calls.
+          if (provider === 'custom' && body.model === customModel && body.stream === true
+            && JSON.stringify(body.messages) === JSON.stringify(titleMessages)) {
+            expect(body.tools).toBeUndefined();
+            titleRequests.push({ body, provider: actualProvider });
+            response.setHeader('Content-Type', 'text/event-stream');
+            response.end('data: ' + JSON.stringify({ choices: [{ index: 0,
+              delta: { content: conversationTitle }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n');
+            return;
+          }
+          generation.push({ body, provider: actualProvider });
           const prompt = body.messages.filter((message: any) => message.role === 'user').at(-1)?.content;
           if (![firstPrompt, contextPrompt, failurePrompt, stopPrompt, resumedPrompt].includes(prompt)) throw Error('Unexpected generation prompt.');
           expect(body.messages.filter((message: any) => message.role === 'user' && message.content === prompt),
@@ -160,11 +178,21 @@ for (const provider of ['local', 'custom'] as const) {
       await sendPrompt(resumedPrompt);
       await expect(assistant.filter({ hasText: resumedAnswer })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Stop generating', exact: true })).toHaveCount(0);
+      if (provider === 'custom') {
+        await expect.poll(async () => {
+          const store = await page.evaluate(() => window.electron.loadConversations!());
+          return store.data?.conversations.find(item => item.id === store.data?.activeConversationId)?.title;
+        }).toBe(conversationTitle);
+      }
       expect(generation.map(item => item.provider)).toEqual(Array(6).fill(provider));
       expect(generation.map(item => item.body.messages.filter((message: any) => message.role === 'user').at(-1)?.content))
         .toEqual([firstPrompt, contextPrompt, failurePrompt, failurePrompt, stopPrompt, resumedPrompt]);
       expect(serverErrors).toEqual([]);
+      expect(titleRequests).toHaveLength(provider === 'custom' ? 1 : 0);
       proof = await runtime.evidence();
+      expect(proof.requests.filter((request: any) => request.method === 'POST' && request.phase === 'chat'
+        && request.path === (provider === 'custom' ? '/v1/chat/completions' : '/api/chat')))
+        .toHaveLength(generation.length + titleRequests.length);
       expect(proof.rejected).toEqual([]);
       expect(proof.currentRag).toBe(proof.initialRag);
       expect(proof.transport.rendererDenied).toEqual([]);
@@ -182,7 +210,7 @@ for (const provider of ['local', 'custom'] as const) {
     finally {
       if (!proof) { try { proof = await runtime.evidence(); } catch (error) { failures.push(error); } }
       try {
-        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, stopClosed, serverErrors, proof,
+        fs.writeFileSync(testInfo.outputPath('chat-request-proof.json'), JSON.stringify({ provider, generation, titleRequests, stopClosed, serverErrors, proof,
           failures: failures.map(error => describeFailure(error)) }, null, 2));
       } catch (error) { failures.push(error); }
       try {

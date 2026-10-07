@@ -255,6 +255,18 @@ try {
       providers.push(receipt.provider);
       assert.equal(receipt.generation.length, 6, 'Send/context/error/Retry/Stop/resume must reach six real provider requests');
       assert(receipt.generation.every(request => request.provider === receipt.provider && request.body.stream === true));
+      assert.equal(receipt.titleRequests.length, receipt.provider === 'custom' ? 1 : 0, 'Keep the exact auxiliary title request separately');
+      for (const request of receipt.titleRequests) {
+        assert.equal(request.provider, 'custom'); assert.equal(request.body.model, 'homebot-chat-fixture');
+        assert.equal(request.body.stream, true); assert.equal(request.body.tools, undefined);
+        assert.deepEqual(request.body.messages, [
+          { role: 'system', content: 'Generate a short conversation title (4-6 words max, no punctuation, no quotes) that captures what this exchange is about.' },
+          { role: 'user', content: 'User: The secret phrase is Tui-47. Acknowledge it.\nAssistant: I have the secret phrase Tui-47 🌈 ready for our next turn.\nTitle:' },
+        ]);
+      }
+      assert.equal(receipt.proof.requests.filter(request => request.method === 'POST' && request.phase === 'chat'
+        && request.path === (receipt.provider === 'custom' ? '/v1/chat/completions' : '/api/chat')).length,
+      receipt.generation.length + receipt.titleRequests.length, 'Account for every actual provider POST');
       assert.equal(receipt.stopClosed, true, 'Stop must close the actual pending provider socket');
       assert.deepEqual(receipt.serverErrors, []);
       assert.deepEqual(receipt.proof.rejected, []);

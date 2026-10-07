@@ -63,3 +63,27 @@ Playwright discovery still requires the exact two titles without executing
 their test bodies. The remote manifest now retains the raw checkout commit
 object, merge parents, PR head/base and workflow SHA alongside the tree and
 compiled hashes.
+
+## 2026-10-08 - integrated production native checkpoint
+
+Run `37683605405` executed both native cases once on PR head `e91bf02e`;
+the actual merge checkout was `7f2dc119`, with parents `69075fe5` and that
+PR head. The downloaded proof archive `11510617242` matched its authenticated
+SHA-256 digest before extraction. Local chat passed all six user requests,
+fragmented UTF-8, context, partial error/Retry, actual socket Stop and resume.
+Both cases retained positive native/launcher disappearance and no forced
+cleanup; this does not prove native OS exit code zero.
+
+Custom chat failed its request-count assertion after reaching those controls:
+its seven recorded POSTs include six user chat requests and the ordinary
+automatic first-exchange title request. The title request reached the exact
+owned custom endpoint but the fixture rejected its prompt. This is retained
+failure evidence, not custom-chat acceptance.
+
+The fixture now recognizes only the exact first-exchange title transcript,
+records that auxiliary request separately, serves a bounded title, and checks
+its saved conversation title. Both the native test and runner still require
+exactly six ordinary chat turns and account for every actual provider POST.
+Production app code, request/Stop assertions and transport guards are unchanged.
+Acceptance TypeScript, runner syntax and diff checks pass; fresh hosted native
+and whole-head qualification remain required before landing or delivery.
