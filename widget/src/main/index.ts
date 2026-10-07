@@ -30,6 +30,7 @@ import { registerWorkspaceTerminalIpc } from './workspace-terminal-ipc';
 import { workspacePtySessions } from './workspace-terminal-pty';
 import { closeAllWorkspaceTasks } from './workspace-tasks';
 import { stopCalendarHelpers, resumeCalendarHelpers } from './calendar-helpers';
+import { setWorkspaceRuntimeClosing } from './workspace-runtime-admission';
 import { registerProblemReportIpc } from './problem-report-ipc';
 import { registerWhisperIpc } from './speech/whisper-ipc';
 import { startAssistantBridge, stopAssistantBridge, CODING_TOOLS } from './assistant-bridge';
@@ -674,6 +675,7 @@ app.on('before-quit', event => {
   event.preventDefault();
   if (mcpQuitPending) return;
   mcpQuitPending = true;
+  setWorkspaceRuntimeClosing(true);
   // Keep ordinary services available until owned process cleanup is confirmed.
   // A refused quit must leave the retained renderer able to use HomeBot.
   let runtimeReady = true;
@@ -697,6 +699,7 @@ app.on('before-quit', event => {
   }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
     if (!runtimeReady) {
       mcpQuitPending = false;
+      setWorkspaceRuntimeClosing(false);
       resumeCalendarHelpers();
       void dialog.showMessageBox({ type: 'error', message: 'A running HomeBot program could not be stopped.',
         detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, tasks, debugger or tests panel.',

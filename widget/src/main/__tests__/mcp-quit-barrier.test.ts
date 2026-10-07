@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 import * as ts from 'typescript';
+import { assertWorkspaceRuntimeOpen, setWorkspaceRuntimeClosing } from '../workspace-runtime-admission';
+
+afterEach(() => setWorkspaceRuntimeClosing(false));
 
 const source = fs.readFileSync(path.join(__dirname, '../index.ts'), 'utf8');
 const handlerStart = source.indexOf("app.on('before-quit'");
@@ -37,7 +40,7 @@ function harness(keepExistingWindow = false) {
   const windowHandlers = new Map<string, (...args: any[]) => void>();
   const ownedWindow = { isDestroyed: () => false, on: jest.fn((name: string, handler: any) => windowHandlers.set(name, handler)), removeListener: jest.fn() };
   const createMainWindow = jest.fn(() => ownedWindow);
-  const context = { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
+  const context = { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
   vm.runInNewContext(compiled, context);
   vm.runInNewContext('createMainWindow()', context);
   createMainWindow.mockClear();
@@ -46,6 +49,28 @@ function harness(keepExistingWindow = false) {
 // Flush the native and VM promise queues through a real event-loop turn.
 // Cleanup phases may add microtasks without changing the quit contract.
 async function settle() { await new Promise<void>(resolve => setImmediate(resolve)); }
+
+test('new runtime admission stays closed through pending MCP after owned cleanup, and a refused quit reopens it', async () => {
+  const accepted = harness();
+  accepted.app.quit();
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  await settle();
+  expect(accepted.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  accepted.resolve(); await settle();
+  expect(accepted.nativeQuits()).toBe(1);
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+
+  setWorkspaceRuntimeClosing(false);
+  const refused = harness();
+  refused.otherCleanup.workspacePtySessions.closeAll.mockRejectedValueOnce(new Error('Owned terminal is still running'));
+  refused.app.quit();
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  await settle();
+  expect(refused.nativeQuits()).toBe(0);
+  expect(refused.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(assertWorkspaceRuntimeOpen).not.toThrow();
+});
 
 test('native window close retains its owning renderer through a refusal, then permits close after retry cleanup', async () => {
   const h = harness(true);

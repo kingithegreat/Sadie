@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { randomUUID } from 'crypto';
+import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
 import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 import { checkedWorkspacePath } from './workspace-files';
@@ -61,6 +62,7 @@ export class WorkspacePtySessions {
   }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = stopWorkspacePtyTree) {}
 
   create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void): WorkspaceTerminalSessionInfo {
+    assertWorkspaceRuntimeOpen();
     if (process.platform === 'win32' && Number(os.release().split('.')[2]) < 26100) throw new Error('Interactive terminals require Windows 11 24H2 (build 26100) or newer for bounded native cleanup. Use the command terminal on this Windows version.');
     if (this.sessions.size >= MAX_SESSIONS) throw new Error('Close a terminal before opening another (maximum four).');
     const cwd = checkedWorkspacePath(request.projectDir);

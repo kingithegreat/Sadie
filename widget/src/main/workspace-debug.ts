@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -155,6 +156,7 @@ export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Pro
     if (!session) { if (sessions.size >= 2) throw new Error('Close another project debug session first.'); session = new DebugSession(root); sessions.set(root, session); }
     switch (request.action) {
       case 'start': {
+        assertWorkspaceRuntimeOpen();
         const file = projectFile(root, request.file);
         const args = request.args || []; if (!Array.isArray(args) || args.length > 50 || args.some(arg => typeof arg !== 'string' || arg.length > 5000)) throw new Error('Program arguments are invalid.');
         await session.start(file, args);

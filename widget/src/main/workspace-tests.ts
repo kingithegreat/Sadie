@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as ts from 'typescript';
 import { spawn, type ChildProcess } from 'child_process';
+import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import { stripAnsi } from '../shared/ansi';
 import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath, validateTrustedWorkspaceRoot, workspacePathWithin } from './workspace-trust';
 import type { WorkspaceDiscoveredTest, WorkspaceTestRequest, WorkspaceTestResult } from '../shared/workspace-test-types';
@@ -122,6 +123,7 @@ export async function performWorkspaceTests(request: WorkspaceTestRequest): Prom
     if (request.action === 'state') return state(runs.get(root));
     if (request.action === 'stop') { const run = runs.get(root); if (run) await stopRun(run); return state(run); }
     if (request.action !== 'run') throw new Error('Unknown test action.');
+    assertWorkspaceRuntimeOpen();
     if (runs.get(root)?.child || [...runs.values()].some(run => !!run.child)) throw new Error('Stop the current test run first.');
     const prepared = prepareWorkspaceTestCommand(request);
     const child = spawn(process.execPath, prepared.args, { cwd: prepared.cwd, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });

@@ -11,6 +11,7 @@
 import { ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import { stripAnsi, excerptForModel } from '../shared/ansi';
 import type {
   WorkspacePackageTask,
@@ -385,6 +386,7 @@ export async function executeWorkspacePackageTask(
   if (closingTasks) return { success: false, error: 'Package tasks are stopping before HomeBot closes. Try again after shutdown finishes.' };
   let current: WorkspaceTaskSnapshot;
   try {
+    assertWorkspaceRuntimeOpen();
     current = prepareWorkspacePackageTask(approved.projectDir, approved.scriptName);
   } catch (error) {
     return { success: false, error: failMessage(error) };
