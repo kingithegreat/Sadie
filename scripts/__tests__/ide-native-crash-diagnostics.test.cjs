@@ -29,9 +29,10 @@ function fixture() {
   fs.writeFileSync(path.join(receipts, 'ide-native-paths-8484.json'), JSON.stringify({ pid: identity.pid, main: path.join(root, 'app/widget/out/main/index.js'), ragRoot: root, mode: 'existing-E2E-fixtures; isolation-only-bootstrap', paths: { userData: profile, crashDumps: crashes }, expectedPaths: { crashDumps: crashes } }));
   return { root, output, receipts, crashes, options: { privateRoot: root, output, started, finished, shutdownDirectory: receipts, env: {} } };
 }
-function isolatedCollector(response, platform = 'win32') {
+function isolatedCollector(response, platform = 'win32', filesystem = fs) {
   let calls = 0; const holder = { exports: {} };
   vm.runInNewContext(fs.readFileSync(sourceFile, 'utf8'), { module: holder, exports: holder.exports, Buffer, process: { platform, env: { GITHUB_ACTIONS: 'true', RUNNER_OS: 'Windows' } }, require(name) {
+    if (name === 'node:fs') return filesystem;
     if (name === 'node:child_process') return { execFile(exe, args, options, callback) { calls++; assert.equal(exe, 'powershell.exe'); assert.equal(options.timeout, 4000); assert.equal(options.windowsHide, true); if (response instanceof Error) callback(response); else callback(null, JSON.stringify(response)); } };
     return require(name);
   } }, { filename: sourceFile });
@@ -110,5 +111,72 @@ test('collection failure cannot mask or change an original successful or failed 
   for (const passed of [false, true]) { const original = { passed, failure: passed ? undefined : { message: 'original native error' }, spawn: { status: passed ? 0 : 1 } }; const proof = structuredClone(original);
     await diagnostics.attachCrashDiagnostics(proof, {}, async () => { throw Error('Diagnostic copy failure'); });
     const { crashDiagnostics, ...result } = proof; assert.deepEqual(result, original); assert.equal(crashDiagnostics.status, 'error'); assert.equal(crashDiagnostics.originalResultPreserved, true);
+  }
+});
+
+test('selected held-file metadata reproduces the buffer decoder and authenticates bounded ranges', () => {
+  const f = fixture(), file = path.join(f.crashes, 'metadata.dmp'), bytes = dump(); fs.writeFileSync(file, bytes);
+  const selected = diagnostics.readMinidumpMetadata(f.root, file);
+  assert.deepEqual(selected.summary, diagnostics.summarizeMinidump(bytes)); assert.equal(selected.fileBytes, 600);
+  assert(selected.selectedBytes < 1024); assert.equal(selected.selectedBytes, selected.ranges.reduce((n, r) => n + r.bytes, 0));
+  for (const r of selected.ranges) { const data = Buffer.from(r.data, 'base64'); assert.equal(data.length, r.bytes); assert.equal(r.sha256, crypto.createHash('sha256').update(data).digest('hex')); assert.deepEqual(data, bytes.subarray(r.offset, r.offset + r.bytes)); }
+  assert.throws(() => diagnostics.readMinidumpMetadata(f.root, file, 31), /read bound/);
+  assert.throws(() => diagnostics.readMinidumpMetadata(f.root, file, diagnostics.LIMITS.metadataBytes + 1), /budget/);
+  assert.deepEqual(fs.readFileSync(file), bytes);
+});
+
+test('oversized logical dump retains only positional metadata, no memory/context or full-file hash', async () => {
+  const f = fixture(), file = path.join(f.crashes, 'oversized.dmp'), bytes = dump();
+  // An unreferenced large context lies in the logical file; never read it.
+  bytes.writeUInt32LE(1024, 240); bytes.writeUInt32LE(16 * 1024 * 1024, 244); fs.writeFileSync(file, bytes);
+  const logicalSize = BigInt(diagnostics.LIMITS.dumpBytes) + 1n; let selectedFd; const calls = [];
+  const large = stat => ({ ...stat, size: typeof stat.size === 'bigint' ? logicalSize : Number(logicalSize), isFile: () => true, isDirectory: () => false, isSymbolicLink: () => false });
+  const controlledFs = { ...fs,
+    lstatSync(p, options) { const stat = fs.lstatSync(p, options); return path.resolve(p) === file ? large(stat) : stat; },
+    openSync(p, flags) { const fd = fs.openSync(p, flags); if (path.resolve(p) === file) selectedFd = fd; return fd; },
+    fstatSync(fd, options) { const stat = fs.fstatSync(fd, options); return fd === selectedFd ? large(stat) : stat; },
+    readSync(fd, buffer, offset, length, position) { if (fd === selectedFd) { calls.push({ length, position }); assert(Number.isInteger(position)); assert(length <= 1024); assert(position + length <= bytes.length); } return fs.readSync(fd, buffer, offset, length, position); },
+    readFileSync(p, options) { assert.notEqual(path.resolve(p), file, 'No whole dump read'); return fs.readFileSync(p, options); },
+  };
+  const mock = isolatedCollector({ events: [], examined: 0, unknown: 0, capped: false }, 'win32', controlledFs);
+  const proof = { passed: false, failure: { message: 'actual native AV' }, spawn: { status: 1 } };
+  await mock.api.attachCrashDiagnostics(proof, f.options);
+  assert.equal(proof.passed, false); assert.equal(proof.failure.message, 'actual native AV'); assert.equal(proof.spawn.status, 1);
+  const report = proof.crashDiagnostics; assert.equal(report.status, 'observed'); assert.equal(report.dumps.length, 1);
+  const d = report.dumps[0]; assert.equal(d.metadataOnly, true); assert.equal(d.rawDumpCopied, false); assert.equal(d.fullFileSha256, null); assert.equal(d.sourceFileBytes, Number(logicalSize)); assert.equal(d.association.status, 'candidate'); assert(d.file.endsWith('.metadata.json'));
+  const packet = JSON.parse(fs.readFileSync(d.file, 'utf8')); assert.deepEqual(packet.summary, diagnostics.summarizeMinidump(dump())); assert.equal(packet.selectedBytes, calls.reduce((n, r) => n + r.length, 0)); assert(packet.selectedBytes < 1024);
+  assert.equal(diagnostics.LIMITS.dumpBytes, 32 * 1024 * 1024); assert.equal(diagnostics.LIMITS.totalBytes, 64 * 1024 * 1024); assert.deepEqual(fs.readFileSync(file), bytes);
+});
+
+test('selected parser refuses invalid references before reading them and never follows context', () => {
+  const bytes = dump(), calls = []; bytes.writeUInt32LE(0xfffffff0, 280);
+  assert.throws(() => diagnostics.parseSelectedMinidump((offset, length) => { calls.push({ offset, length }); return bytes.subarray(offset, offset + length); }, bytes.length), /RVA/);
+  assert(calls.every(r => r.offset < bytes.length && r.length < 1024));
+  for (const length of [undefined, NaN, Infinity, 31, 32.5]) assert.throws(() => diagnostics.parseSelectedMinidump(() => { throw Error('Must not read'); }, length), /file bound/);
+  const badName = dump(); badName.writeUInt16LE(0, 384); assert.throws(() => diagnostics.summarizeMinidump(badName), /module name/);
+});
+
+test('held metadata file changes refuse and always close the exact descriptor', () => {
+  const f = fixture(), file = path.join(f.crashes, 'changed.dmp'); fs.writeFileSync(file, dump());
+  for (const mode of ['size', 'mtime', 'inode', 'short-read']) {
+    let fd, queries = 0, closed = false;
+    const controlledFs = { ...fs,
+      openSync(p, flags) { const opened = fs.openSync(p, flags); if (path.resolve(p) === file) fd = opened; return opened; },
+      fstatSync(h, options) { const stat = fs.fstatSync(h, options); if (h !== fd || ++queries < 2) return stat; return { ...stat, isFile: () => true, ...(mode === 'size' ? { size: stat.size + 1n } : mode === 'mtime' ? { mtimeNs: stat.mtimeNs + 1n } : mode === 'inode' ? { ino: stat.ino + 1n } : {}) }; },
+      readSync(h, ...args) { return h === fd && mode === 'short-read' ? 0 : fs.readSync(h, ...args); },
+      closeSync(h) { if (h === fd) closed = true; return fs.closeSync(h); },
+    };
+    const mock = isolatedCollector({}, 'win32', controlledFs);
+    assert.throws(() => mock.api.readMinidumpMetadata(f.root, file), /changed|truncated/); assert.equal(closed, true); assert.deepEqual(fs.readFileSync(file), dump());
+  }
+});
+
+test('selected metadata refuses declared context and nonselected stream overlap before reading names', () => {
+  for (const kind of ['context', 'nonselected-stream']) {
+    const bytes = dump(), calls = [];
+    if (kind === 'context') { bytes.writeUInt32LE(100, 240); bytes.writeUInt32LE(380, 244); }
+    else { bytes.writeUInt32LE(4, 8); bytes.writeUInt32LE(5, 68); bytes.writeUInt32LE(100, 72); bytes.writeUInt32LE(380, 76); }
+    assert.throws(() => diagnostics.parseSelectedMinidump((offset, size) => { calls.push({ offset, size }); return bytes.subarray(offset, offset + size); }, bytes.length), /overlaps excluded/);
+    assert(calls.every(r => r.offset !== 380 && r.offset !== 384));
   }
 });

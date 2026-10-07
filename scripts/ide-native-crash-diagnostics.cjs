@@ -2,7 +2,7 @@
 // Passive, CI-only observations. This module never signals an application,
 // configures WER/Crashpad, changes an exit result, or attributes a root cause.
 const fs = require('node:fs'), path = require('node:path'), cp = require('node:child_process'), crypto = require('node:crypto');
-const LIMITS = Object.freeze({ dumpBytes: 32 * 1024 * 1024, totalBytes: 64 * 1024 * 1024, streams: 128, modules: 512, stringBytes: 4096, entries: 256, depth: 4, xmlBytes: 128 * 1024, helperMs: 4000 });
+const LIMITS = Object.freeze({ dumpBytes: 32 * 1024 * 1024, metadataBytes: 128 * 1024, metadataTotalBytes: 512 * 1024, totalBytes: 64 * 1024 * 1024, streams: 128, modules: 512, stringBytes: 4096, entries: 256, depth: 4, xmlBytes: 128 * 1024, helperMs: 4000 });
 const within = (root, target) => { const r = path.relative(path.resolve(root), path.resolve(target)); return !path.isAbsolute(r) && r !== '..' && !r.startsWith('..' + path.sep); };
 const samePath = (a, b) => typeof a === 'string' && typeof b === 'string' && path.win32.normalize(a).toLowerCase() === path.win32.normalize(b).toLowerCase();
 const validBirth = value => typeof value === 'string' && /^\d{1,19}$/.test(value) && BigInt(value) > 0n;
@@ -10,51 +10,69 @@ const sha256 = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const message = error => String(error?.message || error).slice(0, 1024);
 
 /** Microsoft minidumpapiset.h uses four-byte packing. No memory/stack bytes or symbols are interpreted. */
-function summarizeMinidump(bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 32 || bytes.length > LIMITS.dumpBytes) throw Error('Minidump byte bound invalid');
-  const range = (offset, size) => { if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0 || offset > bytes.length - size) throw Error('Minidump RVA/size outside file'); };
-  if (bytes.toString('ascii', 0, 4) !== 'MDMP' || (bytes.readUInt32LE(4) & 0xffff) !== 42899) throw Error('Minidump signature/version invalid');
-  const count = bytes.readUInt32LE(8), directory = bytes.readUInt32LE(12);
+function parseSelectedMinidump(read, fileBytes) {
+  if (typeof read !== 'function' || !Number.isSafeInteger(fileBytes) || fileBytes < 32) throw Error('Minidump metadata file bound invalid');
+  const range = (offset, size) => { if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0 || offset > fileBytes - size) throw Error('Minidump RVA/size outside file'); };
+  const forbidden = [], selected = [];
+  const overlaps = (a, b) => a.size > 0 && b.size > 0 && a.offset < b.offset + b.size && b.offset < a.offset + a.size;
+  const exclude = (offset, size) => { range(offset, size); const r = { offset, size }; if (selected.some(s => overlaps(s, r))) throw Error('Minidump selected metadata overlaps excluded data'); forbidden.push(r); };
+  const readRange = (offset, size) => { range(offset, size); const r = { offset, size }; if (forbidden.some(f => overlaps(r, f))) throw Error('Minidump selected metadata overlaps excluded data'); selected.push(r); return read(offset, size); };
+  const header = readRange(0, 32);
+  if (header.toString('ascii', 0, 4) !== 'MDMP' || (header.readUInt32LE(4) & 0xffff) !== 42899) throw Error('Minidump signature/version invalid');
+  const count = header.readUInt32LE(8), directory = header.readUInt32LE(12);
   if (!count || count > LIMITS.streams || directory < 32) throw Error('Minidump stream count/directory invalid');
-  range(directory, count * 12);
-  const streams = new Map();
+  const entries = readRange(directory, count * 12), streams = new Map();
   for (let index = 0; index < count; index++) {
-    const item = directory + index * 12, type = bytes.readUInt32LE(item), size = bytes.readUInt32LE(item + 4), rva = bytes.readUInt32LE(item + 8);
+    const item = index * 12, type = entries.readUInt32LE(item), size = entries.readUInt32LE(item + 4), rva = entries.readUInt32LE(item + 8);
     range(rva, size);
     if ([4, 6, 15].includes(type)) { if (streams.has(type)) throw Error('Duplicate selected minidump stream'); streams.set(type, { rva, size }); }
+    else exclude(rva, size);
   }
   const exception = streams.get(6);
   if (!exception || exception.size < 168) throw Error('Minidump exception stream missing/truncated');
-  const e = exception.rva, parameters = bytes.readUInt32LE(e + 32);
+  const e = readRange(exception.rva, 168), parameters = e.readUInt32LE(32);
   if (parameters > 15) throw Error('Minidump exception parameter count invalid');
-  range(bytes.readUInt32LE(e + 164), bytes.readUInt32LE(e + 160));
-  const address = bytes.readBigUInt64LE(e + 24);
-  const result = { threadId: bytes.readUInt32LE(e), exceptionCode: '0x' + bytes.readUInt32LE(e + 8).toString(16).padStart(8, '0'), exceptionAddress: '0x' + address.toString(16).padStart(16, '0'), faultModule: null };
+  // Validate the referenced context range without reading context/stack/memory.
+  exclude(e.readUInt32LE(164), e.readUInt32LE(160));
+  const address = e.readBigUInt64LE(24);
+  const result = { threadId: e.readUInt32LE(0), exceptionCode: '0x' + e.readUInt32LE(8).toString(16).padStart(8, '0'), exceptionAddress: '0x' + address.toString(16).padStart(16, '0'), faultModule: null };
   const modules = streams.get(4);
   if (modules) {
     if (modules.size < 4) throw Error('Minidump module list truncated');
-    const moduleCount = bytes.readUInt32LE(modules.rva);
+    const moduleCount = readRange(modules.rva, 4).readUInt32LE(0);
     if (moduleCount > LIMITS.modules || modules.size < 4 + moduleCount * 108) throw Error('Minidump module count invalid');
+    const records = readRange(modules.rva + 4, moduleCount * 108); let match;
     for (let index = 0; index < moduleCount; index++) {
-      const m = modules.rva + 4 + index * 108, base = bytes.readBigUInt64LE(m), size = BigInt(bytes.readUInt32LE(m + 8)), nameRva = bytes.readUInt32LE(m + 20);
-      range(nameRva, 4); const nameSize = bytes.readUInt32LE(nameRva);
-      if (nameSize > LIMITS.stringBytes || nameSize % 2) throw Error('Minidump module string bound invalid');
-      range(nameRva + 4, nameSize);
-      const name = path.win32.basename(bytes.toString('utf16le', nameRva + 4, nameRva + 4 + nameSize));
+      const m = index * 108, base = records.readBigUInt64LE(m), size = BigInt(records.readUInt32LE(m + 8));
       if (address >= base && address - base < size) {
-        if (result.faultModule) throw Error('Minidump address matches overlapping modules');
-        result.faultModule = { name, base: '0x' + base.toString(16), offset: '0x' + (address - base).toString(16) };
+        if (match) throw Error('Minidump address matches overlapping modules');
+        match = { base, nameRva: records.readUInt32LE(m + 20) };
       }
+    }
+    if (match) {
+      const nameSize = readRange(match.nameRva, 4).readUInt32LE(0);
+      if (nameSize > LIMITS.stringBytes || nameSize % 2) throw Error('Minidump module string bound invalid');
+      range(match.nameRva + 4, nameSize);
+      const rawName = readRange(match.nameRva + 4, nameSize).toString('utf16le');
+      if (!rawName || /[\x00-\x1f\x7f]/.test(rawName)) throw Error('Minidump module name invalid');
+      const name = path.win32.basename(rawName);
+      result.faultModule = { name, base: '0x' + match.base.toString(16), offset: '0x' + (address - match.base).toString(16) };
     }
   }
   const misc = streams.get(15);
   if (misc) {
-    if (misc.size < 24 || bytes.readUInt32LE(misc.rva) < 24 || bytes.readUInt32LE(misc.rva) > misc.size) throw Error('Minidump MiscInfo bound invalid');
-    const flags = bytes.readUInt32LE(misc.rva + 4);
-    if (flags & 1) result.processId = bytes.readUInt32LE(misc.rva + 8);
-    if (flags & 2) result.processCreateTime = bytes.readUInt32LE(misc.rva + 12);
+    if (misc.size < 24) throw Error('Minidump MiscInfo bound invalid');
+    const info = readRange(misc.rva, 24);
+    if (info.readUInt32LE(0) < 24 || info.readUInt32LE(0) > misc.size) throw Error('Minidump MiscInfo bound invalid');
+    const flags = info.readUInt32LE(4);
+    if (flags & 1) result.processId = info.readUInt32LE(8);
+    if (flags & 2) result.processCreateTime = info.readUInt32LE(12);
   }
   return result;
+}
+function summarizeMinidump(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 32 || bytes.length > LIMITS.dumpBytes) throw Error('Minidump byte bound invalid');
+  return parseSelectedMinidump((offset, size) => bytes.subarray(offset, offset + size), bytes.length);
 }
 
 function associateDump(summary, identity) {
@@ -116,6 +134,32 @@ function readReceipts(root, directory, match) {
   try { for (let entry; (entry = handle.readSync());) { if (++count > LIMITS.entries) throw Error('Diagnostic receipt entry bound exceeded'); if (!match.test(entry.name)) continue; try { result.push(JSON.parse(readBounded(root, path.join(directory, entry.name), 2 * 1024 * 1024).toString('utf8'))); } catch (error) { errors.push({ file: entry.name, error: message(error) }); } } } finally { handle.closeSync(); }
   return { result, errors };
 }
+/** Retain only selected fixed metadata, never a full oversized dump or memory. */
+function readMinidumpMetadata(root, file, readBudget = LIMITS.metadataBytes) {
+  if (!Number.isSafeInteger(readBudget) || readBudget < 0 || readBudget > LIMITS.metadataBytes) throw Error('Minidump metadata budget invalid');
+  const canonical = checkedPath(root, file), before = fs.lstatSync(canonical, { bigint: true });
+  if (!before.isFile() || before.size < 32n || before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw Error('Minidump metadata file bound invalid');
+  const fd = fs.openSync(canonical, 'r');
+  try {
+    const opened = fs.fstatSync(fd, { bigint: true });
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino || opened.birthtimeNs !== before.birthtimeNs || opened.size !== before.size || opened.mtimeNs !== before.mtimeNs) throw Error('Minidump metadata file changed before open');
+    const ranges = []; let selectedBytes = 0;
+    const read = (offset, size) => {
+      if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0 || offset > Number(opened.size) - size || size > readBudget - selectedBytes) throw Error('Minidump metadata read bound invalid');
+      const bytes = Buffer.alloc(size); let length = 0;
+      while (length < size) { const count = fs.readSync(fd, bytes, length, size - length, offset + length); if (!count) throw Error('Minidump metadata read truncated'); length += count; }
+      selectedBytes += size;
+      ranges.push({ offset, bytes: size, sha256: sha256(bytes), data: bytes.toString('base64') });
+      return bytes;
+    };
+    const summary = parseSelectedMinidump(read, Number(opened.size));
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || after.dev !== opened.dev || after.ino !== opened.ino || after.birthtimeNs !== opened.birthtimeNs || checkedPath(root, file) !== canonical) throw Error('Minidump metadata file changed during read');
+    const current = fs.lstatSync(canonical, { bigint: true });
+    if (current.dev !== opened.dev || current.ino !== opened.ino || current.birthtimeNs !== opened.birthtimeNs || current.size !== opened.size || current.mtimeNs !== opened.mtimeNs) throw Error('Minidump metadata path changed during read');
+    return { format: 'selected-minidump-metadata-v1', fileBytes: Number(opened.size), selectedBytes, ranges, summary, identity: { dev: String(opened.dev), ino: String(opened.ino), birthtimeNs: String(opened.birthtimeNs), mtimeNs: String(opened.mtimeNs) }, scope: 'Selected header/directory/exception/module records/fault-module name/MiscInfo only; refuses known nonselected stream/context overlaps and does not follow context, stack or memory pointers. No full-file hash. Process association is diagnostic only.' };
+  } finally { fs.closeSync(fd); }
+}
 function scanDumps(root, directory, errors) {
   const files = []; let count = 0;
   function visit(folder, depth) {
@@ -161,13 +205,29 @@ async function collectWindowsCrashDiagnostics(options) {
       const { xml, ...detail } = qualified; report.events.push({ ...detail, file, bytes: bytes.length, sha256: sha256(bytes) });
     }
   } catch (error) { report.errors.push({ source: 'event-query', error: message(error) }); }
-  let copied = 0;
+  let copied = 0, metadataRead = 0;
   for (const identity of identities) {
     const receipt = paths.result.find(row => row.pid === identity.pid && row.mode === 'existing-E2E-fixtures; isolation-only-bootstrap' && samePath(row.main, path.join(privateRoot, 'app/widget/out/main/index.js')) && samePath(row.ragRoot, privateRoot) && row.paths && row.expectedPaths && typeof row.paths.crashDumps === 'string' && typeof row.paths.userData === 'string' && samePath(row.paths.crashDumps, row.expectedPaths.crashDumps) && samePath(row.paths.crashDumps, path.join(row.paths.userData, 'CrashDumps')) && within(privateRoot, row.paths.crashDumps) && within(privateRoot, row.paths.userData));
     if (!receipt) { report.errors.push({ pid: identity.pid, source: 'dump-path', error: 'No matching private crashDumps path receipt' }); continue; }
     try {
       for (const file of scanDumps(privateRoot, receipt.paths.crashDumps, report.errors)) {
+        let observed;
         try {
+          const stat = fs.lstatSync(checkedPath(privateRoot, file), { bigint: true });
+          observed = { sourceFile: path.relative(privateRoot, file), sourceFileBytes: String(stat.size), regularFile: stat.isFile() };
+          if (!stat.isFile()) throw Error('Diagnostic dump is not a regular file');
+          if (stat.size > BigInt(LIMITS.dumpBytes)) {
+            // Reserve the whole possible read before parsing, including failures.
+            const budget = Math.min(LIMITS.metadataBytes, LIMITS.metadataTotalBytes - metadataRead);
+            metadataRead += budget;
+            const metadata = readMinidumpMetadata(privateRoot, file, budget);
+            const destination = path.join(target, `dump-${identity.pid}-${report.dumps.length}.metadata.json`);
+            const bytes = Buffer.from(JSON.stringify(metadata));
+            if (copied + bytes.length > LIMITS.totalBytes) throw Error('Aggregate dump copy bound exceeded');
+            fs.writeFileSync(destination, bytes, { flag: 'wx' }); copied += bytes.length;
+            report.dumps.push({ file: destination, source: path.relative(privateRoot, file), bytes: bytes.length, sha256: sha256(bytes), sourceFileBytes: metadata.fileBytes, selectedBytes: metadata.selectedBytes, metadataOnly: true, rawDumpCopied: false, fullFileSha256: null, fullDumpCopyRefused: 'Above original 32 MiB full-copy limit', summary: metadata.summary, association: associateDump(metadata.summary, identity) });
+            continue;
+          }
           const bytes = readBounded(privateRoot, file, LIMITS.dumpBytes);
           if (copied + bytes.length > LIMITS.totalBytes) throw Error('Aggregate dump copy bound exceeded');
           const destination = path.join(target, `dump-${identity.pid}-${report.dumps.length}.dmp`);
@@ -175,7 +235,7 @@ async function collectWindowsCrashDiagnostics(options) {
           const record = { file: destination, source: path.relative(privateRoot, file), bytes: bytes.length, sha256: sha256(bytes), association: { status: 'unqualified', reason: 'Not parsed' } };
           try { record.summary = summarizeMinidump(bytes); record.association = associateDump(record.summary, identity); } catch (error) { record.parseError = message(error); }
           report.dumps.push(record);
-        } catch (error) { report.errors.push({ source: 'dump-copy', error: message(error) }); }
+        } catch (error) { report.errors.push({ source: 'dump-copy', ...observed, error: message(error) }); }
       }
     } catch (error) { report.errors.push({ pid: identity.pid, source: 'dump-scan', error: message(error) }); }
   }
@@ -187,4 +247,4 @@ async function collectWindowsCrashDiagnostics(options) {
 async function attachCrashDiagnostics(proof, options, collect = collectWindowsCrashDiagnostics) {
   try { proof.crashDiagnostics = await collect(options); } catch (error) { proof.crashDiagnostics = { status: 'error', error: message(error), originalResultPreserved: true, causeEstablished: false }; }
 }
-module.exports = { LIMITS, summarizeMinidump, associateDump, qualifiedEvent, eventQuerySource, readBounded, collectWindowsCrashDiagnostics, attachCrashDiagnostics };
+module.exports = { LIMITS, summarizeMinidump, parseSelectedMinidump, readMinidumpMetadata, associateDump, qualifiedEvent, eventQuerySource, readBounded, collectWindowsCrashDiagnostics, attachCrashDiagnostics };
