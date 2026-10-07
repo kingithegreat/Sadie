@@ -2,7 +2,9 @@ import { EventEmitter } from 'events';
 import fs from 'fs';
 import { prepareElectronShutdown, closeElectronApp, closeRemainingElectronApps, CLOSE_BUDGET_MS } from '../../renderer/e2e/helpers/closeApp';
 import { monitorNativeApp } from '../../renderer/e2e/helpers/nativeAppProcess';
+import { collectWindowsNativeWaitChain } from '../../renderer/e2e/helpers/windowsNativeWaitChain';
 jest.mock('../../renderer/e2e/helpers/nativeAppProcess', () => ({ monitorNativeApp: jest.fn() }));
+jest.mock('../../renderer/e2e/helpers/windowsNativeWaitChain', () => ({ collectWindowsNativeWaitChain: jest.fn(async () => ({ status: 'partial', threads: [] })) }));
 jest.mock('fs', () => ({ ...jest.requireActual('fs'), mkdirSync: jest.fn(), writeFileSync: jest.fn() }));
 beforeEach(() => { jest.clearAllMocks(); jest.spyOn(console, 'log').mockImplementation(() => {}); jest.spyOn(console, 'error').mockImplementation(() => {}); });
 afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
@@ -27,6 +29,7 @@ test('actual native exit precedes transport close; wrapper disappearance is not 
   expect(f.monitor.dispose).toHaveBeenCalledTimes(1);
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt).toMatchObject({ graceful: true, native: { pid: 100 }, launcherPid: 200, nativeExit: { code: 0 } });
+  expect(collectWindowsNativeWaitChain).not.toHaveBeenCalled();
 });
 test('native timeout preserves exact refusal/capture diagnostics and owned cleanup remains a test failure', async () => {
   jest.useFakeTimers(); const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
@@ -134,6 +137,33 @@ test('unrelated evaluation errors remain failures even if native cleanup succeed
   expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt.graceful).toBe(false); expect(receipt.driverTeardownErrors).toBeUndefined();
+  expect(collectWindowsNativeWaitChain).not.toHaveBeenCalled();
+});
+
+test('native timeout collects bounded metadata before cleanup while preserving the original failure', async () => {
+  jest.useFakeTimers(); const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  (collectWindowsNativeWaitChain as jest.Mock).mockImplementationOnce(async (identity: unknown) => {
+    expect(identity).toEqual({ pid: 100, creation: f.monitor.creation });
+    expect(f.monitor.cleanup).not.toHaveBeenCalled();
+    return { status: 'partial', threads: [], error: 'Controlled unsupported wait element' };
+  });
+  const failed = expect(closeElectronApp(f.app)).rejects.toThrow(/did not exit within close budget/);
+  await jest.advanceTimersByTimeAsync(CLOSE_BUDGET_MS); await failed;
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.graceful).toBe(false); expect(receipt.cleanupExit).toMatchObject({ code: 1 });
+  expect(collectWindowsNativeWaitChain).toHaveBeenCalledTimes(process.platform === 'win32' ? 1 : 0);
+  if (process.platform === 'win32') expect(receipt.nativeWaitChain).toMatchObject({ status: 'partial' });
+});
+
+test('wait metadata failure cannot replace the original timeout or prevent owned cleanup', async () => {
+  jest.useFakeTimers(); const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  (collectWindowsNativeWaitChain as jest.Mock).mockRejectedValueOnce(new Error('Controlled collection failure'));
+  const failed = expect(closeElectronApp(f.app)).rejects.toThrow(/did not exit within close budget/);
+  await jest.advanceTimersByTimeAsync(CLOSE_BUDGET_MS); await failed;
+  expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.graceful).toBe(false);
+  if (process.platform === 'win32') expect(receipt.nativeWaitChainError).toContain('Controlled collection failure');
 });
 
 function inspectorFixture() {

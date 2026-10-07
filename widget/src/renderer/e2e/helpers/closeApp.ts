@@ -4,6 +4,7 @@ import path from 'path';
 import { randomUUID } from 'crypto';
 import { monitorNativeApp, type NativeAppMonitor, type NativeAppExit } from './nativeAppProcess';
 import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ownedElectronInspector';
+import { collectWindowsNativeWaitChain } from './windowsNativeWaitChain';
 import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
 export const CLOSE_BUDGET_MS = 20_000;
@@ -196,6 +197,16 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
       }
       persist();
+      if (process.platform === 'win32' && !state.nativeExit && state.monitor.creation && Date.now() >= deadline) {
+        // Failure-only read-only metadata for the original captured main. The
+        // original timeout stays failed; this never substitutes for OS exit.
+        try {
+          receipt.nativeWaitChain = await bounded(collectWindowsNativeWaitChain(
+            { pid: state.monitor.info.pid, creation: state.monitor.creation }, path.dirname(artifact),
+          ), 4500, 'Failure-only native wait metadata exceeded its separate bound');
+        } catch (diagnosticError) { receipt.nativeWaitChainError = String(diagnosticError); }
+        persist();
+      }
       try { receipt.forcedOwnedCleanup = await bounded(state.monitor.cleanup(tree), 6500, 'Owned native cleanup unconfirmed'); receipt.cleanupExit = await bounded(state.monitor.exit, 3000, 'Owned native OS exit unconfirmed'); } catch (cleanupError) { receipt.cleanupError = String(cleanupError); }
       try { await bounded(app.close(), 3000, 'Failure cleanup transport did not close'); } catch (transportError) { receipt.transportError = String(transportError); }
     } else {

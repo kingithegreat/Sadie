@@ -4,6 +4,7 @@ import { closeElectronApp, prepareElectronShutdown, CLOSE_BUDGET_MS } from '../e
 import { monitorNativeApp, type NativeAppExit } from '../e2e/helpers/nativeAppProcess';
 
 jest.mock('../e2e/helpers/nativeAppProcess', () => ({ monitorNativeApp: jest.fn() }));
+jest.mock('../e2e/helpers/windowsNativeWaitChain', () => ({ collectWindowsNativeWaitChain: jest.fn(async () => ({ status: 'partial', threads: [] })) }));
 jest.mock('fs', () => ({ ...jest.requireActual('fs'), mkdirSync: jest.fn(), writeFileSync: jest.fn() }));
 
 /** These fixture controls exercise the helper contract, not native Electron. */
