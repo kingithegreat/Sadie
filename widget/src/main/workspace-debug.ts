@@ -119,20 +119,34 @@ class DebugSession {
     return result;
   }
   async stop(): Promise<void> {
-    this.socket?.close(); this.socket = null;
-    this.rejectRequests('Debug session stopped.');
     const child = this.child;
+    const socket = this.socket; this.socket = null; socket?.close();
+    this.rejectRequests('Debug session stopped.');
     if (child) await stopWorkspaceChild(child);
+    if (this.child && this.child !== child) return;
     if (this.child === child) this.child = null;
     this.paused = false; this.frames = []; this.points.clear(); this.scripts.clear();
   }
 }
 const sessions = new Map<string, DebugSession>();
-export async function stopWorkspaceDebuggers(): Promise<void> { await Promise.all([...sessions.values()].map(session => session.stop())); sessions.clear(); }
+let stoppingAll: Promise<void> | null = null;
+export function stopWorkspaceDebuggers(): Promise<void> {
+  if (stoppingAll) return stoppingAll;
+  const pending = Promise.allSettled([...sessions.entries()].map(async ([root, session]) => {
+    await session.stop();
+    if (sessions.get(root) === session && !session.child) sessions.delete(root);
+  })).then(results => {
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  });
+  const owned = pending.finally(() => { if (stoppingAll === owned) stoppingAll = null; });
+  stoppingAll = owned; return owned;
+}
 export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Promise<WorkspaceDebugResult> {
   try {
     if (!request || typeof request.root !== 'string') throw new Error('Choose a project folder.');
     const root = projectRoot(request.root);
+    if (request.action === 'start' && stoppingAll) throw new Error('Debugger cleanup is in progress. Wait for it to finish before starting another program.');
     let session = sessions.get(root);
     if (!session && request.action !== 'start') {
       if (request.action === 'state' || request.action === 'stop') return { success: true, running: false, paused: false, output: '', frames: [], breakpoints: [] };
@@ -147,7 +161,7 @@ export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Pro
         break;
       }
       case 'state': break;
-      case 'stop': await session.stop(); sessions.delete(root); break;
+      case 'stop': await session.stop(); if (sessions.get(root) === session && !session.child) sessions.delete(root); break;
       case 'resume': await session.command('Debugger.resume'); break;
       case 'pause': await session.command('Debugger.pause'); break;
       case 'step-over': await session.command('Debugger.stepOver'); break;

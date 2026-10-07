@@ -31,9 +31,10 @@ class ControlledSocket {
 let root: string; let file: string; let originalSocket: typeof WebSocket;
 const children: Array<EventEmitter & { pid: number; stderr: EventEmitter; stdout: EventEmitter }> = [];
 const tick = () => new Promise(resolve => setImmediate(resolve));
-const call = (action: 'start' | 'state', extra = {}) => performWorkspaceDebug({ root, action, ...extra });
+const call = (action: 'start' | 'state' | 'stop' | 'breakpoint', extra = {}) => performWorkspaceDebug({ root, action, ...extra });
 beforeEach(() => {
   jest.clearAllMocks(); ControlledSocket.instances = []; children.length = 0;
+  (stopWorkspaceChild as jest.Mock).mockImplementation(async (child: EventEmitter) => { child.emit('exit', 0); });
   root = fs.mkdtempSync(path.join(os.homedir(), 'hb-debug-startup-')); file = path.join(root, 'main.js'); fs.writeFileSync(file, 'console.log("fixture");\n');
   originalSocket = global.WebSocket; global.WebSocket = ControlledSocket as unknown as typeof WebSocket;
   (spawn as jest.Mock).mockImplementation(() => {
@@ -62,4 +63,57 @@ test('late open from an exited startup neither initializes nor stops the replace
   oldSocket.dispatch('message', { data: JSON.stringify({ method: 'Debugger.paused', params: { callFrames: [{ callFrameId: 'old-frame', location: { scriptId: 'old-script', lineNumber: 9, columnNumber: 0 } }] } }) });
   oldSocket.dispatch('close');
   expect(await call('state')).toEqual(expect.objectContaining({ success: true, running: true, paused: false, pid: children[1].pid, frames: [] }));
+});
+
+test('delayed owned Stop preserves a replacement paused connection, fresh breakpoint and session entry', async () => {
+  const first = call('start', { file });
+  children[0].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); ControlledSocket.instances[0].open(); expect((await first).success).toBe(true);
+  let finishStop!: () => void;
+  (stopWorkspaceChild as jest.Mock).mockImplementationOnce((child: EventEmitter) => {
+    child.emit('exit', 0); // Actual exit precedes completion of tree/handle cleanup.
+    return new Promise<void>(resolve => { finishStop = resolve; });
+  });
+  const oldStop = call('stop'); expect(stopWorkspaceChild).toHaveBeenCalledWith(children[0]);
+  const replacement = call('start', { file });
+  children[1].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40002/def-456\n'); await tick();
+  const socket = ControlledSocket.instances[1]; socket.open(); expect((await replacement).success).toBe(true);
+  socket.dispatch('message', { data: JSON.stringify({ method: 'Debugger.scriptParsed', params: { scriptId: 'new-script', url: file } }) });
+  socket.dispatch('message', { data: JSON.stringify({ method: 'Debugger.paused', params: { callFrames: [{ callFrameId: 'new-frame', functionName: 'current', url: '', location: { scriptId: 'new-script', lineNumber: 3, columnNumber: 0 }, scopeChain: [] }] } }) });
+  expect((await call('breakpoint', { file, line: 4 })).success).toBe(true);
+  finishStop(); const completedOldStop = await oldStop;
+  expect(completedOldStop).toEqual(expect.objectContaining({ success: true, running: true, paused: true, pid: children[1].pid, breakpoints: [{ path: file, line: 4 }] }));
+  const current = await call('state');
+  expect(current).toEqual(expect.objectContaining({ success: true, running: true, paused: true, pid: children[1].pid, breakpoints: [{ path: file, line: 4 }] }));
+  expect(current.frames).toEqual([expect.objectContaining({ id: 'new-frame', path: file, line: 4 })]);
+  expect(stopWorkspaceChild).toHaveBeenCalledTimes(1);
+});
+
+test('global debugger cleanup blocks new starts until its owned stop finishes, then permits a fresh session', async () => {
+  const first = call('start', { file }); children[0].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); ControlledSocket.instances[0].open(); await first;
+  let finishStop!: () => void;
+  (stopWorkspaceChild as jest.Mock).mockImplementationOnce((child: EventEmitter) => { child.emit('exit', 0); return new Promise<void>(resolve => { finishStop = resolve; }); });
+  const cleanup = stopWorkspaceDebuggers(); expect(stopWorkspaceDebuggers()).toBe(cleanup);
+  expect(await call('start', { file })).toEqual(expect.objectContaining({ success: false, error: expect.stringMatching(/cleanup is in progress/) }));
+  expect(children).toHaveLength(1);
+  finishStop(); await cleanup;
+  expect(await call('state')).toEqual(expect.objectContaining({ running: false, breakpoints: [] }));
+  const fresh = call('start', { file }); children[1].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40002/def-456\n'); await tick(); ControlledSocket.instances[1].open();
+  expect(await fresh).toEqual(expect.objectContaining({ success: true, running: true, pid: children[1].pid }));
+});
+
+test('one refused global stop does not release admission while another owned stop remains pending', async () => {
+  const first = call('start', { file }); children[0].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); ControlledSocket.instances[0].open(); await first;
+  const otherRoot = path.join(root, 'other'); fs.mkdirSync(otherRoot); const otherFile = path.join(otherRoot, 'main.js'); fs.writeFileSync(otherFile, 'console.log("other");\n');
+  const second = performWorkspaceDebug({ root: otherRoot, action: 'start', file: otherFile }); children[1].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40002/def-456\n'); await tick(); ControlledSocket.instances[1].open(); await second;
+  let finishSecond!: () => void;
+  (stopWorkspaceChild as jest.Mock)
+    .mockImplementationOnce(async (child: EventEmitter) => { child.emit('exit', 0); throw new Error('First cleanup refused'); })
+    .mockImplementationOnce((child: EventEmitter) => { child.emit('exit', 0); return new Promise<void>(resolve => { finishSecond = resolve; }); });
+  let settled = false;
+  const cleanup = stopWorkspaceDebuggers().then(() => { settled = true; return ''; }, error => { settled = true; return error.message; });
+  await tick(); expect(settled).toBe(false);
+  expect((await call('start', { file })).error).toMatch(/cleanup is in progress/); expect(children).toHaveLength(2);
+  finishSecond(); expect(await cleanup).toBe('First cleanup refused');
+  const fresh = call('start', { file }); children[2].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40003/abc-456\n'); await tick(); ControlledSocket.instances[2].open();
+  expect((await fresh).success).toBe(true);
 });
