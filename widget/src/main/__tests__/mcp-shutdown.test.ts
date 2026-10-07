@@ -1,5 +1,6 @@
 /** Controlled SDK promises only: no real process, user config or network. */
 import type { McpServerConfig } from '../mcp-client';
+import { PassThrough } from 'stream';
 
 jest.mock('electron', () => ({ app: { getPath: () => 'mcp-shutdown-fixture' } }));
 jest.mock('fs', () => ({ existsSync: jest.fn(() => true), readFileSync: jest.fn() }));
@@ -53,6 +54,27 @@ test('control: completed connection registers tools and shutdown closes its clie
   await mcp.shutdownMcpServers();
   expect(client.close).toHaveBeenCalledTimes(1);
   expect(mcp.getMcpStatus()).toEqual([]);
+});
+
+test('stdio stderr is consumed before handshake even when server output exceeds the stream buffer', async () => {
+  jest.useRealTimers();
+  const blocked = new PassThrough({ highWaterMark: 1024 });
+  expect(blocked.write(Buffer.alloc(65536))).toBe(false);
+  expect(blocked.readableLength).toBe(65536); // Missing-reader positive control.
+  blocked.destroy();
+  const stderr = new PassThrough({ highWaterMark: 1024 });
+  require('@modelcontextprotocol/sdk/client/stdio.js').StdioClientTransport.mockImplementationOnce(() => ({ stderr }));
+  client.connect.mockImplementation(async () => {
+    await new Promise<void>(resolve => {
+      stderr.once('drain', resolve);
+      expect(stderr.write(Buffer.alloc(65536))).toBe(false);
+    });
+  });
+  try {
+    expect(await mcp.connectSingleServer(config, register)).toMatchObject({ connected: true, toolCount: 1 });
+    expect(stderr.readableLength).toBe(0);
+    await mcp.shutdownMcpServers();
+  } finally { stderr.destroy(); }
 });
 
 test('shutdown owns an unfinished handshake and prevents its late registration', async () => {

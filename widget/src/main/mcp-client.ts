@@ -268,6 +268,10 @@ async function connectServer(
       cwd: config.cwd,
       stderr: 'pipe'
     });
+    // SDK piping uses a PassThrough. Consume it before connect/start so a
+    // noisy server cannot block its handshake or exit on an unread stderr pipe.
+    // Server stderr is not protocol data and is not copied into user logs.
+    transport.stderr?.resume();
   } else {
     transport = new SSEClientTransport(new URL(config.url));
   }
