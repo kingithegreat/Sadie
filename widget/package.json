@@ -67,7 +67,7 @@
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.11.0",
     "msedge-tts": "^2.0.7",
-    "node-pty": "1.1.0",
+    "node-pty": "1.2.0-beta.15",
     "node-record-lpcm16": "^1.0.1",
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
