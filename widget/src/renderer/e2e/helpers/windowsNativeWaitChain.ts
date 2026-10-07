@@ -113,7 +113,7 @@ public static class HomeBotWaitChain {
               int type=Marshal.ReadInt32(p,0),status=Marshal.ReadInt32(p,4);
               node["objectType"]=type; node["objectStatus"]=status;
               if(type==8) { node["processId"]=(uint)Marshal.ReadInt32(p,8); node["threadId"]=(uint)Marshal.ReadInt32(p,12); node["waitTime"]=(uint)Marshal.ReadInt32(p,16); node["contextSwitches"]=(uint)Marshal.ReadInt32(p,20); }
-              if(status==1 || status==4 || status==5 || status==9 || status==10) complete=false;
+              if(type<1 || type>12 || type==10 || status<1 || status>10 || status==1 || status==4 || status==5 || status==9 || status==10) complete=false;
               chain.Add(node);
             }
           }
@@ -140,7 +140,7 @@ ${nativeWaitChainCSharpSource()}
 $report=[HomeBotWaitChain]::Collect([uint32]${pid},'${creation}');
 $json=ConvertTo-Json -InputObject $report -Depth 8 -Compress;
 while([Text.Encoding]::UTF8.GetByteCount($json) -gt 61440 -and $report['threads'].Count -gt 0){
-  $report['threads'].RemoveAt($report['threads'].Count-1);$report['status']='partial';$report['truncatedOutput']=$true;
+  $report['threads'].RemoveAt($report['threads'].Count-1);if($report['status'] -ne 'refused'){$report['status']='partial'};$report['truncatedOutput']=$true;
   $json=ConvertTo-Json -InputObject $report -Depth 8 -Compress;
 }
 [Console]::Out.WriteLine('WCT:'+ $json);[Console]::Out.Flush();`;
@@ -188,13 +188,18 @@ export async function collectWindowsNativeWaitChain(identity: CapturedNativeIden
       !Array.isArray(data.threads) || data.threads.length > WAIT_CHAIN_MAX_THREADS || data.threads.some((row: any) => !row || !Array.isArray(row.nodes) || row.nodes.length > WAIT_CHAIN_MAX_NODES) ||
       (data.identityVerified === true && (!validIdentity(identity.pid, data.heldCreation) || BigInt(data.heldCreation) / 10n !== BigInt(identity.creation) / 10n)) ||
       (data.status === 'complete' && (data.identityVerified !== true || data.stillAlive !== true || data.truncatedThreads || data.truncatedOutput || !Number.isInteger(data.totalThreadCount) || data.totalThreadCount < 1 || data.totalThreadCount !== data.threads.length ||
-        data.threads.some((row: any) => row.error || row.wctError !== 0 || row.reportedNodeCount !== row.nodes.length || row.nodes.length < 1 || row.nodes.some((node: any) => !node || [1, 4, 5, 9, 10].includes(node.objectStatus)))))) {
+        data.threads.some((row: any) => row.error || row.wctError !== 0 || row.reportedNodeCount !== row.nodes.length || row.nodes.length < 1 || row.nodes.some((node: any) => !node ||
+          !Number.isInteger(node.objectType) || node.objectType < 1 || node.objectType > 12 || node.objectType === 10 ||
+          !Number.isInteger(node.objectStatus) || node.objectStatus < 1 || node.objectStatus > 10 || [1, 4, 5, 9, 10].includes(node.objectStatus)))))) {
       throw new Error('Invalid or unqualified wait-chain metadata receipt.');
     }
     for (const key of ['status', 'identityVerified', 'stillAlive', 'heldCreation', 'totalThreadCount', 'truncatedThreads', 'truncatedOutput', 'threads', 'error'] as const) {
       if (key in data) (receipt as any)[key] = data[key];
     }
-    if (result.error) { receipt.status = 'partial'; receipt.error = `Collector failed: ${result.error.message.slice(0, 512)}`; }
+    if (result.error) {
+      if (receipt.status !== 'refused') receipt.status = 'partial';
+      receipt.error = `${receipt.error ? `${receipt.error}; ` : ''}Collector failed: ${result.error.message.slice(0, 512)}`;
+    }
   } catch (error) { receipt.status = 'refused'; receipt.error = String(error).slice(0, 512); }
   receipt.durationMs = Date.now() - started;
   try { fs.writeFileSync(receipt.artifact, JSON.stringify(receipt, null, 2), 'utf8'); }

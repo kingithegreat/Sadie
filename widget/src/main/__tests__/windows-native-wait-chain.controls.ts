@@ -1,6 +1,6 @@
 import { windowsNativeWaitChainSource } from '../../renderer/e2e/helpers/windowsNativeWaitChain';
 
-export type WaitChainControl = 'complete' | 'denied' | 'reused' | 'wrong-thread-owner' | 'root-exits' | 'more-data';
+export type WaitChainControl = 'complete' | 'denied' | 'reused' | 'wrong-thread-owner' | 'root-exits' | 'more-data' | 'invalid-type' | 'invalid-status' | 'unknown-type';
 export const controlIdentity = { pid: 1234, creation: '639269363416749710' };
 
 /** Replace EVERY native import and real thread enumeration before execution.
@@ -19,7 +19,7 @@ export function buildWaitChainControl(mode: WaitChainControl): string {
     CloseThreadWaitChainSession: 'static void CloseThreadWaitChainSession(IntPtr session) { SessionClosed++; }',
     GetThreadWaitChain: `static bool GetThreadWaitChain(IntPtr session,UIntPtr context,uint flags,uint tid,ref uint count,IntPtr nodes,out bool cycle) {
       if(session.ToInt32()!=44 || context!=UIntPtr.Zero || flags!=1 || count!=16) throw new Exception("WCT bounds/ABI");
-      WctCalls++;cycle=false;for(int n=0;n<16;n++){var p=IntPtr.Add(nodes,n*280);Marshal.WriteInt32(p,0,8);Marshal.WriteInt32(p,4,3);Marshal.WriteInt32(p,8,1234);Marshal.WriteInt32(p,12,(int)tid);Marshal.WriteInt32(p,16,7);Marshal.WriteInt32(p,20,11);}
+      WctCalls++;cycle=false;for(int n=0;n<16;n++){var p=IntPtr.Add(nodes,n*280);Marshal.WriteInt32(p,0,${mode === 'invalid-type' ? 0 : mode === 'unknown-type' ? 10 : 8});Marshal.WriteInt32(p,4,${mode === 'invalid-status' ? 11 : 3});Marshal.WriteInt32(p,8,1234);Marshal.WriteInt32(p,12,(int)tid);Marshal.WriteInt32(p,16,7);Marshal.WriteInt32(p,20,11);}
       count=${mode === 'more-data' ? 17 : 2};${mode === 'root-exits' ? 'RootGone=true;' : ''} return ${mode === 'denied' || mode === 'more-data' ? 'false' : 'true'};
     }`,
   };

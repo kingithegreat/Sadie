@@ -53,6 +53,18 @@ test('metadata failures stay partial and transport failure cannot promote a rece
   reply(complete, new Error('collector timed out'));
   expect(await collectWindowsNativeWaitChain(identity, artifacts)).toMatchObject({ status: 'partial', error: expect.stringContaining('timed out') });
 });
+test('identity refusal survives an exec error and retains the original refusal reason', async () => {
+  reply({ ...complete, status: 'refused', identityVerified: false, stillAlive: false, threads: [], error: 'Captured birth mismatch' }, new Error('collector failed'));
+  expect(await collectWindowsNativeWaitChain(identity, artifacts)).toMatchObject({ status: 'refused', error: expect.stringMatching(/Captured birth mismatch.*collector failed/) });
+});
+test.each([
+  { objectType: 0, objectStatus: 3 }, { objectType: 13, objectStatus: 3 },
+  { objectType: 8, objectStatus: 0 }, { objectType: 8, objectStatus: 11 },
+  { objectType: 8 }, { objectStatus: 3 }, { objectType: 10, objectStatus: 3 },
+])('malformed or unknown enum nodes cannot be classified complete: %j', async node => {
+  reply({ ...complete, threads: [{ ...row, nodes: [node] }] });
+  expect((await collectWindowsNativeWaitChain(identity, artifacts)).status).toBe('refused');
+});
 test('oversized or multiple receipt output fails closed', async () => {
   run.mockImplementation((_file, _args, _options, callback) => callback(null, 'x'.repeat(65537), ''));
   expect((await collectWindowsNativeWaitChain(identity, artifacts)).status).toBe('refused');
@@ -75,7 +87,7 @@ test('generated collector imports only read/query APIs and has no application ef
 });
 
 const windowsControl = actualPlatform === 'win32' ? test : test.skip;
-windowsControl.each<WaitChainControl>(['complete', 'denied', 'reused', 'wrong-thread-owner', 'root-exits', 'more-data'])('generated actual WCT pipeline %s has every native API mocked', mode => {
+windowsControl.each<WaitChainControl>(['complete', 'denied', 'reused', 'wrong-thread-owner', 'root-exits', 'more-data', 'invalid-type', 'invalid-status', 'unknown-type'])('generated actual WCT pipeline %s has every native API mocked', mode => {
   const source = buildWaitChainControl(mode);
   expect(source).not.toContain('DllImport'); expect(source).not.toContain('Process.GetProcessById');
   const output = jest.requireActual('child_process').execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')],
