@@ -5,6 +5,8 @@ import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './workspace-trust';
 import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
+import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
+import { captureWorkspacePtyTree, stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 import type { WorkspaceDebugRequest, WorkspaceDebugResult, WorkspaceDebugFrame } from '../shared/workspace-debug-types';
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 function projectRoot(input: string): string {
@@ -17,6 +19,29 @@ function projectFile(root: string, file: unknown): string {
   return actual;
 }
 interface InspectorFrame { callFrameId: string; functionName: string; url: string; location: { scriptId: string; lineNumber: number; columnNumber: number }; scopeChain: Array<{ type: string; object: { objectId?: string } }> }
+interface OwnedDebugProgram {
+  child: ChildProcess; identity: Promise<WorkspacePtyIdentity | null | undefined>;
+  ended: boolean; executed: boolean; receipt?: WorkspacePtyStopReceipt;
+  captured?: Promise<void>; stopping?: Promise<void>; error?: string;
+  exit: Promise<void>; resolveExit(): void;
+}
+function groupGone(pid: number): boolean {
+  try { process.kill(-pid, 0); return false; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; }
+}
+async function waitForGroup(pid: number): Promise<boolean> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    if (groupGone(pid)) return true;
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  return groupGone(pid);
+}
+function waitForOwnedExit(program: OwnedDebugProgram): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('The debug program did not confirm exit. Its cleanup authority is retained; try Stop again.')), 5500);
+    void program.exit.then(() => { clearTimeout(timer); resolve(); });
+  });
+}
 class DebugSession {
   readonly root: string;
   child: ChildProcess | null = null;
@@ -28,15 +53,26 @@ class DebugSession {
   private requests = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private scripts = new Map<string, string>();
   private points = new Map<string, { path: string; line: number; id: string }>();
+  private ownedPrograms = new Map<ChildProcess, OwnedDebugProgram>();
   constructor(root: string) { this.root = root; }
+  hasCleanup(): boolean { return this.ownedPrograms.size > 0; }
   private rejectRequests(message: string): void {
     for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error(message)); }
     this.requests.clear();
   }
   async start(file: string, args: string[]) {
     if (this.child) throw new Error('Stop the current debug session first.');
+    const cleanupGeneration = debugCleanupGeneration;
+    // Keep ended cleanup authority while freeing the live cap. A same-project
+    // replacement waits for those retained records instead of discarding them.
+    if (this.hasCleanup()) await this.stop();
+    if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. Start again after cleanup finishes.');
+    assertWorkspaceRuntimeOpen();
     this.child = spawn(process.execPath, ['--inspect-brk=127.0.0.1:0', '--', file, ...args], { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
     const child = this.child;
+    let resolveExit!: () => void;
+    const program: OwnedDebugProgram = { child, identity: workspacePtyLifecycle.capture(child.pid!), ended: false, executed: false, exit: new Promise(resolve => { resolveExit = resolve; }), resolveExit: () => resolveExit() };
+    this.ownedPrograms.set(child, program);
     try {
     rememberWorkspaceChild(child);
     const url = await new Promise<string>((resolve, reject) => {
@@ -44,8 +80,21 @@ class DebugSession {
       const timeout = setTimeout(() => reject(new Error('The debugger did not start in time.')), 5000);
       child.stderr!.on('data', chunk => { stderr = (stderr + chunk).slice(-16_384); this.output = (this.output + chunk).slice(-256_000); const match = stderr.match(/Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9-]+)/); if (match) { clearTimeout(timeout); resolve(match[1]); } });
       child.stdout!.on('data', chunk => { this.output = (this.output + chunk).slice(-256_000); });
-      child.once('error', error => { clearTimeout(timeout); reject(error); });
+      child.once('error', error => {
+        clearTimeout(timeout);
+        // Failed spawn has no native PID and emits no exit. There is no process
+        // authority to retain or wait for; errors after a real spawn keep it.
+        if (!Number.isSafeInteger(child.pid) || child.pid! <= 0) {
+          program.ended = true; program.resolveExit(); this.ownedPrograms.delete(child);
+          if (this.child === child) this.child = null;
+        }
+        reject(error);
+      });
       child.once('exit', () => {
+        program.ended = true; program.resolveExit();
+        // Project code has not run if inspect-brk was never released.
+        if (!program.executed) this.ownedPrograms.delete(child);
+        else if (process.platform === 'win32' && !program.receipt) program.error = 'The debug program ended before its process tree could be captured. Cleanup is unverified; inspect and stop its remaining programs, then retry Stop.';
         clearTimeout(timeout);
         if (!this.socket) reject(new Error('The program exited before the debugger connected.'));
         if (this.child === child) {
@@ -72,7 +121,7 @@ class DebugSession {
         // Node has finished execution and cannot exit while this frontend stays
         // attached. Only the captured inspector's completion event releases it;
         // program stderr is not evidence. State clears on actual child exit.
-        socket.close();
+        void this.complete(program, socket).catch(error => { program.error = error instanceof Error ? error.message : String(error); });
       }
     });
     socket.addEventListener('close', () => { if (this.socket === socket) this.rejectRequests('Debugger disconnected.'); });
@@ -83,6 +132,10 @@ class DebugSession {
     };
     await initialize('Runtime.enable'); await initialize('Debugger.enable');
     await initialize('NodeRuntime.notifyWhenWaitingForDisconnect', { enabled: true });
+    const original = await program.identity;
+    if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
+    if (process.platform === 'win32' && !original) throw new Error('The debug program creation identity could not be verified. No project code was run; try Start again.');
+    program.executed = true;
     await initialize('Runtime.runIfWaitingForDebugger');
     } catch (error) {
       // An ended startup may finish after a subsequent Start. Its failure must
@@ -90,6 +143,61 @@ class DebugSession {
       if (this.child === child) await this.stop();
       throw error;
     }
+  }
+  private async capture(program: OwnedDebugProgram): Promise<void> {
+    if (program.receipt) return;
+    if (program.captured) return program.captured;
+    const operation = (async () => {
+      const original = await program.identity;
+      if (program.ended) throw new Error('The debug program ended before its process tree could be captured. Cleanup is unverified; inspect and stop its remaining programs, then retry Stop.');
+      const captured = await captureWorkspacePtyTree(program.child.pid!, original);
+      if (!captured.captured || !captured.receipt) throw new Error('The debug program process tree could not be verified. Cleanup authority is retained; try Stop again before closing HomeBot.');
+      program.receipt = captured.receipt;
+    })();
+    program.captured = operation;
+    try { await operation; } finally { if (program.captured === operation) program.captured = undefined; }
+  }
+  private async complete(program: OwnedDebugProgram, socket: WebSocket): Promise<void> {
+    if (!this.ownedPrograms.has(program.child)) return;
+    if (process.platform === 'win32') {
+      // Read-only authority must arrive before releasing this captured frontend.
+      await this.capture(program);
+      if (this.child === program.child && this.socket === socket) socket.close();
+    } else {
+      // POSIX signals the still-owned detached group before releasing its leader.
+      // This is cleanup, not a claim of natural OS exit zero.
+      await this.stopProgram(program);
+      if (this.socket === socket) socket.close();
+    }
+  }
+  private stopProgram(program: OwnedDebugProgram): Promise<void> {
+    if (!this.ownedPrograms.has(program.child)) return Promise.resolve();
+    if (program.stopping) return program.stopping;
+    const operation = (async () => {
+      if (!program.executed) {
+        // inspect-brk has not released project code, so there are no project
+        // descendants yet. This exact ChildProcess still owns startup cleanup.
+        if (!program.ended) await stopWorkspaceChild(program.child);
+        await waitForOwnedExit(program);
+      } else if (process.platform === 'win32') {
+        if (program.captured) await program.captured;
+        if (!program.receipt) await this.capture(program);
+        const result = await stopWorkspacePtyTree(program.child.pid!, await program.identity, program.receipt);
+        if (result.receipt) program.receipt = result.receipt;
+        if (!result.stopped) throw new Error('The debug program process tree did not confirm exit. Its captured identities are retained; try Stop again.');
+        await waitForOwnedExit(program);
+      } else {
+        // After leader exit, only query absence; never signal an old/reused PGID.
+        if (!program.ended) await stopWorkspaceChild(program.child);
+        if (!await waitForGroup(program.child.pid!)) throw new Error('The debug program ended but its process group has not confirmed exit. Cleanup is unverified; stop its remaining programs and retry Stop.');
+        await waitForOwnedExit(program);
+      }
+      this.ownedPrograms.delete(program.child); program.error = undefined;
+    })();
+    program.stopping = operation;
+    void operation.catch(error => { program.error = error instanceof Error ? error.message : String(error); });
+    void operation.finally(() => { if (program.stopping === operation) program.stopping = undefined; }).catch(() => undefined);
+    return operation;
   }
   command(method: string, params: Record<string, unknown> = {}): Promise<any> {
     const socket = this.socket;
@@ -103,7 +211,8 @@ class DebugSession {
       let file = ''; try { file = url.startsWith('file:') ? fileURLToPath(url) : url; } catch { /* internal script */ }
       return { id: frame.callFrameId, name: frame.functionName || '(anonymous)', path: within(this.root, file) ? file : '', line: frame.location.lineNumber + 1, column: frame.location.columnNumber + 1 };
     });
-    return { success: true, running: !!this.child, paused: this.paused, output: this.output, pid: this.child?.pid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
+    const retained = [...this.ownedPrograms.values()].filter(program => program.ended || program.error);
+    return { success: true, running: !!this.child, cleanupPending: retained.length > 0, error: retained.find(program => program.error)?.error, paused: this.paused, output: this.output, pid: this.child?.pid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
   }
   async breakpoint(file: string, line: number, remove: boolean) {
     const key = `${file}:${line}`; const previous = this.points.get(key);
@@ -129,21 +238,29 @@ class DebugSession {
   }
   async stop(): Promise<void> {
     const child = this.child;
-    const socket = this.socket; this.socket = null; socket?.close();
+    const socket = this.socket;
     this.rejectRequests('Debug session stopped.');
-    if (child) await stopWorkspaceChild(child);
+    // Keep the inspector attached until Windows tree authority is captured;
+    // disconnecting first can let a completed leader exit before capture.
+    const results = await Promise.allSettled([...this.ownedPrograms.values()].map(program => this.stopProgram(program)));
+    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+    if (failed) throw failed.reason;
     if (this.child && this.child !== child) return;
+    if (this.socket === socket) { this.socket = null; socket?.close(); }
     if (this.child === child) this.child = null;
     this.paused = false; this.frames = []; this.points.clear(); this.scripts.clear();
   }
 }
 const sessions = new Map<string, DebugSession>();
+const startingRoots = new Set<string>();
+let debugCleanupGeneration = 0;
 let stoppingAll: Promise<void> | null = null;
 export function stopWorkspaceDebuggers(): Promise<void> {
   if (stoppingAll) return stoppingAll;
+  debugCleanupGeneration++;
   const pending = Promise.allSettled([...sessions.entries()].map(async ([root, session]) => {
     await session.stop();
-    if (sessions.get(root) === session && !session.child) sessions.delete(root);
+    if (sessions.get(root) === session && !startingRoots.has(root) && !session.child && !session.hasCleanup()) sessions.delete(root);
   })).then(results => {
     const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failure) throw failure.reason;
@@ -161,17 +278,21 @@ export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Pro
       if (request.action === 'state' || request.action === 'stop') return { success: true, running: false, paused: false, output: '', frames: [], breakpoints: [] };
       throw new Error('Start a debug session first.');
     }
-    if (!session) { if (sessions.size >= 2) throw new Error('Close another project debug session first.'); session = new DebugSession(root); sessions.set(root, session); }
+    if (!session) { session = new DebugSession(root); sessions.set(root, session); }
     switch (request.action) {
       case 'start': {
         assertWorkspaceRuntimeOpen();
         const file = projectFile(root, request.file);
         const args = request.args || []; if (!Array.isArray(args) || args.length > 50 || args.some(arg => typeof arg !== 'string' || arg.length > 5000)) throw new Error('Program arguments are invalid.');
-        await session.start(file, args);
+        if (session.child || startingRoots.has(root)) throw new Error('Stop the current debug session first.');
+        const liveRoots = new Set([...startingRoots, ...[...sessions.entries()].filter(([, current]) => current.child).map(([key]) => key)]);
+        if (liveRoots.size >= 2) throw new Error('Close another project debug session first.');
+        startingRoots.add(root);
+        try { await session.start(file, args); } finally { startingRoots.delete(root); }
         break;
       }
       case 'state': break;
-      case 'stop': await session.stop(); if (sessions.get(root) === session && !session.child) sessions.delete(root); break;
+      case 'stop': await session.stop(); if (sessions.get(root) === session && !startingRoots.has(root) && !session.child && !session.hasCleanup()) sessions.delete(root); break;
       case 'resume': await session.command('Debugger.resume'); break;
       case 'pause': await session.command('Debugger.pause'); break;
       case 'step-over': await session.command('Debugger.stepOver'); break;

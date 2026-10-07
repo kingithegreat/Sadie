@@ -29,12 +29,12 @@ export default function DebuggerPanel({ root, activePath, onOpenFile }: Props) {
     <label>Arguments (one per line)<textarea aria-label="Debug program arguments" value={args} onChange={event => setArgs(event.target.value)} rows={2} /></label>
     <button disabled={busy || state?.running || !file} onClick={() => void request('start', { file, args: args.split('\n').filter(Boolean) })}>Start debugging</button>
     <div role="toolbar" aria-label="Debug controls">
-      <button disabled={busy || !state?.running} onClick={() => void request('stop')}>Stop debugger</button>
+      <button disabled={busy || !(state?.running || state?.cleanupPending)} onClick={() => void request('stop')}>Stop debugger</button>
       <button disabled={busy || !state?.paused} onClick={() => void request('resume')}>Continue</button>
       <button disabled={busy || !state?.running || state?.paused} onClick={() => void request('pause')}>Pause</button>
       {(['step-over', 'step-in', 'step-out'] as const).map(action => <button key={action} disabled={busy || !state?.paused} onClick={() => void request(action)}>{action.replace(/-/g, ' ')}</button>)}
     </div>
-    <div role="status">{state?.running ? state.paused ? 'Paused' : 'Running' : 'Stopped'}</div>{error && <p role="alert">{error}</p>}
+    <div role="status">{state?.running ? state.paused ? 'Paused' : 'Running' : state?.cleanupPending ? 'Program ended; cleanup pending' : 'Stopped'}</div>{(error || state?.error) && <p role="alert">{error || state?.error}</p>}
     <label>Breakpoint line<input aria-label="Breakpoint line" type="number" min={1} value={line} onChange={event => setLine(Number(event.target.value))} /></label><button disabled={busy || !state?.running || !file} onClick={() => void request('breakpoint', { file, line })}>Add breakpoint</button>
     {state?.breakpoints?.map(point => <div key={`${point.path}:${point.line}`}><button onClick={() => onOpenFile(point.path, point.line)}>{point.path}:{point.line}</button><button disabled={busy} onClick={() => void request('breakpoint', { file: point.path, line: point.line, remove: true })}>Remove breakpoint</button></div>)}
     <h4>Call stack</h4>{state?.frames?.map(item => <div key={item.id}><button aria-pressed={frame === item.id} onClick={() => { setFrame(item.id); if (item.path) onOpenFile(item.path, item.line); }}>{item.name} — {item.path || '(runtime)'}:{item.line}</button></div>)}

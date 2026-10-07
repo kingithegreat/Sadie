@@ -5,7 +5,8 @@ export interface WorkspaceDebugRequest {
 }
 export interface WorkspaceDebugFrame { id: string; name: string; path: string; line: number; column: number }
 export interface WorkspaceDebugResult {
-  success: boolean; error?: string; running?: boolean; paused?: boolean; output?: string; pid?: number;
+  // The leader may have ended while captured descendant cleanup is retained.
+  success: boolean; error?: string; running?: boolean; cleanupPending?: boolean; paused?: boolean; output?: string; pid?: number;
   frames?: WorkspaceDebugFrame[]; breakpoints?: Array<{ path: string; line: number }>;
   value?: string; variables?: Array<{ name: string; value: string }>;
 }

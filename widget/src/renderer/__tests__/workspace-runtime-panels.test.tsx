@@ -43,6 +43,20 @@ test('debug toolbar, breakpoints, call frames, variables and watch expressions r
   fireEvent.change(screen.getByLabelText('Watch expression'), { target: { value: 'count' } });
   await act(async () => fireEvent.click(screen.getByText('Evaluate watch'))); expect(workspaceDebug).toHaveBeenCalledWith({ root: '/project', action: 'evaluate', frameId: 'frame', expression: 'count' });
 });
+
+test('an ended debugger keeps Stop reachable for retained cleanup, exposes refusal and clears only confirmed cleanup', async () => {
+  const workspaceDebug = jest.fn().mockImplementation(async ({ action }: { action: string }) => action === 'state' ? { success: true, running: false, cleanupPending: true, error: 'Remaining process identities need cleanup.' } : { success: false, error: 'Captured child is still alive; retry Stop.' });
+  (window as any).electron = { workspaceDebug };
+  await act(async () => render(<DebuggerPanel root="/project" activePath="/project/main.js" onOpenFile={jest.fn()} />));
+  expect(screen.getByRole('status')).toHaveTextContent('Program ended; cleanup pending');
+  expect(screen.getByRole('alert')).toHaveTextContent('Remaining process identities need cleanup.');
+  const stop = screen.getByText('Stop debugger'); expect(stop).not.toBeDisabled();
+  await act(async () => fireEvent.click(stop));
+  expect(workspaceDebug).toHaveBeenLastCalledWith({ root: '/project', action: 'stop' });
+  expect(screen.getByRole('alert')).toHaveTextContent('Captured child is still alive; retry Stop.'); expect(stop).not.toBeDisabled();
+  workspaceDebug.mockResolvedValueOnce({ success: true, running: false, cleanupPending: false });
+  await act(async () => fireEvent.click(stop)); expect(stop).toBeDisabled(); expect(screen.getByRole('status')).toHaveTextContent('Stopped'); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
 test('test discovery rows open source and run one named test with coverage, with a real Stop route', async () => {
   const workspaceTests = jest.fn().mockImplementation(async ({ action }: { action: string }) => action === 'list' ? { success: true, tests: [{ path: '/project/math.test.js', name: 'adds', line: 8, runner: 'node' }] } : { success: true, running: true, output: 'actual output' });
   const open = jest.fn(); (window as any).electron = { workspaceTests };
