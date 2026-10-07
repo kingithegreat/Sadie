@@ -27,6 +27,21 @@ function bootstrap(adapterPath?: string) {
 }
 
 describe('fixed process bootstrap before Job assignment', () => {
+  it('echoes exactly one fresh identity challenge without consuming GO or importing project code', () => {
+    const f = bootstrap('approved-adapter'); const challenge = 'b'.repeat(64);
+    f.pipe.emit('data', Buffer.from(JSON.stringify({ type: 'identity-challenge', challenge }) + '\n'));
+    expect(f.pipe.write).toHaveBeenCalledWith(JSON.stringify({ type: 'identity-response', challenge, capability: 'a'.repeat(64) }) + '\n');
+    expect(f.spawn).not.toHaveBeenCalled(); expect(f.imports).toEqual(['node:net', 'node:child_process']);
+    f.go(); expect(f.spawn).toHaveBeenCalledTimes(1); f.child.emit('spawn'); f.accept();
+  });
+  it('rejects malformed, extra-field and replayed challenges before any GO', () => {
+    for (const packet of [{ type: 'identity-challenge', challenge: 'wrong' }, { type: 'identity-challenge', challenge: 'b'.repeat(64), extra: true }]) {
+      const f = bootstrap(); expect(() => f.pipe.emit('data', Buffer.from(JSON.stringify(packet) + '\n'))).toThrow('exit:125');
+      expect(f.spawn).not.toHaveBeenCalled();
+    }
+    const f = bootstrap(), packet = Buffer.from(JSON.stringify({ type: 'identity-challenge', challenge: 'b'.repeat(64) }) + '\n');
+    f.pipe.emit('data', packet); expect(() => f.pipe.emit('data', packet)).toThrow('exit:125'); expect(f.spawn).not.toHaveBeenCalled();
+  });
   it('clears preloads and keeps the capability out of the executable arguments', () => {
     const gate = createWorkspaceProcessGate({ NODE_OPTIONS: '--require project-preload', ELECTRON_RUN_AS_NODE: '0' });
     expect(gate.env.NODE_OPTIONS).toBe(''); expect(gate.env.ELECTRON_RUN_AS_NODE).toBe('1');

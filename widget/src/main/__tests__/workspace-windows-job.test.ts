@@ -30,6 +30,21 @@ describe('creation-gated Windows Job ownership', () => {
   });
   afterEach(() => { if (oldSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = oldSystemRoot; jest.clearAllTimers(); jest.useRealTimers(); });
 
+  it('task child capture binds its parent to main and resolves only a strict native identity result', async () => {
+    const f = helper(), job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    const capture = job.attachChild!(90); f.send({ type: 'listening' }); await settle();
+    expect(f.requests()).toEqual([{ id: 1, operation: 'attach-child', pid: 90, parent: process.pid }]);
+    f.reply({ ok: true, creation: identity.creation, parent: process.pid });
+    await expect(capture).resolves.toEqual({ creation: identity.creation, parent: process.pid }); await job.ready;
+    await expect(job.attachChild!(91)).rejects.toThrow('fixed task child');
+  });
+  it.each([{ ok: false }, { ok: true, creation: '0', parent: process.pid }, { ok: true, creation: identity.creation, parent: process.pid + 1 }, { ok: true, creation: 123, parent: process.pid }])('unknown task child result refuses readiness and never grants GO: %o', async response => {
+    const f = helper(), job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    const capture = job.attachChild!(90); f.send({ type: 'listening' }); await settle(); f.reply(response);
+    await expect(capture).rejects.toThrow('creation identity'); await expect(job.ready).rejects.toThrow('creation identity');
+    expect(f.requests().every(r => r.operation !== 'go')).toBe(true);
+  });
+
   it('returns ownership before helper listening and resolves ready only after assignment', async () => {
     const fake = helper(); const job = createWorkspaceWindowsJob(90, identity);
     let ready = false; void job.ready.then(() => { ready = true; });

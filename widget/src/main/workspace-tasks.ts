@@ -492,15 +492,26 @@ async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runne
         } catch { publish(true, 'The package task ended with unverified Job cleanup. Select Stop to retry.'); }
       })().catch(() => publish(true, 'Task cleanup could not be confirmed. Select Stop to retry.'));
     });
-    const original = child.pid ? await workspacePtyLifecycle.capture(child.pid, options.onLauncherIdentity) : undefined;
-    if (!original) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
-    await job.attach(child.pid!, original);
-    if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');
+    const exactChild = child;
+    const childStillOwned = () => exactChild === child && !!exactChild.pid && !childEnded && exactChild.exitCode === null && exactChild.signalCode === null;
+    if (!childStillOwned() || cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
+    if (job.attachChild) {
+      const original = await job.attachChild(exactChild.pid!);
+      if (!original || original.parent !== process.pid || !/^\d{1,19}$/.test(original.creation) || BigInt(original.creation) <= 0n) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
+    } else {
+      // Compatibility for explicitly injected legacy test collaborators only.
+      // The real product helper always provides authenticated attachChild.
+      if (!options.createWindowsJob) throw new Error('The task identity handoff is unavailable. No package code was released.');
+      const original = await workspacePtyLifecycle.capture(exactChild.pid!, options.onLauncherIdentity);
+      if (!original) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
+      await job.attach(exactChild.pid!, original);
+    }
+    if (!childStillOwned() || cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
     assertWorkspaceRuntimeOpen();
     if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed during startup. Review the task again.');
     await job.authorize(launch, () => {
       options.validateAuthority?.();
-      if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');
+      if (cancelled || options.signal?.aborted || !childStillOwned()) throw new Error('Task startup was cancelled before execution.');
       assertWorkspaceRuntimeOpen();
       if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed before execution. Review the task again.');
       executionAuthorized = true;

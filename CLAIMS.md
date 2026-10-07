@@ -29,6 +29,13 @@ and the shared fixed pre-execution gate; root owns existing MCP client/quit wiri
 Editor also owns Tests runner Job reservation, admission, retained cleanup and
 focused/native fixtures. Root owns Tests shared result/UI and final sender-frame
 IPC fences, including visible retryable cleanup after natural runner exit.
+Files now owns a task-only retained-helper attachChild follow-up in isolated
+`ide-task-attach-child-20261008`: same-held native birth/direct-main-parent,
+authenticated live-peer fresh challenge before assignment and unchanged final
+GO fences. Original 74ce query-timeout failure remains preserved; no native
+fix qualification is claimed. Files also owns the generated mocked-API test's
+15s subprocess/20s outer budget and fixed diagnostic phases; production query
+1800ms and Job4500ms deadlines stay unchanged. Editor adversarially reviews.
 Files remains sole owner of shared Job/gate modules while completing task/PTY
 integration, including task-only short-command completion evidence. Root's MCP
 stderr drain fixes a separately reproduced backpressure defect; native hang cause

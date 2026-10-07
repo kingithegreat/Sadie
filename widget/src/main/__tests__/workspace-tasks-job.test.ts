@@ -51,6 +51,40 @@ test('Windows executes only a fixed bootstrap, then main-approved target after i
   app.finish(); await expect(run).resolves.toMatchObject({ success: true, cleanupPending: false, exitCode: 0 });
 });
 
+test('the real-style helper attaches a task child without launching a separate identity query', async () => {
+  const app = fixture(), attachChild = jest.fn(async () => original); Object.assign(app.job, { attachChild });
+  const run = app.run(); await settle(); expect(attachChild).toHaveBeenCalledWith(4501);
+  expect(workspacePtyLifecycle.capture).not.toHaveBeenCalled(); expect(app.job.attach).not.toHaveBeenCalled();
+  expect(app.job.authorize).toHaveBeenCalledTimes(1); app.finish(); await expect(run).resolves.toMatchObject({ success: true });
+});
+test('a foreign or malformed helper identity never authorizes the task and joins exact startup cleanup', async () => {
+  for (const value of [{ ...original, parent: process.pid + 1 }, { ...original, creation: '0' }]) {
+    const app = fixture(); Object.assign(app.job, { attachChild: jest.fn(async () => value) });
+    await expect(app.run()).resolves.toMatchObject({ success: false, cleanupPending: false, error: expect.stringContaining('creation identity') });
+    expect(app.job.authorize).not.toHaveBeenCalled(); expect(app.child.kill).toHaveBeenCalledTimes(1); expect(app.job.stop).toHaveBeenCalledTimes(1);
+  }
+});
+test('an already-ended ChildProcess is rejected before helper capture', async () => {
+  const app = fixture(), attachChild = jest.fn(async () => original); Object.assign(app.job, { attachChild }); app.child.exitCode = 0;
+  await expect(app.run()).resolves.toMatchObject({ success: false }); expect(attachChild).not.toHaveBeenCalled(); expect(app.job.authorize).not.toHaveBeenCalled();
+});
+test('exit or cancellation while native capture is pending prevents later GO', async () => {
+  for (const action of ['exit', 'cancel'] as const) {
+    const app = fixture(); let captured!: (identity: typeof original) => void;
+    Object.assign(app.job, { attachChild: jest.fn(() => new Promise<typeof original>(resolve => { captured = resolve; })) });
+    const run = app.run(); await settle();
+    const closing = action === 'cancel' ? closeAllWorkspaceTasks() : undefined;
+    if (action === 'exit') app.finish(); captured(original); await closing;
+    await expect(run).resolves.toMatchObject({ success: false, cleanupPending: false }); expect(app.job.authorize).not.toHaveBeenCalled();
+  }
+});
+test('project mutation while native capture is pending refuses before GO', async () => {
+  const app = fixture(); let captured!: (identity: typeof original) => void;
+  Object.assign(app.job, { attachChild: jest.fn(() => new Promise<typeof original>(resolve => { captured = resolve; })) });
+  const run = app.run(); await settle(); fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ scripts: { check: 'changed' } })); captured(original);
+  await expect(run).resolves.toMatchObject({ success: false, cleanupPending: false }); expect(app.job.authorize).not.toHaveBeenCalled();
+});
+
 test('a missing or unknown launcher identity refuses before attachment and joins retained ownership', async () => {
   for (const capture of [null, undefined]) {
     jest.mocked(workspacePtyLifecycle.capture).mockResolvedValueOnce(capture);

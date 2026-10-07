@@ -47,7 +47,7 @@ const pipe=process.env.HOMEBOT_IDE_GATE_PIPE, capability=process.env.HOMEBOT_IDE
 delete process.env.HOMEBOT_IDE_GATE_PIPE; delete process.env.HOMEBOT_IDE_GATE_CAP;
 if(!/^hbi-[a-f0-9-]{36}$/.test(pipe||'')||! /^[a-f0-9]{64}$/.test(capability||'')) process.exit(125);
 // No project require, profile, npm, or preload runs while this core launcher waits.
-let received=false, child, text='', acknowledged=false, accepted=false, completed, failureSent=false;
+let received=false, challenged=false, child, text='', acknowledged=false, accepted=false, completed, failureSent=false;
 const deadline=setTimeout(()=>process.exit(125),10000);
 const slash=String.fromCharCode(92),newline=String.fromCharCode(10);
 const connection=net.connect(slash+slash+'.'+slash+'pipe'+slash+pipe);
@@ -73,8 +73,12 @@ connection.on('data',value=>{
  }
  text+=value.toString(); if(text.length>131072) return process.exit(125);
  const end=text.indexOf(newline); if(end<0) return;
- received=true;
  let launch;try{launch=JSON.parse(text.slice(0,end));}catch{return process.exit(125);}text='';
+ if(launch&&launch.type==='identity-challenge'){
+  if(challenged||Object.keys(launch).length!==2||typeof launch.challenge!=='string'||! /^[a-f0-9]{64}$/.test(launch.challenge))return process.exit(125);
+  challenged=true;connection.write(JSON.stringify({type:'identity-response',challenge:launch.challenge,capability})+newline);return;
+ }
+ received=true;
  if(!launch||typeof launch.executable!=='string'||!launch.executable||!Array.isArray(launch.args)||launch.args.some(x=>typeof x!=='string')||!launch.env||typeof launch.env!=='object'||Array.isArray(launch.env)) return process.exit(125);
  if(launch.console!==undefined&&(launch.console!=='attached'||launch.kind!==undefined||launch.adapter!==undefined))return process.exit(125);
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;

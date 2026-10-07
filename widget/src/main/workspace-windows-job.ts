@@ -18,6 +18,8 @@ export interface WorkspaceApprovedLaunch {
 export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   readonly listening: Promise<void>;
   attach(pid: number, original: WorkspacePtyIdentity): Promise<void>;
+  /** Task-only live-peer capture; originating parent is always main process.pid. */
+  attachChild?(pid: number): Promise<WorkspacePtyIdentity>;
   authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
   /** Observability only; never evidence of readiness, membership or cleanup. */
   getStartupDiagnostics?(): WorkspaceJobStartupDiagnostics;
@@ -31,7 +33,7 @@ export interface WorkspaceJobStartupDiagnostics {
   noOwnerCleanupConfirmed?: true;
 }
 interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capability: string } }
-type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown; nativeCode?: unknown };
+type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; creation?: unknown; parent?: unknown; phase?: unknown; code?: unknown; nativeCode?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
 const DIAGNOSTIC_PHASES = new Set(['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'setup', 'setup-read', 'utility-import', 'utility-imported', 'compile', 'asset-load', 'asset-loaded', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
@@ -106,6 +108,20 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
         if (result.ok !== true) throw new Error('Job assignment or startup peer verification failed. No project execution was released.' + diagnostic());
         readyResolve();
       } catch (error) { readyReject(error instanceof Error ? error : new Error('Job assignment failed.')); throw error; }
+    },
+    attachChild: async pid => {
+      if (!options.gate || attached || !Number.isSafeInteger(pid) || pid <= 0) {
+        const error = new Error('One fixed task child and its private startup peer are required.'); readyReject(error); throw error;
+      }
+      attached = true;
+      try {
+        await listening;
+        const result = await request('attach-child', { pid, parent: process.pid });
+        if (result.ok !== true || typeof result.creation !== 'string' || !/^\d{1,19}$/.test(result.creation) || BigInt(result.creation) <= 0n || result.parent !== process.pid) {
+          throw new Error('The task launcher creation identity could not be verified. No package code was released.' + diagnostic());
+        }
+        readyResolve(); return { creation: result.creation, parent: process.pid };
+      } catch (error) { readyReject(error instanceof Error ? error : new Error('Task child assignment failed.')); throw error; }
     },
     authorize: async (launch, validate) => {
       if (!options.gate || authorized) throw new Error('The startup handoff is single-use.');
@@ -273,12 +289,17 @@ try {
   $line=ReadSetupLine 131072 $true; if($null -eq $line) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }
   if($line.Length -gt 131072) { throw 'input' }; $request=[OwnedWindowsJob]::ParseFrame($line)
   if($request.id -isnot [int] -or $request.id -le 0 -or $request.operation -isnot [string]) { throw 'request' }
-  foreach($key in $request.Keys) { if($key -cnotin @('id','operation','pid','creation','launch')) { throw 'request' } }
+  foreach($key in $request.Keys) { if($key -cnotin @('id','operation','pid','creation','parent','launch')) { throw 'request' } }
   try {
-   if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation} }
+   if($request.operation -in @('attach','attach-child','go','query','stop')) { $phase=if($request.operation -eq 'attach-child'){'attach'}else{[string]$request.operation}; Emit @{type='phase';phase=$phase} }
    if($request.operation -eq 'attach' -and !$attached) {
     if($request.pid -isnot [int] -or $request.pid -le 0 -or $request.creation -isnot [string] -or $request.creation -cnotmatch '^[0-9]{1,19}$' -or [long]$request.creation -le 0) { throw 'operation' }
     $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true}
+   }
+   elseif($request.operation -eq 'attach-child' -and !$attached -and $initial.gate) {
+    if($request.Count -ne 4 -or $request.pid -isnot [int] -or $request.pid -le 0 -or $request.parent -isnot [int] -or $request.parent -le 0) { throw 'operation' }
+    $attached=$true; $identity=[OwnedWindowsJob]::ParseFrame([OwnedWindowsJob]::AttachChild([int]$request.pid,[int]$request.parent,[string]$initial.gate.capability))
+    Emit @{type='result';id=$request.id;ok=$true;creation=$identity.creation;parent=$identity.parent}
    }
    elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
     $authorized=$true; $ack=[OwnedWindowsJob]::ParseFrame([OwnedWindowsJob]::Go([OwnedWindowsJob]::EncodeFrame($request.launch)))
@@ -302,7 +323,7 @@ try {
   } catch {
    $exception=$_.Exception; while($exception.InnerException) { $exception=$exception.InnerException }
    $code='unknown'; if($exception.Message -in @('create','limits','pipe','open','identity','assign','root','peer-timeout','peer','capability','peer-read-timeout','peer-input','query','baseline','child','completion','membership','operation')) { $code=$exception.Message }
-   if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation;code=$code} }
+   if($request.operation -in @('attach','attach-child','go','query','stop')) { $phase=if($request.operation -eq 'attach-child'){'attach'}else{[string]$request.operation}; Emit @{type='phase';phase=$phase;code=$code} }
    Emit @{type='result';id=$request.id;ok=$false}
   }
  }
