@@ -30,6 +30,18 @@ function nearestPackage(root: string, file: string): { directory: string; manife
   }
   return { directory: root, manifest: {} };
 }
+const JEST_CONFIG_NAMES = ['jest.config.js', 'jest.config.ts', 'jest.config.mjs', 'jest.config.mts', 'jest.config.cjs', 'jest.config.cts', 'jest.config.json'];
+function hasJestConfig(root: string, directory: string): boolean {
+  // Jest resolves from the command cwd and stops at the nearest package.json.
+  // Inspect only these fixed filenames; discovering a runner never loads config.
+  return JEST_CONFIG_NAMES.some(name => {
+    const file = path.join(directory, name);
+    try {
+      const stat = fs.lstatSync(file);
+      return stat.isFile() && !stat.isSymbolicLink() && stat.size <= 1024 * 1024 && checkedTrustedWorkspacePath(root, file) === file;
+    } catch { return false; }
+  });
+}
 function runnerFor(root: string, file: string, content: string): WorkspaceDiscoveredTest['runner'] {
   const source = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, true);
   let explicit: WorkspaceDiscoveredTest['runner'] | undefined;
@@ -41,10 +53,10 @@ function runnerFor(root: string, file: string, content: string): WorkspaceDiscov
   if (explicit) return explicit;
   const findRequire = (node: ts.Node) => { if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' && node.arguments[0] && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === 'node:test') explicit = 'node'; ts.forEachChild(node, findRequire); };
   findRequire(source); if (explicit) return explicit;
-  const { manifest } = nearestPackage(root, file); const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
-  // Explicit package configuration identifies global Jest tests even when
+  const { directory, manifest } = nearestPackage(root, file); const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
+  // Explicit Jest configuration identifies global Jest tests even when
   // Vitest is also installed. Explicit source imports above still win.
-  return manifest.jest ? 'jest' : dependencies.vitest ? 'vitest' : dependencies.jest ? 'jest' : 'node';
+  return manifest.jest || hasJestConfig(root, directory) ? 'jest' : dependencies.vitest ? 'vitest' : dependencies.jest ? 'jest' : 'node';
 }
 /** Parse declarations, without importing or executing project code. */
 export function discoverWorkspaceTests(rootInput: string): WorkspaceDiscoveredTest[] {
