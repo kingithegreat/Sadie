@@ -233,9 +233,9 @@ $inputEncoding=[System.Text.UTF8Encoding]::new($false)
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-constructed"}'); [Console]::Out.Flush()
 [Console]::InputEncoding=$inputEncoding
 [Console]::Out.WriteLine('{"type":"phase","phase":"encoding-set"}'); [Console]::Out.Flush()
-function ReadSetupLine([int]$maximum) {
+function ReadSetupLine([int]$maximum,[bool]$allowCleanEof=$false) {
  $text=[System.Text.StringBuilder]::new()
- while($true) { $character=[Console]::In.Read(); if($character -lt 0) { throw 'input' }; if($character -eq 10) { return $text.ToString() }; if($character -eq 13 -or $text.Length -ge $maximum) { throw 'input' }; [void]$text.Append([char]$character) }
+ while($true) { $character=[Console]::In.Read(); if($character -lt 0) { if($allowCleanEof -and $text.Length -eq 0) { return $null }; throw 'input' }; if($character -eq 10) { return $text.ToString() }; if($character -eq 13 -or $text.Length -ge $maximum) { throw 'input' }; [void]$text.Append([char]$character) }
 }
 function Emit($value) { [Console]::Out.WriteLine([OwnedWindowsJob]::EncodeFrame($value)); [Console]::Out.Flush() }
 try {
@@ -270,7 +270,7 @@ try {
  $attached=$false; $authorized=$false
  while($true) {
   Emit @{type='phase';phase='command'}
-  if([Console]::In.Peek() -lt 0) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }; $line=ReadSetupLine 131072
+  $line=ReadSetupLine 131072 $true; if($null -eq $line) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }
   if($line.Length -gt 131072) { throw 'input' }; $request=[OwnedWindowsJob]::ParseFrame($line)
   if($request.id -isnot [int] -or $request.id -le 0 -or $request.operation -isnot [string]) { throw 'request' }
   foreach($key in $request.Keys) { if($key -cnotin @('id','operation','pid','creation','launch')) { throw 'request' } }
