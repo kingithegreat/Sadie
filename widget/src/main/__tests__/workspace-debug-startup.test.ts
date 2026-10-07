@@ -34,7 +34,7 @@ class ControlledSocket {
 }
 let root: string; let file: string; let originalSocket: typeof WebSocket;
 const originalPlatform = process.platform;
-const children: Array<EventEmitter & { pid: number; stderr: EventEmitter; stdout: EventEmitter }> = [];
+const children: Array<EventEmitter & { pid: number; exitCode: number | null; signalCode: null; stderr: EventEmitter; stdout: EventEmitter }> = [];
 interface ControlledJob { ready: Promise<void>; listening: Promise<void>; attachChild: jest.Mock; authorize: jest.Mock; queryEmpty: jest.Mock; stop: jest.Mock }
 const jobs: ControlledJob[] = [];
 function makeJob(overrides: Partial<ControlledJob> = {}): ControlledJob {
@@ -286,6 +286,17 @@ test('uncertain retained Job query keeps the completed inspector attached until 
   expect(socket.readyState).toBe(ControlledSocket.OPEN);
   expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true, error: 'Job helper query is uncertain.' }));
   expect((await call('stop')).success).toBe(true); expect(jobs[0].stop).toHaveBeenCalledTimes(1);
+});
+
+test('refused Stop retains running status while the executed bootstrap is still alive', async () => {
+  const starting = call('start', { file }); await tick();
+  children[0].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick();
+  ControlledSocket.instances[0].open(); expect((await starting).success).toBe(true);
+  jobs[0].stop.mockRejectedValueOnce(new Error('Job cleanup refused.'));
+  expect((await call('stop')).success).toBe(false);
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true, error: 'Job cleanup refused.' }));
+  expect(children[0].exitCode).toBe(null);
+  expect((await call('stop')).success).toBe(true);
 });
 
 test('per-project Stop fences pending assignment before either cleanup finishes, preventing project-code release', async () => {

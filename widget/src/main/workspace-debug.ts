@@ -260,7 +260,7 @@ class DebugSession {
       return { id: frame.callFrameId, name: frame.functionName || '(anonymous)', path: within(this.root, file) ? file : '', line: frame.location.lineNumber + 1, column: frame.location.columnNumber + 1 };
     });
     const retained = [...this.ownedPrograms.values()].filter(program => program.ended || program.error);
-    return { success: true, running: !!this.currentProgram && !this.currentProgram.ended && !this.currentProgram.stopRequested, cleanupPending: retained.length > 0, error: retained.find(program => program.error)?.error, paused: this.paused, output: this.output, pid: this.currentProgram?.targetPid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
+    return { success: true, running: !!this.child || (!!this.currentProgram && !this.currentProgram.ended && !this.currentProgram.stopRequested), cleanupPending: retained.length > 0, error: retained.find(program => program.error)?.error, paused: this.paused, output: this.output, pid: this.currentProgram?.targetPid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
   }
   async breakpoint(file: string, line: number, remove: boolean) {
     const key = `${file}:${line}`; const previous = this.points.get(key);
