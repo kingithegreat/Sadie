@@ -2247,7 +2247,7 @@ export async function streamFromLLM(
       // Cap recall for small models to avoid blowing the context window.
       const cloudModelSmall = isSmallModel(cloudModelName);
       const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
-      let cloudSystemPrompt = [systemPromptWithGuidelines, inlineDraft ? options?.conversationPrompt : undefined].filter(Boolean).join('\n\n');
+      let cloudSystemPrompt = [systemPromptWithGuidelines, options?.conversationPrompt].filter(Boolean).join('\n\n');
       const recalled = inlineDraft ? null : await recallMemory(message).catch(() => null);
       if (recalled) {
         const cappedRecall = cloudModelSmall ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
@@ -2427,7 +2427,7 @@ export async function streamFromLLM(
       const history = historyBeforeCurrentTurn(conversationId, message);
       // Build system prompt for the actual code model (may differ in size from chatModel)
       const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
-      const codeSystemPrompt = [getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines), inlineDraft ? options?.conversationPrompt : undefined].filter(Boolean).join('\n\n');
+      const codeSystemPrompt = [getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines), options?.conversationPrompt].filter(Boolean).join('\n\n');
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
