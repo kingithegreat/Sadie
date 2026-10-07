@@ -19,6 +19,15 @@ root owns serial integration, existing contracts/index/packaging and verificatio
 Assignment must precede project/shell execution; cleanup requires retained Job
 ActiveProcesses zero, never a Job wait signal or reconstructed PID ancestry.
 Failed/unknown setup or helper loss retains ownership/refusal. No completion claim.
+Editor additionally owns an independent failure-only Windows wait-chain diagnostic
+module and its controlled tests; root owns its qualified shutdown-helper callsite.
+No memory dump, debugger attach, process suspension or guessed-PID termination.
+Editor then plans retained MCP stdio transport containment using public SDK APIs
+and the shared fixed pre-execution gate; root owns existing MCP client/quit wiring.
+Files remains sole owner of shared Job/gate modules while completing task/PTY
+integration, including task-only short-command completion evidence. Root's MCP
+stderr drain fixes a separately reproduced backpressure defect; native hang cause
+is unproved. Qualified app quit is separate from actual held OS exit.
 Files' read-only Windows captured-tree API is integrated in root; only successful
 same-live-root capture grants a receipt. Root owns native shutdown helper ordering
 and eight mocked actual-source controls; native qualification remains pending.
