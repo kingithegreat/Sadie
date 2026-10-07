@@ -11,7 +11,7 @@ jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_JOB_TAS
 import { executeWorkspacePackageTask, prepareWorkspacePackageTask, stopWorkspaceTask, closeAllWorkspaceTasks } from '../workspace-tasks';
 
 let home: string, project: string;
-const owned: ReturnType<typeof fixture>[] = [];
+const owned: Array<{ job: { stop: jest.Mock }; finish: () => void }> = [];
 const original = { creation: '639269357577651780', parent: process.pid };
 beforeEach(() => {
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'hbi-job-task-')); process.env.HOMEBOT_JOB_TASK_HOME = home;
@@ -69,7 +69,7 @@ test('unknown accounting retains cleanup rather than treating root exit as tree-
 });
 
 test('changed manifest at the final GO fence refuses execution and joins retained bootstrap cleanup', async () => {
-  const app = fixture(); app.job.authorize.mockImplementationOnce(async (_launch, validate) => {
+  const app = fixture(); app.job.authorize.mockImplementationOnce(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => {
     fs.writeFileSync(path.join(project, 'package.json'), JSON.stringify({ scripts: { check: 'changed after readiness' } }));
     validate?.(); return 4502;
   });

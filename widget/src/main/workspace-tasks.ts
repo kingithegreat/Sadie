@@ -604,7 +604,7 @@ export async function executeWorkspacePackageTask(
       child = spawnProcess(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], {
         cwd: current.projectDir,
         windowsHide: true,
-        detached: platform !== 'win32',
+        detached: true,
         shell: false,
         env: { ...process.env, ...options.env, FORCE_COLOR: '0', NO_COLOR: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
