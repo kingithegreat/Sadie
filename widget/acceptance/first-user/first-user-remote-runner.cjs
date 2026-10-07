@@ -32,6 +32,7 @@ let source;
 let payloadBefore;
 let dependencyBefore;
 let nativeStatus;
+let sqliteBinding;
 
 function write(name, value) {
   fs.writeFileSync(path.join(proof, name), JSON.stringify(value, null, 2));
@@ -101,7 +102,7 @@ function dependencySnapshot() {
     rootPackage: path.join(repo, 'package.json'), rootLock: path.join(repo, 'package-lock.json'),
     widgetPackage: path.join(widget, 'package.json'), widgetLock: path.join(widget, 'package-lock.json'),
     electron: path.join(widget, 'node_modules', 'electron', 'dist', 'electron.exe'),
-    widgetSQLite: path.join(widget, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
+    widgetSQLite: sqliteBinding || path.join(widget, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
     rootSQLite: path.join(repo, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
     sharp: path.join(widget, 'node_modules', '@img', 'sharp-win32-x64', 'lib', 'sharp-win32-x64.node'),
   };
@@ -165,6 +166,19 @@ try {
     fs.symlinkSync(target, destination, 'junction');
     assert.equal(fs.realpathSync(destination), fs.realpathSync(target));
   }
+  stage = 'Electron SQLite load control';
+  resourcePreflight('native-binding');
+  const bindingHome=path.join(owned,'binding-home');
+  fs.mkdirSync(bindingHome);
+  const probeCode=`const {createRequire}=require('node:module');const r=createRequire(${JSON.stringify(path.join(widget,'package.json'))});const Database=r('better-sqlite3');const db=new Database(':memory:');const result=db.prepare('SELECT 42 AS value').get();const native=Object.keys(require.cache).filter(file=>file.endsWith('better_sqlite3.node'));db.close();console.log(JSON.stringify({value:result.value,native,electron:process.versions.electron,modules:process.versions.modules}));`;
+  const bindingProbe=JSON.parse(command(path.join(widget,'node_modules/electron/dist/electron.exe'),['-e',probeCode],bindingHome,
+    {...env,ELECTRON_RUN_AS_NODE:'1',HOME:bindingHome,USERPROFILE:bindingHome,APPDATA:bindingHome,LOCALAPPDATA:bindingHome,TEMP:bindingHome,TMP:bindingHome},true,30_000));
+  write('native-binding-proof.json',bindingProbe);
+  assert.equal(bindingProbe.value,42,'Electron must execute a real in-memory SQLite query');
+  assert.equal(bindingProbe.electron,JSON.parse(fs.readFileSync(path.join(widget,'node_modules/electron/package.json'),'utf8')).version);
+  assert.equal(bindingProbe.native.length,1,'Resolve the actually loaded SQLite binary');
+  sqliteBinding=fs.realpathSync(bindingProbe.native[0]);
+  assert(within(fs.realpathSync(path.join(widget,'node_modules/better-sqlite3')),sqliteBinding),'SQLite must come from disposable widget dependencies');
   dependencyBefore = dependencySnapshot();
   assert(dependencyBefore.electron.exists && dependencyBefore.widgetSQLite.exists, 'Widget install must provide Electron and rebuilt SQLite');
   write('dependencies-before.json', dependencyBefore);
