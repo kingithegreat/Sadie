@@ -3,6 +3,7 @@ import fs from 'fs';
 import { prepareElectronShutdown, closeElectronApp, closeRemainingElectronApps, CLOSE_BUDGET_MS } from '../../renderer/e2e/helpers/closeApp';
 import { monitorNativeApp } from '../../renderer/e2e/helpers/nativeAppProcess';
 import { collectWindowsNativeWaitChain } from '../../renderer/e2e/helpers/windowsNativeWaitChain';
+import { captureOwnedElectronInspector } from '../../renderer/e2e/helpers/ownedElectronInspector';
 jest.mock('../../renderer/e2e/helpers/nativeAppProcess', () => ({ monitorNativeApp: jest.fn() }));
 jest.mock('../../renderer/e2e/helpers/windowsNativeWaitChain', () => ({ collectWindowsNativeWaitChain: jest.fn(async () => ({ status: 'partial', threads: [] })) }));
 jest.mock('fs', () => ({ ...jest.requireActual('fs'), mkdirSync: jest.fn(), writeFileSync: jest.fn() }));
@@ -270,4 +271,29 @@ test('a successful connection handshake still refuses a nonzero held native exit
   await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, false);
   await expect(closeElectronApp(f.app)).rejects.toThrow('nonzero OS code');
   expect(f.socket.terminate).not.toHaveBeenCalled();
+});
+
+test.each([0, 1])('dispatcher disposal after handshake preserves the actual held native exit code %i', async code => {
+  const f = inspectorFixture();
+  f.connection.close.mockImplementation(() => {
+    f.connection._closed = true; f.socket.readyState = 3;
+    f.app._connection.toImpl = () => { throw new TypeError("Cannot read properties of undefined (reading '_object')"); };
+    f.finish({ code });
+  });
+  await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, false);
+  if (code === 0) await closeElectronApp(f.app);
+  else await expect(closeElectronApp(f.app)).rejects.toThrow('nonzero OS code');
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt).toMatchObject({ graceful: code === 0, nativeExit: { code }, inspectorAfterRelease: { nodeClosed: true, socketState: 3 } });
+  expect(f.socket.terminate).not.toHaveBeenCalled();
+});
+
+test('passive captured status cannot authorize a disconnect after dispatcher loss', () => {
+  const f = inspectorFixture();
+  const inspector = captureOwnedElectronInspector(f.app, f.child as any, f.monitor as any)!;
+  f.app._connection.toImpl = () => { throw new TypeError("Cannot read properties of undefined (reading '_object')"); };
+  expect(inspector.status()).toEqual({ nodeClosed: false, socketState: 1 });
+  expect(() => inspector.close()).toThrow('inspector identity changed');
+  expect(() => inspector.terminate()).toThrow('inspector identity changed');
+  expect(f.connection.close).not.toHaveBeenCalled(); expect(f.socket.terminate).not.toHaveBeenCalled();
 });
