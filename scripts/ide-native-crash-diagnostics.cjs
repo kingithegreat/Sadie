@@ -16,7 +16,7 @@ function parseSelectedMinidump(read, fileBytes) {
   const forbidden = [], selected = [];
   const overlaps = (a, b) => a.size > 0 && b.size > 0 && a.offset < b.offset + b.size && b.offset < a.offset + a.size;
   const exclude = (offset, size) => { range(offset, size); const r = { offset, size }; if (selected.some(s => overlaps(s, r))) throw Error('Minidump selected metadata overlaps excluded data'); forbidden.push(r); };
-  const readRange = (offset, size) => { range(offset, size); const r = { offset, size }; if (forbidden.some(f => overlaps(r, f))) throw Error('Minidump selected metadata overlaps excluded data'); selected.push(r); return read(offset, size); };
+  const readRange = (offset, size) => { range(offset, size); const r = { offset, size }; if (forbidden.some(f => overlaps(r, f))) throw Error('Minidump selected metadata overlaps excluded data'); if (selected.some(s => overlaps(r, s))) throw Error('Minidump selected metadata overlaps selected data'); selected.push(r); return read(offset, size); };
   const header = readRange(0, 32);
   if (header.toString('ascii', 0, 4) !== 'MDMP' || (header.readUInt32LE(4) & 0xffff) !== 42899) throw Error('Minidump signature/version invalid');
   const count = header.readUInt32LE(8), directory = header.readUInt32LE(12);
@@ -157,7 +157,7 @@ function readMinidumpMetadata(root, file, readBudget = LIMITS.metadataBytes) {
     if (after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || after.dev !== opened.dev || after.ino !== opened.ino || after.birthtimeNs !== opened.birthtimeNs || checkedPath(root, file) !== canonical) throw Error('Minidump metadata file changed during read');
     const current = fs.lstatSync(canonical, { bigint: true });
     if (current.dev !== opened.dev || current.ino !== opened.ino || current.birthtimeNs !== opened.birthtimeNs || current.size !== opened.size || current.mtimeNs !== opened.mtimeNs) throw Error('Minidump metadata path changed during read');
-    return { format: 'selected-minidump-metadata-v1', fileBytes: Number(opened.size), selectedBytes, ranges, summary, identity: { dev: String(opened.dev), ino: String(opened.ino), birthtimeNs: String(opened.birthtimeNs), mtimeNs: String(opened.mtimeNs) }, scope: 'Selected header/directory/exception/module records/fault-module name/MiscInfo only; refuses known nonselected stream/context overlaps and does not follow context, stack or memory pointers. No full-file hash. Process association is diagnostic only.' };
+    return { format: 'selected-minidump-metadata-v1', fileBytes: Number(opened.size), selectedBytes, ranges, summary, identity: { dev: String(opened.dev), ino: String(opened.ino), birthtimeNs: String(opened.birthtimeNs), mtimeNs: String(opened.mtimeNs) }, scope: 'Selected header/directory/exception/module records/fault-module name/MiscInfo only; refuses selected-to-selected and known nonselected stream/context overlaps and does not follow context, stack or memory pointers. No full-file hash. Process association is diagnostic only.' };
   } finally { fs.closeSync(fd); }
 }
 function scanDumps(root, directory, errors) {

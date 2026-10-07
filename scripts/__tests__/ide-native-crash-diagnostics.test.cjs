@@ -184,3 +184,29 @@ test('selected metadata refuses declared context and nonselected stream overlap 
     assert(calls.every(r => r.offset !== 380 && r.offset !== 384));
   }
 });
+
+test('selected metadata refuses forged selected-stream, name, header and directory aliases before overlapping reads', () => {
+  const cases = [
+    { name: 'MiscInfo inside Exception', offset: 120, mutate(bytes) {
+      bytes.writeUInt32LE(120, 64); bytes.writeUInt32LE(24, 120); bytes.writeUInt32LE(3, 124);
+      bytes.writeUInt32LE(identity.pid, 128); bytes.writeUInt32LE(Number((BigInt(birth) - 621355968000000000n) / 10000000n), 132);
+    } },
+    { name: 'MiscInfo inside module records', offset: 300, mutate(bytes) {
+      bytes.writeUInt32LE(300, 64); bytes.writeUInt32LE(24, 300); bytes.writeUInt32LE(3, 304);
+      bytes.writeUInt32LE(identity.pid, 308); bytes.writeUInt32LE(Number((BigInt(birth) - 621355968000000000n) / 10000000n), 312);
+    } },
+    { name: 'module name inside Exception', offset: 120, mutate(bytes) {
+      const name = Buffer.from('C:\\private\\forged.node', 'utf16le'); bytes.writeUInt32LE(120, 280);
+      bytes.writeUInt32LE(name.length, 120); name.copy(bytes, 124);
+    } },
+    { name: 'directory inside header', offset: 16, refusal: /directory invalid/, mutate(bytes) { bytes.writeUInt32LE(16, 12); } },
+    { name: 'Exception inside directory', offset: 56, mutate(bytes) { bytes.writeUInt32LE(56, 40); } },
+    { name: 'module count inside Exception', offset: 88, mutate(bytes) { bytes.writeUInt32LE(88, 52); } },
+  ];
+  for (const c of cases) {
+    const bytes = dump(), calls = []; c.mutate(bytes);
+    assert.throws(() => diagnostics.parseSelectedMinidump((offset, size) => { calls.push({ offset, size }); return bytes.subarray(offset, offset + size); }, bytes.length), c.refusal || /overlaps selected/, c.name);
+    assert(!calls.some(r => r.offset === c.offset), c.name + ': overlapping read must not occur');
+  }
+  const normal = diagnostics.summarizeMinidump(dump()); assert.equal(normal.faultModule.name, 'module.node'); assert.equal(diagnostics.associateDump(normal, identity).status, 'candidate');
+});
