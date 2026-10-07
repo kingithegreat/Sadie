@@ -1,4 +1,21 @@
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
+// Independent read-only observer. Loading/calling it never creates a Job or pipe.
+public static class HomeBotOpenedFiles {
+ [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr GetStdHandle(int kind);
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetFinalPathNameByHandleW(IntPtr handle,StringBuilder result,uint length,uint flags);
+ static string Query(int kind) {
+  IntPtr handle=GetStdHandle(kind);
+  if(handle==IntPtr.Zero || handle==new IntPtr(-1)) throw new Exception("handle");
+  var result=new StringBuilder(32768);
+  uint length=GetFinalPathNameByHandleW(handle,result,32768,0);
+  if(length==0 || length>=32768) throw new Exception("path");
+  return Convert.ToBase64String(Encoding.UTF8.GetBytes(result.ToString()));
+ }
+ public static void Emit() {
+  string first=Query(-10),second=Query(-11);
+  Console.Error.Write("HBI_OPENED_1\n"+first+"\n"+second+"\n");
+ }
+}
 public static class OwnedWindowsJob {
  // Fixed framework serializer only; no type resolver or request-selected assembly.
  static System.Web.Script.Serialization.JavaScriptSerializer Json() { return new System.Web.Script.Serialization.JavaScriptSerializer { MaxJsonLength=131072,RecursionLimit=16 }; }

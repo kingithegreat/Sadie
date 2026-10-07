@@ -3,6 +3,7 @@ import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { verifiedWorkspaceWindowsJobAsset } from './workspace-windows-job-asset';
 
 export const OPENED_PATH_QUERY_MS = 5000;
 const MAX_QUERY_BYTES = 192 * 1024;
@@ -14,34 +15,25 @@ export const supportsOpenedFilePaths = (platform: string = process.platform) => 
  * https://nodejs.org/api/child_process.html#optionsstdio
  * https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-getfinalpathnamebyhandlew
  */
-export function openedFileQuerySource(): string {
+export function openedFileQuerySource(asset: { assembly: string; sha256: string }): string {
+  const encodedPath = Buffer.from(asset.assembly, 'utf8').toString('base64');
+  if (!path.win32.isAbsolute(asset.assembly) || !encodedPath || encodedPath.length > 8192 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('The fixed opened-file verification asset is invalid.');
   return String.raw`$ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 $PSModuleAutoloadingPreference='None'
 try {
-  Import-Module ([System.IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Utility','Microsoft.PowerShell.Utility.psd1')) -ErrorAction Stop
-  $framework=[System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
-  Microsoft.PowerShell.Utility\Add-Type -ReferencedAssemblies @([System.IO.Path]::Combine($framework,'System.dll')) -TypeDefinition @'
-using System;
-using System.Text;
-using System.Runtime.InteropServices;
-public static class HomeBotOpenedFiles {
- [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr GetStdHandle(int kind);
- [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetFinalPathNameByHandleW(IntPtr handle,StringBuilder result,uint length,uint flags);
- static string Query(int kind) {
-  IntPtr handle=GetStdHandle(kind);
-  if(handle==IntPtr.Zero || handle==new IntPtr(-1)) throw new Exception("handle");
-  var result=new StringBuilder(32768);
-  uint length=GetFinalPathNameByHandleW(handle,result,32768,0);
-  if(length==0 || length>=32768) throw new Exception("path");
-  return Convert.ToBase64String(Encoding.UTF8.GetBytes(result.ToString()));
- }
- public static void Emit() {
-  string first=Query(-10),second=Query(-11);
-  Console.Error.Write("HBI_OPENED_1\n"+first+"\n"+second+"\n");
- }
-}
-'@ -ErrorAction Stop
+  $assetPath=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${encodedPath}'))
+  $assetStream=[System.IO.File]::Open($assetPath,[System.IO.FileMode]::Open,[System.IO.FileAccess]::Read,[System.IO.FileShare]::Read)
+  try {
+    if($assetStream.Length -lt 512 -or $assetStream.Length -gt 1048576) { throw 'asset' }
+    $assetBytes=[byte[]]::new([int]$assetStream.Length); $offset=0
+    while($offset -lt $assetBytes.Length) { $read=$assetStream.Read($assetBytes,$offset,$assetBytes.Length-$offset); if($read -le 0) { throw 'asset' }; $offset+=$read }
+    if($assetStream.Length -ne $assetBytes.Length) { throw 'asset' }
+  } finally { $assetStream.Dispose() }
+  $hasher=[System.Security.Cryptography.SHA256]::Create()
+  try { $actualHash=[System.BitConverter]::ToString($hasher.ComputeHash($assetBytes)).Replace('-','').ToLowerInvariant() } finally { $hasher.Dispose() }
+  if($actualHash -cne '${asset.sha256}') { throw 'asset' }
+  [void][System.Reflection.Assembly]::Load($assetBytes)
   [HomeBotOpenedFiles]::Emit()
   exit 0
 } catch { [Console]::Error.Write("HBI_OPENED_FAILED\n"); exit 1 }
@@ -77,6 +69,9 @@ export async function queryOpenedFilePaths(fds: readonly number[]): Promise<[str
   const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT;
   if (!systemRoot || !path.win32.isAbsolute(systemRoot)) throw new Error('The fixed Windows file-verification helper is unavailable.');
   const executable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  let source: string;
+  try { source = openedFileQuerySource(verifiedWorkspaceWindowsJobAsset()); }
+  catch { throw new Error('The fixed opened-file verification product asset is unavailable or changed.'); }
   let privateRoot: string;
   try {
     // Main-owned canonical userData, never the request root or caller env.
@@ -100,7 +95,7 @@ export async function queryOpenedFilePaths(fds: readonly number[]): Promise<[str
   return new Promise((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(openedFileQuerySource(), 'utf16le').toString('base64')], { windowsHide: true, cwd: privateRoot, env, stdio: [fds[0], fds[1], 'pipe'] });
+      child = spawn(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(source, 'utf16le').toString('base64')], { windowsHide: true, cwd: privateRoot, env, stdio: [fds[0], fds[1], 'pipe'] });
     } catch { reject(new Error('The fixed opened-file verification helper could not start.')); return; }
     let output = Buffer.alloc(0), failure: Error | undefined;
     const fail = (message: string) => { failure ||= new Error(message); try { child.kill(); } catch { /* close remains the ownership oracle */ } };

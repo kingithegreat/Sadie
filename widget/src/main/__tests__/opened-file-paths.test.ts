@@ -7,8 +7,11 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 const mockSpawn = jest.fn(); let mockProfile: string;
+const mockVerifiedAsset = jest.fn();
+const asset = { assembly: String.raw`C:\product\assets\OwnedWindowsJob.dll`, sha256: 'a'.repeat(64) };
 jest.mock('child_process', () => ({ spawn: (...args: unknown[]) => mockSpawn(...args) }));
 jest.mock('electron', () => ({ app: { getPath: () => mockProfile } }));
+jest.mock('../workspace-windows-job-asset', () => ({ verifiedWorkspaceWindowsJobAsset: () => mockVerifiedAsset() }));
 import { queryOpenedFilePaths, parseOpenedFilePaths, openedFileQuerySource, OPENED_PATH_QUERY_MS } from '../opened-file-paths';
 let helper: EventEmitter & { stderr: PassThrough; kill: jest.Mock };
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
@@ -19,6 +22,7 @@ beforeEach(() => {
   jest.replaceProperty(process, 'env', { SystemRoot: String.raw`C:\Windows`, NODE_OPTIONS: '--require forbidden', HOMEBOT_E2E: '1' });
   helper = Object.assign(new EventEmitter(), { stderr: new PassThrough(), kill: jest.fn() });
   mockSpawn.mockReset().mockReturnValue(helper);
+  mockVerifiedAsset.mockReset().mockReturnValue(asset);
 });
 afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks(); Object.defineProperty(process, 'platform', originalPlatform); fs.rmSync(mockProfile, { recursive: true, force: true }); });
 
@@ -29,7 +33,8 @@ test('only owned numeric descriptors reach fixed helper and actual paths decode 
   expect(options.stdio).toEqual([41, 42, 'pipe']); expect(options.cwd).toBe(path.join(mockProfile, 'ide-file-verification'));
   expect(options.env.NODE_OPTIONS).toBeUndefined(); expect(options.env.HOMEBOT_E2E).toBeUndefined();
   expect(options.env.TEMP).toBe(options.cwd); expect(options.env.USERPROFILE).toBe(options.cwd);
-  expect(Buffer.from(args.at(-1), 'base64').toString('utf16le')).toBe(openedFileQuerySource());
+  expect(Buffer.from(args.at(-1), 'base64').toString('utf16le')).toBe(openedFileQuerySource(asset));
+  expect(mockVerifiedAsset).toHaveBeenCalledTimes(1);
   helper.stderr.write(metadata()); helper.emit('close', 0, null);
   expect(await pending).toEqual([String.raw`C:\project\a`, String.raw`C:\project\b`]);
 });
@@ -58,10 +63,36 @@ test('helper failure or output overflow refuses without returning metadata', asy
   helper.emit('close', 0, null); expect(await outcome).toHaveProperty('message', expect.stringContaining('metadata budget'));
 });
 test('generated query contains only two handle-query imports and no file read or caller path channel', () => {
-  const source = openedFileQuerySource();
-  expect(source.match(/DllImport/g)).toHaveLength(2); expect(source).toContain('GetFinalPathNameByHandleW');
-  expect(source).not.toMatch(/CreateFile|ReadFile|FileStream|ReadLine|ReadAll|Get-Content|Invoke-Expression/);
-  expect(source).toContain('Query(-10),second=Query(-11)');
+  const native = fs.readFileSync(path.resolve(__dirname, '../../../native/OwnedWindowsJob.cs'), 'utf8');
+  const observer = native.slice(native.indexOf('public static class HomeBotOpenedFiles'), native.indexOf('public static class OwnedWindowsJob'));
+  expect(observer.match(/DllImport/g)).toHaveLength(2); expect(observer).toContain('GetFinalPathNameByHandleW');
+  expect(observer).not.toMatch(/CreateFile|ReadFile|FileStream|ReadLine|ReadAll|OwnedWindowsJob/);
+  expect(observer).toContain('Query(-10),second=Query(-11)');
+  const source = openedFileQuerySource(asset);
+  expect(source).not.toMatch(/Add-Type|Import-Module|DllImport|CreateFile|ReadFile|ReadLine|ReadAll|Get-Content|Invoke-Expression|OwnedWindowsJob\]::/);
+  expect(source).toContain('$assetStream.Length -gt 1048576');
+  expect(source).toContain('[System.IO.FileShare]::Read');
+  expect(source).toContain('$assetStream.Length -ne $assetBytes.Length');
+  expect(source.indexOf('ComputeHash($assetBytes)')).toBeLessThan(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)'));
+  expect(source.indexOf("if($actualHash -cne '" + asset.sha256)).toBeLessThan(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)'));
+  expect(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)')).toBeLessThan(source.indexOf('[HomeBotOpenedFiles]::Emit()'));
+  expect(source).toContain('finally { $assetStream.Dispose() }');
+});
+
+test('unverified product asset refuses before helper launch or private directory creation', async () => {
+  mockVerifiedAsset.mockImplementation(() => { throw new Error('outside unknown asset path'); });
+  await expect(queryOpenedFilePaths([41, 42])).rejects.toThrow('product asset is unavailable or changed');
+  expect(mockSpawn).not.toHaveBeenCalled(); expect(fs.readdirSync(mockProfile)).toEqual([]);
+});
+
+test('invalid fixed asset metadata cannot enter generated code', () => {
+  for (const value of [{ ...asset, assembly: 'relative.dll' }, { ...asset, sha256: "'; forbidden '" }, { ...asset, assembly: 'C:\\' + 'x'.repeat(8192) }]) {
+    expect(() => openedFileQuerySource(value)).toThrow('asset is invalid');
+  }
+  const quoted = { ...asset, assembly: String.raw`C:\product's folder\OwnedWindowsJob.dll` };
+  const source = openedFileQuerySource(quoted);
+  expect(source).not.toContain(quoted.assembly);
+  expect(source).toContain(Buffer.from(quoted.assembly, 'utf8').toString('base64'));
 });
 test('existing compiler-directory junction refuses before helper launch or outside writes', async () => {
   const outside = fs.mkdtempSync(path.join(path.dirname(mockProfile), 'hbi-query-outside-'));

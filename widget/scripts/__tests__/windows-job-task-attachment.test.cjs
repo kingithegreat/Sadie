@@ -10,6 +10,8 @@ const cp = require('node:child_process');
 const root = path.resolve(__dirname, '../../..');
 function managedControl(source) {
   const methods = {
+    GetStdHandle: 'static IntPtr GetStdHandle(int kind) { throw new Exception("observer call forbidden"); }',
+    GetFinalPathNameByHandleW: 'static uint GetFinalPathNameByHandleW(IntPtr handle,StringBuilder result,uint length,uint flags) { throw new Exception("observer call forbidden"); }',
     CreateJobObject: 'static IntPtr CreateJobObject(IntPtr attributes,string name) { return new IntPtr(201); }',
     SetInformationJobObject: 'static bool SetInformationJobObject(IntPtr job,int type,ref ExtendedLimit info,uint length) { return true; }',
     QueryInformationJobObject: 'static bool QueryInformationJobObject(IntPtr job,int type,out Accounting info,uint length,IntPtr returned) { info=new Accounting();return true; }',
