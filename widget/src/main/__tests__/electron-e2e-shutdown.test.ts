@@ -117,10 +117,25 @@ test.each([false, true])('qualified irreversible exit (stderr wait=%s) releases 
   f.socket.terminate.mockImplementation(() => { f.socket.readyState = 3; nativeExited = true; f.finish({ code: 0 }); });
   f.app.close.mockImplementation(async () => { expect(nativeExited).toBe(true); expect(f.monitor.verify).toHaveBeenCalled(); });
   await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, stderrWait);
+  f.app.evaluate.mockImplementation(() => { throw new Error('Evaluation cannot run after irreversible exit'); });
   await closeElectronApp(f.app);
   expect(f.app.close).toHaveBeenCalledTimes(1); expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.monitor.cleanup).not.toHaveBeenCalled();
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt).toMatchObject({ graceful: true, nativeExit: { code: 0 }, inspectorQualification: { mainPid: 100, matchingExitNonce: true, stderrWaitObserved: stderrWait }, capturedIdentitiesGone: true });
+});
+
+test.each(['diagnostics', 'quit'])('qualified exit during pending %s evaluation releases inspector without waiting for that evaluation', async stage => {
+  const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  const callsBeforeClose = f.app.evaluate.mock.calls.length;
+  f.app.evaluate.mockImplementation((fn: unknown) => {
+    if (stage === 'quit' && !String(fn).includes('setImmediate')) return Promise.resolve({ helpers: [], refusals: [] });
+    f.exiting(true, false);
+    return new Promise(() => {});
+  });
+  await closeElectronApp(f.app);
+  expect(f.app.evaluate).toHaveBeenCalledTimes(callsBeforeClose + (stage === 'quit' ? 2 : 1));
+  expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.monitor.cleanup).not.toHaveBeenCalled();
+  expect(f.monitor.verify).toHaveBeenCalled();
 });
 test.each([false, true])('qualified exit (stderr wait=%s) releases only the held inspector websocket and still requires actual OS0', async stderrWait => {
   const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, stderrWait);

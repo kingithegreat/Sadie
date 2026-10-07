@@ -9,6 +9,11 @@ filesystem/recovery modules; `ide_editor_language` owns CodeEditor and language
 modules; `ide_ai_workflows` owns assistant/Changes/proposals/context and scoped
 router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
 main registrations, generated docs, publication and resource-gated verification.
+Current debugger follow-ups: Editor owns active-session capacity, retained child
+cleanup authority, pre-detach capture and reachable cleanupPending Stop UI.
+Files' read-only Windows captured-tree API is integrated in root; only successful
+same-live-root capture grants a receipt. Root owns native shutdown helper ordering
+and eight mocked actual-source controls; native qualification remains pending.
 Current native follow-ups: the beta15 async PTY/IPC/held-worker fixes and passive
 CI diagnostics are published at49b2. Its native run still failed3/4: task stop
 returned uncertain and quit stayed open; no native crash/OS0 is claimed for that

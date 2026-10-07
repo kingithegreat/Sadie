@@ -7,7 +7,7 @@ import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ow
 import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
 export const CLOSE_BUDGET_MS = 20_000;
-interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; irreversibleExit: Promise<void>; inspector?: OwnedElectronInspector }
+interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; irreversibleExit: Promise<void>; exitEventObserved?: boolean; inspector?: OwnedElectronInspector }
 const states = new WeakMap<ElectronApplication, Promise<State>>();
 const pendingApps = new Set<ElectronApplication>();
 const closings = new WeakMap<ElectronApplication, Promise<number>>();
@@ -37,7 +37,7 @@ export async function prepareElectronShutdown(app: ElectronApplication, entry: s
       // PID+nonce marker permits releasing our inspector even when stderr is
       // quiet; actual held OS exit and captured-child checks remain required.
       // https://nodejs.org/docs/latest-v24.x/api/process.html#event-exit
-      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) finished();
+      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) { state.exitEventObserved = true; finished(); }
     };
     const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
     app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
@@ -125,9 +125,22 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
       }
       // app.close disposes transport before a production refusal can be diagnosed.
       if (!state.nativeExit) {
-        receipt.productionBeforeQuit = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), deadline - Date.now(), 'Pre-quit process diagnostics unavailable');
-        persist();
-        await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), deadline - Date.now(), 'Native quit request exceeded close budget');
+        const owned = state;
+        // A marker can arrive before close starts or during either evaluation.
+        // Never wait for an event loop that has already irreversibly exited.
+        const whileRunnable = async <T>(evaluate: () => Promise<T>): Promise<{ value: T } | { finished: true }> => {
+          if (owned.exitEventObserved || owned.nativeExit) return { finished: true };
+          return bounded(Promise.race([
+            owned.irreversibleExit.then(() => ({ finished: true as const })),
+            owned.monitor.exit.then(() => ({ finished: true as const })),
+            evaluate().then(value => ({ value })),
+          ]), deadline - Date.now(), 'Native evaluation exceeded close budget');
+        };
+        const diagnostics = await whileRunnable(() => app.evaluate(() => (global as any).__homebotE2eShutdown));
+        if ('value' in diagnostics) {
+          receipt.productionBeforeQuit = diagnostics.value; persist();
+          await whileRunnable(() => app.evaluate(({ app }) => { setImmediate(() => app.quit()); }));
+        }
       }
     }
     const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.irreversibleExit.then(() => ({ mainExitEvent: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
@@ -167,7 +180,9 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
     if (state) {
       receipt.stderr = state.stderr; receipt.stdout = state.stdout;
       receipt.productionAtExit = exitDiagnostics(state.stdout);
-      try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
+      if (!state.exitEventObserved && !state.nativeExit) {
+        try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
+      }
       persist();
       try { receipt.forcedOwnedCleanup = await bounded(state.monitor.cleanup(tree), 6500, 'Owned native cleanup unconfirmed'); receipt.cleanupExit = await bounded(state.monitor.exit, 3000, 'Owned native OS exit unconfirmed'); } catch (cleanupError) { receipt.cleanupError = String(cleanupError); }
       try { await bounded(app.close(), 3000, 'Failure cleanup transport did not close'); } catch (transportError) { receipt.transportError = String(transportError); }
