@@ -161,3 +161,5 @@ workspace/
 # Retained generated managed task-control proof; uploaded by existing CI jobs.
 /artifacts/ide-native-zero-retry/task-attachment-controls-*/
 /artifacts/ide-native-zero-retry/managed-framing-*/
+/artifacts/ide-native-zero-retry/pending-job-observation-plain.json
+/artifacts/ide-native-zero-retry/pending-job-observation-sdk-gate.json
