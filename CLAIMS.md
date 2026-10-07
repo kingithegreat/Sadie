@@ -980,3 +980,13 @@ remained unchanged. That byte count describes logical temporary extraction
 writes avoided, not measured physical reclamation. Earlier failures remain
 retained. Media editing is released to root; full CI, typecheck, publication
 and fresh Desktop delivery remain root-owned and pending.
+
+## 2026-10-07 - LOCAL-CHAT-TRANSPORT
+
+Codex local-chat agent owns Ollama NDJSON transport and cancellation in
+streamFromOllamaWithTools, neutral router/ollama-chat-stream.ts, and bounded
+ollama-chat-stream.test.ts. Private branch claude/chat-local-20261007 starts
+from main ce53a7db; custom and renderer agents own separate areas. Root owns
+Drive coordination, final integration, publication and native UI proof. No
+shared checkout/profile/dependency mutations. Test-first baseline: 8 failed
+and 1 passed; heavy checks paused under current resource floor.

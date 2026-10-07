@@ -29,6 +29,7 @@ import {
   describeCloudTarget,
 } from './router/error-recovery';
 import { isSmallModel, OLLAMA_CHAT_MODEL } from './router/model-size';
+import { readOllamaChatStream } from './router/ollama-chat-stream';
 import {
   formatWebSearchResult,
   buildSourceCardsToken,
@@ -2489,7 +2490,7 @@ export async function streamFromOllamaWithTools(
   images: ImageAttachment[] | undefined,
   conversationId: string,
   onChunk: (text: string) => void, 
-  _onToolCall: (toolName: string, args: any) => void,
+  onToolCall: (toolName: string, args: any) => void,
   onToolResult: (result: any) => void,
   onEnd: () => void,
   onError: (err: any) => void,
@@ -2815,6 +2816,7 @@ export async function streamFromOllamaWithTools(
 
   // Recursive function to handle tool calls
   async function processResponse(round: number = 0): Promise<void> {
+    if (controller.signal.aborted || ended) return;
     if (round >= MAX_TOOL_ROUNDS) {
       console.error(`[HomeBot] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
       onChunk(`\n⚠️ I've reached the maximum number of tool-call rounds (${MAX_TOOL_ROUNDS}). Please try rephrasing your request.`);
@@ -2884,14 +2886,14 @@ export async function streamFromOllamaWithTools(
       }
 
       console.log('[HomeBot] Ollama chat stream connected...');
-      const stream = response.data as NodeJS.ReadableStream;
+      const stream = response.data as import('stream').Readable;
+      if (controller.signal.aborted || ended) { stream.destroy(); return; }
       
       let assistantContent = '';
       let pendingToolCalls: any[] = [];
       // Buffer chunks so we can detect tool JSON before sending to the UI.
       // Flush progressively after a short delay; if tool JSON is detected
       // on stream end we replace the content.
-      const chunkBuffer: string[] = [];
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       let flushedLength = 0; // how many chars of assistantContent we already sent
 
@@ -2899,6 +2901,7 @@ export async function streamFromOllamaWithTools(
         if (flushTimer) return;
         flushTimer = setTimeout(() => {
           flushTimer = null;
+          if (controller.signal.aborted || ended) return;
           // Only flush if we have unflushed content and no tool_calls detected yet
           if (flushedLength < assistantContent.length && pendingToolCalls.length === 0) {
             const unflushed = assistantContent.slice(flushedLength);
@@ -2910,46 +2913,26 @@ export async function streamFromOllamaWithTools(
         }, 120); // Small delay to batch-check content
       }
       
-      await new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk: Buffer) => {
-          try {
-            const lines = chunk.toString('utf8').split('\n').filter(line => line.trim());
-            for (const line of lines) {
-              if (!line) continue;
-              const parsed = JSON.parse(line);
-              
-              // Handle content chunks
-              if (parsed.message?.content) {
-                chunkCount++;
-                assistantContent += parsed.message.content;
-                chunkBuffer.push(parsed.message.content);
-                scheduleFlush();
-              }
-              
-              // Handle tool calls
-              if (parsed.message?.tool_calls) {
-                pendingToolCalls = parsed.message.tool_calls;
-              }
-              
-              if (parsed.done) {
-                if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-                console.log(`[HomeBot] Response done, chunks=${chunkCount}, toolCalls=${pendingToolCalls.length}`);
-                resolve();
-              }
-            }
-          } catch (e) {
-            // Partial JSON, ignore
+      try {
+        await readOllamaChatStream(stream, controller.signal, parsed => {
+          if (parsed.message?.content) {
+            chunkCount++;
+            assistantContent += parsed.message.content;
+            scheduleFlush();
+          }
+          if (willUseTools && Array.isArray(parsed.message?.tool_calls)) {
+            pendingToolCalls.push(...parsed.message.tool_calls);
           }
         });
-        
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
+      } finally {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      }
+      if (controller.signal.aborted || ended) return;
       
       // If no explicit tool_calls were emitted but the assistant content
       // looks like raw tool JSON, parse and route it through the tool
       // execution pipeline rather than rendering it as plain text.
-      if (pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
+      if (willUseTools && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
         // Try extracting tool calls from mixed text (models like mistral
         // often embed tool JSON inside descriptive prose)
         const extracted = extractToolCallsFromText(assistantContent);
@@ -2973,7 +2956,7 @@ export async function streamFromOllamaWithTools(
       // Final fallback: detect prose-style tool descriptions like
       // "write_file path='...' content='...'" that models sometimes output
       // instead of using the proper tool_call mechanism.
-      if (pendingToolCalls.length === 0) {
+      if (willUseTools && pendingToolCalls.length === 0) {
         const proseCalls = extractProseToolCalls(assistantContent);
         if (proseCalls && proseCalls.length > 0) {
           pendingToolCalls = proseCalls;
@@ -3065,7 +3048,13 @@ export async function streamFromOllamaWithTools(
           try { onChunk(formatBatchPreviewForChat(previewBatch(calls))); } catch (e) { safeCatch(e); }
         }
 
+        for (const call of calls) {
+          if (controller.signal.aborted || ended) return;
+          onToolCall(call.name, call.arguments);
+        }
+        if (controller.signal.aborted || ended) return;
         const batchResults = await executeToolBatch(calls, toolContext);
+        if (controller.signal.aborted || ended) return;
 
         // Agentic mode: stream per-tool completion status
         if (options?.agenticMode) {
@@ -3088,6 +3077,7 @@ export async function streamFromOllamaWithTools(
 
             if (typeof requestPermission === 'function') {
               const resp = await requestPermission(missing, reason);
+              if (controller.signal.aborted || ended) return;
 
               if (!resp || resp.decision === 'cancel') {
                 const result = { success: false, error: 'User declined permission request' } as any;
@@ -3104,6 +3094,7 @@ export async function streamFromOllamaWithTools(
 
               if (resp.decision === 'allow_once') {
                 const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing });
+                if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
                 return;
@@ -3118,6 +3109,7 @@ export async function streamFromOllamaWithTools(
                 } catch (e) { console.error('[HomeBot] Failed to persist permission changes:', e); }
 
                 const rerun = await executeToolBatch(calls, toolContext);
+                if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
                 return;
@@ -3169,6 +3161,7 @@ export async function streamFromOllamaWithTools(
               toolSummary,
               depth: round
             });
+            if (controller.signal.aborted || ended) return;
             if (!reflection.fallback) {
               if (reflection.accepted) {
                 onChunk(reflection.message);
@@ -3219,6 +3212,7 @@ export async function streamFromOllamaWithTools(
     cancel: () => {
       console.log('[HomeBot] Stream cancel requested');
       controller.abort();
+      safeEnd('cancelled');
     }
   };
 }
