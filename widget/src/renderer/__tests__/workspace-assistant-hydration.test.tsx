@@ -76,13 +76,18 @@ test('old-root late hydration cannot reveal its history or typed draft in the ne
 test('expired hydration can Retry and its late original response cannot replace the recovered transcript', async () => {
   jest.useFakeTimers(); const old = deferred<any>();
   api.workspaceAiSession.mockReturnValueOnce(old.promise).mockResolvedValueOnce({ success: true, turns: [{ id: 'current', role: 'assistant', text: 'latest durable transcript' }] });
-  render(panel());
+  // Resolve the independent successful rules load before advancing the history
+  // deadline; otherwise this fixture artificially expires both promises.
+  await act(async () => { render(panel()); });
+  expect(screen.queryByText('Loading project instructions before sending.')).not.toBeInTheDocument();
   await act(async () => { await Promise.resolve(); jest.advanceTimersByTime(ASSISTANT_HISTORY_LOAD_TIMEOUT_MS); });
   expect(screen.getByRole('alert')).toHaveTextContent('timed out'); expect(api.workspaceAiSaveSession).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry history recovery' })); });
   await act(async () => { old.resolve({ success: true, turns: [{ id: 'stale', role: 'assistant', text: 'expired old response' }] }); });
   expect(screen.getByRole('log')).toHaveTextContent('latest durable transcript'); expect(screen.getByRole('log')).not.toHaveTextContent('expired old response');
   expect(api.workspaceAiSession).toHaveBeenCalledTimes(2); expect(api.workspaceAiSaveSession).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('Ask the assistant'), { target: { value: 'recovered history question' } });
+  expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
 });
 
 test('ephemeral assistant without recovery or save APIs stays usable and cannot write durable history', async () => {
