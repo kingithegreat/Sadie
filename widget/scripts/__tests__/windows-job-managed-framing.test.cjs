@@ -1,7 +1,9 @@
 'use strict';
 // Pure generated framing controls only; never call a Job/Win32/process method.
 const {test}=require('node:test');
-test('exact generated setup and managed JSON framing reject malformed authority without invoking kernel methods', {skip:process.platform!=='win32',timeout:15000},()=>{
+// AGENTS.md107–108: bound real subprocess/file tests above the default. These
+// fixture-only caps include cold PowerShell startup; product Job deadlines stay fixed.
+test('exact generated setup and managed JSON framing reject malformed authority without invoking kernel methods', {skip:process.platform!=='win32',timeout:25000},()=>{
 const fs=require('fs'),path=require('path'),crypto=require('crypto'),cp=require('child_process'),vm=require('vm'),assert=require('assert');
 const root=path.resolve(__dirname,'../../..'),ts=require(root+'/widget/node_modules/typescript');
 // Both hosted lanes already own this artifact namespace; no environment-selected
@@ -76,7 +78,7 @@ fs.writeFileSync(out+'/pure.ps1','\uFEFF'+pure);
 // at its exact private path rather than exceeding Windows' argv length limit.
 const pureStarted=Date.now();
 const invocation="$global:hbiFramingParentEpoch="+pureStarted+";$global:hbiFramingHostClock=[Diagnostics.Stopwatch]::StartNew();[Console]::Out.WriteLine('PHASE:host-invoked|parentMs='+[Math]::Min(60000,[Math]::Max(0,[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()-$global:hbiFramingParentEpoch))+'|hostMs='+[Math]::Min(60000,$global:hbiFramingHostClock.ElapsedMilliseconds)+'|fixtureMs=0'); & '"+path.win32.normalize(out+'/pure.ps1').replace(/'/g,"''")+"'";
-const exe=path.win32.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),r=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',Buffer.from(invocation,'utf16le').toString('base64')],{windowsHide:true,timeout:8000,encoding:'utf8',maxBuffer:32768,input:'warm\nhash\n\n\n{"id":1,"operation":"stop"}\n'});
+const exe=path.win32.join(process.env.SystemRoot,'System32/WindowsPowerShell/v1.0/powershell.exe'),r=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',Buffer.from(invocation,'utf16le').toString('base64')],{windowsHide:true,timeout:15000,encoding:'utf8',maxBuffer:32768,input:'warm\nhash\n\n\n{"id":1,"operation":"stop"}\n'});
 const pureDiagnostic=phaseDiagnostic('pure',r,pureStarted);assert(!r.error&&r.status===0&&!r.signal,JSON.stringify(pureDiagnostic));
 const checks=r.stdout.split(/\r?\n/).filter(l=>l.startsWith('PASS:'));assert.equal(checks.length,cases.length+negatives.length+badEnvelopes.length+5);
 fs.writeFileSync(out+'/proof.json',JSON.stringify({sourceHead:cp.execFileSync('git',['-C',root,'rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim(),hashes:{source:sha(fs.readFileSync(sourceFile)),managed:sha(fs.readFileSync(managed)),generated:sha(script),assembly:sha(fs.readFileSync(dll))},compiler:inputs.compiler,references:inputs.references,checks,passed:checks.length,scope:'Fixed compiler and generated PS parser, bounded setup/managed JSON pure methods only. No Create/Attach/Stop/PInvoke/Job/PTY/project/native app execution.'},null,2));console.log(JSON.stringify({out,passed:checks.length}));
