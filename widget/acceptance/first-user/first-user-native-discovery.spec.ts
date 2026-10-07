@@ -27,6 +27,11 @@ async function visibleControl(page: Page, locator: Locator, label: string,
   expect(box!.y, `${label} top edge`).toBeGreaterThanOrEqual(-1);
   expect(box!.x + box!.width, `${label} right edge`).toBeLessThanOrEqual(viewport.width + 1);
   expect(box!.y + box!.height, `${label} bottom edge`).toBeLessThanOrEqual(viewport.height + 1);
+  expect(await locator.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    const top = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return !!top && (top === element || element.contains(top));
+  }), `${label} must receive a click at its center`).toBe(true);
   receipts.push({ label, viewport, box: box! });
 }
 
@@ -172,6 +177,17 @@ test('post-setup compact discovery and editable draft survive Home navigation in
         `${theme} narrow attachment remove`, 16, 16, bounds);
       await visibleControl(page, page.getByRole('button', { name: 'Set chat guidelines', exact: true }),
         `${theme} narrow guidelines`, 24, 32, bounds);
+      for (const label of ['Voice conversation', 'Capture screen']) {
+        const action = page.getByRole('button', { name: label, exact: true });
+        await visibleControl(page, action, `${theme} narrow ${label}`, 32, 32, bounds);
+        await expect.poll(() => action.evaluate(element => {
+          const composer = document.querySelector('.chat-interface .input-container');
+          if (!composer) return false;
+          const a = element.getBoundingClientRect();
+          const b = composer.getBoundingClientRect();
+          return a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right;
+        }), { message: `${label} must stay clear of the entire composer` }).toBe(true);
+      }
       const chatLayout = await page.locator('.chat-interface').evaluate(element => {
         const edge = element.getBoundingClientRect();
         return { width: element.clientWidth, scrollWidth: element.scrollWidth,
@@ -197,6 +213,7 @@ test('post-setup compact discovery and editable draft survive Home navigation in
         await visibleControl(page, disclosure, `${theme} narrow ${label}`, 200, 44, bounds);
       }
       await expect.poll(() => page.locator('.dashboard-container').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+      await page.mouse.move(0, 0);
       await page.screenshot({ path: testInfo.outputPath(`first-user-home-narrow-${theme}.png`) });
       await start.click();
       await expect(composer).toHaveValue(brief);

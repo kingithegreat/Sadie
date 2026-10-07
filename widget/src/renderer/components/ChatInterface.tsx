@@ -1,5 +1,5 @@
 
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
 import { InputBox, type ComposerDraft } from './InputBox';
@@ -31,6 +31,32 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
+
+  useLayoutEffect(() => {
+    const input = composerRef.current?.closest<HTMLElement>('.input-container');
+    const app = input?.closest<HTMLElement>('.app-container');
+    if (!input || !app) return;
+    const property = '--homebot-composer-clearance';
+    const previous = app.style.getPropertyValue(property);
+    let active = true;
+    const measure = () => {
+      if (!active || !input.isConnected || !app.isConnected) return;
+      const clearance = Math.max(120, Math.ceil(app.getBoundingClientRect().bottom - input.getBoundingClientRect().top) + 12);
+      app.style.setProperty(property, `${clearance}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(input);
+    observer?.observe(app);
+    window.addEventListener('resize', measure);
+    return () => {
+      active = false;
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      if (previous) app.style.setProperty(property, previous);
+      else app.style.removeProperty(property);
+    };
+  }, []);
 
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';

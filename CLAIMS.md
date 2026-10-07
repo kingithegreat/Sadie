@@ -91,6 +91,14 @@ Native coverage retains a direct card-clipping regression assertion. All previou
 failed receipts remain preserved; source-agent editing is complete and released to
 root's serial integration, current-head CI/review, final native verification and
 separate delivery. No editing or verification is delegated to an idle agent.
+Run37554602836 passes all four production Windows cases with zero retries and
+strict nonforced closure. Dark/light screenshots nevertheless reveal the camera
+action overlapping Send as the composer grows. Root measures the real composer
+clearance using ResizeObserver and keeps both floating actions above it, with
+cleanup on Home navigation. Native checks now require each main control to be
+topmost at its center and both floating actions to remain outside the composer.
+Previous passing source/native evidence is retained; fresh qualification of this
+additional UI correction, review and separately launchable delivery remain pending.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
