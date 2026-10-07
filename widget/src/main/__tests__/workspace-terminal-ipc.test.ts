@@ -1,6 +1,6 @@
 const handlers = new Map<string, Function>();
 const frame = {}; const sender = { id: 7, mainFrame: frame, isDestroyed: () => false, send: jest.fn(), once: jest.fn() };
-const manager = { list: jest.fn(async (_owner: number, _root: string) => [{ sessionId: 's1', output: 'retained output' }]), create: jest.fn((_owner: number, _request: any, _notify: any) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
+const manager = { list: jest.fn(async (_owner: number, _root: string) => [{ sessionId: 's1', output: 'retained output' }]), create: jest.fn(async (_owner: number, _request: any, _notify: any) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
 jest.mock('electron', () => ({ ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn), removeHandler: (name: string) => handlers.delete(name) } }));
 jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: sender }) }));
 jest.mock('../workspace-terminal-pty', () => ({ workspacePtySessions: manager, workspaceTerminalProfiles: () => [{ id: 'cmd' }] }));
@@ -40,4 +40,20 @@ test('destroyed owner cleanup catches bounded Close rejection without an unhandl
     expect(manager.closeOwner).toHaveBeenCalledWith(7);
     expect(log).toHaveBeenCalledWith('[HomeBot-CATCH]', expect.objectContaining({ message: 'Process-tree exit remains unconfirmed' }));
   } finally { log.mockRestore(); }
+});
+
+test('create waits for native startup and returns the resolved session rather than a promise', async () => {
+  let ready!: (session: { sessionId: string }) => void;
+  manager.create.mockImplementationOnce(() => new Promise<{ sessionId: string }>(resolve => { ready = resolve; }));
+  let settled = false;
+  const response = handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', profileId: 'cmd' }).then((value: unknown) => { settled = true; return value; });
+  await Promise.resolve(); await Promise.resolve();
+  expect(settled).toBe(false);
+  ready({ sessionId: 'native-ready' });
+  expect(await response).toEqual({ success: true, session: { sessionId: 'native-ready' } });
+});
+
+test('native startup rejection is an IPC error instead of a successful promise-shaped session', async () => {
+  manager.create.mockRejectedValueOnce(Error('Native terminal startup did not become ready'));
+  expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', profileId: 'cmd' })).toEqual({ success: false, error: 'Native terminal startup did not become ready' });
 });
