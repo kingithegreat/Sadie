@@ -66,6 +66,13 @@ still requires zero actual generate requests. Compact discovery exposed a real
 to44px. This one CSS correction is the only production change after16149190.
 All four cases closed without forced cleanup, but overall acceptance still awaits
 the fresh run. Supplemental acceptance TypeScript passes; runtime guards unchanged.
+Run37553258955 passes all three setup cases without retries; compact discovery
+proved entry, Home and starter focus plus retained document/text navigation,
+then failed because the560px window squeezed its composer to151px. Root adds a
+narrow-screen full-width text row with controls below. Two stale model hints now
+describe the chosen uncensored model without falsely claiming tools are disabled.
+Widget TypeScript and scoped lint for those hints pass. Fresh compiled/native,
+current-head whole hosted checks, configured review and delivery remain pending.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

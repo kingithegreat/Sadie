@@ -22,3 +22,23 @@
   outline-offset: 2px;
 }
 .widget-first-task span { color: var(--text-secondary, #555); }
+
+@media (max-width: 640px) {
+  .app-container .chat-interface .input-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .app-container .chat-interface .input-field {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .app-container .chat-interface .char-counter { align-self: center; }
+  .app-container .chat-interface .input-actions {
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
