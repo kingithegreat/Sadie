@@ -49,7 +49,7 @@ import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
 import { installConsoleGate } from './utils/console-gate';
 import { initLogging, logStartup } from './utils/logger';
-import { shutdownMcpServers, resumeMcpServersAfterRefusedQuit } from './mcp-client';
+import { shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
@@ -709,9 +709,12 @@ app.on('before-quit', event => {
       void dialog.showMessageBox({ type: 'error', message: 'A running HomeBot program could not be stopped.',
         detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, tasks, debugger or tests panel.',
         buttons: ['Try closing again', 'Keep HomeBot open'], defaultId: 1, cancelId: 1,
-      }).then(result => {
+      }).then(async result => {
         if (result.response === 0) app.quit();
-        else if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+        else {
+          if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+          await restoreMcpServersAfterRefusedQuit();
+        }
       }).catch(safeCatch);
       return;
     }

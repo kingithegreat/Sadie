@@ -36,20 +36,47 @@ function harness(keepExistingWindow = false) {
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
   const resumeMcpServersAfterRefusedQuit = jest.fn();
+  const restoreMcpServersAfterRefusedQuit = jest.fn(async () => {});
   const safeCatch = jest.fn();
   const dialog = { showMessageBox: jest.fn(async () => ({ response: 1 })) };
   const windowHandlers = new Map<string, (...args: any[]) => void>();
   const ownedWindow = { isDestroyed: () => false, on: jest.fn((name: string, handler: any) => windowHandlers.set(name, handler)), removeListener: jest.fn() };
   const createMainWindow = jest.fn(() => ownedWindow);
-  const context = { app, ...otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
+  const context = { app, ...otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
   vm.runInNewContext(compiled, context);
   vm.runInNewContext('createMainWindow()', context);
   createMainWindow.mockClear();
-  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
+  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
 // Flush the native and VM promise queues through a real event-loop turn.
 // Cleanup phases may add microtasks without changing the quit contract.
 async function settle() { await new Promise<void>(resolve => setImmediate(resolve)); }
+
+test('healthy MCP restoration waits for explicit Keep open and never runs for Try closing again', async () => {
+  const keep = harness(true);
+  let choose!: (result: { response: number }) => void;
+  keep.dialog.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { choose = resolve; }));
+  keep.app.quit(); await settle(); keep.reject(new Error('MCP cleanup refused')); await settle();
+  expect(keep.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+  expect(keep.restoreMcpServersAfterRefusedQuit).not.toHaveBeenCalled();
+  choose({ response: 1 }); await settle();
+  expect(keep.restoreMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+
+  const retry = harness(true);
+  retry.dialog.showMessageBox.mockImplementation(() => new Promise(() => {}));
+  retry.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+  retry.app.quit(); await settle(); retry.reject(new Error('MCP cleanup refused')); await settle();
+  expect(retry.restoreMcpServersAfterRefusedQuit).not.toHaveBeenCalled();
+});
+
+test('failed MCP restoration keeps HomeBot open and reports the failure', async () => {
+  const h = harness(true), error = new Error('MCP reconnect failed');
+  h.restoreMcpServersAfterRefusedQuit.mockRejectedValueOnce(error);
+  h.app.quit(); await settle(); h.reject(new Error('MCP cleanup refused')); await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+});
 
 test('new runtime admission stays closed through pending MCP after owned cleanup, and a refused quit reopens it', async () => {
   const accepted = harness();
