@@ -216,6 +216,8 @@ export interface WorkspaceTaskRunResult {
   /** The request completed. A task may still have a non-zero exitCode. */
   success: boolean;
   cancelled?: boolean;
+  /** The command ended, but its owned process tree still needs Stop/retry. */
+  cleanupPending?: boolean;
   timedOut?: boolean;
   exitCode?: number | null;
   durationMs?: number;

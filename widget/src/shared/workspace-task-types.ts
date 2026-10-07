@@ -4,6 +4,7 @@ export interface WorkspaceTaskEvent {
   projectDir: string;
   scriptName: string;
   running: boolean;
+  cleanupPending?: boolean;
   outputExcerpt?: string;
   problems?: WorkspaceProblem[];
   result?: WorkspaceTaskRunResult;
