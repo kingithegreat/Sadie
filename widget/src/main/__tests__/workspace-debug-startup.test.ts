@@ -53,16 +53,37 @@ test('late open from an exited startup neither initializes nor stops the replace
   children[1].stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40002/def-456\n'); await tick();
   const currentSocket = ControlledSocket.instances[1]; currentSocket.open();
   expect(await second).toEqual(expect.objectContaining({ success: true, running: true, pid: children[1].pid }));
-  expect(currentSocket.sent.map(message => JSON.parse(message).method)).toEqual(['Runtime.enable', 'Debugger.enable', 'Runtime.runIfWaitingForDebugger']);
+  expect(currentSocket.sent.map(message => JSON.parse(message).method)).toEqual(['Runtime.enable', 'Debugger.enable', 'NodeRuntime.notifyWhenWaitingForDisconnect', 'Runtime.runIfWaitingForDebugger']);
+  expect(JSON.parse(currentSocket.sent[2]).params).toEqual({ enabled: true });
   // A queued network callback from the former socket settles the former await.
   // It cannot issue commands on this session's new socket or invoke its Stop.
   oldSocket.dispatch('open');
   expect(await first).toEqual(expect.objectContaining({ success: false, error: expect.stringMatching(/session changed during startup/) }));
-  expect(oldSocket.sent).toEqual([]); expect(currentSocket.sent).toHaveLength(3);
+  expect(oldSocket.sent).toEqual([]); expect(currentSocket.sent).toHaveLength(4);
   expect(stopWorkspaceChild).not.toHaveBeenCalled();
   oldSocket.dispatch('message', { data: JSON.stringify({ method: 'Debugger.paused', params: { callFrames: [{ callFrameId: 'old-frame', location: { scriptId: 'old-script', lineNumber: 9, columnNumber: 0 } }] } }) });
   oldSocket.dispatch('close');
+  oldSocket.dispatch('message', { data: JSON.stringify({ method: 'NodeRuntime.waitingForDisconnect' }) });
+  expect(currentSocket.readyState).toBe(ControlledSocket.OPEN);
   expect(await call('state')).toEqual(expect.objectContaining({ success: true, running: true, paused: false, pid: children[1].pid, frames: [] }));
+});
+
+test('only owned inspector completion detaches, retaining running state and points until actual child exit', async () => {
+  const starting = call('start', { file });
+  const child = children[0]; child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick();
+  const socket = ControlledSocket.instances[0]; socket.open(); expect((await starting).success).toBe(true);
+  expect(JSON.parse(socket.sent[2])).toEqual(expect.objectContaining({ method: 'NodeRuntime.notifyWhenWaitingForDisconnect', params: { enabled: true } }));
+  expect((await call('breakpoint', { file, line: 2 })).success).toBe(true);
+  child.stderr.emit('data', 'Waiting for the debugger to disconnect...\n');
+  child.stdout.emit('data', 'NodeRuntime.waitingForDisconnect\n');
+  expect(socket.readyState).toBe(ControlledSocket.OPEN);
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, pid: child.pid, breakpoints: [{ path: file, line: 2 }] }));
+  socket.dispatch('message', { data: JSON.stringify({ method: 'NodeRuntime.waitingForDisconnect' }) });
+  expect(socket.readyState).toBe(3);
+  expect(stopWorkspaceChild).not.toHaveBeenCalled();
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, pid: child.pid, breakpoints: [{ path: file, line: 2 }] }));
+  child.emit('exit', 0);
+  expect(await call('state')).toEqual(expect.objectContaining({ running: false, paused: false, frames: [], breakpoints: [] }));
 });
 
 test('delayed owned Stop preserves a replacement paused connection, fresh breakpoint and session entry', async () => {

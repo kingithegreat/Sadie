@@ -45,9 +45,10 @@ test('refuses unrelated scripts, unsupported runtimes, invalid breakpoints, and 
   expect((await call('evaluate', { expression: '1 + 1' })).error).toMatch(/Start|Pause/);
 });
 test('a program exiting without Stop clears installed points; restart installs and hits a fresh breakpoint', async () => {
-  // Self-termination exercises the real child exit event while its inspector is
-  // connected, without a Stop request or a test-owned kill of the child PID.
-  fs.writeFileSync(file, 'let count = 1;\ncount += 2;\nif (process.argv.includes("--end-without-stop")) process.kill(process.pid);\nconsole.log("RESTART", count);\nsetInterval(() => {}, 1000);\n');
+  // The first program drains its event loop normally; neither it nor the test
+  // kills its PID. User-emitted inspector-like prose must not detach the later
+  // live program before its real line-4 breakpoint.
+  fs.writeFileSync(file, 'let count = 1;\ncount += 2;\nprocess.stderr.write("Waiting for the debugger to disconnect...\\n");\nconsole.log("RESTART", count);\nif (!process.argv.includes("--end-without-stop")) setInterval(() => {}, 1000);\n');
   const first = await call('start', { file, args: ['--end-without-stop'] }); expect(first.success).toBe(true);
   const firstPid = first.pid!; expect(Number.isInteger(firstPid)).toBe(true);
   await waitForPaused();
@@ -59,6 +60,7 @@ test('a program exiting without Stop clears installed points; restart installs a
   let ended = await call('state');
   for (let attempt = 0; ended.running && attempt < 100; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
   expect(ended).toEqual(expect.objectContaining({ success: true, running: false, paused: false, frames: [], breakpoints: [] }));
+  expect(ended.output).toContain('RESTART 3');
   expect(() => process.kill(firstPid, 0)).toThrow();
   const second = await call('start', { file }); expect(second.success).toBe(true); expect(second.pid).not.toBe(firstPid); expect(second.breakpoints).toEqual([]);
   await waitForPaused();

@@ -62,20 +62,28 @@ class DebugSession {
     this.socket = new WebSocket(url);
     const socket = this.socket;
     socket.addEventListener('message', event => {
-      if (this.socket !== socket) return;
+      if (this.child !== child || this.socket !== socket) return;
       let message: any; try { message = JSON.parse(String(event.data)); } catch { return; }
       if (message.id) { const pending = this.requests.get(message.id); if (!pending) return; this.requests.delete(message.id); clearTimeout(pending.timer); if (message.error) pending.reject(new Error(message.error.message || 'Debugger request failed.')); else pending.resolve(message.result); }
       else if (message.method === 'Debugger.scriptParsed') this.scripts.set(message.params.scriptId, message.params.url);
       else if (message.method === 'Debugger.paused') { this.paused = true; this.frames = message.params.callFrames || []; }
       else if (message.method === 'Debugger.resumed') { this.paused = false; this.frames = []; }
+      else if (message.method === 'NodeRuntime.waitingForDisconnect') {
+        // Node has finished execution and cannot exit while this frontend stays
+        // attached. Only the captured inspector's completion event releases it;
+        // program stderr is not evidence. State clears on actual child exit.
+        socket.close();
+      }
     });
     socket.addEventListener('close', () => { if (this.socket === socket) this.rejectRequests('Debugger disconnected.'); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Debugger connection timed out.')), 5000); socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true }); socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('The debugger connection failed.')); }, { once: true }); });
-    const initialize = async (method: string) => {
+    const initialize = async (method: string, params: Record<string, unknown> = {}) => {
       const requireOwner = () => { if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.'); };
-      requireOwner(); await this.command(method); requireOwner();
+      requireOwner(); await this.command(method, params); requireOwner();
     };
-    await initialize('Runtime.enable'); await initialize('Debugger.enable'); await initialize('Runtime.runIfWaitingForDebugger');
+    await initialize('Runtime.enable'); await initialize('Debugger.enable');
+    await initialize('NodeRuntime.notifyWhenWaitingForDisconnect', { enabled: true });
+    await initialize('Runtime.runIfWaitingForDebugger');
     } catch (error) {
       // An ended startup may finish after a subsequent Start. Its failure must
       // never stop that replacement, or a program rejected by duplicate Start.
