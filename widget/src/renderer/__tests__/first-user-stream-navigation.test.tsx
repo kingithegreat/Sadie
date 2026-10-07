@@ -197,8 +197,8 @@ test('switching from local to custom during user persistence still permits Retry
     expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
     await act(async () => { fireEvent.click(document.querySelector('.model-selector-button')!); });
     await act(async () => { fireEvent.click(screen.getByText('Fixture online')); });
-    expect(bridge.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ useCustomLLM: true }));
-    expect(screen.getByText(/Switched to.*fixture-model/)).toBeInTheDocument();
+    expect(bridge.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ useCustomLLM: true,
+      customLLM: expect.objectContaining({ model: 'fixture-model' }) }));
   } finally {
     await act(async () => { write.resolve(undefined); });
   }

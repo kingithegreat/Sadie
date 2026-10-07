@@ -2,7 +2,8 @@
 
 ## 2026-10-07 — CHAT-CUSTOM-TRANSPORT
 
-Custom-model agent owns custom-llm-client, its transport regressions, and cloud
+Custom-model source edits are released to root's serial chat integration. The
+agent prepared custom-llm-client, its transport regressions, and cloud
 chat/code tool-round-trip regions of message-router in isolated worktree
 `.homebot/chat-custom-20261007`, branch `claude/chat-custom-20261007`, based on
 `ce53a7db`. Local agent owns Ollama router region; root owns integration and
@@ -994,10 +995,21 @@ and fresh Desktop delivery remain root-owned and pending.
 
 ## 2026-10-07 - LOCAL-CHAT-TRANSPORT
 
-Codex local-chat agent owns Ollama NDJSON transport and cancellation in
+Local-chat source edits are released to root's serial chat integration. The
+agent prepared Ollama NDJSON transport and cancellation in
 streamFromOllamaWithTools, neutral router/ollama-chat-stream.ts, and bounded
 ollama-chat-stream.test.ts. Private branch claude/chat-local-20261007 starts
 from main ce53a7db; custom and renderer agents own separate areas. Root owns
 Drive coordination, final integration, publication and native UI proof. No
 shared checkout/profile/dependency mutations. Test-first baseline: 8 failed
 and 1 passed; heavy checks paused under current resource floor.
+
+## Chat local/custom serial integration
+
+Root owns `claude/chat-integration-20261007`, including renderer Retry identity,
+local/custom transports and queued-tool Stop guards. Agent source claims are
+released into this integration; hosted compiler, full tests, production native
+chat, review and landing remain pending. The dedicated native fixtures do not
+contact owner providers or prove response quality. See
+`tasks/chat-local-custom-20261007.md` and the preserved private A/B receipts.
+Preserve active wizard-retention, IDE, character and existing delivery owners.
