@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './workspace-trust';
 import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
-import { captureWorkspacePtyTree, stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
+import { createWorkspaceWindowsJob, type WorkspaceWindowsJob } from './workspace-windows-job';
 import type { WorkspaceDebugRequest, WorkspaceDebugResult, WorkspaceDebugFrame } from '../shared/workspace-debug-types';
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 function projectRoot(input: string): string {
@@ -21,8 +21,8 @@ function projectFile(root: string, file: unknown): string {
 interface InspectorFrame { callFrameId: string; functionName: string; url: string; location: { scriptId: string; lineNumber: number; columnNumber: number }; scopeChain: Array<{ type: string; object: { objectId?: string } }> }
 interface OwnedDebugProgram {
   child: ChildProcess; identity: Promise<WorkspacePtyIdentity | null | undefined>;
-  ended: boolean; executed: boolean; receipt?: WorkspacePtyStopReceipt;
-  captured?: Promise<void>; stopping?: Promise<void>; error?: string;
+  ended: boolean; executed: boolean; job?: WorkspaceWindowsJob;
+  stopping?: Promise<void>; error?: string;
   exit: Promise<void>; resolveExit(): void;
 }
 function groupGone(pid: number): boolean {
@@ -95,8 +95,7 @@ class DebugSession {
         program.ended = true; program.resolveExit();
         rejectStartup?.(new Error('The debug session changed during startup.'));
         // Project code has not run if inspect-brk was never released.
-        if (!program.executed) this.ownedPrograms.delete(child);
-        else if (process.platform === 'win32' && !program.receipt) program.error = 'The debug program ended before its process tree could be captured. Cleanup is unverified; inspect and stop its remaining programs, then retry Stop.';
+        if (!program.executed && !program.job) this.ownedPrograms.delete(child);
         clearTimeout(timeout);
         if (!this.socket) reject(new Error('The program exited before the debugger connected.'));
         if (this.child === child) {
@@ -144,6 +143,15 @@ class DebugSession {
     const original = await program.identity;
     if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
     if (process.platform === 'win32' && !original) throw new Error('The debug program creation identity could not be verified. No project code was run; try Start again.');
+    if (process.platform === 'win32') {
+      // inspect-brk still gates project code. Retain this synchronous ownership
+      // even if assignment fails; readiness alone permits releasing execution.
+      program.job = createWorkspaceWindowsJob(child.pid!, original!);
+      await program.job.ready;
+      if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
+    }
+    if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. No project code was run.');
+    assertWorkspaceRuntimeOpen();
     program.executed = true;
     await initialize('Runtime.runIfWaitingForDebugger');
     } catch (error) {
@@ -153,24 +161,14 @@ class DebugSession {
       throw error;
     }
   }
-  private async capture(program: OwnedDebugProgram): Promise<void> {
-    if (program.receipt) return;
-    if (program.captured) return program.captured;
-    const operation = (async () => {
-      const original = await program.identity;
-      if (program.ended) throw new Error('The debug program ended before its process tree could be captured. Cleanup is unverified; inspect and stop its remaining programs, then retry Stop.');
-      const captured = await captureWorkspacePtyTree(program.child.pid!, original);
-      if (!captured.captured || !captured.receipt) throw new Error('The debug program process tree could not be verified. Cleanup authority is retained; try Stop again before closing HomeBot.');
-      program.receipt = captured.receipt;
-    })();
-    program.captured = operation;
-    try { await operation; } finally { if (program.captured === operation) program.captured = undefined; }
-  }
   private async complete(program: OwnedDebugProgram, socket: WebSocket): Promise<void> {
     if (!this.ownedPrograms.has(program.child)) return;
     if (process.platform === 'win32') {
-      // Read-only authority must arrive before releasing this captured frontend.
-      await this.capture(program);
+      // Kernel membership was established before project execution and survives
+      // parent exit/late forks. Check the retained helper is still authoritative
+      // before releasing only this inspector; its live leader is not empty yet.
+      if (!program.job) throw new Error('The debug program has no retained Windows Job. Cleanup is unverified.');
+      await program.job.queryEmpty();
       if (this.child === program.child && this.socket === socket) socket.close();
     } else {
       // POSIX signals the still-owned detached group before releasing its leader.
@@ -183,18 +181,19 @@ class DebugSession {
     if (!this.ownedPrograms.has(program.child)) return Promise.resolve();
     if (program.stopping) return program.stopping;
     const operation = (async () => {
-      if (!program.executed) {
+      if (process.platform === 'win32' && program.job) {
+        await program.job.stop();
+        // Assignment can reject before the leader joined the Job. Project code
+        // was never released; its exact startup ChildProcess still owns cleanup.
+        if (!program.executed && !program.ended) await stopWorkspaceChild(program.child);
+        await waitForOwnedExit(program);
+      } else if (!program.executed) {
         // inspect-brk has not released project code, so there are no project
         // descendants yet. This exact ChildProcess still owns startup cleanup.
         if (!program.ended) await stopWorkspaceChild(program.child);
         await waitForOwnedExit(program);
       } else if (process.platform === 'win32') {
-        if (program.captured) await program.captured;
-        if (!program.receipt) await this.capture(program);
-        const result = await stopWorkspacePtyTree(program.child.pid!, await program.identity, program.receipt);
-        if (result.receipt) program.receipt = result.receipt;
-        if (!result.stopped) throw new Error('The debug program process tree did not confirm exit. Its captured identities are retained; try Stop again.');
-        await waitForOwnedExit(program);
+        throw new Error('The debug program has no retained Windows Job. Cleanup is unverified; stop its remaining programs before closing HomeBot.');
       } else {
         // After leader exit, only query absence; never signal an old/reused PGID.
         if (!program.ended) await stopWorkspaceChild(program.child);
@@ -249,8 +248,8 @@ class DebugSession {
     const child = this.child;
     const socket = this.socket;
     this.rejectRequests('Debug session stopped.');
-    // Keep the inspector attached until Windows tree authority is captured;
-    // disconnecting first can let a completed leader exit before capture.
+    // Keep the inspector attached while owned Job cleanup is pending. A failed
+    // operation retains the same Job and leaves Stop/quit retry reachable.
     const results = await Promise.allSettled([...this.ownedPrograms.values()].map(program => this.stopProgram(program)));
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failed) throw failed.reason;

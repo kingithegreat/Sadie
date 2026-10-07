@@ -5,14 +5,14 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { performWorkspaceDebug, stopWorkspaceDebuggers } from '../workspace-debug';
 import { stopWorkspaceChild } from '../workspace-owned-process';
-import { captureWorkspacePtyTree, stopWorkspacePtyTree } from '../workspace-pty-force-stop';
+import { createWorkspaceWindowsJob } from '../workspace-windows-job';
 import { workspacePtyLifecycle } from '../workspace-pty-identity';
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 jest.mock('../workspace-owned-process', () => ({ rememberWorkspaceChild: jest.fn(), stopWorkspaceChild: jest.fn(async (child: EventEmitter) => { child.emit('exit', 0); }) }));
 jest.mock('../workspace-trust', () => ({ validateTrustedWorkspaceRoot: (root: string) => root, checkedTrustedWorkspacePath: (_root: string, file: string) => file }));
 jest.mock('../workspace-pty-identity', () => ({ workspacePtyLifecycle: { capture: jest.fn(async () => ({ creation: '638953000000000000', parent: process.pid })) } }));
-jest.mock('../workspace-pty-force-stop', () => ({ captureWorkspacePtyTree: jest.fn(), stopWorkspacePtyTree: jest.fn() }));
+jest.mock('../workspace-windows-job', () => ({ createWorkspaceWindowsJob: jest.fn() }));
 jest.setTimeout(15_000);
 
 class ControlledSocket {
@@ -35,15 +35,15 @@ class ControlledSocket {
 let root: string; let file: string; let originalSocket: typeof WebSocket;
 const originalPlatform = process.platform;
 const children: Array<EventEmitter & { pid: number; stderr: EventEmitter; stdout: EventEmitter }> = [];
+const jobs: Array<{ ready: Promise<void>; queryEmpty: jest.Mock; stop: jest.Mock }> = [];
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const call = (action: 'start' | 'state' | 'stop' | 'breakpoint', extra = {}) => performWorkspaceDebug({ root, action, ...extra });
 beforeEach(() => {
   Object.defineProperty(process, 'platform', { value: 'win32' });
-  jest.clearAllMocks(); ControlledSocket.instances = []; children.length = 0;
+  jest.clearAllMocks(); ControlledSocket.instances = []; children.length = 0; jobs.length = 0;
   (stopWorkspaceChild as jest.Mock).mockImplementation(async (child: EventEmitter) => { child.emit('exit', 0); });
   (workspacePtyLifecycle.capture as jest.Mock).mockResolvedValue({ creation: '638953000000000000', parent: process.pid });
-  (captureWorkspacePtyTree as jest.Mock).mockImplementation(async (pid, original) => ({ captured: true, receipt: [{ pid, ...original }] }));
-  (stopWorkspacePtyTree as jest.Mock).mockImplementation(async (pid, _original, receipt) => { const child = children.find(child => child.pid === pid)!; await stopWorkspaceChild(child as any); return { stopped: true, attempted: true, receipt }; });
+  (createWorkspaceWindowsJob as jest.Mock).mockImplementation(pid => { const child = children.find(child => child.pid === pid)!; const job = { ready: Promise.resolve(), queryEmpty: jest.fn().mockResolvedValue(false), stop: jest.fn(async () => { await stopWorkspaceChild(child as any); }) }; jobs.push(job); return job; });
   root = fs.mkdtempSync(path.join(os.homedir(), 'hb-debug-startup-')); file = path.join(root, 'main.js'); fs.writeFileSync(file, 'console.log("fixture");\n');
   originalSocket = global.WebSocket; global.WebSocket = ControlledSocket as unknown as typeof WebSocket;
   (spawn as jest.Mock).mockImplementation(() => {
@@ -153,24 +153,23 @@ test('one refused global stop does not release admission while another owned sto
   expect((await fresh).success).toBe(true);
 });
 
-test('completion waits for read-only tree authority; retained descendants remain reachable after leader exit and failed Stop', async () => {
+test('completion checks the retained Job; leader exit and failed Stop preserve the same Job for descendant cleanup', async () => {
   const starting = call('start', { file }); const child = children[0];
   child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open(); await starting;
-  let finishCapture!: (result: any) => void;
-  (captureWorkspacePtyTree as jest.Mock).mockImplementationOnce(() => new Promise(resolve => { finishCapture = resolve; }));
+  const job = jobs[0]; let finishQuery!: (empty: boolean) => void;
+  job.queryEmpty.mockImplementationOnce(() => new Promise(resolve => { finishQuery = resolve; }));
   socket.dispatch('message', { data: JSON.stringify({ method: 'NodeRuntime.waitingForDisconnect' }) }); await tick();
   expect(socket.readyState).toBe(ControlledSocket.OPEN);
   expect(await call('state')).toEqual(expect.objectContaining({ running: true, pid: child.pid }));
-  const receipt = [{ pid: child.pid, creation: '638953000000000000', parent: process.pid }, { pid: 43001, creation: '638953000000000001', parent: child.pid }];
-  finishCapture({ captured: true, receipt }); await tick(); expect(socket.readyState).toBe(3);
+  finishQuery(false); await tick(); expect(socket.readyState).toBe(3);
   child.emit('exit', 0);
   expect(await call('state')).toEqual(expect.objectContaining({ running: false, cleanupPending: true }));
-  (stopWorkspacePtyTree as jest.Mock).mockResolvedValueOnce({ stopped: false, attempted: true, receipt });
-  expect((await call('stop')).error).toMatch(/captured identities are retained/);
+  job.stop.mockRejectedValueOnce(new Error('Job still active; retry retained Job.'));
+  expect((await call('stop')).error).toMatch(/Job still active/);
   expect(await call('state')).toEqual(expect.objectContaining({ running: false, cleanupPending: true }));
   expect((await call('stop')).success).toBe(true);
-  expect(stopWorkspacePtyTree).toHaveBeenLastCalledWith(child.pid, { creation: receipt[0].creation, parent: receipt[0].parent }, receipt);
-  expect(captureWorkspacePtyTree).toHaveBeenCalledTimes(1); // No root-gone recapture.
+  expect(job.stop).toHaveBeenCalledTimes(2);
+  expect(createWorkspaceWindowsJob).toHaveBeenCalledTimes(1); // No root-gone recapture/reassignment.
   expect((await call('state')).cleanupPending).not.toBe(true);
 });
 
@@ -189,17 +188,18 @@ test('ended cleanup records free the live cap while two active or starting roots
   }
   await startAt(roots[2]); await startAt(roots[3]);
   const rejected = await call('start', { file }); expect(rejected.error).toMatch(/Close another project/); expect(children).toHaveLength(4);
-  await stopWorkspaceDebuggers(); expect(stopWorkspacePtyTree).toHaveBeenCalledTimes(4);
+  await stopWorkspaceDebuggers(); expect(jobs.every(job => job.stop.mock.calls.length === 1)).toBe(true);
 });
 
-test('abrupt executed exit retains uncertain cleanup, refuses shutdown and never recaptures or kills the old PID', async () => {
+test('abrupt executed exit retains assigned Job; helper loss refuses shutdown without recapturing the old PID', async () => {
   let isolated!: typeof import('../workspace-debug'); jest.isolateModules(() => { isolated = require('../workspace-debug'); });
   const starting = isolated.performWorkspaceDebug({ root, action: 'start', file }); const child = children[0];
   child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); ControlledSocket.instances[0].open(); await starting;
+  const job = jobs[0]; job.stop.mockRejectedValue(new Error('Job helper ownership lost; cleanup is unverified.'));
   child.emit('exit', 9);
-  expect(await isolated.performWorkspaceDebug({ root, action: 'state' })).toEqual(expect.objectContaining({ running: false, cleanupPending: true, error: expect.stringMatching(/before its process tree could be captured/) }));
-  await expect(isolated.stopWorkspaceDebuggers()).rejects.toThrow(/Cleanup is unverified/);
-  expect(captureWorkspacePtyTree).not.toHaveBeenCalled(); expect(stopWorkspacePtyTree).not.toHaveBeenCalled();
+  expect(await isolated.performWorkspaceDebug({ root, action: 'state' })).toEqual(expect.objectContaining({ running: false, cleanupPending: true }));
+  await expect(isolated.stopWorkspaceDebuggers()).rejects.toThrow(/ownership lost/);
+  expect(createWorkspaceWindowsJob).toHaveBeenCalledTimes(1); expect(job.stop).toHaveBeenCalledTimes(1);
   expect((await isolated.performWorkspaceDebug({ root, action: 'stop' })).success).toBe(false);
 });
 
@@ -209,7 +209,7 @@ test('unknown Windows creation identity does not release project code and cleans
   child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open();
   expect((await starting).error).toMatch(/No project code was run/);
   expect(socket.sent.map(text => JSON.parse(text).method)).not.toContain('Runtime.runIfWaitingForDebugger');
-  expect(stopWorkspaceChild).toHaveBeenCalledWith(child); expect(captureWorkspacePtyTree).not.toHaveBeenCalled(); expect(stopWorkspacePtyTree).not.toHaveBeenCalled();
+  expect(stopWorkspaceChild).toHaveBeenCalledWith(child); expect(createWorkspaceWindowsJob).not.toHaveBeenCalled();
   expect((await call('state')).cleanupPending).not.toBe(true);
 });
 
@@ -219,4 +219,41 @@ test('failed spawn without a PID releases its reservation without waiting for a 
   expect(await starting).toEqual(expect.objectContaining({ success: false, error: 'spawn ENOENT' }));
   expect(await call('state')).toEqual(expect.objectContaining({ running: false, cleanupPending: false }));
   expect(stopWorkspaceChild).not.toHaveBeenCalled(); await stopWorkspaceDebuggers();
+});
+
+test('Windows Job assignment readiness gates project-code release while retaining synchronous ownership', async () => {
+  let ready!: () => void;
+  const job = { ready: new Promise<void>(resolve => { ready = resolve; }), queryEmpty: jest.fn().mockResolvedValue(false), stop: jest.fn(async () => { children[0].emit('exit', 0); }) };
+  (createWorkspaceWindowsJob as jest.Mock).mockReturnValueOnce(job);
+  const starting = call('start', { file }); const child = children[0];
+  child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open(); await tick();
+  expect(createWorkspaceWindowsJob).toHaveBeenCalledWith(child.pid, { creation: '638953000000000000', parent: process.pid });
+  expect(socket.sent.map(text => JSON.parse(text).method)).not.toContain('Runtime.runIfWaitingForDebugger');
+  expect((await call('start', { file })).error).toMatch(/Stop the current/); expect(children).toHaveLength(1);
+  ready(); expect((await starting).success).toBe(true); expect(JSON.parse(socket.sent[socket.sent.length - 1]).method).toBe('Runtime.runIfWaitingForDebugger');
+  await call('stop'); expect(job.stop).toHaveBeenCalledTimes(1);
+});
+
+test('assignment rejection never releases project code; failed cleanup retains the same Job for retry', async () => {
+  let rejectReady!: (error: Error) => void;
+  const job = { ready: new Promise<void>((_resolve, reject) => { rejectReady = reject; }), queryEmpty: jest.fn(), stop: jest.fn().mockRejectedValueOnce(new Error('Owned Job cleanup still pending.')) };
+  (createWorkspaceWindowsJob as jest.Mock).mockReturnValueOnce(job);
+  const starting = call('start', { file }); const child = children[0];
+  child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open(); await tick();
+  rejectReady(new Error('Birth-checked Job assignment failed.'));
+  expect((await starting).error).toMatch(/Owned Job cleanup still pending/);
+  expect(socket.sent.map(text => JSON.parse(text).method)).not.toContain('Runtime.runIfWaitingForDebugger');
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true }));
+  job.stop.mockImplementationOnce(async () => { child.emit('exit', 0); });
+  expect((await call('stop')).success).toBe(true); expect(job.stop).toHaveBeenCalledTimes(2); expect(createWorkspaceWindowsJob).toHaveBeenCalledTimes(1);
+});
+
+test('uncertain retained Job query keeps the completed inspector attached until owned Stop proves cleanup', async () => {
+  const starting = call('start', { file }); const child = children[0];
+  child.stderr.emit('data', 'Debugger listening on ws://127.0.0.1:40001/abc-123\n'); await tick(); const socket = ControlledSocket.instances[0]; socket.open(); await starting;
+  jobs[0].queryEmpty.mockRejectedValueOnce(new Error('Job helper query is uncertain.'));
+  socket.dispatch('message', { data: JSON.stringify({ method: 'NodeRuntime.waitingForDisconnect' }) }); await tick();
+  expect(socket.readyState).toBe(ControlledSocket.OPEN);
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, cleanupPending: true, error: 'Job helper query is uncertain.' }));
+  expect((await call('stop')).success).toBe(true); expect(jobs[0].stop).toHaveBeenCalledTimes(1);
 });

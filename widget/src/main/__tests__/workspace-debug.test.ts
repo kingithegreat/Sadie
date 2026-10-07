@@ -131,4 +131,38 @@ test('completion preserves descendant cleanup authority and Stop leaves an unrel
     }
   }
 });
+
+test('a grandchild survives an intermediate exit and remains owned after its debugger leader completes', async () => {
+  // The intermediate exits before inspector completion. Its missing CIM row
+  // must not erase the leaf's creation-time Job membership on Windows.
+  const leafProgram = 'setInterval(() => {},1000);console.log("LEAF_READY", process.pid);';
+  const intermediateProgram = [
+    'const { spawn } = require("child_process");',
+    `const leaf = spawn(process.execPath, ["-e", ${JSON.stringify(leafProgram)}], { detached: process.platform === "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });`,
+    'let output = ""; let ready = false; let errors = "";',
+    'leaf.stderr.on("data", chunk => { errors = (errors + chunk).slice(-2048); });',
+    'const timeout = setTimeout(() => { leaf.kill(); throw new Error("Leaf readiness timed out: " + errors); }, 5000);',
+    'leaf.once("error", error => { clearTimeout(timeout); throw error; });',
+    'leaf.once("exit", (code, signal) => { if (!ready) { clearTimeout(timeout); throw new Error("Leaf ended before readiness: " + code + "/" + signal + " " + errors); } });',
+    'leaf.stdout.on("data", chunk => { output = (output + chunk).slice(-1024); if (!ready && /LEAF_READY \\d+/.test(output)) { ready = true; clearTimeout(timeout); process.kill(leaf.pid,0); console.log("LEAF_READY", leaf.pid); leaf.stdout.destroy(); leaf.stderr.destroy(); leaf.unref(); } });',
+  ].join('\n');
+  fs.writeFileSync(file, [
+    'const { spawn } = require("child_process");',
+    `const intermediate = spawn(process.execPath, ["-e", ${JSON.stringify(intermediateProgram)}], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });`,
+    'let output = ""; let errors = "";',
+    'intermediate.stdout.on("data", chunk => { output = (output + chunk).slice(-1024); process.stdout.write(chunk); });',
+    'intermediate.stderr.on("data", chunk => { errors = (errors + chunk).slice(-2048); });',
+    'intermediate.once("error", error => { throw error; });',
+    'intermediate.once("close", (code, signal) => { if(code !== 0 || !/LEAF_READY \\d+/.test(output)) throw new Error("Intermediate failed: " + code + "/" + signal + " " + errors); console.log("INTERMEDIATE_EXIT", intermediate.pid); setTimeout(() => console.log("LATE_TREE_FINISHED"), 150); });',
+  ].join('\n') + '\n');
+  const started = await call('start', { file }); expect(started.success).toBe(true); await waitForPaused(); expect((await call('resume')).success).toBe(true);
+  let ended = await call('state');
+  for (let attempt = 0; ended.running && attempt < 400; attempt++) { await new Promise(resolve => setTimeout(resolve, 30)); ended = await call('state'); }
+  expect(ended.running).toBe(false); expect(ended.output).toContain('INTERMEDIATE_EXIT'); expect(ended.output).toContain('LATE_TREE_FINISHED');
+  const leafMatch = /LEAF_READY (\d+)/.exec(ended.output || ''); const intermediateMatch = /INTERMEDIATE_EXIT (\d+)/.exec(ended.output || ''); expect(leafMatch).not.toBeNull(); expect(intermediateMatch).not.toBeNull();
+  const leafPid = Number(leafMatch![1]); const intermediatePid = Number(intermediateMatch![1]); expect(() => process.kill(intermediatePid, 0)).toThrow();
+  if (process.platform === 'win32') { expect(ended.cleanupPending).toBe(true); expect(() => process.kill(leafPid, 0)).not.toThrow(); }
+  const stopped = await call('stop'); expect(stopped.success).toBe(true); expect(stopped.cleanupPending).not.toBe(true); expect(() => process.kill(leafPid, 0)).toThrow();
+  console.info(JSON.stringify({ debugLateTreeProof: { leaderPid: started.pid, intermediatePid, intermediateGoneBeforeCompletion: true, leafPid, leafGoneAfterCleanup: true, mechanism: process.platform === 'win32' ? 'retained pre-execution Job' : 'live process-group completion cleanup' } }));
+});
 jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));
