@@ -33,8 +33,8 @@ test.afterEach(async () => { await closeRemainingElectronApps(); });
 async function open(prefix: string) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
-  await waitForAppReady(page);
   await dismissFirstRun(page);
+  await waitForAppReady(page);
   return { app, page };
 }
 

@@ -10,7 +10,7 @@ beforeEach(() => {
       { id: '2', title: 'Alpha chat', createdAt: '2024-01-05T00:00:00Z', updatedAt: '2024-01-05T00:00:00Z', messageCount: 1, pinned: true },
       { id: '3', title: 'Middle chat', createdAt: '2024-01-03T00:00:00Z', updatedAt: '2024-01-08T00:00:00Z', messageCount: 2 },
     ]),
-    deleteConversation: jest.fn(),
+    deleteConversation: jest.fn().mockResolvedValue({ success: true }),
     updateConversation: jest.fn(),
     loadConversation: jest.fn(),
     writeClipboard: jest.fn(),
@@ -21,6 +21,7 @@ beforeEach(() => {
 afterEach(() => { delete (window as any).electron; });
 
 const noop = () => {};
+const acknowledgeDelete = () => ({ success: true });
 
 import ConversationSidebar from '../components/ConversationSidebar';
 
@@ -33,7 +34,7 @@ describe('ConversationSidebar — sort options', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     // Wait for conversations to load
@@ -56,7 +57,7 @@ describe('ConversationSidebar — sort options', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await new Promise(r => setTimeout(r, 50));
@@ -72,7 +73,7 @@ describe('ConversationSidebar — sort options', () => {
         currentConversationId={null}
         onSelectConversation={noop}
         onNewConversation={noop}
-        onDeleteConversation={noop}
+        onDeleteConversation={acknowledgeDelete}
       />
     );
     await new Promise(r => setTimeout(r, 50));

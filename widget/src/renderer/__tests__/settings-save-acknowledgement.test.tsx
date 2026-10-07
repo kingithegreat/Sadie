@@ -30,6 +30,7 @@ beforeEach(() => {
   window.localStorage.clear();
   (ipcRenderer.invoke as jest.Mock).mockReset().mockImplementation(async (channel, value) => {
     if (channel === 'homebot:get-settings') return clone(persisted);
+    if (channel === 'homebot:set-uncensored-mode') return { success: true, enabled: value };
     if (channel === 'homebot:save-settings') {
       if (delaySave) await new Promise<void>(resolve => { finishSave = resolve; });
       if (failSave) return { success: false, error: 'disk read-only' };
@@ -39,7 +40,7 @@ beforeEach(() => {
     return undefined;
   });
   (window as any).electron = {
-    getSettings: bridge.getSettings, saveSettings: bridge.saveSettings,
+    getSettings: bridge.getSettings, saveSettings: bridge.saveSettings, setUncensoredMode: bridge.setUncensoredMode,
     onMessage: jest.fn(() => jest.fn()), checkConnection: jest.fn().mockResolvedValue({ ollama: 'offline', n8n: 'offline' }),
     loadConversations: jest.fn().mockResolvedValue({ success: true, data: [] }),
     getUncensoredMode: jest.fn().mockResolvedValue({ enabled: false }),
@@ -124,7 +125,7 @@ test('setup skip awaits the same actual save bridge, retains first-run on failur
   await act(async () => { render(<App />); });
   await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Skip setup' })); });
   expect(screen.getByText('Welcome to HomeBot')).toBeInTheDocument();
-  expect(screen.getByText(/Could not save setup: disk read-only/)).toBeInTheDocument();
+  expect(screen.getByText(/Could not finish setup: disk read-only/)).toBeInTheDocument();
   expect(persisted.firstRun).toBe(true);
   failSave = false;
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Skip setup' })); });

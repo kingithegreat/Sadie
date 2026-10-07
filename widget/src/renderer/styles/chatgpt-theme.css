@@ -8109,13 +8109,9 @@ body {
    column never swallows clicks meant for the chat underneath. */
 .floating-feature-buttons {
   position: absolute;
-  /* Must clear .input-container, which measures 91px tall with a single-line
-     composer. At the original 90px the lower button overlapped it by 17px â€”
-     which is the collision the responsive pass "fixed" by hiding the whole
-     container. One value at every width, so the three media queries below can
-     no longer drift out of agreement with it; floating-features.e2e asserts
-     the buttons never intersect the composer. */
-  bottom: 120px;
+  /* Chat measures the composer as text, attachments and guidelines change its
+     height. Keep both actions above it; Home uses the compact fallback. */
+  bottom: var(--homebot-composer-clearance, 120px);
   right: 16px;
   display: flex;
   flex-direction: column;

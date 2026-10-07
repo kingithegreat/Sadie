@@ -50,6 +50,130 @@ This is an active implementation claim, not a completion or verification claim.
 This ownership lasts through PR #474 verification, merge and a separately verified
 merged-main test delivery with a release update in the canonical plan. After those
 conditions are met, this entry is a historical work journal and releases the files.
+## 2026-10-07 — FIRST-USER-EASE
+
+Aden requested agents find the best ways to give users what they want and make
+HomeBot easy for a first-time user. Codex root coordinates an isolated branch
+`claude/first-user-ease-20261007`, worktree `.homebot/first-user-20261007`, from
+fresh main `d6635590` after Studio #475. Three read-only audits cover first-run
+setup, task discovery/navigation and request/error recovery. Root owns evidence
+selection, App integration, serial guarded verification, publication and delivery.
+Implementation: first_run_audit owns FirstRunModal and its focused tests/styles;
+discovery_audit owns DashboardPanel/SuggestedPrompts and focused tests;
+intent_recovery_audit owns ChatInterface/InputBox/MessageList/MessageBubble and
+focused tests. Root owns App.tsx wiring, ConversationSidebar acknowledgement,
+renderer attachment-retry guidance and native acceptance. Current #474 diff has
+no overlaps with these renderer files. Audit reports are retained under
+`.homebot/first-user-*-audit.md`; reachable defects include Settings/Studio misrouting, automatic starter
+submission, false connection status and draft/attachment loss. Source corrections
+are underway; no tests/builds have been delegated or counted as run.
+The IDE #474 team retains main/router/preload/workspace and its active claim.
+No actual provider generation/model downloads, credentials or owner profile writes
+are part of this UI audit. Existing accepted test copies remain preserved.
+Checkpoint: local widget TypeScript and scoped lint passed (zero errors, four
+existing warnings). The affected run executed and passed 236 tests in 22 suites;
+the subsequent explicit New/Select failure guards and two new negative tests
+still need the final full check. App navigation/recovery guards include live
+conversation identity, serialized acknowledged activation and a bounded visible
+held-request recovery action. First-run local coding also keeps an installed
+code model or uses the chosen installed chat model. Three external native proof
+spec/helper drafts await root execution against a frozen private compiled runtime.
+Native acceptance, current-head hosted checks/review, merge and delivery remain
+pending. No actual model download, provider-quality or installed-release claim.
+Full-suite checkpoint: 5,088 widget tests passed, 14 failed and 33 existing tests
+were skipped. Seven renderer suites had incomplete conversation IPC fixtures or
+did not load their saved-message fixture before checking retention. After fixing
+the fixtures without relaxing production acknowledgement guards or assertions,
+the seven suites pass all 24 tests with TypeScript. Final full-suite checks remain
+pending; the first full run stopped before root tests and documentation checks.
+Final source checks: widget/root TypeScript, whole-widget lint (zero errors,
+seven existing warnings), all 5,102 widget assertions with 33 existing skips,
+all 232 root tests, and docs drift pass. The full widget run completed its JSON
+results but retained the documented main-process Jest handle; exact-owned cleanup
+was recorded rather than described as natural exit. Hosted CI already uses
+`--forceExit` for that existing limitation. Native acceptance is still pending
+the standing 5 GiB/2 GiB resource floor; current free disk is about 4.08 GiB.
+The local build guard refused launch at that floor. To continue verification,
+root added an opt-in production-path Windows CI lane with the four reviewed
+setup/discovery cases, isolated stores and fixture HTTP, zero retries, captured
+process identities and before/after compiled/dependency hashes. Its supplemental
+TypeScript and runner syntax checks pass. CI execution, visual inspection and
+configured review remain pending. This lane preserves real package identity and
+does not enable production E2E IPC shortcuts; no real provider/download claim.
+Windows run37551972937 built production, proved the real Electron SQLite load
+and executed all four cases without retries. Cloud setup passed; local chat
+cases exposed a too-short fixture reply triggering the existing quality retry,
+and compact discovery failed before capturing process identities. Those harness
+causes are being corrected with retained primary diagnostics and bounded startup
+identity capture. All three setup cases closed without forced cleanup; discovery
+and overall native acceptance remain unqualified. Production UI is unchanged.
+Follow-up run37552790012 captured identities and completed both local setup,
+single-request greeting and persistence assertions. Its final deny classification
+rejected the existing automatic title POST, which stayed blocked before HTTP;
+the next test recognises only that exact owned origin/path/method/chat phase and
+still requires zero actual generate requests. Compact discovery exposed a real
+31px Explore target; root raised its minimum to44px and the acceptance minimum
+to44px. This one CSS correction is the only production change after16149190.
+All four cases closed without forced cleanup, but overall acceptance still awaits
+the fresh run. Supplemental acceptance TypeScript passes; runtime guards unchanged.
+Run37553258955 passes all three setup cases without retries; compact discovery
+proved entry, Home and starter focus plus retained document/text navigation,
+then failed because the560px window squeezed its composer to151px. Root adds a
+narrow-screen full-width text row with controls below. Two stale model hints now
+describe the chosen uncensored model without falsely claiming tools are disabled.
+Widget TypeScript and scoped lint for those hints pass. Fresh compiled/native,
+current-head whole hosted checks, configured review and delivery remain pending.
+Run37553706922 again passes all three setup cases and the narrow composer now
+measures526px wide with Send/attachment controls inside the window. Discovery
+still rejects horizontal overflow. The existing guidelines control is positioned
+36px beyond its wrapper; root moves it into normal flow on narrow screens,
+labels it and explicitly checks its bounds, retaining descendant overflow data.
+The Linux shard3 install failed before tests in onnxruntime-node's external binary
+download (ETIMEDOUT/ENETUNREACH); its log is retained, not counted as a UI result.
+Supplemental acceptance TypeScript passes; fresh whole qualification remains pending.
+Run37554140166 verifies narrow chat scrollWidth560 equals width560 and all composer,
+Send, attachment and guidelines controls fit. Three setup cases pass again.
+The optional activity disclosure needs normal Home scrolling; root's proof now
+scrolls to each secondary disclosure before checking its viewport bounds. Captured
+descendant geometry also shows the joke card extending beyond its clipped message
+container, so narrow daily cards now stack and are bounded to their column.
+Native coverage retains a direct card-clipping regression assertion. All previous
+failed receipts remain preserved; source-agent editing is complete and released to
+root's serial integration, current-head CI/review, final native verification and
+separate delivery. No editing or verification is delegated to an idle agent.
+Run37554602836 passes all four production Windows cases with zero retries and
+strict nonforced closure. Dark/light screenshots nevertheless reveal the camera
+action overlapping Send as the composer grows. Root measures the real composer
+clearance using ResizeObserver and keeps both floating actions above it, with
+cleanup on Home navigation. Native checks now require each main control to be
+topmost at its center and both floating actions to remain outside the composer.
+Previous passing source/native evidence is retained; fresh qualification of this
+additional UI correction, review and separately launchable delivery remain pending.
+Run37555546597 passes all four cases and the new center-click/composer-clearance
+checks. Visual inspection confirms Send is clear but catches the camera touching
+the rightmost starter. Narrow chat/Home content now reserves a gutter for those
+actions; native acceptance checks all four starter bounds/click targets and each
+Home disclosure against floating-button overlap. Fresh qualification remains pending.
+Configured review at732488f6 found four P2 issues: committed turns restored as
+duplicate drafts after navigation, unused New records left in storage, unbounded
+inactive draft attachments, and an incomplete native workflow path filter.
+Root is integrating same-turn Retry recovery after persistence, adopted-ID and
+pending-selection-safe empty-record cleanup with ordered backend/UI adoption,
+eight inactive drafts/128MiB estimated-string retention with refusal rather than
+eviction, and native acceptance on every PR. The first integrated three-suite
+run caught backend reconciliation preceding UI adoption; the ordered adoption
+correction and capacity controls pass all32 affected tests, TypeScript and scoped
+lint. Supplemental cleanup/late Retry-visibility controls are being prepared in
+the released navigation test file by intent_recovery_audit. Root owns all App
+integration, serial broader checks, fresh CI/native/review and delivery. No
+source changes are qualified by the earlier732488f6 native/hosted receipts.
+Frozen review-fix source now passes all262 tests in23 affected suites, both
+TypeScript projects and scoped lint; the native workflow YAML parses and every
+PR is eligible. New controls cover pending selection during cleanup, refusal
+while an unused record is being deleted, and both late Retry-row persistence
+orderings without duplicates. All source/test editing is released to root.
+Fresh compiled native, current-head whole CI/configured review and separately
+launchable merged-main delivery remain pending; original failed receipts retained.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

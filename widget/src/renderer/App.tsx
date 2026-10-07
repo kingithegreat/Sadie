@@ -3,6 +3,11 @@ import UpdateBanner from './components/UpdateBanner';
 import { debug as logDebug } from '../shared/logger';
 import { chatIdeaToJobInput } from '../shared/chat-idea';
 import ChatInterface from "./components/ChatInterface";
+import { createEmptyComposerDraft, mergeComposerAttachments, type ComposerDraft,
+  type ComposerAttachmentBatch, type ComposerAttachmentScope } from './components/InputBox';
+import { prepareInactiveDraftRetention } from './utils/composerDraftBudget';
+import { retainRetryRequest } from './utils/retryRequestBudget';
+import './styles/first-user.css';
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
 import PermissionModal from './components/PermissionModal';
@@ -35,8 +40,7 @@ const NotificationHistory = lazy(() => import("./components/NotificationHistory"
 const DashboardPanel = lazy(() => import("./components/DashboardPanel"));
 const VoiceConversation = lazy(() => import("./components/VoiceConversation"));
 import type {
-  ChatMessage,
-  StreamingState
+  ChatMessage
 } from "./types";
 import type {
   Message as SharedMessage,
@@ -77,6 +81,45 @@ interface PendingModelSuggestion {
   images?: ImageAttachment[] | null;
   documents?: DocumentAttachment[] | null;
   recommendation: ModelRecommendation;
+  scope: SubmissionScope;
+}
+
+interface SubmissionScope {
+  id: string;
+  generation: number;
+  conversationId: string | null;
+  draft: ComposerDraft;
+  retained?: boolean;
+  committed?: boolean;
+  assistantId?: string;
+  creationFlow?: ConversationPromptFlow;
+  creationPending?: boolean;
+}
+
+interface ConversationPromptFlow {
+  generation: number;
+  originConversationId: string | null;
+  conversationId: string | null;
+  prompt: string;
+  revision: number;
+  savedRevision: number;
+  promise: Promise<boolean> | null;
+  predecessor?: Promise<boolean> | null;
+  purpose?: 'draft';
+  hasSubmission?: boolean;
+  pendingSubmissions?: number;
+}
+
+interface StreamReply {
+  conversationId: string;
+  message: ChatMessage;
+  placeholderSaved: Promise<boolean>;
+  terminal: boolean;
+  failed?: boolean;
+  saving: boolean;
+  save: (repair?: boolean) => Promise<void>;
+  finish: (updates: Partial<ChatMessage>) => void;
+  stop: () => void;
 }
 
 const App: React.FC<AppProps> = ({ initialMessages }) => {
@@ -237,7 +280,107 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const [status, setStatus] = useState<Status>({ n8n: 'checking', ollama: 'checking' });
   const [backendDiagnostic, setBackendDiagnostic] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
+  const conversationNavigationRef = useRef(0);
+  const conversationNavigationPreparationRef = useRef(0);
+  const conversationActivationRef = useRef<Promise<void>>(Promise.resolve());
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft>(createEmptyComposerDraft);
+  const composerDraftRef = useRef(composerDraft);
+  composerDraftRef.current = composerDraft;
+  const conversationDraftsRef = useRef(new Map<string, ComposerDraft>());
+  const attachmentGenerationRef = useRef(0);
+  const attachmentDraftGenerationsRef = useRef(new Map<string, number>());
+  const attachmentDraftOwnersRef = useRef(new Map<number, string>());
+  const pendingAttachmentReadsRef = useRef(new Map<number, number>());
+  const [, refreshPendingAttachmentReads] = useState(0);
+  const attachmentGenerationFor = useCallback((key: string) => {
+    let generation = attachmentDraftGenerationsRef.current.get(key);
+    if (generation === undefined) {
+      generation = ++attachmentGenerationRef.current;
+      attachmentDraftGenerationsRef.current.set(key, generation);
+      attachmentDraftOwnersRef.current.set(generation, key);
+    }
+    return generation;
+  }, []);
+  const invalidateAttachmentDraft = useCallback((key: string) => {
+    const generation = attachmentDraftGenerationsRef.current.get(key);
+    if (generation !== undefined) attachmentDraftOwnersRef.current.delete(generation);
+    attachmentDraftGenerationsRef.current.delete(key);
+  }, []);
+  const migrateAttachmentDraft = useCallback((from: string, to: string) => {
+    if (from === to) return;
+    const generation = attachmentDraftGenerationsRef.current.get(from);
+    invalidateAttachmentDraft(to);
+    if (generation === undefined) return;
+    attachmentDraftGenerationsRef.current.delete(from);
+    attachmentDraftGenerationsRef.current.set(to, generation);
+    attachmentDraftOwnersRef.current.set(generation, to);
+  }, [invalidateAttachmentDraft]);
+  const hasPendingNullAttachments = useCallback(() => {
+    const generation = attachmentDraftGenerationsRef.current.get('new');
+    return generation !== undefined && (pendingAttachmentReadsRef.current.get(generation) || 0) > 0;
+  }, []);
+  // Empty inactive scopes without reads have nothing to retain. Never recycle a
+  // generation: late callbacks cannot gain authority on an A → B → A visit.
+  const activeDraftKey = conversationId || 'new';
+  for (const [key, generation] of attachmentDraftGenerationsRef.current) {
+    if (key !== activeDraftKey && !conversationDraftsRef.current.has(key) && !pendingAttachmentReadsRef.current.has(generation)) {
+      attachmentDraftGenerationsRef.current.delete(key);
+      attachmentDraftOwnersRef.current.delete(generation);
+    }
+  }
+  const activeDraftGeneration = attachmentGenerationFor(activeDraftKey);
+  const handleAttachmentReadStart = useCallback((scope: ComposerAttachmentScope) => {
+    pendingAttachmentReadsRef.current.set(scope.generation, (pendingAttachmentReadsRef.current.get(scope.generation) || 0) + 1);
+    refreshPendingAttachmentReads(revision => revision + 1);
+  }, []);
+  const handleAttachmentReadEnd = useCallback((scope: ComposerAttachmentScope) => {
+    const remaining = (pendingAttachmentReadsRef.current.get(scope.generation) || 1) - 1;
+    if (remaining > 0) pendingAttachmentReadsRef.current.set(scope.generation, remaining);
+    else pendingAttachmentReadsRef.current.delete(scope.generation);
+    refreshPendingAttachmentReads(revision => revision + 1);
+  }, []);
+  const handleAttachmentsReady = useCallback((batch: ComposerAttachmentBatch) => {
+    const owner = attachmentDraftOwnersRef.current.get(batch.scope.generation);
+    if (!owner || deletedConversationIdsRef.current.has(owner) || attachmentDraftGenerationsRef.current.get(owner) !== batch.scope.generation) {
+      return { success: false, error: 'That draft was sent, cleared, or deleted while the file was loading. Reattach the file to the draft you want to use.' };
+    }
+    const currentKey = conversationIdRef.current || 'new';
+    if (owner === 'new' && currentKey !== 'new') {
+      return { success: false, error: 'The new draft changed while the file was loading. Reattach the file in the chat you want to use.' };
+    }
+    const previous = owner === currentKey ? composerDraftRef.current
+      : conversationDraftsRef.current.get(owner) || createEmptyComposerDraft();
+    const merged = mergeComposerAttachments(previous, batch);
+    if (!merged.success) return merged;
+    if (owner === currentKey) {
+      composerDraftRef.current = merged.draft;
+      setComposerDraft(merged.draft);
+    } else {
+      const retention = prepareInactiveDraftRetention(conversationDraftsRef.current,
+        { key: owner, draft: merged.draft, activatingKey: currentKey });
+      if (!retention.allowed) return { success: false,
+        error: 'There is not enough room to keep this file in the original chat. Send or clear an unfinished draft, then reattach the file there.' };
+      conversationDraftsRef.current = retention.nextDrafts;
+      addToast('The file is ready in its original chat. Open that chat to review and send it.', 'info', 8000);
+    }
+    return { success: true };
+  }, [addToast]);
+  const knownConversationIdsRef = useRef(new Set<string>());
+  const unusedConversationCleanupRef = useRef(new Set<string>());
+  const deletedConversationIdsRef = useRef(new Set<string>());
+  const retryRequestsRef = useRef(new Map<string, HomeBotRequestWithImages>());
+  const [heldSubmissions, setHeldSubmissions] = useState<SubmissionScope[]>([]);
+  const heldSubmissionsRef = useRef(heldSubmissions);
+  heldSubmissionsRef.current = heldSubmissions;
   const [conversationSystemPrompt, setConversationSystemPrompt] = useState<string>('');
+  const conversationSystemPromptRef = useRef(conversationSystemPrompt);
+  conversationSystemPromptRef.current = conversationSystemPrompt;
+  const conversationPromptFlowRef = useRef<ConversationPromptFlow | null>(null);
+  const pendingConversationPromptsRef = useRef(new Map<string, ConversationPromptFlow>());
+  const conversationPromptWritesRef = useRef(new Map<string, Promise<void>>());
+  const conversationPromptDeletionRef = useRef(new Set<string>());
   const [mode, setMode] = useState<AppMode>('chat');
   // Where the IDE's Back button returns to: the last view of the main
   // interface before Code mode was entered. Chat is the app's starting view.
@@ -301,6 +444,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    // Live replies, pending writes and failed recovery copies own their content
+    // independently of the visible chat. Dispatch caps this set without eviction.
+    const streamRepliesRef = useRef(new Map<string, StreamReply>());
+    const streamReplyReservationsRef = useRef(new Set<string>());
+    // Stop saves immediately and keeps at most eight terminal listeners for a
+    // genuine end confirmation. These markers contain no draft or reply bytes.
+    const stoppedStreamConfirmationsRef = useRef(new Map<string, {
+      conversationId: string; token: symbol; reconciling?: boolean;
+    }>());
+    const [unsavedReplyIds, setUnsavedReplyIds] = useState<string[]>([]);
     // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
     const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -360,9 +513,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           if (mounted && r?.success && r.vramGB) setVramGB(r.vramGB);
         }).catch(() => {});
         if (mounted && convResult?.success && convResult.data) {
+          for (const item of Object.values(convResult.data.conversations || {})) knownConversationIdsRef.current.add(item.id);
           // Always start with a fresh chat — history is accessible via the sidebar
           const newConv = await window.electron.createConversation?.();
           if (newConv?.success && newConv.data) {
+            knownConversationIdsRef.current.add(newConv.data.id);
             setConversationId(newConv.data.id);
             setConversationSystemPrompt(newConv.data.systemPrompt || '');
             try { await window.electron.setActiveConversation?.(newConv.data.id); } catch (e) {}
@@ -371,6 +526,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           // No conversations yet - create first one
           const newConv = await window.electron.createConversation?.();
           if (mounted && newConv?.success && newConv.data) {
+            knownConversationIdsRef.current.add(newConv.data.id);
             setConversationId(newConv.data.id);
           }
         }
@@ -416,6 +572,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         try { subs.unsubscribe(); } catch (e) {}
       }
       streamSubsRef.current.clear();
+      stoppedStreamConfirmationsRef.current.clear();
     };
   }, []);
 
@@ -611,7 +768,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // creating a new conversation without relying on state propagation.
   const persistMessage = useCallback(async (msg: ChatMessage, convIdOverride?: string) => {
     const convId = convIdOverride || conversationId;
-    if (!convId) return;
+    if (!convId) return false;
     try {
       // Map renderer StreamingState to shared type (exclude 'cancelling' which is renderer-only)
       const mappedStreamingState = msg.streamingState === 'cancelling' ? 'cancelled' : msg.streamingState;
@@ -627,19 +784,24 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       try { (window as any).__HOMEBOT_RENDERER_LOGS = (window as any).__HOMEBOT_RENDERER_LOGS || []; (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage conv=${convId} id=${msg.id} len=${String(msg.content).length}`); } catch (e) {}
       const res = await window.electron.addMessage?.(convId, sharedMsg);
       try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage result=${JSON.stringify(res)}`); } catch (e) {}
+      return res?.success === true;
     } catch (err) {
       console.error('Failed to persist message:', err);
       try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage error=${String(err)}`); } catch (e) {}
+      return false;
     }
   }, [conversationId]);
 
   // Helper to update a persisted message
-  const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>) => {
-    if (!conversationId) return;
+  const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>, convIdOverride?: string) => {
+    const convId = convIdOverride || conversationId;
+    if (!convId) return false;
     try {
-      await window.electron.updateMessage?.(conversationId, messageId, updates);
+      const result = await window.electron.updateMessage?.(convId, messageId, updates);
+      return result?.success === true;
     } catch (err) {
       console.error('Failed to update persisted message:', err);
+      return false;
     }
   }, [conversationId]);
 
@@ -666,57 +828,272 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   }, [saveSettings, newId]);
 
   /**
-   * Update per-conversation system prompt and persist it
-   */
-  const updateConversationSystemPrompt = async (prompt: string) => {
-    setConversationSystemPrompt(prompt);
-    let convId = conversationId;
-    if (!convId) {
-      // If no active conversation, create one to persist the system prompt
-      try {
-        const result = await window.electron.createConversation?.();
-        if (result?.success && result.data) {
-          convId = result.data.id;
-          setConversationId(convId);
-          setConversationSystemPrompt(prompt); // Ensure local state has the prompt
-          // Persist active conversation selection
-          try { await window.electron.setActiveConversation?.(convId); } catch (e) {}
-        }
-      } catch (err) {
-        console.error('Failed to create conversation for system prompt:', err);
-        return;
-      }
-    }
-    try {
-      const conv = await window.electron.getConversation?.(convId!);
-      const stored: import('../shared/types').StoredConversation = conv?.data || { id: convId!, title: 'Conversation', messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-      stored.systemPrompt = prompt;
-      await window.electron.saveConversation?.(stored);
-    } catch (err) {
-      console.error('Failed to persist conversation system prompt:', err);
-    }
-  };
-
-  /**
    * Handle creating a new conversation
    */
+  const prepareDraftNavigation = useCallback((destination?: string) => {
+    const result = prepareInactiveDraftRetention(conversationDraftsRef.current, {
+      key: conversationIdRef.current || 'new', draft: composerDraftRef.current, activatingKey: destination,
+    });
+    if (!result.allowed) addToast(result.reason === 'bytes'
+      ? 'These unfinished chats contain too many files to keep while switching. Send a draft or remove some attachments first. Your current draft is kept.'
+      : 'Too many unfinished chats. Send or clear a draft before switching chats. Your current draft is kept.', 'warning', 8000);
+    return result;
+  }, [addToast]);
+
+  const activateConversation = useCallback(async (id: string, generation: number, adopt?: (drafts: Map<string, ComposerDraft>) => void,
+    options?: { preserveCurrentDraft?: boolean }) => {
+    // Serial acknowledgements keep a slower older activation from becoming the
+    // backend's final selection after the newest navigation has completed.
+    const activation = conversationActivationRef.current.then(async () => {
+      if (generation !== conversationNavigationRef.current) return false;
+      const unownedDraft = () => !options?.preserveCurrentDraft && !conversationIdRef.current &&
+        (!!composerDraftRef.current.text || !!composerDraftRef.current.images.length || !!composerDraftRef.current.documents.length ||
+          !!(conversationPromptFlowRef.current?.promise && conversationPromptFlowRef.current.hasSubmission) || hasPendingNullAttachments());
+      const explainUnownedDraft = () => addToast('Your new draft is kept here. Open the destination again so HomeBot can keep it in its own chat before switching.', 'warning', 8000);
+      // A draft may appear after navigation started (including deletion while
+      // a selection read is pending). Never commit it under a synthetic key.
+      if (unownedDraft()) { explainUnownedDraft(); return false; }
+      // Lazy guidelines adoption keeps this exact composer active. It must not
+      // retain a second, inaccessible copy under the old null-ID "new" key.
+      const planRetention = () => prepareDraftNavigation(options?.preserveCurrentDraft ? conversationIdRef.current || 'new' : id);
+      if (!planRetention().allowed) return false;
+      const result = await window.electron.setActiveConversation?.(id);
+      if (result?.success !== true) throw new Error(result?.error || 'Could not open this conversation. Please try again.');
+      const retention = planRetention();
+      if (generation !== conversationNavigationRef.current || !retention.allowed || unownedDraft()) {
+        if (unownedDraft()) explainUnownedDraft();
+        const adopted = conversationIdRef.current;
+        if (adopted && adopted !== id) {
+          const restored = await window.electron.setActiveConversation?.(adopted);
+          if (restored?.success !== true) throw new Error('Could not restore the current conversation.');
+        }
+        return false;
+      }
+      // Commit the adopted renderer identity within this same serial operation,
+      // before cleanup or the next activation can inspect it.
+      adopt?.(retention.nextDrafts);
+      return true;
+    });
+    conversationActivationRef.current = activation.then(() => undefined, () => undefined);
+    return activation;
+  }, [prepareDraftNavigation, addToast, hasPendingNullAttachments]);
+
+  const cleanUnusedConversation = useCallback(async (created: import('../shared/types').StoredConversation) => {
+    const id = created.id;
+    try {
+      if (!knownConversationIdsRef.current.has(id) && id !== conversationIdRef.current && !created.messages.length) {
+        const latest = await window.electron.getConversation?.(id);
+        if (latest?.success && latest.data && latest.data.createdAt === created.createdAt && !latest.data.messages.length &&
+            !knownConversationIdsRef.current.has(id) && id !== conversationIdRef.current) {
+          unusedConversationCleanupRef.current.add(id);
+          try {
+            const removed = await window.electron.deleteConversation?.(id);
+            if (removed?.success !== true) throw new Error('Could not remove the unused conversation.');
+          } finally {
+            unusedConversationCleanupRef.current.delete(id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Could not clean up unused conversation:', error);
+      addToast('HomeBot could not remove an unused empty chat. You can remove it from conversations.', 'warning', 8000);
+    } finally {
+      // createConversation also selects its new record in main. Reconcile at
+      // execution time, after queued acknowledgements, with the adopted UI ID.
+      const reconciliation = conversationActivationRef.current.then(async () => {
+        const adopted = conversationIdRef.current;
+        if (!adopted) return;
+        try {
+          const result = await window.electron.setActiveConversation?.(adopted);
+          if (result?.success !== true) throw new Error(result?.error || 'Active chat was not acknowledged.');
+        } catch (error) {
+          console.error('Could not reconcile active conversation:', error);
+          addToast('HomeBot could not restore the active chat. Open it again from conversations before continuing.', 'error', 0);
+        }
+      });
+      conversationActivationRef.current = reconciliation.then(() => undefined, () => undefined);
+      await reconciliation;
+    }
+  }, [addToast]);
+
+  const getCurrentConversationPromptFlow = useCallback(() => {
+    const flow = conversationPromptFlowRef.current;
+    const owner = conversationIdRef.current;
+    const generation = conversationNavigationRef.current;
+    if (!flow || flow.conversationId !== owner || flow.prompt !== conversationSystemPromptRef.current) return null;
+    if (flow.generation === generation) return flow;
+    // A failed navigation changes the generation but leaves this editor and
+    // adopted identity visible. Rebase without authorizing the older async work.
+    const rebased: ConversationPromptFlow = { ...flow, generation, promise: null,
+      predecessor: flow.promise || flow.predecessor };
+    conversationPromptFlowRef.current = rebased;
+    if (owner && rebased.savedRevision !== rebased.revision) pendingConversationPromptsRef.current.set(owner, rebased);
+    return rebased;
+  }, []);
+
+  const getOrCreateNullConversationFlow = useCallback(() => {
+    const current = getCurrentConversationPromptFlow();
+    if (current) return current;
+    const flow: ConversationPromptFlow = {
+      generation: conversationNavigationRef.current, originConversationId: null, conversationId: null,
+      prompt: conversationSystemPromptRef.current, revision: 0,
+      savedRevision: conversationSystemPromptRef.current ? -1 : 0, promise: null, purpose: 'draft',
+    };
+    conversationPromptFlowRef.current = flow;
+    return flow;
+  }, [getCurrentConversationPromptFlow]);
+
+  const runConversationPromptFlow = useCallback((flow: ConversationPromptFlow): Promise<boolean> => {
+    if (flow.promise) return flow.promise;
+    const current = () => conversationPromptFlowRef.current === flow &&
+      flow.generation === conversationNavigationRef.current && flow.conversationId === conversationIdRef.current;
+    if (!current()) return Promise.resolve(false);
+    if (flow.conversationId && flow.savedRevision === flow.revision) return Promise.resolve(true);
+    flow.promise = (async () => {
+      let created: import('../shared/types').StoredConversation | undefined;
+      try {
+        if (flow.predecessor) {
+          await flow.predecessor;
+          flow.predecessor = null;
+          if (!current()) return false;
+        }
+        if (!flow.conversationId) {
+          const result = await window.electron.createConversation?.();
+          if (!result?.success || !result.data?.id) throw new Error(result?.error || 'Could not create conversation');
+          created = result.data;
+          if (deletedConversationIdsRef.current.has(created.id) || conversationPromptDeletionRef.current.has(created.id)) return false;
+          if (!current()) { await cleanUnusedConversation(created); return false; }
+          const replacement = created;
+          const adopted = await activateConversation(replacement.id, flow.generation, drafts => {
+            if (!current() || deletedConversationIdsRef.current.has(replacement.id) || conversationPromptDeletionRef.current.has(replacement.id)) return;
+            migrateAttachmentDraft(conversationIdRef.current || 'new', replacement.id);
+            conversationDraftsRef.current = drafts;
+            flow.conversationId = replacement.id;
+            pendingConversationPromptsRef.current.set(replacement.id, flow);
+            knownConversationIdsRef.current.add(replacement.id);
+            conversationIdRef.current = replacement.id;
+            setConversationId(replacement.id);
+            conversationSystemPromptRef.current = flow.prompt;
+            setConversationSystemPrompt(flow.prompt);
+            window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
+              detail: { ...replacement, messageCount: replacement.messages?.length || 0 },
+            }));
+          }, { preserveCurrentDraft: true });
+          if (!adopted || flow.conversationId !== replacement.id) { await cleanUnusedConversation(replacement); return false; }
+        }
+        // Only one get/save pair runs at a time. Edits while a read is pending
+        // supersede that read; edits during a save are written next from a fresh record.
+        const owner = flow.conversationId!;
+        // A captured record owns its autosave even after navigation. Only
+        // adoption, UI and error reporting require the current editor scope.
+        const ownsRecord = () => !deletedConversationIdsRef.current.has(owner);
+        const write = (conversationPromptWritesRef.current.get(owner) || Promise.resolve()).then(async () => {
+          while (ownsRecord() && !conversationPromptDeletionRef.current.has(owner) && flow.savedRevision !== flow.revision) {
+            const revision = flow.revision;
+            const result = await window.electron.getConversation?.(flow.conversationId!);
+            if (!ownsRecord()) return false;
+            if (conversationPromptDeletionRef.current.has(owner)) return false;
+            if (revision !== flow.revision) continue;
+            if (!result?.success || !result.data || result.data.id !== flow.conversationId) {
+              throw new Error(result?.error || 'Could not load conversation');
+            }
+            const saved = await window.electron.saveConversation?.({ ...result.data, systemPrompt: flow.prompt });
+            if (saved?.success !== true) throw new Error(saved?.error || 'Could not save conversation guidelines');
+            flow.savedRevision = revision;
+          }
+          if (flow.savedRevision === flow.revision && pendingConversationPromptsRef.current.get(owner) === flow) {
+            pendingConversationPromptsRef.current.delete(owner);
+          }
+          return current() && flow.savedRevision === flow.revision;
+        });
+        const barrier = write.then(() => undefined, () => undefined);
+        conversationPromptWritesRef.current.set(owner, barrier);
+        try { return await write; }
+        finally {
+          if (conversationPromptWritesRef.current.get(owner) === barrier) conversationPromptWritesRef.current.delete(owner);
+        }
+      } catch (error) {
+        console.error('Could not save conversation guidelines:', error);
+        if (created && flow.conversationId !== created.id) await cleanUnusedConversation(created);
+        if (current()) addToast(flow.purpose === 'draft'
+          ? 'Could not open a chat to keep this draft. Your text and attachments are kept. Please try again.'
+          : flow.conversationId
+            ? 'Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.'
+            : 'Could not open a chat for these guidelines. Your edits are kept. Edit them again or retry your message.', 'error', 0);
+        return false;
+      } finally {
+        flow.promise = null;
+      }
+    })();
+    return flow.promise;
+  }, [activateConversation, cleanUnusedConversation, addToast, migrateAttachmentDraft]);
+
+  const updateConversationSystemPrompt = useCallback((prompt: string) => {
+    let flow = getCurrentConversationPromptFlow();
+    const owner = conversationIdRef.current;
+    const generation = conversationNavigationRef.current;
+    // Keep unsaved editor text in memory without evicting another chat's work.
+    const otherPending = [...pendingConversationPromptsRef.current.entries()].filter(([id]) => id !== owner);
+    const bytes = otherPending.reduce((total, [, pending]) => total + pending.prompt.length * 2, prompt.length * 2);
+    if (otherPending.length >= 16 || prompt.length * 2 > 128 * 1024 || bytes > 512 * 1024) {
+      addToast('These guidelines exceed the limit for unsaved edits. Your previous text is kept. Save or shorten existing guidelines before adding more.', 'warning', 0);
+      return;
+    }
+    conversationSystemPromptRef.current = prompt;
+    setConversationSystemPrompt(prompt);
+    if (!flow || flow.generation !== generation || flow.conversationId !== owner) {
+      flow = { generation, originConversationId: owner, conversationId: owner, prompt, revision: 0, savedRevision: -1, promise: null };
+      conversationPromptFlowRef.current = flow;
+    } else {
+      flow.prompt = prompt;
+      flow.revision += 1;
+    }
+    flow.purpose = undefined;
+    if (owner) pendingConversationPromptsRef.current.set(owner, flow);
+    if (!owner || !conversationPromptDeletionRef.current.has(owner)) void runConversationPromptFlow(flow);
+  }, [getCurrentConversationPromptFlow, runConversationPromptFlow, addToast]);
+
   const handleNewConversation = async () => {
+    const preparation = ++conversationNavigationPreparationRef.current;
+    if (!prepareDraftNavigation().allowed) return;
+    if (!conversationIdRef.current && (composerDraftRef.current.text || composerDraftRef.current.images.length ||
+        composerDraftRef.current.documents.length || getCurrentConversationPromptFlow()?.hasSubmission || hasPendingNullAttachments())) {
+      if (!await runConversationPromptFlow(getOrCreateNullConversationFlow())) return;
+      if (preparation !== conversationNavigationPreparationRef.current || !prepareDraftNavigation().allowed) return;
+    }
+    const generation = ++conversationNavigationRef.current;
+    let created: import('../shared/types').StoredConversation | undefined;
     try {
       const result = await window.electron.createConversation?.();
+      if (!result?.success || !result.data) throw new Error(result?.error || 'Could not create conversation');
+      created = result.data;
+      if (generation !== conversationNavigationRef.current) { await cleanUnusedConversation(created); return; }
       if (result?.success && result.data) {
-        setConversationId(result.data.id);
-        setConversationSystemPrompt(result.data.systemPrompt || '');
-        setMessages([]);
-        await window.electron.setActiveConversation?.(result.data.id);
-        window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
-          detail: {
-            ...result.data,
-            messageCount: result.data.messages?.length || 0,
-          }
-        }));
+        const newConversation = result.data;
+        const adopted = await activateConversation(newConversation.id, generation, drafts => {
+          conversationDraftsRef.current = drafts;
+          const nextDraft = createEmptyComposerDraft();
+          composerDraftRef.current = nextDraft;
+          setComposerDraft(nextDraft);
+          knownConversationIdsRef.current.add(newConversation.id);
+          conversationIdRef.current = newConversation.id;
+          setConversationId(newConversation.id);
+          conversationSystemPromptRef.current = newConversation.systemPrompt || '';
+          setConversationSystemPrompt(newConversation.systemPrompt || '');
+          setMessages([]);
+          window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
+            detail: {
+              ...newConversation,
+              messageCount: newConversation.messages?.length || 0,
+            }
+          }));
+        });
+        if (!adopted) await cleanUnusedConversation(created);
       }
     } catch (err) {
       console.error('Failed to create conversation:', err);
+      if (created) await cleanUnusedConversation(created);
+      if (generation === conversationNavigationRef.current) addToast('Could not start a new conversation. Your draft is kept. Please try again.', 'error');
     }
   };
   newConversationRef.current = handleNewConversation;
@@ -725,46 +1102,90 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Handle selecting a different conversation
    */
   const handleSelectConversation = async (id: string, scrollToMessageId?: string) => {
+    if (unusedConversationCleanupRef.current.has(id)) {
+      addToast('This unused chat is being removed. Choose another conversation.', 'warning', 8000);
+      return;
+    }
+    const preparation = ++conversationNavigationPreparationRef.current;
+    if (!prepareDraftNavigation(id).allowed) return;
+    // Protect selection intent before any awaited read can race cleanup.
+    knownConversationIdsRef.current.add(id);
+    if (!conversationIdRef.current && (composerDraftRef.current.text || composerDraftRef.current.images.length ||
+        composerDraftRef.current.documents.length || getCurrentConversationPromptFlow()?.hasSubmission || hasPendingNullAttachments())) {
+      if (!await runConversationPromptFlow(getOrCreateNullConversationFlow())) return;
+      if (preparation !== conversationNavigationPreparationRef.current || !prepareDraftNavigation(id).allowed) return;
+    }
+    const generation = ++conversationNavigationRef.current;
     try {
+      const replyOwners = new Map(Array.from(streamRepliesRef.current.entries())
+        .filter(([, reply]) => reply.conversationId === id));
       const convData = await window.electron.getConversation?.(id);
+      if (generation !== conversationNavigationRef.current) return;
+      if (!convData?.success || !convData.data) throw new Error(convData?.error || 'Could not load conversation');
       if (convData?.success && convData.data) {
-        await window.electron.setActiveConversation?.(id);
+        const selectedConversation = convData.data;
+        await activateConversation(id, generation, drafts => {
+          const nextDraft = id === conversationIdRef.current ? composerDraftRef.current
+            : conversationDraftsRef.current.get(id) || createEmptyComposerDraft();
+          conversationDraftsRef.current = drafts;
+          composerDraftRef.current = nextDraft;
+          setComposerDraft(nextDraft);
 
-        // Convert stored messages to ChatMessage format
-        const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
-          id: m.id ?? newId(),
-          role: m.role as any,
-          content: m.content,
-          createdAt: Date.parse(m.timestamp) || Date.now(),
-          streamingState: (m.streamingState as any) || undefined,
-          error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
-        }));
-        // Viewing a saved reply must preserve its title without another model call.
-        // A conversation with no completed reply can still get its first title.
-        if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
-          (!m.streamingState || m.streamingState === 'finished'))) {
-          titleGeneratedRef.current.add(id);
-        }
-        setConversationId(id);
-        setConversationSystemPrompt(convData.data.systemPrompt || '');
-        setMessages(loadedMsgs);
+          // Convert stored messages to ChatMessage format
+          for (const [messageId, reply] of streamRepliesRef.current) {
+            if (reply.conversationId === id) replyOwners.set(messageId, reply);
+          }
+          const loadedMsgs: ChatMessage[] = selectedConversation.messages.map((m: SharedMessage) => ({
+            id: m.id ?? newId(),
+            role: m.role as any,
+            content: m.content,
+            createdAt: Date.parse(m.timestamp) || Date.now(),
+            streamingState: (m.streamingState as any) || undefined,
+            error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+            ...(replyOwners.get(m.id || '')?.message || {}),
+          }));
+          for (const [messageId, reply] of replyOwners) {
+            if (!loadedMsgs.some(message => message.id === messageId)) loadedMsgs.push({ ...reply.message });
+          }
+          // Viewing a saved reply must preserve its title without another model call.
+          // A conversation with no completed reply can still get its first title.
+          if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
+            (!m.streamingState || m.streamingState === 'finished'))) {
+            titleGeneratedRef.current.add(id);
+          }
+          conversationIdRef.current = id;
+          setConversationId(id);
+          const pendingPrompt = pendingConversationPromptsRef.current.get(id);
+          const selectedPrompt = pendingPrompt ? pendingPrompt.prompt : selectedConversation.systemPrompt || '';
+          if (pendingPrompt) {
+            const restoredFlow = { generation, originConversationId: id, conversationId: id,
+              prompt: selectedPrompt, revision: 0, savedRevision: -1, promise: null };
+            conversationPromptFlowRef.current = restoredFlow;
+            pendingConversationPromptsRef.current.set(id, restoredFlow);
+            addToast('These chat guidelines have not been saved. Your edits are kept; edit them again or send a message to retry.', 'warning');
+          }
+          conversationSystemPromptRef.current = selectedPrompt;
+          setConversationSystemPrompt(selectedPrompt);
+          setMessages(loadedMsgs);
 
-        // Scroll to the target message after render
-        if (scrollToMessageId) {
-          requestAnimationFrame(() => {
-            setTimeout(() => {
-              const el = document.querySelector(`[data-message-id="${scrollToMessageId}"]`);
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el.classList.add('search-flash');
-                setTimeout(() => el.classList.remove('search-flash'), 2000);
-              }
-            }, 100);
-          });
-        }
+          // Scroll to the target message after render
+          if (scrollToMessageId) {
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                const el = document.querySelector(`[data-message-id="${scrollToMessageId}"]`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.classList.add('search-flash');
+                  setTimeout(() => el.classList.remove('search-flash'), 2000);
+                }
+              }, 100);
+            });
+          }
+        });
       }
     } catch (err) {
       console.error('Failed to load conversation:', err);
+      if (generation === conversationNavigationRef.current) addToast('Could not open that conversation. Your draft is kept. Please try again.', 'error');
     }
   };
 
@@ -772,15 +1193,61 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Handle deleting a conversation
    */
   const handleDeleteConversation = async (id: string) => {
+    conversationPromptDeletionRef.current.add(id);
     try {
-      await window.electron.deleteConversation?.(id);
-      
-      // If we deleted the current conversation, create a new one
-      if (id === conversationId) {
-        await handleNewConversation();
+      // Guidelines and reply recovery writes settle before deletion, preventing
+      // a late full-record save or missing-row repair from recreating the record.
+      const promptWrite = conversationPromptWritesRef.current.get(id);
+      if (promptWrite) await promptWrite;
+      const result = await window.electron.deleteConversation?.(id);
+      if (!result?.success) throw new Error(result?.error || 'Could not delete this conversation. Please try again.');
+      conversationDraftsRef.current.delete(id);
+      pendingConversationPromptsRef.current.delete(id);
+      deletedConversationIdsRef.current.add(id);
+      for (const [streamId, confirmation] of stoppedStreamConfirmationsRef.current) {
+        if (confirmation.conversationId !== id) continue;
+        unsubscribeStream(streamId);
+        stoppedStreamConfirmationsRef.current.delete(streamId);
       }
+      invalidateAttachmentDraft(id);
+      setUnsavedReplyIds(previous => previous.filter(streamId => streamRepliesRef.current.get(streamId)?.conversationId !== id));
+      for (const [streamId, reply] of streamRepliesRef.current) {
+        if (reply.conversationId !== id) continue;
+        reply.terminal = true;
+        streamRepliesRef.current.delete(streamId);
+        const subscription = streamSubsRef.current.get(streamId);
+        try { subscription?.unsubscribe(); } catch {}
+        streamSubsRef.current.delete(streamId);
+        const watcher = streamWatchersRef.current.get(streamId);
+        if (watcher) clearTimeout(watcher);
+        streamWatchersRef.current.delete(streamId);
+        try { window.electron.cancelStream?.(streamId); } catch {}
+      }
+      for (const [messageId, request] of retryRequestsRef.current) {
+        if (request.conversation_id === id) retryRequestsRef.current.delete(messageId);
+      }
+      const remainingHeld = heldSubmissionsRef.current.filter(scope => scope.conversationId !== id);
+      heldSubmissionsRef.current = remainingHeld;
+      setHeldSubmissions(remainingHeld);
+      
+      // Clear the deleted conversation only after the backend acknowledges it.
+      // The next message can create its replacement without hiding a failed delete.
+      if (id === conversationIdRef.current) {
+        const nextDraft = createEmptyComposerDraft();
+        composerDraftRef.current = nextDraft;
+        setComposerDraft(nextDraft);
+        setMessages([]);
+        conversationIdRef.current = null;
+        setConversationId(null);
+        conversationSystemPromptRef.current = '';
+        setConversationSystemPrompt('');
+      }
+      return { success: true };
     } catch (err) {
       console.error('Failed to delete conversation:', err);
+      return { success: false, error: err instanceof Error ? err.message : 'Could not delete this conversation. Please try again.' };
+    } finally {
+      conversationPromptDeletionRef.current.delete(id);
     }
   };
 
@@ -796,165 +1263,287 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, []);
 
-  const subscribeToStream = useCallback((streamId: string, assistantId: string) => {
-    // prevent double subscription
+  const subscribeToStream = useCallback((streamId: string, seed: ChatMessage, requestConversationId: string,
+    placeholderSaved: Promise<boolean> = Promise.resolve(true)) => {
+    if (stoppedStreamConfirmationsRef.current.has(streamId)) unsubscribeStream(streamId);
+    stoppedStreamConfirmationsRef.current.delete(streamId);
     if (streamSubsRef.current.has(streamId)) return;
-
+    const stopToken = Symbol(streamId);
+    const assistantId = seed.id;
+    const reply: StreamReply = {
+      conversationId: requestConversationId, message: { ...seed }, placeholderSaved,
+      terminal: false, saving: false, save: async () => {}, finish: () => {}, stop: () => {},
+    };
+    streamRepliesRef.current.set(streamId, reply);
+    setUnsavedReplyIds(previous => previous.filter(id => id !== streamId));
+    const publish = () => {
+      if (deletedConversationIdsRef.current.has(requestConversationId)) return;
+      const snapshot = reply.message;
+      setMessages(previous => conversationIdRef.current !== requestConversationId ? previous
+        : previous.map(message => message.id === assistantId ? { ...message, ...snapshot } : message));
+    };
+    reply.save = async (repair = false) => {
+      if (reply.saving || streamRepliesRef.current.get(streamId) !== reply || deletedConversationIdsRef.current.has(requestConversationId)) return;
+      reply.saving = true;
+      let saved = false;
+      const ownsRecord = () => streamRepliesRef.current.get(streamId) === reply &&
+        !deletedConversationIdsRef.current.has(requestConversationId) && !conversationPromptDeletionRef.current.has(requestConversationId);
+      const write = (conversationPromptWritesRef.current.get(requestConversationId) || Promise.resolve()).then(async () => {
+        const placeholderExists = await reply.placeholderSaved;
+        if (!ownsRecord() || (!placeholderExists && !repair)) return false;
+        if (repair) {
+          // Confirm the chat and inspect an uncertain add acknowledgement before
+          // repairing a row. The deletion barrier also owns this explicit write.
+          const record = await window.electron.getConversation?.(requestConversationId);
+          if (!ownsRecord() || record?.success !== true || record.data?.id !== requestConversationId) return false;
+          if (!record.data.messages.some(message => message.id === assistantId)) return persistMessage(reply.message, requestConversationId);
+        }
+        return updatePersistedMessage(assistantId, {
+          content: reply.message.content,
+          streamingState: reply.message.streamingState === 'cancelling' ? 'cancelled' : reply.message.streamingState,
+          error: !!reply.message.error,
+        }, requestConversationId);
+      });
+      const barrier = write.then(() => undefined, () => undefined);
+      conversationPromptWritesRef.current.set(requestConversationId, barrier);
+      try {
+        saved = await write;
+      } catch (error) {
+        console.error('Could not finish saving the reply:', error);
+      } finally {
+        if (conversationPromptWritesRef.current.get(requestConversationId) === barrier) conversationPromptWritesRef.current.delete(requestConversationId);
+        reply.saving = false;
+        if (streamRepliesRef.current.get(streamId) === reply) {
+          if (saved || deletedConversationIdsRef.current.has(requestConversationId)) {
+            streamRepliesRef.current.delete(streamId);
+            setUnsavedReplyIds(previous => previous.filter(id => id !== streamId));
+          } else {
+            reply.failed = true;
+            setUnsavedReplyIds(previous => previous.includes(streamId) ? previous : [...previous, streamId]);
+            addToast('This reply could not be saved. Open its original chat to copy it or retry saving before closing HomeBot.', 'error', 10000);
+          }
+        }
+      }
+    };
+    reply.finish = updates => {
+      if (reply.terminal) return;
+      reply.terminal = true;
+      const watcher = streamWatchersRef.current.get(streamId);
+      if (watcher) clearTimeout(watcher);
+      streamWatchersRef.current.delete(streamId);
+      reply.message = { ...reply.message, ...updates, updatedAt: Date.now() };
+      publish();
+      if (stoppedStreamConfirmationsRef.current.get(streamId)?.token !== stopToken) unsubscribeStream(streamId);
+      void reply.save();
+    };
+    reply.stop = () => {
+      if (reply.terminal) return;
+      const confirmations = stoppedStreamConfirmationsRef.current;
+      confirmations.set(streamId, { conversationId: requestConversationId, token: stopToken });
+      if (confirmations.size > 8) {
+        const oldestId = confirmations.keys().next().value!;
+        unsubscribeStream(oldestId);
+        confirmations.delete(oldestId);
+      }
+      reply.finish({ streamingState: 'cancelled' });
+    };
+    // Reserve ownership before registering callbacks, including a synchronous end.
+    streamSubsRef.current.set(streamId, { unsubscribe: () => {} });
     const unsubscribe = window.electron.subscribeToStream?.(streamId, {
-      // payload may have an optional streamId coming from the main process listener
       onStreamChunk: (payload: { streamId?: string; chunk: string }) => {
-        setMessages(prev => {
-          return prev.map(m => {
-            if (m.id !== assistantId) return m;
-            if (m.streamingState !== "streaming") return m; // ignore late chunks
-            // If chunk starts with ___REPLACE___, replace the entire content
-            // (used when tool JSON was partially streamed and needs to be cleaned)
-            const replaceMarker = '\n___REPLACE___';
-            if (payload.chunk.startsWith(replaceMarker)) {
-              return {
-                ...m,
-                content: payload.chunk.slice(replaceMarker.length),
-                updatedAt: Date.now(),
-              };
-            }
-            return {
-              ...m,
-              content: m.content + payload.chunk,
-              updatedAt: Date.now(),
-            };
-          });
-        });
+        if (reply.terminal || deletedConversationIdsRef.current.has(requestConversationId)) return;
+        const marker = '\n___REPLACE___';
+        reply.message = { ...reply.message,
+          content: payload.chunk.startsWith(marker) ? payload.chunk.slice(marker.length) : reply.message.content + payload.chunk,
+          updatedAt: Date.now(),
+        };
+        publish();
       },
       onStreamEnd: (payload: { streamId?: string; cancelled?: boolean; model?: string }) => {
-        // Clear any test-only watchdog timer if set
-        try {
-          const t = streamWatchersRef.current.get(streamId);
-          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
-        } catch (e) {}
-        setMessages(prev => {
-          const updated = prev.map(m => {
-            if (m.id !== assistantId) return m;
-
-            const cancelled = !!payload.cancelled;
-            const nextState: StreamingState = cancelled ? "cancelled" : "finished";
-            const durationMs = Date.now() - m.createdAt;
-
-            // A reply that WROTE OUT a tool call instead of making one.
-            //
-            // Reported live: asked to test its tools, HomeBot printed
-            // `<|tool_call_begin|> functions.run_terminal_command …` and then
-            // said "Done", having executed nothing. Being told a job was done
-            // that never started is the worst failure this app has.
-            //
-            // Handled here rather than in the router because every one of the
-            // router's many completion paths funnels through this one place,
-            // and because the raw markup must not reach conversation history —
-            // a later model reads it back and copies the pattern, which is how
-            // a local qwen came to emit Anthropic-shaped markup it would never
-            // invent on its own.
-            const leaked = cancelled ? [] : detectLeakedToolCalls(m.content);
-            const content = leaked.length > 0
-              ? `${stripLeakedToolCalls(m.content)}\n\n⚠️ ${describeLeak(leaked)}`
-              : m.content;
-
-            const updatedMsg = {
-              ...m,
-              content,
-              streamingState: nextState,
-              updatedAt: Date.now(),
-              ...(nextState === "finished" ? { durationMs } : {}),
-              ...(payload.model ? { model: payload.model } : {}),
-            };
-
-            // Persist the final message content
-            if (conversationId) {
-              updatePersistedMessage(assistantId, {
-                content: updatedMsg.content,
-                streamingState: nextState,
-              });
+        if (reply.terminal) {
+          const confirmation = stoppedStreamConfirmationsRef.current.get(streamId);
+          const ownsConfirmation = () => stoppedStreamConfirmationsRef.current.get(streamId)?.token === stopToken &&
+            !deletedConversationIdsRef.current.has(requestConversationId) &&
+            !conversationPromptDeletionRef.current.has(requestConversationId) &&
+            (!streamRepliesRef.current.has(streamId) || streamRepliesRef.current.get(streamId) === reply);
+          if (!confirmation || confirmation.reconciling || !ownsConfirmation()) return;
+          confirmation.reconciling = true;
+          unsubscribeStream(streamId);
+          // This corrects status only: stopped content remains immutable, and a
+          // prior generation cannot replace a same-ID Retry's result.
+          reply.message = { ...reply.message, streamingState: payload.cancelled ? 'cancelled' : 'finished',
+            ...(!payload.cancelled ? { durationMs: Date.now() - reply.message.createdAt } : {}),
+            ...(payload.model ? { model: payload.model } : {}),
+          };
+          publish();
+          try {
+            (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+            (window as any).__e2eEvents.push('homebot:stream-end');
+            if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-end', payload);
+          } catch {}
+          const write = (conversationPromptWritesRef.current.get(requestConversationId) || Promise.resolve()).then(async () => {
+            if (!ownsConfirmation()) return;
+            const saved = await updatePersistedMessage(assistantId, {
+              streamingState: payload.cancelled ? 'cancelled' : 'finished',
+            }, requestConversationId);
+            if (!saved && ownsConfirmation() && !reply.failed) {
+              addToast('Your partial reply is kept, but its final status could not be saved.', 'warning', 10000);
             }
-            
-            return updatedMsg;
           });
-          return updated;
+          const barrier = write.then(() => undefined, () => undefined);
+          conversationPromptWritesRef.current.set(requestConversationId, barrier);
+          void barrier.finally(() => {
+            if (conversationPromptWritesRef.current.get(requestConversationId) === barrier) conversationPromptWritesRef.current.delete(requestConversationId);
+            if (stoppedStreamConfirmationsRef.current.get(streamId)?.token === stopToken) stoppedStreamConfirmationsRef.current.delete(streamId);
+          });
+          return;
+        }
+        const leaked = payload.cancelled ? [] : detectLeakedToolCalls(reply.message.content);
+        const content = leaked.length > 0
+          ? stripLeakedToolCalls(reply.message.content) + '\n\n⚠️ ' + describeLeak(leaked)
+          : reply.message.content;
+        reply.finish({ content, streamingState: payload.cancelled ? 'cancelled' : 'finished',
+          ...(!payload.cancelled ? { durationMs: Date.now() - reply.message.createdAt } : {}),
+          ...(payload.model ? { model: payload.model } : {}),
         });
-        unsubscribeStream(streamId);
-        // E2E: record that stream-end was received
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('homebot:stream-end');
           if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-end', payload);
-        } catch (e) {}
+        } catch {}
       },
       onStreamError: (payload: { streamId?: string; error?: string; message?: string; recoveryHint?: any }) => {
-        // Clear any test-only watchdog timer if set
         try {
-          const t = streamWatchersRef.current.get(streamId);
-          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
-        } catch (e) {}
-        // If the main process included diagnostics, log them and update status
-        try {
-          const diag = (payload as any)?.diagnostic;
-          if (diag) {
-            console.error(`[STREAM ERROR] url=${diag.url} error=${diag.errorText} n8nResponded=${diag.n8nResponded} httpStatus=${diag.httpStatus}`);
-            try { (window as any).homebotCapture?.log(`[Renderer] STREAM ERROR url=${diag.url} status=${diag.httpStatus} n8nResponded=${diag.n8nResponded}`); } catch (e) {}
-            try {
-              setBackendDiagnostic(typeof diag === 'string' ? diag : JSON.stringify(diag, null, 2));
-            } catch (e) { setBackendDiagnostic(String(diag)); }
-            setStatus(prev => ({ ...prev, n8n: 'offline' }));
-          }
-        } catch (e) {}
-
-        // Use the human-readable message from classifyError when available.
-        //
-        // It says "when available" and then did not use it: payload.message is
-        // the RAW internal label — 'Upstream error (n8n unavailable)',
-        // 'Streaming error' — which is what classifyError takes as INPUT, not
-        // what it produces for a reader. Those strings have to keep their
-        // product names because the classifier matches on them, so the friendly
-        // text has to be preferred here instead.
-        const errorText =
-          payload.recoveryHint?.userMessage ||
-          payload.message ||
-          (typeof payload.error === 'string' ? payload.error : undefined) ||
-          'Something went wrong.';
-
-        setMessages(prev => {
-          return prev.map(m => {
-            if (m.id !== assistantId) return m;
-            if (m.streamingState === 'finished' || m.streamingState === 'cancelled') return m;
-            const updatedMsg = {
-              ...m,
-              streamingState: "error" as StreamingState,
-              error: errorText,
-              recoveryHint: payload.recoveryHint || null,
-              updatedAt: Date.now(),
-            };
-            
-            // Persist the error state
-            if (conversationId) {
-              updatePersistedMessage(assistantId, {
-                content: updatedMsg.content,
-                streamingState: "error",
-                error: true,
-              });
+          const diagnostic = (payload as any)?.diagnostic;
+          if (diagnostic) {
+            console.error(`[STREAM ERROR] url=${diagnostic.url} error=${diagnostic.errorText} n8nResponded=${diagnostic.n8nResponded} httpStatus=${diagnostic.httpStatus}`);
+            try { (window as any).homebotCapture?.log(`[Renderer] STREAM ERROR url=${diagnostic.url} status=${diagnostic.httpStatus} n8nResponded=${diagnostic.n8nResponded}`); } catch {}
+            if (!reply.terminal) {
+              setBackendDiagnostic(typeof diagnostic === 'string' ? diagnostic : JSON.stringify(diagnostic, null, 2));
+              setStatus(previous => ({ ...previous, n8n: 'offline' }));
             }
-            
-            return updatedMsg;
-          });
-        });
-        unsubscribeStream(streamId);
-        // E2E: record that stream-error was received
+          }
+        } catch {}
+        if (reply.terminal) return;
+        const error = payload.recoveryHint?.userMessage || payload.message ||
+          (typeof payload.error === 'string' ? payload.error : undefined) || 'Something went wrong.';
+        reply.finish({ streamingState: 'error', error, recoveryHint: payload.recoveryHint || null });
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('homebot:stream-error');
           if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-error', payload);
-        } catch (e) {}
+        } catch {}
       },
     });
+    if (reply.terminal) { try { unsubscribe?.(); } catch {} }
+    else streamSubsRef.current.set(streamId, { unsubscribe: unsubscribe ?? (() => {}) });
+  }, [addToast, unsubscribeStream, updatePersistedMessage, persistMessage]);
 
-    streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
-  }, [unsubscribeStream, conversationId, updatePersistedMessage]);
+  const rememberRetryRequest = useCallback((assistantId: string, request: HomeBotRequestWithImages) => {
+    retainRetryRequest(retryRequestsRef.current, assistantId, request);
+  }, []);
+
+  const releaseSubmissionCreation = useCallback((scope: SubmissionScope) => {
+    streamReplyReservationsRef.current.delete(scope.id);
+    if (!scope.creationPending || !scope.creationFlow) return;
+    scope.creationPending = false;
+    const flow = scope.creationFlow;
+    flow.pendingSubmissions = Math.max(0, (flow.pendingSubmissions || 1) - 1);
+    flow.hasSubmission = flow.pendingSubmissions > 0;
+  }, []);
+  const preserveStoppedSubmission = useCallback((scope: SubmissionScope, message = 'This request was not sent because you changed conversations. Its draft is kept in the original conversation.') => {
+    if (scope.retained) return;
+    scope.retained = true;
+    releaseSubmissionCreation(scope);
+    // Successful deletion includes unsent work from this conversation, even
+    // when an earlier validation finishes after the deletion acknowledgement.
+    if (scope.conversationId && deletedConversationIdsRef.current.has(scope.conversationId)) return;
+    if (scope.committed) {
+      // The user turn is already durable. Restoring it as an unsent draft would
+      // duplicate it on Send; offer Retry against that same turn instead.
+      if (scope.conversationId && scope.assistantId && !deletedConversationIdsRef.current.has(scope.conversationId)) {
+        const recovery: ChatMessage = {
+          id: scope.assistantId, role: 'assistant', createdAt: Date.now(), streamingState: 'error',
+          content: 'Your request is saved here. It was not sent because you changed conversations. Choose Retry to continue.',
+          error: 'Request saved but not sent.',
+        };
+        setMessages(previous => conversationIdRef.current === scope.conversationId ? [...previous, recovery] : previous);
+        void persistMessage(recovery, scope.conversationId).then(saved => {
+          if (!saved) {
+            addToast('Your request is saved, but HomeBot could not save its Retry control. Return to the original chat to review it.', 'error', 0);
+          } else {
+            setMessages(previous => conversationIdRef.current === scope.conversationId && !previous.some(row => row.id === recovery.id)
+              ? [...previous, recovery] : previous);
+          }
+        });
+        addToast('Your request is saved in its original chat. Return there and choose Retry to continue.', 'warning', 8000);
+      }
+      return;
+    }
+    const current = scope.conversationId === conversationIdRef.current;
+    const stored = current ? composerDraftRef.current : conversationDraftsRef.current.get(scope.conversationId || 'new');
+    const recoveryRetention = !current ? prepareInactiveDraftRetention(conversationDraftsRef.current, {
+      key: scope.conversationId || 'new', draft: scope.draft,
+    }) : null;
+    if ((scope.conversationId !== null || current) && (!stored || (!stored.text && !stored.images.length && !stored.documents.length)) &&
+        (current || recoveryRetention?.allowed)) {
+      if (current) {
+        composerDraftRef.current = scope.draft;
+        setComposerDraft(scope.draft);
+      } else {
+        if (recoveryRetention?.allowed) conversationDraftsRef.current = recoveryRetention.nextDrafts;
+      }
+      addToast(message, 'warning', 8000);
+      return;
+    }
+    const size = (item: SubmissionScope) => 2 * (
+      item.draft.text.length + [...item.draft.images, ...item.draft.documents]
+        .reduce((total, attachment) => total + Object.values(attachment).reduce<number>((sum, value) => sum + (typeof value === 'string' ? value.length : 0), 0), 0)
+    );
+    const retained = heldSubmissionsRef.current;
+    if (retained.length >= 8 || size(scope) + retained.reduce((total, item) => total + size(item), 0) > 32 * 1024 * 1024) {
+      addToast('Your earlier request was not sent and the temporary recovery buffer is full. Your newer draft is kept. Reattach the original files and write that earlier request again.', 'error', 0);
+      return;
+    }
+    const next = [...retained, scope];
+    heldSubmissionsRef.current = next;
+    setHeldSubmissions(next);
+    addToast('Your earlier request was not sent. Your newer draft is kept. Return to its conversation and clear or send the newer draft to restore the held request.', 'warning', 8000);
+  }, [addToast, persistMessage, releaseSubmissionCreation]);
+
+  const guardSubmission = useCallback((scope: SubmissionScope) => {
+    const originalFlow = scope.creationFlow || conversationPromptFlowRef.current;
+    const promptFlow = getCurrentConversationPromptFlow();
+    // Lazy guideline creation adopts the same previously empty chat. It is
+    // not explicit navigation, so an already prepared Send still owns it.
+    const owningFlow = originalFlow?.generation === scope.generation ? originalFlow : promptFlow;
+    if (scope.conversationId === null && owningFlow?.generation === scope.generation && owningFlow.originConversationId === null) {
+      scope.creationFlow = owningFlow;
+      if (owningFlow.conversationId) scope.conversationId = owningFlow.conversationId;
+    }
+    if (scope.generation === conversationNavigationRef.current && scope.conversationId === conversationIdRef.current) return true;
+    preserveStoppedSubmission(scope);
+    return false;
+  }, [getCurrentConversationPromptFlow, preserveStoppedSubmission]);
+
+  useEffect(() => {
+    if (pendingModelSuggestion && !guardSubmission(pendingModelSuggestion.scope)) {
+      setPendingModelSuggestion(null);
+    }
+  }, [pendingModelSuggestion, conversationId, guardSubmission]);
+
+  const restoreHeldSubmission = (scope: SubmissionScope) => {
+    const current = composerDraftRef.current;
+    if (current.text || current.images.length || current.documents.length) return;
+    invalidateAttachmentDraft(conversationIdRef.current || 'new');
+    composerDraftRef.current = scope.draft;
+    setComposerDraft(scope.draft);
+    const next = heldSubmissionsRef.current.filter(item => item.id !== scope.id);
+    heldSubmissionsRef.current = next;
+    setHeldSubmissions(next);
+    addToast('Request restored. Review it, then choose Send.', 'info');
+  };
+  const currentHeldSubmission = heldSubmissions.find(item => item.conversationId === conversationId || item.conversationId === null);
 
   const dispatchMessage = useCallback(async (
     text: string,
@@ -962,27 +1551,48 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     images?: ImageAttachment[] | null,
     documents?: DocumentAttachment[] | null,
     modelOverride?: string,
+    submission?: SubmissionScope,
   ) => {
     if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
+    const scope = submission || {
+      id: newId(), generation: conversationNavigationRef.current, conversationId: conversationIdRef.current,
+      draft: { text, images: (images || []).map(image => ({ ...image, id: (image as { id?: string }).id || newId() })), documents: documents || [] },
+    };
+    if (!guardSubmission(scope)) return;
 
-    // Ensure we have an active conversation before persisting messages.
-    // If none exists, create one and use its id for immediate persistence.
-    let activeConvId = conversationId;
-    if (!activeConvId) {
-      try {
-        const created = await window.electron.createConversation?.();
-        if (created?.success && created.data) {
-          activeConvId = created.data.id;
-          setConversationId(activeConvId);
-          setConversationSystemPrompt(created.data.systemPrompt || '');
-          // Persist active conversation selection
-          try { await window.electron.setActiveConversation?.(activeConvId); } catch (e) {}
-        }
-      } catch (e) {
-        console.error('Failed to create conversation before send:', e);
+    // Keep at most eight live/unsaved reply owners without evicting a recovery
+    // copy. A ninth request remains editable until an earlier reply is saved.
+    if (streamRepliesRef.current.size + streamReplyReservationsRef.current.size >= 8) {
+      await Promise.resolve(); // Let the originating composer complete Send's reset.
+      preserveStoppedSubmission(scope, 'Eight replies are still running or waiting to be saved. Finish or save an earlier reply, then send this kept draft again.');
+      return;
+    }
+    streamReplyReservationsRef.current.add(scope.id);
+
+    // Even an older editor scope's already-issued full-record save must finish
+    // before this conversation gains a user turn (including A → B → A).
+    const outstandingPromptWrite = scope.conversationId && conversationPromptWritesRef.current.get(scope.conversationId);
+    if (outstandingPromptWrite) {
+      await outstandingPromptWrite;
+      if (!guardSubmission(scope)) return;
+    }
+    const promptFlow = scope.conversationId ? getCurrentConversationPromptFlow() : getOrCreateNullConversationFlow();
+    if (promptFlow && promptFlow.generation === scope.generation && promptFlow.conversationId === scope.conversationId &&
+        (!promptFlow.conversationId || promptFlow.savedRevision !== promptFlow.revision)) {
+      if (!scope.conversationId) scope.creationFlow = promptFlow;
+      const saved = await runConversationPromptFlow(promptFlow);
+      if (!guardSubmission(scope)) return;
+      if (!saved) {
+        preserveStoppedSubmission(scope, promptFlow.purpose === 'draft'
+          ? 'This request was not sent because HomeBot could not open a conversation. Your draft is kept. Please try again.'
+          : 'This request was not sent because its chat guidelines could not be saved. Your message is kept. Retry after saving the guidelines.');
+        return;
       }
     }
 
+    const activeConvId = scope.conversationId;
+
+    if (!guardSubmission(scope)) return;
     // Add user message
     const userId = newId();
     const userMsg: ChatMessage = {
@@ -994,8 +1604,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         ? { images: images.map(img => ({ url: img.url || img.dataUrl || (img.data ? `data:${img.mimeType || 'image/png'};base64,${img.data}` : ''), filename: img.filename })).filter(i => i.url) }
         : {}),
     };
+    const assistantId = newId();
+    scope.assistantId = assistantId;
+    const streamRequest: HomeBotRequestWithImages & { streamId?: string } = {
+      user_id: 'desktop_user', conversation_id: activeConvId || conversationId || 'default',
+      message: messageText, timestamp: new Date().toISOString(),
+      conversationPrompt: conversationSystemPromptRef.current || undefined, modelOverride,
+      ...(images?.length ? { images, ...(images.length === 1 ? { image: images[0] } : {}) } : {}),
+      ...(documents?.length ? { documents } : {}),
+    };
+    rememberRetryRequest(assistantId, streamRequest);
     setMessages(prev => [...prev, userMsg]);
-    await persistMessage(userMsg, activeConvId ?? undefined);
+    scope.committed = await persistMessage(userMsg, activeConvId ?? undefined);
+    if (!guardSubmission(scope)) return;
 
     if (messages.length === 0 && (activeConvId || conversationId) && text) {
       const cleaned = text
@@ -1008,18 +1629,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const finalTitle = autoTitle.charAt(0).toUpperCase() + autoTitle.slice(1);
       try {
         const convData = await window.electron.getConversation?.(activeConvId || conversationId || '');
+        if (!guardSubmission(scope)) return;
         if (convData?.success && convData.data) {
           await (window as any).electron.saveConversation?.({
             ...convData.data,
             title: finalTitle,
           });
+          if (!guardSubmission(scope)) return;
         }
       } catch (err) {
         console.error('Failed to auto-title conversation:', err);
       }
     }
 
-    const assistantId = newId();
+    if (!guardSubmission(scope)) return;
     const assistantPlaceholder: ChatMessage = {
       id: assistantId,
       role: 'assistant',
@@ -1028,68 +1651,65 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       streamingState: 'streaming'
     };
     setMessages(prev => [...prev, assistantPlaceholder]);
-    persistMessage(assistantPlaceholder, activeConvId ?? undefined);
-    subscribeToStream(assistantId, assistantId);
-
-    const streamRequest: (HomeBotRequestWithImages & { streamId?: string }) = {
-      user_id: 'desktop_user',
-      conversation_id: activeConvId || conversationId || 'default',
-      message: messageText,
-      timestamp: new Date().toISOString(),
-      conversationPrompt: conversationSystemPrompt || undefined,
-      modelOverride,
-    };
-    if (images && images.length > 0) {
-      streamRequest.images = images;
-      if (images.length === 1) streamRequest.image = images[0];
-    }
-    if (documents && documents.length > 0) {
-      streamRequest.documents = documents;
-    }
+    const placeholderSaved = persistMessage(assistantPlaceholder, activeConvId ?? undefined);
+    subscribeToStream(assistantId, assistantPlaceholder, streamRequest.conversation_id, placeholderSaved);
+    streamReplyReservationsRef.current.delete(scope.id);
 
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
       try { (window as any).homebotCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
-      if (process.env.NODE_ENV === 'test') {
+      if (process.env.NODE_ENV === 'test' && streamRepliesRef.current.get(assistantId)?.terminal === false) {
         const timeoutMs = Number(process.env.HOMEBOT_E2E_PROBE_TIMEOUT_MS) || 6000;
         try {
           const t = setTimeout(() => {
             try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
-            updateMessage(assistantId, m => ({ ...m, streamingState: 'error' as StreamingState, error: 'Upstream error (probe timeout)' }));
-            unsubscribeStream(assistantId);
+            streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: 'Upstream error (probe timeout)' });
           }, timeoutMs);
           streamWatchersRef.current.set(assistantId, t);
         } catch (e) {}
       }
     } catch (err: any) {
       console.error(err);
-      updateMessage(assistantId, m => ({
-        ...m,
-        streamingState: 'error',
-        error: err?.message ?? 'Failed to send',
-      }));
+      streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: err?.message ?? 'Failed to send' });
       if (process.env.NODE_ENV === 'test') {
         try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = err; } catch (e) {}
       }
       unsubscribeStream(assistantId);
     }
-  }, [conversationId, conversationSystemPrompt, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage]);
+    releaseSubmissionCreation(scope);
+  }, [conversationId, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage, guardSubmission, preserveStoppedSubmission, rememberRetryRequest, getCurrentConversationPromptFlow, getOrCreateNullConversationFlow, runConversationPromptFlow, releaseSubmissionCreation]);
 
   const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim() ?? '';
     if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
+    invalidateAttachmentDraft(conversationIdRef.current || 'new');
+    const scope: SubmissionScope = {
+      id: newId(), generation: conversationNavigationRef.current, conversationId: conversationIdRef.current,
+      draft: { text: content, images: (images || []).map(image => ({ ...image, id: (image as { id?: string }).id || newId() })), documents: documents || [] },
+    };
+    if (!scope.conversationId) {
+      scope.creationFlow = getOrCreateNullConversationFlow();
+      scope.creationPending = true;
+      scope.creationFlow.pendingSubmissions = (scope.creationFlow.pendingSubmissions || 0) + 1;
+      scope.creationFlow.hasSubmission = true;
+    }
 
     let messageText = text;
+    if (images && images.length > 0) {
+      const imageInfo = images.map(image => `[Image attached: ${image.filename || 'image'}]`).join('\n');
+      messageText = imageInfo + (text ? '\n\n' + text : '\n\nPlease describe this image.');
+    }
     if (documents && documents.length > 0) {
       const docInfo = documents.map(d => `[Document attached: ${d.filename}]`).join('\n');
-      messageText = docInfo + (text ? '\n\n' + text : '\n\nPlease analyze this document.');
+      messageText = docInfo + (messageText ? '\n\n' + messageText : '\n\nPlease analyze this document.');
     }
 
     let modelOverride: string | undefined;
     if (!settings.useCustomLLM) {
       try {
         const res = await window.electron?.listOllamaModels?.();
+        if (!guardSubmission(scope)) return;
         if (res?.success) {
           const modelRoutingMode = settings.modelRoutingMode || 'prompt';
           const recommendation = recommendLocalModelForTask({
@@ -1111,6 +1731,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                 images,
                 documents,
                 recommendation,
+                scope,
               });
               return;
             }
@@ -1132,8 +1753,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         // Keep the request moving even if model inventory lookup fails.
       }
     }
-    await dispatchMessage(text, messageText, images, documents, modelOverride);
-  }, [addToast, dispatchMessage, settings.chatModel, settings.codeModel, settings.modelRoutingMode, settings.useCustomLLM, settings.visionModel]);
+    if (!guardSubmission(scope)) return;
+    await dispatchMessage(text, messageText, images, documents, modelOverride, scope);
+  }, [addToast, dispatchMessage, settings.chatModel, settings.codeModel, settings.modelRoutingMode, settings.useCustomLLM, settings.visionModel, newId, guardSubmission, getOrCreateNullConversationFlow, invalidateAttachmentDraft]);
 
 
   /**
@@ -1155,8 +1777,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (!pendingModelSuggestion) return;
     const pending = pendingModelSuggestion;
     const newModel = pending.recommendation.recommendedModel;
-    const newSettings = { ...settings, chatModel: newModel, useCustomLLM: false };
-    if (!await saveModelSettings(newSettings)) return;
     setPendingModelSuggestion(null);
     await dispatchMessage(
       pending.text,
@@ -1164,15 +1784,35 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       pending.images,
       pending.documents,
       newModel,
+      pending.scope,
     );
-  }, [dispatchMessage, pendingModelSuggestion, settings, saveModelSettings]);
+  }, [dispatchMessage, pendingModelSuggestion]);
 
   const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
     if (idx <= 0) return;
     const prevUser = messages[idx - 1];
     if (!prevUser || prevUser.role !== "user") return;
+    const previousReply = streamRepliesRef.current.get(assistantId);
+    if (previousReply?.saving || stoppedStreamConfirmationsRef.current.get(assistantId)?.reconciling) {
+      addToast('This reply is still being saved. Wait for the save to finish before Retry; its text is kept.', 'warning', 8000);
+      return;
+    }
+    if (previousReply?.failed) {
+      const generation = conversationNavigationRef.current;
+      const owner = conversationIdRef.current;
+      await previousReply.save(true);
+      if (generation !== conversationNavigationRef.current || owner !== conversationIdRef.current ||
+          deletedConversationIdsRef.current.has(previousReply.conversationId)) return;
+      if (streamRepliesRef.current.get(assistantId) === previousReply) return;
+    }
+    if (!streamRepliesRef.current.has(assistantId) && streamRepliesRef.current.size + streamReplyReservationsRef.current.size >= 8) {
+      addToast('Eight replies are still running or waiting to be saved. Finish or save an earlier reply before Retry.', 'warning', 8000);
+      return;
+    }
     const hasDocumentAttachmentMarker = /\[document attached:/i.test(prevUser.content);
+    const hasImageAttachment = !!prevUser.images?.length || /\[image attached:/i.test(prevUser.content);
+    const originalRequest = retryRequestsRef.current.get(assistantId);
 
     // reset assistant bubble
     updateMessage(assistantId, m => ({
@@ -1184,51 +1824,51 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       durationMs: undefined,
     }));
 
-    if (hasDocumentAttachmentMarker) {
+    if ((hasDocumentAttachmentMarker && !originalRequest?.documents?.length) ||
+        (hasImageAttachment && !originalRequest?.images?.length)) {
+      const needsImages = hasImageAttachment && !originalRequest?.images?.length;
       updateMessage(assistantId, m => ({
         ...m,
         streamingState: "error",
-        error: "Document attachments are not preserved for retries. Please reattach the document and send the request again.",
+        error: needsImages
+          ? 'The original image is no longer available for Retry. Reattach it and send the request again.'
+          : 'The original document is no longer available for Retry. Reattach it and send the request again.',
         recoveryHint: {
           service: 'unknown',
-          userMessage: 'This request included a document attachment. Please reattach the document and send it again.',
-          action: 'reattach-document',
-          actionLabel: 'Reattach document',
+          userMessage: needsImages ? 'Reattach the original image and send your request again.' : 'Reattach the original document and send your request again.',
+          action: needsImages ? 'reattach-image' : 'reattach-document',
+          actionLabel: needsImages ? 'Reattach image' : 'Reattach document',
         },
       }));
       return;
     }
 
-    subscribeToStream(assistantId, assistantId);
+    const retryConversationId = originalRequest?.conversation_id || conversationId || 'default';
+    const retrySeed: ChatMessage = { ...messages[idx], content: '', error: null, streamingState: 'streaming',
+      createdAt: Date.now(), durationMs: undefined };
+    subscribeToStream(assistantId, retrySeed, retryConversationId);
 
     try {
       logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
       try { (window as any).homebotCapture?.log(`[Renderer] Retry sending stream request streamId=${assistantId}`); } catch (e) {}
-      await window.electron.sendStreamMessage?.({ streamId: assistantId, user_id: 'desktop_user', conversation_id: conversationId || 'default', message: prevUser.content, timestamp: new Date().toISOString(), images: undefined, retry: true });
+      await window.electron.sendStreamMessage?.({
+        ...(originalRequest || { user_id: 'desktop_user', conversation_id: retryConversationId, message: prevUser.content }),
+        message: prevUser.content,
+        streamId: assistantId,
+        timestamp: new Date().toISOString(),
+        retry: true,
+      });
     } catch (err: any) {
-      updateMessage(assistantId, m => ({
-        ...m,
-        streamingState: "error",
-        error: err?.message ?? "Retry failed",
-      }));
+      streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: err?.message ?? 'Retry failed' });
       unsubscribeStream(assistantId);
     }
-  }, [messages, subscribeToStream, unsubscribeStream, updateMessage, conversationId]);
+  }, [messages, subscribeToStream, unsubscribeStream, updateMessage, conversationId, addToast]);
 
-  // Optimistic cancellation requested by the user in the UI.
   const handleUserCancel = (id: string) => {
-    // Optimistically mark message cancelled in UI
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streamingState: 'cancelled' } : m));
-
-    // Also tear down our local subscription for this stream immediately so
-    // in-flight chunks that still arrive won't be appended to the message.
-    const subs = streamSubsRef.current.get(id);
-    if (subs) {
-      try { subs.unsubscribe(); } catch (e) {}
-    }
-    streamSubsRef.current.delete(id);
-    // Tell main process to cancel the stream as well (best-effort)
-    try { window.electron.cancelStream?.(id); } catch(e) { /* ignore */ }
+    const reply = streamRepliesRef.current.get(id);
+    if (reply) reply.stop();
+    else setMessages(previous => previous.map(message => message.id === id ? { ...message, streamingState: 'cancelled' } : message));
+    try { window.electron.cancelStream?.(id); } catch {}
   };
 
   // Toggle bookmark on a message
@@ -1309,6 +1949,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       pending.images,
       pending.documents,
       undefined,
+      pending.scope,
     );
   }, [dispatchMessage, pendingModelSuggestion]);
 
@@ -1406,6 +2047,22 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
               aria-label="Close"
             >&#x2715;</button>
           </div>
+        </div>
+      )}
+
+      {widgetMode && (
+        <div className="widget-first-task">
+          <button type="button" onClick={async () => {
+            try {
+              const compact = await window.electron?.toggleWidgetMode?.();
+              if (compact !== false) throw new Error('Could not expand HomeBot. Try the Expand button.');
+              setWidgetMode(false);
+              setMode('dashboard');
+            } catch (error) {
+              addToast(error instanceof Error ? error.message : 'Could not expand HomeBot. Please try again.', 'error');
+            }
+          }}>Explore HomeBot</button>
+          <span>Find a place to start.</span>
         </div>
       )}
 
@@ -1555,21 +2212,56 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </div>
       )}
 
+          {unsavedReplyIds.map(id => {
+            const reply = streamRepliesRef.current.get(id);
+            if (!reply) return null;
+            return <div role="alert" className="unsaved-reply-notice" key={id}>
+              <p>This reply could not be saved. Copy it before leaving this chat or closing HomeBot.</p>
+              {reply.conversationId !== conversationId && <button type="button" onClick={() => void handleSelectConversation(reply.conversationId)}>Open chat with unsaved reply</button>}
+              <button type="button" onClick={async () => {
+                const copied = await copyTextToClipboard(reply.message.content);
+                addToast(copied ? 'Unsaved reply copied.' : 'Could not copy this reply. Open its chat to select and copy the text.', copied ? 'info' : 'error');
+              }}>Copy unsaved reply</button>
+              <button type="button" onClick={() => void reply.save(true)}>Retry saving reply</button>
+            </div>;
+          })}
+
       {/* Main Content Area */}
       {mode === 'dashboard' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
           <DashboardPanel
-            onModeChange={(m: string) => setMode(m as AppMode)}
+            onModeChange={setMode}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onStartChat={() => {
+              setMode('chat');
+              requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.chat-interface textarea[aria-label="Message HomeBot"]')?.focus());
+            }}
             onNewConversation={handleNewConversation}
           />
         </Suspense>
       ) : mode === 'chat' ? (
         <ErrorBoundary zone="Chat">
+          {currentHeldSubmission && (
+            <div role="status">
+              <p>An earlier request was held without being sent. Clear or send your current draft to restore it.</p>
+              <button type="button" onClick={() => restoreHeldSubmission(currentHeldSubmission)} disabled={!!composerDraft.text || !!composerDraft.images.length || !!composerDraft.documents.length}>Restore held request</button>
+            </div>
+          )}
           <ChatInterface
             messages={messages}
             onSendMessage={handleSendMessage}
             onUserCancel={handleUserCancel}
             onRetry={retryMessage}
+            onOpenSettings={() => setSettingsOpen(true)}
+            draft={composerDraft}
+            onDraftChange={next => { composerDraftRef.current = next; setComposerDraft(next); }}
+            draftKey={conversationId || 'new'}
+            draftGeneration={activeDraftGeneration}
+            pendingAttachmentReads={pendingAttachmentReadsRef.current.get(activeDraftGeneration) || 0}
+            onAttachmentsReady={handleAttachmentsReady}
+            onAttachmentReadStart={handleAttachmentReadStart}
+            onAttachmentReadEnd={handleAttachmentReadEnd}
+            onAttachmentReadError={message => addToast(message, 'warning', 10000)}
             onBookmark={handleBookmark}
             onReact={handleReact}
             onEdit={handleEdit}
@@ -1823,7 +2515,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             settings={settings as any}
             onSave={async (s) => {
               await saveSettings(s as any);
-              window.dispatchEvent(new CustomEvent('homebot:uncensored-mode-changed', { detail: s.uncensoredMode }));
+              const enabled = !!s.uncensoredMode;
+              try {
+                const applied = await window.electron.setUncensoredMode?.(enabled);
+                if (!applied?.success || applied.enabled !== enabled) throw new Error('Mode acknowledgement missing');
+              } catch {
+                throw new Error('Your choices were saved, but HomeBot could not apply the model mode. Try Finish setup again.');
+              }
+              window.dispatchEvent(new CustomEvent('homebot:uncensored-mode-changed', { detail: enabled }));
             }}
             onClose={() => setFirstRunOpen(false)}
           />
