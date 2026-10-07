@@ -44,15 +44,32 @@ function WriteFixedPhase([string]$phase) {
 }
 WriteFixedPhase 'fixture-entered';$ErrorActionPreference='Stop';$PSModuleAutoLoadingPreference='None';$errors=$null;$tokens=$null;[Management.Automation.Language.Parser]::ParseFile('${(out+'/generated.ps1').replace(/'/g,"''")}',[ref]$tokens,[ref]$errors)|Microsoft.PowerShell.Core\\Out-Null;if($errors.Count){throw 'parse'};WriteFixedPhase 'generated-parsed';[void][Reflection.Assembly]::Load([IO.File]::ReadAllBytes('${dll.replace(/'/g,"''")}'));WriteFixedPhase 'managed-loaded';\n${setupReader}\n`;
 pure+=`WriteFixedPhase 'input-start';[void](ReadSetupLine 8192);[void](ReadSetupLine 64);[void](ReadSetupLine 40);[void](ReadSetupLine 64);$peek=[Console]::In.Peek();$realLine=ReadSetupLine 131072 $true;if($realLine -cne '{"id":1,"operation":"stop"}'){throw 'actual host reader'};[Console]::Out.WriteLine('PASS:actual host bounded Read obtains queued request');\n`;
-for(const c of cases)pure+=`$packet=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(c.packet)}'));[Console]::SetIn([IO.StringReader]::new($packet));$accepted=$false;try{${setupBody};$accepted=$true}catch{[Console]::Out.WriteLine('CONTROL-ERROR:'+$_.Exception.Message)};if($accepted -ne $${c.ok}){throw 'setup control ${c.name}'};[Console]::Out.WriteLine('PASS:setup ${c.name}');\n`;
+// Parse each exact extracted body once, retaining every input/assertion in order.
+pure+=`function TestSetupCase([string]$packet,[bool]$expected,[string]$name) {
+[Console]::SetIn([IO.StringReader]::new($packet));$accepted=$false;try{${setupBody};$accepted=$true}catch{[Console]::Out.WriteLine('CONTROL-ERROR:'+$_.Exception.Message)};if($accepted -ne $expected){throw ('setup control '+$name)};[Console]::Out.WriteLine('PASS:setup '+$name);
+}
+function TestInvalidEnvelope($request,[int]$index) {
+$accepted=$false;try{${envelopeCheck};$accepted=$true}catch{};if($accepted){throw ('envelope '+$index)};[Console]::Out.WriteLine('PASS:managed invalid request '+$index);
+}
+`;
+for(const c of cases){
+ const oversized=c.name==='oversized setup line';
+ if(oversized)assert.equal(c.packet,'x'.repeat(8193)+'\n');
+ const input=oversized?"('x'*8193)+[char]10":`[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(c.packet)}'))`;
+ pure+=`$packet=${input};TestSetupCase $packet $${c.ok} '${c.name}';\n`;
+}
 pure+=`$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(jsonPositive)}'));WriteFixedPhase 'positive-decoded';
 $value=[OwnedWindowsJob]::ParseFrame($json);WriteFixedPhase 'positive-first-parsed';
 if($value.id -isnot [int] -or $value.id -ne 1 -or $value.launch.args[2] -cne 'é🌿'){throw 'types'};WriteFixedPhase 'positive-types-checked';
 $encoded=[OwnedWindowsJob]::EncodeFrame($value);WriteFixedPhase 'positive-encoded';
 $again=[OwnedWindowsJob]::ParseFrame($encoded);WriteFixedPhase 'positive-second-parsed';
 if($again.launch.args[0] -cne '' -or $again.launch.env.RULE -cne 'é'){throw 'roundtrip'};[Console]::Out.WriteLine('PASS:managed typed nested launch roundtrip');\n`;
-for(let i=0;i<negatives.length;i++)pure+=`$line=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(negatives[i])}'));$accepted=$false;try{[void][OwnedWindowsJob]::ParseFrame($line);$accepted=$true}catch{};if($accepted){throw 'negative ${i}'};[Console]::Out.WriteLine('PASS:managed invalid frame ${i}');\n`;
-for(let i=0;i<badEnvelopes.length;i++)pure+=`$request=[OwnedWindowsJob]::ParseFrame([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(JSON.stringify(badEnvelopes[i]))}')));$accepted=$false;try{${envelopeCheck};$accepted=$true}catch{};if($accepted){throw 'envelope ${i}'};[Console]::Out.WriteLine('PASS:managed invalid request ${i}');\n`;
+for(let i=0;i<negatives.length;i++){
+ if(i===8)assert.equal(negatives[i],'x'.repeat(131073));
+ const input=i===8?"('x'*131073)":`[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(negatives[i])}'))`;
+ pure+=`$line=${input};$accepted=$false;try{[void][OwnedWindowsJob]::ParseFrame($line);$accepted=$true}catch{};if($accepted){throw 'negative ${i}'};[Console]::Out.WriteLine('PASS:managed invalid frame ${i}');\n`;
+}
+for(let i=0;i<badEnvelopes.length;i++)pure+=`$request=[OwnedWindowsJob]::ParseFrame([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encode(JSON.stringify(badEnvelopes[i]))}')));TestInvalidEnvelope $request ${i};\n`;
 pure+=`[Console]::SetIn([IO.StringReader]::new(''));if($null -ne (ReadSetupLine 8 $true)){throw 'clean EOF'};[Console]::Out.WriteLine('PASS:clean actual read EOF is distinct from missing setup');$refused=$false;try{[void](ReadSetupLine 8)}catch{$refused=$true};if(!$refused){throw 'missing setup'};[Console]::Out.WriteLine('PASS:missing setup refuses');[Console]::SetIn([IO.StringReader]::new('partial'));$refused=$false;try{[void](ReadSetupLine 8 $true)}catch{$refused=$true};if(!$refused){throw 'truncated request'};[Console]::Out.WriteLine('PASS:truncated request refuses');\n`;
 fs.writeFileSync(out+'/pure.ps1','\uFEFF'+pure);
 // Match the product EncodedCommand host. The immutable large pure fixture stays
