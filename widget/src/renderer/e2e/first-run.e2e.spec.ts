@@ -397,9 +397,9 @@ test.describe('First-run onboarding and config persistence', () => {
     // the very first screen. If these ever revert to a product name, that is a
     // regression to fail on, not an assertion to quietly update.
     //
-    // Scoped to the modal: unscoped, "On this PC" also matches the hardware
-    // toast (see the helper above).
-    await expect(modal.getByText('On this PC')).toBeVisible();
+    // Scope and exact text keep the label distinct from both the hardware
+    // toast and the path's explanatory sentence.
+    await expect(modal.getByText('On this PC', { exact: true })).toBeVisible();
     await expect(modal.getByText('Online', { exact: true })).toBeVisible();
 
     // Complete via local path
