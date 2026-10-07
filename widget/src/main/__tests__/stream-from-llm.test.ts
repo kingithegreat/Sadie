@@ -40,7 +40,7 @@ const mockSettings: Record<string, any> = {
   hideOnBlur: false,
 };
 jest.mock('../config-manager', () => ({
-  getSettings: jest.fn(() => Promise.resolve(mockSettings)),
+  getSettings: jest.fn(() => mockSettings),
   saveSettings: jest.fn(),
 }));
 
@@ -79,6 +79,7 @@ jest.mock('../custom-llm-client', () => ({
 jest.mock('../tools', () => ({
   initializeTools: jest.fn(),
   getSmallModelTools: jest.fn(() => []),
+  getFocusedOllamaTools: jest.fn(() => []),
   getFocusedToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   getAllToolDefinitions: jest.fn(() => [{ type: 'function', function: { name: 'test_tool', parameters: {} } }]),
   executeToolBatch: jest.fn(() => Promise.resolve([{ result: { text: '' } }])),
@@ -86,6 +87,8 @@ jest.mock('../tools', () => ({
 
 // ── Import after all mocks ──────────────────────────────────────────────────
 import { streamFromLLM } from '../message-router';
+import { executeToolBatch } from '../tools';
+import { MemoryManager } from '../memory-manager';
 
 function callbacks() {
   return {
@@ -115,6 +118,8 @@ function resetSettings() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (executeToolBatch as jest.Mock).mockReset().mockResolvedValue([{ result: { text: '' } }]);
+  mockStreamFromCustomLLM.mockReset();
   resetSettings();
   mockValidateCustomLLMConfig.mockReturnValue({ valid: false, error: 'not configured' });
 });
@@ -167,6 +172,23 @@ describe('streamFromLLM', () => {
       expect(typeof handle.cancel).toBe('function');
     });
 
+    test('plain greeting does not give an unoffered tool call an execution callback', async () => {
+      mockStreamFromCustomLLM.mockImplementationOnce(async (...args: any[]) => {
+        args[9]?.({ name: 'read_file', arguments: { path: 'unrequested.txt' } });
+        args[5]();
+        return { cancel: jest.fn() };
+      });
+      const cbs = callbacks();
+      await streamFromLLM('hello', undefined, 'conv-no-offered-tools',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      const args = mockStreamFromCustomLLM.mock.calls[0];
+      expect(args[8]).toBeUndefined();
+      expect(args[9]).toBeUndefined();
+      expect(cbs.onToolCall).not.toHaveBeenCalled();
+      expect(cbs.onToolResult).not.toHaveBeenCalled();
+      expect(cbs.onEnd).toHaveBeenCalledTimes(1);
+    });
+
     test('image attachment ⇒ sends images to cloud LLM', async () => {
       const cbs = callbacks();
       const images = [{ data: 'base64data', mimeType: 'image/png' }];
@@ -207,6 +229,90 @@ describe('streamFromLLM', () => {
       expect(signal.aborted).toBe(true);
     });
 
+    test('multiple custom tool calls yield one complete followup and one terminal end', async () => {
+      (executeToolBatch as jest.Mock).mockImplementation(async (calls: any[]) =>
+        calls[0]?.name === 'read_file'
+          ? [{ success: true, result: 'A' }, { success: true, result: 'B' }]
+          : [{ result: { text: '' } }]);
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[4]('Checking files.');
+        args[9]({ id: 'a', name: 'read_file', arguments: { path: 'a' } });
+        args[9]({ id: 'b', name: 'read_file', arguments: { path: 'b' } });
+        void args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      }).mockImplementationOnce((...args: any[]) => {
+        args[4]('Summary'); args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('read both files', undefined, 'conv-custom-batch',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      const fileBatches = (executeToolBatch as jest.Mock).mock.calls.filter(([calls]) => calls[0]?.name === 'read_file');
+      expect(fileBatches).toHaveLength(1);
+      expect(fileBatches[0][0]).toEqual([
+        { name: 'read_file', arguments: { path: 'a' } },
+        { name: 'read_file', arguments: { path: 'b' } },
+      ]);
+      expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
+      const followup = mockStreamFromCustomLLM.mock.calls[1][1];
+      expect(followup.filter((row: any) => row.role === 'tool')).toEqual([
+        { role: 'tool', content: JSON.stringify({ success: true, result: 'A' }), tool_call_id: 'a' },
+        { role: 'tool', content: JSON.stringify({ success: true, result: 'B' }), tool_call_id: 'b' },
+      ]);
+      expect(cbs.onEnd).toHaveBeenCalledTimes(1);
+      expect(cbs.onError).not.toHaveBeenCalled();
+    });
+
+    test('inline chat guidelines override saved guidelines and survive custom tool synthesis', async () => {
+      mockSettings.chatGuidelines = 'Use short paragraphs.';
+      (MemoryManager.getConversation as jest.Mock).mockReturnValueOnce({ systemPrompt: 'Use a pirate voice.' });
+      (executeToolBatch as jest.Mock).mockImplementation(async (calls: any[]) =>
+        calls[0]?.name === 'read_file' ? [{ success: true, result: 'read' }] : []);
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[9]({ id: 'a', name: 'read_file', arguments: {} }); void args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      }).mockImplementationOnce((...args: any[]) => {
+        args[5](); return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('read my file', undefined, 'cloud-inline-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError, undefined, undefined,
+        { conversationPrompt: 'Answer in te reo Māori.' });
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(2);
+      expect(mockStreamFromCustomLLM.mock.calls[1][1]).toContainEqual({
+        role: 'tool', content: JSON.stringify({ success: true, result: 'read' }), tool_call_id: 'a',
+      });
+      for (const call of mockStreamFromCustomLLM.mock.calls) {
+        expect(call[3]).toContain('## User Guidelines\nUse short paragraphs.\n\nAnswer in te reo Māori.');
+        expect(call[3]).not.toContain('Use a pirate voice.');
+      }
+    });
+
+    test('saved per-chat guidelines are used when no inline prompt is supplied', async () => {
+      (MemoryManager.getConversation as jest.Mock).mockReturnValueOnce({ systemPrompt: 'Answer as a teacher.' });
+      const cbs = callbacks();
+      await streamFromLLM('explain rainbows', undefined, 'cloud-saved-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      expect(mockStreamFromCustomLLM.mock.calls[0][3]).toContain('## User Guidelines\nAnswer as a teacher.');
+    });
+
+    test('a cloud stream error after visible text surfaces without mixing in a local reply', async () => {
+      mockStreamFromCustomLLM.mockImplementationOnce((...args: any[]) => {
+        args[4]('Partial reply');
+        args[6](new Error('Connection interrupted'));
+        args[4]('late'); args[5]();
+        return Promise.resolve({ cancel: jest.fn() });
+      });
+      const cbs = callbacks();
+      await streamFromLLM('explain closures', undefined, 'conv-custom-partial',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      expect(cbs.onChunk.mock.calls.flat()).toEqual(['Partial reply']);
+      expect(cbs.onError).toHaveBeenCalledTimes(1);
+      expect(cbs.onEnd).not.toHaveBeenCalled();
+    });
+
     test('429 from custom LLM surfaces the cloud error instead of falling back to Ollama', async () => {
       mockStreamFromCustomLLM.mockImplementationOnce((
         _message: string,
@@ -242,6 +348,15 @@ describe('streamFromLLM', () => {
       mockSettings.codeApiKey = 'sk-code-test';
       mockSettings.codeApiProvider = 'openai';
       mockSettings.codeModel = 'gpt-4o';
+    });
+
+    test('coding API prompt retains inline per-chat guidelines', async () => {
+      mockValidateCustomLLMConfig.mockReturnValue({ valid: true });
+      const cbs = callbacks();
+      await streamFromLLM('write a python function to sort a list', undefined, 'code-inline-guidelines',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError, undefined, undefined,
+        { conversationPrompt: 'Explain every line for a beginner.' });
+      expect(mockStreamFromCustomLLM.mock.calls[0][3]).toContain('## User Guidelines\nExplain every line for a beginner.');
     });
 
     test('coding query with codeApiKey ⇒ routes to custom LLM (code config)', async () => {

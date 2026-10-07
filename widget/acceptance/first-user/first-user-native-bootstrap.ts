@@ -60,6 +60,9 @@ function stopOwnedProcess(identity: ProcessIdentity) {
 export async function openFirstUserFixture(options: {
   testInfo: TestInfo; firstRun?: boolean; inventory?: 'installed' | 'missing'; entry?: string;
   holdSecondSettingsResponse?: boolean;
+  /** Additive transport fixtures; ordinary first-user cases retain their exact behavior. */
+  chatHandler?: (input: { provider: 'local' | 'custom'; body: any; response: http.ServerResponse }) => void | Promise<void>;
+  customModel?: string;
 }) {
   if (options.holdSecondSettingsResponse) {
     expect(options.firstRun).toBe(true);
@@ -133,6 +136,11 @@ export async function openFirstUserFixture(options: {
       return;
     }
     if (request.method === 'POST' && request.url === '/api/chat' && fixture.phase === 'chat'
+      && data?.model === CHAT_MODEL && data?.stream === true && options.chatHandler) {
+      await options.chatHandler({ provider: 'local', body: data, response });
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/api/chat' && fixture.phase === 'chat'
       && data?.model === CHAT_MODEL && data?.stream === true
       && data?.messages?.filter((message: any) => message.role === 'user').at(-1)?.content === 'Hello') {
       response.setHeader('Content-Type', 'application/x-ndjson');
@@ -162,6 +170,30 @@ export async function openFirstUserFixture(options: {
     return `http://127.0.0.1:${(server.address() as { port: number }).port}`;
   }
   const ollamaUrl = await start(ollama), n8nUrl = await start(n8n);
+  const custom = options.customModel ? http.createServer(async (request, response) => {
+    let data: any;
+    try { data = await body(request); } catch { response.writeHead(400).end(); return; }
+    const record = { method: request.method!, path: request.url!, body: data, phase: fixture.phase };
+    fixture.requests.push(record);
+    if (request.headers.authorization) {
+      fixture.rejected.push(record);
+      response.writeHead(400).end('{"error":"The custom fixture is keyless"}');
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/v1/models') {
+      response.setHeader('Content-Type', 'application/json');
+      response.end(JSON.stringify({ data: [{ id: options.customModel, object: 'model', owned_by: 'disposable-loopback-fixture' }] }));
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/v1/chat/completions' && fixture.phase === 'chat'
+      && data?.model === options.customModel && data?.stream === true && options.chatHandler) {
+      await options.chatHandler({ provider: 'custom', body: data, response });
+      return;
+    }
+    fixture.rejected.push(record);
+    response.writeHead(404).end('{"error":"Unexpected custom fixture request"}');
+  }) : null;
+  const customUrl = custom ? await start(custom) + '/v1' : null;
   const settingsPath = path.join(profile, 'config', 'user-settings.json');
   fs.writeFileSync(settingsPath, JSON.stringify({ firstRun: options.firstRun !== false, uncensoredMode: options.firstRun !== false,
     chatModel: options.firstRun === false ? CHAT_MODEL : 'qwen2.5:7b', theme: 'dark', useCustomLLM: false,
@@ -170,7 +202,7 @@ export async function openFirstUserFixture(options: {
   const guard = path.join(root, 'guard.cjs');
   fs.writeFileSync(guard, `
 const state=globalThis.firstUserGuard={phase:'setup',controls:0,rendererControls:0,allowed:[],denied:[],processAttempts:[],rendererDenied:[]};
-const origins={ollama:${JSON.stringify(ollamaUrl)},n8n:${JSON.stringify(n8nUrl)}};
+const origins={ollama:${JSON.stringify(ollamaUrl)},n8n:${JSON.stringify(n8nUrl)},custom:${JSON.stringify(customUrl ? new URL(customUrl).origin : null)}};
 let control=true;
 function inspect(value,method,protocol){
   let url;
@@ -182,10 +214,10 @@ function inspect(value,method,protocol){
   method=String(method||value?.method||'GET').toUpperCase();
   const entry={method,url:url.href,phase:state.phase};
   if(url.username||url.password||url.search||url.hash)return reject(entry);
-  const basic=method==='GET'&&((url.origin===origins.ollama&&['/','/api/tags','/api/ps'].includes(url.pathname))||(url.origin===origins.n8n&&['/','/healthz'].includes(url.pathname)));
+  const basic=method==='GET'&&((url.origin===origins.ollama&&['/','/api/tags','/api/ps'].includes(url.pathname))||(url.origin===origins.n8n&&['/','/healthz'].includes(url.pathname))||(origins.custom&&url.origin===origins.custom&&url.pathname==='/v1/models'));
   const ping=method==='POST'&&url.origin===origins.n8n&&['/webhook/homebot/calendar','/webhook/homebot/chat','/webhook/homebot/media-research'].includes(url.pathname);
   const pull=method==='POST'&&url.origin===origins.ollama&&url.pathname==='/api/pull'&&state.phase==='pull';
-  const chat=method==='POST'&&url.origin===origins.ollama&&url.pathname==='/api/chat'&&state.phase==='chat';
+  const chat=method==='POST'&&state.phase==='chat'&&((url.origin===origins.ollama&&url.pathname==='/api/chat')||(origins.custom&&url.origin===origins.custom&&url.pathname==='/v1/chat/completions'));
   if(!basic&&!ping&&!pull&&!chat)return reject(entry);
   state.allowed.push(entry);
 }
@@ -344,7 +376,7 @@ if(${options.holdSecondSettingsResponse === true}){
       }
     } finally {
       if (safeToCloseServers) {
-        for (const server of [ollama, n8n]) {
+        for (const server of [ollama, n8n, ...(custom ? [custom] : [])]) {
           const closed = new Promise<void>(resolve => server.close(() => resolve()));
           server.closeAllConnections();
           await closed;
@@ -430,7 +462,7 @@ if(${options.holdSecondSettingsResponse === true}){
         release();
       });
     }
-    return { app, page, fixture, roots, settingsPath, ollamaUrl, setPhase, evidence, close, settingsReadRace, releaseSettingsRead };
+    return { app, page, fixture, roots, settingsPath, ollamaUrl, customUrl, setPhase, evidence, close, settingsReadRace, releaseSettingsRead };
   } catch (error) {
     const failures: unknown[] = [error];
     if (app && options.holdSecondSettingsResponse) {
