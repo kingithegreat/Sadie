@@ -64,6 +64,18 @@ evidence are retained. Independent final read-only review found no blocker.
 Source is frozen again; final-head hosted/native/configured review and delivery
 must finish before this integration claim is released in canonical Drive.
 
+Final review also exposed a rejected save invalidating a newer secondary reply.
+The actual Settings panel reproduction retains the old 32K model despite a
+pending 128K startup reply. Root now tracks in-flight saves separately: both
+startup readers drain the pending-save set before checking authority/lifetime;
+only successful acknowledgements advance model and full-snapshot generations.
+The finally path releases readers after failure without generation rollback.
+Two additional actual App/preload/UI cases prove rejected-save recovery and
+waiting while an acknowledgement is pending. The final four focused suites
+pass all 120 assertions naturally, TypeScript and scoped lint with four existing
+warnings. Independent barrier review found no blocker. Original failures remain
+retained; another current-head qualification is required before release.
+
 ## 2026-10-07 — FIRST-USER-EASE
 
 Aden requested agents find the best ways to give users what they want and make

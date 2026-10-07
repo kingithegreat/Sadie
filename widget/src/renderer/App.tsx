@@ -273,6 +273,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   });
   const settingsMutationGenerationRef = useRef(0);
   const settingsSavedGenerationRef = useRef(0);
+  const pendingSettingsSavesRef = useRef(new Set<Promise<void>>());
   const [isHydrated, setIsHydrated] = useState(false);
   // What the ROUTER says would answer right now — the header displays this,
   // never its own derivation. `settings.chatModel` as the header source is
@@ -507,6 +508,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           window.electron.getSettings(),
           window.electron.loadConversations?.(),
         ]);
+        while (pendingSettingsSavesRef.current.size) {
+          await Promise.all(Array.from(pendingSettingsSavesRef.current));
+        }
         if (mounted && loaded) setSettings(prev => {
           if (bootSaveGeneration !== settingsSavedGenerationRef.current) return prev;
           // A startup fallback or the post-subscription refresh owns its newer
@@ -719,7 +723,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // Re-read settings after subscribing to catch any model fallback that fired before mount
     const settingsRefreshGeneration = settingsMutationGenerationRef.current;
     let settingsRefreshActive = true;
-    window.electron.getSettings?.().then(s => {
+    window.electron.getSettings?.().then(async s => {
+      while (pendingSettingsSavesRef.current.size) {
+        await Promise.all(Array.from(pendingSettingsSavesRef.current));
+      }
       if (settingsRefreshActive && settingsRefreshGeneration === settingsMutationGenerationRef.current && s?.chatModel) {
         settingsMutationGenerationRef.current += 1;
         setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
@@ -829,14 +836,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Save user settings to main process
    */
   const saveSettings = useCallback(async (newSettings: SharedSettings) => {
-    // An earlier read must not restore its model after a newer setup/settings
-    // choice starts saving, including while its acknowledgement is pending.
-    settingsMutationGenerationRef.current += 1;
-    const updated = await window.electron.saveSettings(newSettings);
-    // Only an acknowledged full save owns unrelated settings. A failed save
-    // must still allow the original first-run/theme configuration to hydrate.
-    settingsSavedGenerationRef.current += 1;
-    setSettings(prev => ({ ...prev, ...updated }));
+    // Reads wait for the acknowledgement. A rejected save has not changed
+    // model authority and must still allow valid startup replies to hydrate.
+    let finishSave!: () => void;
+    const pending = new Promise<void>(resolve => { finishSave = resolve; });
+    pendingSettingsSavesRef.current.add(pending);
+    try {
+      const updated = await window.electron.saveSettings(newSettings);
+      settingsMutationGenerationRef.current += 1;
+      settingsSavedGenerationRef.current += 1;
+      setSettings(prev => ({ ...prev, ...updated }));
+    } finally {
+      pendingSettingsSavesRef.current.delete(pending);
+      finishSave();
+    }
   }, []);
 
   const saveModelSettings = useCallback(async (newSettings: SharedSettings) => {
