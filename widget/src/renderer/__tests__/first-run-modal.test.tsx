@@ -1087,7 +1087,7 @@ describe('FirstRunModal — first-user consent, routing and focus', () => {
     expect(screen.queryByText('Ollama is ready!')).toBeNull();
   });
 
-  test('Skip invalidates a pending local download and prevents its verification follow-up', async () => {
+  test('Skip keeps setup mounted until a pending local download and verification finish', async () => {
     const electron = makeMockElectron();
     const pull = deferred<{ success: boolean }>();
     electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
@@ -1097,11 +1097,42 @@ describe('FirstRunModal — first-user consent, routing and focus', () => {
     render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'original' }} onSave={onSave} onClose={onClose} />);
     await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+    expect(screen.getByRole('button', { name: 'Skip setup' })).toBeDisabled();
     await act(async () => { fireEvent.click(screen.getByText('Skip setup')); });
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
     await act(async () => { pull.resolve({ success: true }); });
-    expect(electron.listOllamaModels).toHaveBeenCalledTimes(1);
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: 'Skip setup' })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByText('Skip setup')); });
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'original', firstRun: false }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test.each(['model', 'Ollama'])('a pending setup save prevents starting a %s download before it closes the wizard', async operation => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    if (operation === 'Ollama') {
+      electron.checkConnection.mockResolvedValue({ ollama: 'offline' });
+      electron.checkOllamaInstalled.mockResolvedValue({ installed: false, path: '' });
+    }
+    window.electron = electron as any;
+    const save = deferred<void>();
+    const onSave = jest.fn(() => save.promise), onClose = jest.fn();
+    render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={onClose} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Skip setup' })); });
+    const download = screen.getByRole('button', { name: operation === 'model' ? 'Download AI' : 'Install Ollama automatically' });
+    expect(download).toBeDisabled();
+    fireEvent.click(download);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => { save.resolve(undefined); });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+    expect(electron.downloadOllama).not.toHaveBeenCalled();
   });
 
   test('background Ollama installation reconciles the reentered local path without another installation or model pull', async () => {

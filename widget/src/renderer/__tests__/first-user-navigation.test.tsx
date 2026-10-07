@@ -3,13 +3,14 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from '../App';
 import { resizeImageFile } from '../utils/imageUtils';
+import { COMPOSER_DRAFT_RETENTION_LIMITS } from '../utils/composerDraftBudget';
 import type { Message } from '../../shared/types';
 
 jest.mock('../utils/imageUtils', () => ({ resizeImageFile: jest.fn() }));
 
 const PHOTO_DATA = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0u8AAAAASUVORK5CYII=';
 
-type Conversation = { id: string; title: string; messages: Message[]; createdAt: string; updatedAt: string; messageCount: number };
+type Conversation = { id: string; title: string; messages: Message[]; createdAt: string; updatedAt: string; messageCount: number; systemPrompt?: string };
 type ConversationReply = { success: boolean; data?: Conversation };
 type Ack = { success: boolean; error?: string };
 
@@ -51,6 +52,15 @@ function persistRow(id: string, message: Message): Ack {
   return { success: true };
 }
 
+function copyRecord(record: Conversation): Conversation {
+  return { ...record, messages: record.messages.map(message => ({ ...message })) };
+}
+
+function saveRecord(record: Conversation): Ack {
+  conversations.set(record.id, copyRecord(record));
+  return { success: true };
+}
+
 beforeEach(() => {
   conversations = new Map(['A', 'B', 'C', 'D'].map(id => [id, conversation(id)]));
   backendActive = null;
@@ -66,7 +76,10 @@ beforeEach(() => {
     listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:7b' }] }),
     loadConversations: jest.fn(async () => ({ success: true, data: { conversations: Array.from(conversations.values()) } })),
     createConversation: jest.fn().mockResolvedValue({ success: true, data: conversations.get('A') }),
-    getConversation: jest.fn(async (id: string) => ({ success: conversations.has(id), data: conversations.get(id) })),
+    getConversation: jest.fn(async (id: string) => {
+      const record = conversations.get(id);
+      return { success: !!record, data: record ? copyRecord(record) : undefined };
+    }),
     setActiveConversation: jest.fn(async (id: string) => activate(id)),
     deleteConversation: jest.fn(async (id: string) => {
       conversations.delete(id);
@@ -80,7 +93,7 @@ beforeEach(() => {
       Object.assign(row, updates);
       return { success: true };
     }),
-    saveConversation: jest.fn().mockResolvedValue({ success: true }),
+    saveConversation: jest.fn(async (record: Conversation) => saveRecord(record)),
     sendStreamMessage: jest.fn().mockResolvedValue(undefined),
     subscribeToStream: jest.fn(() => jest.fn()),
     onMessage: jest.fn(() => jest.fn()),
@@ -123,6 +136,26 @@ async function choose(id: string) {
 async function expectActive(id: string) {
   await waitFor(() => expect(backendActive).toBe(id));
   expect(await screen.findByText(`Saved reply from ${id}.`)).toBeInTheDocument();
+}
+
+function editGuidelines(prompt: string) {
+  if (!screen.queryByRole('textbox', { name: 'Conversation system prompt' })) {
+    fireEvent.click(screen.getByRole('button', { name: 'Set chat guidelines' }));
+  }
+  fireEvent.change(screen.getByRole('textbox', { name: 'Conversation system prompt' }), { target: { value: prompt } });
+}
+
+async function deleteA() {
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Conversation A' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+}
+
+async function deleteActiveA() {
+  await deleteA();
+  await act(async () => {});
+  expect(conversations.has('A')).toBe(false);
+  expect(backendActive).toBeNull();
 }
 
 async function fillInactiveDraftCapacity() {
@@ -736,6 +769,459 @@ test('a committed send paused at its title lookup creates a Retry row in A rathe
   expect(conversations.get('A')!.messages.filter(row => row.role === 'user')).toEqual([committedUser]);
   act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
 });
+
+test('rapid guideline edits after acknowledged deletion share one replacement and save the latest edit after activation acknowledgement', async () => {
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  const activation = deferred<Ack>();
+  let created!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { created = createEmptyConversation('guideline-replacement'); return creation.promise; });
+  bridge.setActiveConversation.mockImplementationOnce((id: string) => activation.promise.then(reply => { if (reply.success) activate(id); return reply; }));
+  editGuidelines('First edit');
+  editGuidelines('Second edit');
+  editGuidelines('Latest edit before creation');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  await act(async () => { creation.resolve({ success: true, data: created }); });
+  await waitFor(() => expect(bridge.setActiveConversation).toHaveBeenCalledWith(created.id));
+  expect(bridge.saveConversation).not.toHaveBeenCalled();
+  editGuidelines('Latest edit during activation');
+  await act(async () => { activation.resolve({ success: true }); });
+  await waitFor(() => expect(conversations.get(created.id)?.systemPrompt).toBe('Latest edit during activation'));
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Latest edit during activation');
+  expect(conversations.has('A')).toBe(false);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('guideline adoption keeps the same nonempty composer and document recoverable without a null-ID ghost draft', async () => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Keep this same-chat request.');
+  await attach('same-chat-guidelines.txt');
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('same-composer') }));
+  editGuidelines('Guidelines for the same composer.');
+  await waitFor(() => expect(conversations.get('same-composer')?.systemPrompt).toBe('Guidelines for the same composer.'));
+  expect(inputValue()).toBe('Keep this same-chat request.');
+  expect(screen.getByText('same-chat-guidelines.txt')).toBeInTheDocument();
+  await choose('B');
+  await expectActive('B');
+  await choose('same-composer');
+  await waitFor(() => expect(backendActive).toBe('same-composer'));
+  expect(inputValue()).toBe('Keep this same-chat request.');
+  expect(screen.getByText('same-chat-guidelines.txt')).toBeInTheDocument();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('guideline adoption at eight inactive drafts adds no inaccessible new-key draft and retained chats remain recoverable', async () => {
+  await fillInactiveDraftCapacity();
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Conversation budget-7' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+  await waitFor(() => expect(backendActive).toBeNull());
+  typeDraft('Same active composer at full inactive capacity.');
+  await attach('full-capacity-guidelines.txt');
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('full-capacity-guidelines') }));
+  editGuidelines('Keep these guidelines without retaining the active composer twice.');
+  await waitFor(() => expect(conversations.get('full-capacity-guidelines')?.systemPrompt).toBe('Keep these guidelines without retaining the active composer twice.'));
+  expect(backendActive).toBe('full-capacity-guidelines');
+  expect(inputValue()).toBe('Same active composer at full inactive capacity.');
+  expect(screen.getByText('full-capacity-guidelines.txt')).toBeInTheDocument();
+  expect(screen.queryByText('Too many unfinished chats. Send or clear a draft before switching chats. Your current draft is kept.')).toBeNull();
+  typeDraft('');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove full-capacity-guidelines.txt' }));
+  await choose('budget-0');
+  await expectActive('budget-0');
+  expect(inputValue()).toBe('Retained budget-0 request.');
+  const creates = bridge.createConversation.mock.calls.length;
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('no-ghost-capacity') }));
+  fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  await waitFor(() => expect(backendActive).toBe('no-ghost-capacity'));
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates + 1);
+  await choose('budget-1');
+  await expectActive('budget-1');
+  expect(inputValue()).toBe('Retained budget-1 request.');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('guideline adoption exempts active attachment bytes while ordinary New still enforces inactive byte capacity', async () => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Active bytes stay in this composer.');
+  await attach('active-byte-guidelines.txt');
+  const limits = COMPOSER_DRAFT_RETENTION_LIMITS as { maxEstimatedBytes: number };
+  const originalLimit = limits.maxEstimatedBytes;
+  // Exercise the real App retention branch with ordinary file bytes, without
+  // allocating a production-sized 128 MiB fixture in the test runner.
+  limits.maxEstimatedBytes = 64;
+  try {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('active-byte-guidelines') }));
+    editGuidelines('Keep the same active attachment bytes.');
+    await waitFor(() => expect(conversations.get('active-byte-guidelines')?.systemPrompt).toBe('Keep the same active attachment bytes.'));
+    expect(inputValue()).toBe('Active bytes stay in this composer.');
+    expect(screen.getByText('active-byte-guidelines.txt')).toBeInTheDocument();
+    const creates = bridge.createConversation.mock.calls.length;
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    expect(bridge.createConversation).toHaveBeenCalledTimes(creates);
+    expect(await screen.findByText('These unfinished chats contain too many files to keep while switching. Send a draft or remove some attachments first. Your current draft is kept.')).toBeInTheDocument();
+    expect(backendActive).toBe('active-byte-guidelines');
+  } finally {
+    limits.maxEstimatedBytes = originalLimit;
+  }
+});
+
+test.each(['New', 'Select'])('failed %s keeps unsaved current A guidelines eligible for Send retry', async navigation => {
+  await mountReady();
+  bridge.saveConversation.mockResolvedValueOnce({ success: false, error: 'Fixture save refused.' });
+  editGuidelines('Retry these exact current A guidelines.');
+  await screen.findByText('Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.');
+  if (navigation === 'New') {
+    bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture New refused.' });
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    await screen.findByText('Could not start a new conversation. Your draft is kept. Please try again.');
+  } else {
+    bridge.getConversation.mockResolvedValueOnce({ success: false, error: 'Fixture Select refused.' });
+    await choose('B');
+    await screen.findByText('Could not open that conversation. Your draft is kept. Please try again.');
+  }
+  typeDraft('Send the request after failed navigation.');
+  await attach('failed-navigation-guidelines.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('A');
+  expect(request.conversationPrompt).toBe('Retry these exact current A guidelines.');
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'failed-navigation-guidelines.txt', data: btoa('Exact bytes for failed-navigation-guidelines.txt') }));
+  expect(conversations.get('A')?.systemPrompt).toBe('Retry these exact current A guidelines.');
+  // The new user turn also saves its automatic title after the guideline retry.
+  expect(bridge.saveConversation.mock.calls.filter(([record]) => record.title === 'Conversation A')).toHaveLength(2);
+  expect(backendActive).toBe('A');
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test.each(['New', 'Select'])('failed %s during null-editor creation preserves latest guidelines and sends only through their replacement', async navigation => {
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  let unused!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { unused = createEmptyConversation('stale-null-guidelines'); return creation.promise; });
+  editGuidelines('First pending null-editor guidelines.');
+  // Select exercises a direct Send retry with no edit after the failed switch;
+  // New exercises an additional edit while the old creation is still pending.
+  if (navigation === 'Select') editGuidelines('Latest null-editor guidelines.');
+  if (navigation === 'New') {
+    bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture New refused.' });
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    await screen.findByText('Could not start a new conversation. Your draft is kept. Please try again.');
+  } else {
+    bridge.getConversation.mockResolvedValueOnce({ success: false, error: 'Fixture Select refused.' });
+    await choose('B');
+    await screen.findByText('Could not open that conversation. Your draft is kept. Please try again.');
+  }
+  const createsBeforeRetry = bridge.createConversation.mock.calls.length;
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('rebased-null-guidelines') }));
+  if (navigation === 'New') editGuidelines('Latest null-editor guidelines.');
+  typeDraft('Send only with my latest guidelines.');
+  await attach('null-editor-guidelines.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  expect(bridge.createConversation).toHaveBeenCalledTimes(createsBeforeRetry);
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await act(async () => { creation.resolve({ success: true, data: unused }); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('rebased-null-guidelines');
+  expect(request.conversationPrompt).toBe('Latest null-editor guidelines.');
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'null-editor-guidelines.txt', data: btoa('Exact bytes for null-editor-guidelines.txt') }));
+  expect(conversations.get('rebased-null-guidelines')?.systemPrompt).toBe('Latest null-editor guidelines.');
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Latest null-editor guidelines.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(createsBeforeRetry + 1);
+  expect(bridge.setActiveConversation).not.toHaveBeenCalledWith(unused.id);
+  expect(bridge.deleteConversation).toHaveBeenCalledWith(unused.id);
+  expect(conversations.has(unused.id)).toBe(false);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test('successful navigation still invalidates a rebased null-editor request awaiting its older creation', async () => {
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  let unused!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { unused = createEmptyConversation('unused-rebased-guidelines'); return creation.promise; });
+  editGuidelines('Old pending guidelines.');
+  bridge.getConversation.mockResolvedValueOnce({ success: false, error: 'Fixture Select refused.' });
+  await choose('B');
+  await screen.findByText('Could not open that conversation. Your draft is kept. Please try again.');
+  editGuidelines('Rebased guidelines that still belong to the original editor.');
+  typeDraft('Original editor request.');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await choose('B');
+  await expectActive('B');
+  typeDraft('Keep the successfully selected B draft.');
+  await act(async () => { creation.resolve({ success: true, data: unused }); });
+  await waitFor(() => expect(conversations.has(unused.id)).toBe(false));
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(backendActive).toBe('B');
+  expect(inputValue()).toBe('Keep the successfully selected B draft.');
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('');
+});
+
+test('Send during guideline creation uses that same acknowledged replacement, its latest guidelines and unchanged document bytes', async () => {
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  let created!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { created = createEmptyConversation('guideline-send'); return creation.promise; });
+  editGuidelines('Initial guidelines');
+  typeDraft('Summarize the original notes.');
+  await attach('guideline-notes.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  editGuidelines('Use these latest guidelines.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  await act(async () => { creation.resolve({ success: true, data: created }); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe(created.id);
+  expect(request.conversationPrompt).toBe('Use these latest guidelines.');
+  expect(request.message).toBe('[Document attached: guideline-notes.txt]\n\nSummarize the original notes.');
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'guideline-notes.txt', data: btoa('Exact bytes for guideline-notes.txt') }));
+  expect(conversations.get(created.id)?.systemPrompt).toBe('Use these latest guidelines.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.setActiveConversation).toHaveBeenCalledWith(created.id);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test('navigation during replacement guideline creation cannot adopt the stale chat or replace B guidelines and draft', async () => {
+  conversations.get('B')!.systemPrompt = 'Saved B guidelines.';
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  let created!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { created = createEmptyConversation('unused-guideline'); return creation.promise; });
+  editGuidelines('Guidelines for the pending replacement.');
+  await choose('B');
+  await expectActive('B');
+  typeDraft('Keep B words.');
+  await attach('keep-b-guidelines.txt');
+  await act(async () => { creation.resolve({ success: true, data: created }); });
+  await waitFor(() => expect(conversations.has(created.id)).toBe(false));
+  expect(backendActive).toBe('B');
+  expect(bridge.setActiveConversation).not.toHaveBeenCalledWith(created.id);
+  expect(bridge.saveConversation).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Saved B guidelines.');
+  expect(inputValue()).toBe('Keep B words.');
+  expect(screen.getByText('keep-b-guidelines.txt')).toBeInTheDocument();
+});
+
+test.each(['create', 'activate'])('failed guideline replacement %s keeps the acknowledged deletion and latest edits, then retries safely', async failure => {
+  await mountReady();
+  await deleteActiveA();
+  if (failure === 'create') bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture creation unavailable.' });
+  else {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('refused-guideline') }));
+    bridge.setActiveConversation.mockResolvedValueOnce({ success: false, error: 'Fixture activation unavailable.' });
+  }
+  editGuidelines('Keep these unsaved guidelines.');
+  await screen.findByText('Could not open a chat for these guidelines. Your edits are kept. Edit them again or retry your message.');
+  expect(conversations.has('A')).toBe(false);
+  expect(backendActive).toBeNull();
+  expect(bridge.saveConversation).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Keep these unsaved guidelines.');
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('retried-guideline') }));
+  editGuidelines('Keep these latest retried guidelines.');
+  await waitFor(() => expect(conversations.get('retried-guideline')?.systemPrompt).toBe('Keep these latest retried guidelines.'));
+  expect(backendActive).toBe('retried-guideline');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(3);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('guideline reads and saves are serialized so older replies cannot overwrite later edits', async () => {
+  await mountReady();
+  const lookup = deferred<ConversationReply>();
+  const write = deferred<Ack>();
+  bridge.getConversation.mockReturnValueOnce(lookup.promise);
+  bridge.saveConversation.mockImplementationOnce((record: Conversation) => write.promise.then(reply => { if (reply.success) saveRecord(record); return reply; }));
+  editGuidelines('Old edit');
+  await waitFor(() => expect(bridge.getConversation).toHaveBeenCalledTimes(1));
+  editGuidelines('Later edit before lookup returns');
+  expect(bridge.getConversation).toHaveBeenCalledTimes(1);
+  await act(async () => { lookup.resolve({ success: true, data: copyRecord(conversations.get('A')!) }); });
+  await waitFor(() => expect(bridge.saveConversation).toHaveBeenCalledTimes(1));
+  expect(bridge.saveConversation.mock.calls[0][0].systemPrompt).toBe('Later edit before lookup returns');
+  const readsDuringSave = bridge.getConversation.mock.calls.length;
+  editGuidelines('Newest edit while save awaits');
+  expect(bridge.getConversation).toHaveBeenCalledTimes(readsDuringSave);
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(1);
+  await act(async () => { write.resolve({ success: true }); });
+  await waitFor(() => expect(conversations.get('A')?.systemPrompt).toBe('Newest edit while save awaits'));
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Newest edit while save awaits');
+});
+
+test('Send waits for an existing guideline snapshot and save so that snapshot cannot remove the new user turn', async () => {
+  await mountReady();
+  const lookup = deferred<ConversationReply>();
+  const write = deferred<Ack>();
+  const captured = copyRecord(conversations.get('A')!);
+  bridge.getConversation.mockReturnValueOnce(lookup.promise);
+  bridge.saveConversation.mockImplementationOnce((record: Conversation) => write.promise.then(reply => { if (reply.success) saveRecord(record); return reply; }));
+  editGuidelines('Guidelines saved before this message.');
+  await waitFor(() => expect(bridge.getConversation).toHaveBeenCalledTimes(1));
+  typeDraft('Send the original request after the guidelines.');
+  await attach('ordered-guidelines.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await act(async () => { lookup.resolve({ success: true, data: captured }); });
+  await waitFor(() => expect(bridge.saveConversation).toHaveBeenCalledTimes(1));
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await act(async () => { write.resolve({ success: true }); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('A');
+  expect(request.conversationPrompt).toBe('Guidelines saved before this message.');
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'ordered-guidelines.txt', data: btoa('Exact bytes for ordered-guidelines.txt') }));
+  expect(conversations.get('A')!.messages.filter(message => message.role === 'user')).toEqual([expect.objectContaining({ content: request.message })]);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test('an A guideline read finishing after navigation saves only A and preserves B guidelines and draft', async () => {
+  conversations.get('B')!.systemPrompt = 'Saved B guidelines.';
+  await mountReady();
+  const lookup = deferred<ConversationReply>();
+  const captured = copyRecord(conversations.get('A')!);
+  bridge.getConversation.mockReturnValueOnce(lookup.promise);
+  editGuidelines('Captured A guidelines.');
+  await waitFor(() => expect(bridge.getConversation).toHaveBeenCalledTimes(1));
+  await choose('B');
+  await expectActive('B');
+  typeDraft('Current B request.');
+  await attach('current-b-guidelines.txt');
+  await act(async () => { lookup.resolve({ success: true, data: captured }); });
+  await waitFor(() => expect(conversations.get('A')?.systemPrompt).toBe('Captured A guidelines.'));
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(1);
+  expect(bridge.saveConversation.mock.calls[0][0].id).toBe('A');
+  expect(backendActive).toBe('B');
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Saved B guidelines.');
+  expect(inputValue()).toBe('Current B request.');
+  expect(screen.getByText('current-b-guidelines.txt')).toBeInTheDocument();
+  expect(conversations.get('B')?.systemPrompt).toBe('Saved B guidelines.');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test.each(['read', 'save'])('a failed guideline %s retains the latest A text through navigation and same-text retry', async failure => {
+  await mountReady();
+  if (failure === 'read') bridge.getConversation.mockResolvedValueOnce({ success: false, error: 'Fixture read refused.' });
+  else bridge.saveConversation.mockResolvedValueOnce({ success: false, error: 'Fixture save refused.' });
+  editGuidelines('Keep the latest failed A edit.');
+  await screen.findByText('Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.');
+  expect(conversations.get('A')?.systemPrompt).toBeUndefined();
+  await choose('B');
+  await expectActive('B');
+  await choose('A');
+  await expectActive('A');
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Keep the latest failed A edit.');
+  expect(await screen.findByText('These chat guidelines have not been saved. Your edits are kept; edit them again or send a message to retry.')).toBeInTheDocument();
+  typeDraft('Retry this request with my retained guidelines.');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('A');
+  expect(request.conversationPrompt).toBe('Keep the latest failed A edit.');
+  expect(conversations.get('A')?.systemPrompt).toBe('Keep the latest failed A edit.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(1);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test('oversized guideline edits are refused visibly without replacing the last acknowledged text', async () => {
+  await mountReady();
+  editGuidelines('Keep these acknowledged guidelines.');
+  await waitFor(() => expect(conversations.get('A')?.systemPrompt).toBe('Keep these acknowledged guidelines.'));
+  const writes = bridge.saveConversation.mock.calls.length;
+  editGuidelines('x'.repeat(64 * 1024 + 1));
+  expect(await screen.findByText('These guidelines exceed the limit for unsaved edits. Your previous text is kept. Save or shorten existing guidelines before adding more.')).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Keep these acknowledged guidelines.');
+  expect(conversations.get('A')?.systemPrompt).toBe('Keep these acknowledged guidelines.');
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(writes);
+});
+
+test('returning A through B does not allow a newer A guideline save to overtake its prior pending save', async () => {
+  await mountReady();
+  const oldWrite = deferred<Ack>();
+  bridge.saveConversation.mockImplementationOnce((record: Conversation) => oldWrite.promise.then(reply => { if (reply.success) saveRecord(record); return reply; }));
+  editGuidelines('Old A guidelines waiting for acknowledgement.');
+  await waitFor(() => expect(bridge.saveConversation).toHaveBeenCalledTimes(1));
+  await choose('B');
+  await expectActive('B');
+  await choose('A');
+  await expectActive('A');
+  editGuidelines('New A guidelines must win.');
+  await act(async () => {});
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(1);
+  await act(async () => { oldWrite.resolve({ success: true }); });
+  await waitFor(() => expect(conversations.get('A')?.systemPrompt).toBe('New A guidelines must win.'));
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('New A guidelines must win.');
+  expect(conversations.get('B')?.systemPrompt).toBeUndefined();
+});
+
+test('failed guideline save blocks Send without losing the message and retries against the same chat', async () => {
+  await mountReady();
+  bridge.saveConversation.mockResolvedValue({ success: false, error: 'Fixture save refused.' });
+  editGuidelines('Unacknowledged guidelines.');
+  await screen.findByText('Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.');
+  typeDraft('Keep my unsent request.');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await screen.findByText('This request was not sent because its chat guidelines could not be saved. Your message is kept. Retry after saving the guidelines.');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(inputValue()).toBe('Keep my unsent request.');
+  bridge.saveConversation.mockImplementation(async (record: Conversation) => saveRecord(record));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('A');
+  expect(request.conversationPrompt).toBe('Unacknowledged guidelines.');
+  expect(request.message).toBe('Keep my unsent request.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(1);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test.each([true, false])('deletion waits for an issued guideline write and never resurrects the record (both acknowledgements succeed: %s)', async success => {
+  await mountReady();
+  const write = deferred<Ack>();
+  bridge.saveConversation.mockImplementationOnce((record: Conversation) => write.promise.then(reply => { if (reply.success) saveRecord(record); return reply; }));
+  if (!success) bridge.deleteConversation.mockResolvedValueOnce({ success: false, error: 'Fixture deletion refused.' });
+  editGuidelines('First pending guideline save.');
+  await waitFor(() => expect(bridge.saveConversation).toHaveBeenCalledTimes(1));
+  await deleteA();
+  expect(bridge.deleteConversation).not.toHaveBeenCalled();
+  editGuidelines('Latest edits during pending deletion.');
+  await act(async () => { write.resolve({ success, error: success ? undefined : 'Fixture save refused.' }); });
+  await waitFor(() => expect(bridge.deleteConversation).toHaveBeenCalledWith('A'));
+  expect(bridge.saveConversation).toHaveBeenCalledTimes(1);
+  if (success) {
+    expect(conversations.has('A')).toBe(false);
+    expect(backendActive).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('');
+  } else {
+    await screen.findByText('Fixture deletion refused.');
+    expect(screen.getByText('Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.')).toBeInTheDocument();
+    expect(conversations.has('A')).toBe(true);
+    expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('Latest edits during pending deletion.');
+    editGuidelines('Latest edits after failed deletion.');
+    await waitFor(() => expect(conversations.get('A')?.systemPrompt).toBe('Latest edits after failed deletion.'));
+  }
+  expect(conversations.get('B')!.messages).toHaveLength(1);
+});
+
+function inputValue() { return (screen.getByRole('textbox', { name: 'Message HomeBot' }) as HTMLTextAreaElement).value; }
 
 test('confirming an old model suggestion after starting New restores the request instead of dispatching it to the new conversation', async () => {
   bridge.getSettings.mockResolvedValue({ firstRun: false, chatModel: 'qwen2.5:3b', modelRoutingMode: 'prompt', useCustomLLM: false });

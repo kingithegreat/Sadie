@@ -139,7 +139,9 @@ export default function FirstRunModal({
   const saveInFlight = useRef(false);
 
   const persistSetup = async (payload: Settings) => {
-    if (saveInFlight.current) return;
+    // Closing unmounts this wizard and its operation lock. Keep setup mounted
+    // until the authorized download and its inventory verification settle.
+    if (saveInFlight.current || downloadInFlight.current) return;
     saveInFlight.current = true;
     setSaving(true);
     setSaveError(null);
@@ -406,7 +408,7 @@ export default function FirstRunModal({
   };
 
   const handleDownloadOllama = async () => {
-    if (downloadInFlight.current) return;
+    if (downloadInFlight.current || saveInFlight.current) return;
     const generation = ++localGeneration.current;
     downloadGeneration.current = generation;
     downloadInFlight.current = true;
@@ -434,7 +436,7 @@ export default function FirstRunModal({
   };
 
   const handleDownloadAI = async () => {
-    if (downloadInFlight.current || !plannedDownload || modelDiskFit?.fits === false || !diskOk) return;
+    if (downloadInFlight.current || saveInFlight.current || !plannedDownload || modelDiskFit?.fits === false || !diskOk) return;
     const generation = ++localGeneration.current;
     downloadGeneration.current = generation;
     downloadInFlight.current = true;
@@ -528,6 +530,7 @@ export default function FirstRunModal({
   };
 
   const handleFinish = async () => {
+    if (downloadInFlight.current) return;
     invalidateCloudCheck(false);
     invalidateLocalCheck();
     const payload: any = { ...draft, firstRun: false, telemetryEnabled: telemetryConsent };
@@ -568,6 +571,7 @@ export default function FirstRunModal({
   };
 
   const handleSkip = async () => {
+    if (downloadInFlight.current) return;
     invalidateCloudCheck(false);
     invalidateLocalCheck();
     const payload = { ...draft, firstRun: false, telemetryEnabled: false } as any;
@@ -602,7 +606,7 @@ export default function FirstRunModal({
 
         <div className="first-run-content">
           {saveError && <p role="alert" className="wizard-error-detail">{saveError}</p>}
-          {backgroundDownload && <p role="status" className="wizard-error-detail">The setup you started continues in the background. It cannot be stopped here. Wait for it to finish before starting another download.</p>}
+          {downloadActive && <p role="status" className="wizard-error-detail">{backgroundDownload ? 'The setup you started continues in the background. ' : 'Your download and setup check are still in progress. '}Setup stays open until they finish. Back can change the setup view, but skipping or finishing setup must wait. The download cannot be stopped here.</p>}
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>
@@ -679,7 +683,7 @@ export default function FirstRunModal({
                   </div>
                   {ollamaError && <p className="wizard-error-detail">{ollamaError}</p>}
                   <div className="wizard-btn-row">
-                    <button type="button" className="first-run-btn first-run-btn-primary" disabled={downloadActive} onClick={handleDownloadOllama}>
+                    <button type="button" className="first-run-btn first-run-btn-primary" disabled={saving || downloadActive} onClick={handleDownloadOllama}>
                       Install Ollama automatically
                     </button>
                     <button type="button" className="first-run-btn first-run-btn-secondary" onClick={runLocalSetup}>
@@ -749,7 +753,7 @@ export default function FirstRunModal({
                   <p className="wizard-step-desc">No chat AI is installed yet. Recommended: <strong>{plannedDownload.name}</strong> — approximately {plannedDownload.sizeGB.toFixed(1)} GB. Downloading needs an internet connection and free disk space. Chat runs on this PC afterwards.</p>
                   {freeDiskGBRef.current !== null && <p className="wizard-step-desc">Disk check reports {freeDiskGBRef.current.toFixed(1)} GB free.</p>}
                   {freeDiskGBRef.current === null && <p className="wizard-step-desc">Free disk space could not be checked. Make sure there is room for this download.</p>}
-                  <button type="button" className="first-run-btn first-run-btn-primary" disabled={downloadActive || !diskOk || modelDiskFit?.fits === false} onClick={handleDownloadAI}>Download AI</button>
+                  <button type="button" className="first-run-btn first-run-btn-primary" disabled={saving || downloadActive || !diskOk || modelDiskFit?.fits === false} onClick={handleDownloadAI}>Download AI</button>
                 </div>
               )}
               {localPhase === 'pulling-models' && (
@@ -961,7 +965,7 @@ export default function FirstRunModal({
         </div>
 
         <div className="first-run-footer">
-          <button type="button" onClick={handleSkip} disabled={saving} className="first-run-btn first-run-btn-secondary">Skip setup</button>
+          <button type="button" onClick={handleSkip} disabled={saving || downloadActive} className="first-run-btn first-run-btn-secondary">Skip setup</button>
           <div className="wizard-nav-btns">
             {step === 'setup' && (
               <button type="button" onClick={() => { invalidateCloudCheck(); invalidateLocalCheck(); setStep('welcome'); setSetupPath(null); }} className="first-run-btn first-run-btn-secondary">Back</button>
@@ -977,7 +981,7 @@ export default function FirstRunModal({
               </button>
             )}
             {step === 'done' && (
-              <button type="button" onClick={handleFinish} disabled={saving} className="first-run-btn first-run-btn-primary">{saving ? 'Saving…' : 'Get Started'}</button>
+              <button type="button" onClick={handleFinish} disabled={saving || downloadActive} className="first-run-btn first-run-btn-primary">{saving ? 'Saving…' : 'Get Started'}</button>
             )}
           </div>
         </div>

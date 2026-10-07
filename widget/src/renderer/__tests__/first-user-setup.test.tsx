@@ -148,17 +148,97 @@ test('returning to actual local setup verifies the original background download 
   expect(screen.queryByText('Ollama is ready!')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Download AI' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Setting up...' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Skip setup' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Skip setup' }));
+  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(events).toEqual([]);
   expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
   await act(async () => { inventory.resolve({ success: true, models: [{ name: 'qwen2.5:3b' }] }); });
   expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
   expect(screen.queryByText(/continues in the background/)).toBeNull();
+  expect(screen.getByRole('button', { name: 'Skip setup' })).toBeEnabled();
   expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
   expect(persisted).toMatchObject({ firstRun: false, chatModel: 'qwen2.5:3b', codeModel: 'qwen2.5:3b', uncensoredMode: false, useCustomLLM: false, customLLM: { enabled: false } });
   expect(runtimeUncensored).toBe(false);
   expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+});
+
+test.each(['model', 'Ollama'])('an active %s operation blocks actual Skip and cloud Finish through reopen attempts, then unlocks explicit consent', async operation => {
+  const electron = (window as any).electron;
+  let complete!: () => void;
+  if (operation === 'model') {
+    const started = await startDownloadAndReturnToLocal();
+    complete = () => started.pull.resolve({ success: true });
+  } else {
+    const installation = held<{ success: boolean }>();
+    complete = () => installation.resolve({ success: true });
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+    electron.checkConnection.mockResolvedValue({ ollama: 'offline', n8n: 'offline' });
+    electron.checkOllamaInstalled = jest.fn().mockResolvedValue({ installed: false });
+    electron.downloadOllama.mockReturnValueOnce(installation.promise);
+    await act(async () => { render(<App />); });
+    const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+    await act(async () => { fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Install Ollama automatically' })); });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /On this PC/ })); });
+    expect(screen.getByRole('button', { name: 'Install Ollama automatically' })).toBeDisabled();
+  }
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).queryByRole('button', { name: 'Close' })).toBeNull();
+  expect(screen.getByText(/Setup stays open until they finish/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Skip setup' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Skip setup' }));
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  fireEvent.click(dialog.parentElement!);
+  act(() => { window.dispatchEvent(new Event('homebot:reopen-first-run')); });
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  const sameOperation = operation === 'model' ? electron.pullModelStream : electron.downloadOllama;
+  expect(sameOperation).toHaveBeenCalledTimes(1);
+  expect(events).toEqual([]);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(screen.getByRole('button', { name: /Online/ }));
+  fireEvent.click(screen.getByRole('button', { name: /DeepSeek/ }));
+  fireEvent.change(screen.getByLabelText('AI service key'), { target: { value: 'fixture-only' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Prepare service' })); });
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  expect(screen.getByRole('button', { name: 'Get Started' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Get Started' }));
+  act(() => { window.dispatchEvent(new Event('homebot:reopen-first-run')); });
+  expect(screen.getByRole('dialog', { name: 'Ready to try a message' })).toBeInTheDocument();
+  expect(events).toEqual([]);
+  expect(persisted).toEqual(initialSettings);
+  expect(sameOperation).toHaveBeenCalledTimes(1);
+
+  await act(async () => { complete(); });
+  expect(screen.getByRole('button', { name: 'Get Started' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Skip setup' })).toBeEnabled();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(sameOperation).toHaveBeenCalledTimes(1);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(screen.queryByRole('dialog', { name: 'Ready to try a message' })).toBeNull();
+  expect(persisted).toMatchObject({ chatModel: initialSettings.chatModel, useCustomLLM: true, customLLM: { provider: 'deepseek', enabled: true } });
+
+  // Reopening now creates a new wizard; neither the completed operation nor
+  // entering local setup supplies consent for a new model download.
+  electron.checkConnection.mockResolvedValue({ ollama: 'online', n8n: 'offline' });
+  act(() => { window.dispatchEvent(new Event('homebot:reopen-first-run')); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  await act(async () => { fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ })); });
+  expect(screen.getByRole('button', { name: 'Download AI' })).toBeEnabled();
+  expect(sameOperation).toHaveBeenCalledTimes(1);
+  const nextPull = held<{ success: boolean }>();
+  electron.pullModelStream.mockReturnValueOnce(nextPull.promise);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(operation === 'model' ? 2 : 1);
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }] });
+  await act(async () => { nextPull.resolve({ success: true }); });
+  expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+  expect(electron.downloadOllama).toHaveBeenCalledTimes(operation === 'Ollama' ? 1 : 0);
 });
 
 test('a background completion inventory check cannot overwrite the actual Online setup after Back', async () => {
