@@ -33,19 +33,24 @@ const pipe=process.env.HOMEBOT_IDE_GATE_PIPE, capability=process.env.HOMEBOT_IDE
 delete process.env.HOMEBOT_IDE_GATE_PIPE; delete process.env.HOMEBOT_IDE_GATE_CAP;
 if(!/^hbi-[a-f0-9-]{36}$/.test(pipe||'')||! /^[a-f0-9]{64}$/.test(capability||'')) process.exit(125);
 // No project require, profile, npm, or preload runs while this core launcher waits.
-let received=false, child, text='', acknowledged=false;
+let received=false, child, text='', acknowledged=false, accepted=false, completed;
 const deadline=setTimeout(()=>process.exit(125),10000);
 const slash=String.fromCharCode(92),newline=String.fromCharCode(10);
 const connection=net.connect(slash+slash+'.'+slash+'pipe'+slash+pipe);
-const fail=()=>{ if(!acknowledged) process.exit(125); };
+const fail=()=>{ if(!accepted) process.exit(125); };
 connection.on('error',fail); connection.on('end',fail);
 connection.on('connect',()=>connection.write(capability+newline));
 connection.on('data',value=>{
- if(received) return;
+ if(received) {
+  text+=value.toString();if(text.length>4096)return process.exit(125);
+  const end=text.indexOf(newline);if(end<0)return;
+  if(accepted||text.slice(0,end)!=='accepted')return process.exit(125);
+  accepted=true;clearTimeout(deadline);connection.end();if(completed)process.exit(completed.exitCode);return;
+ }
  text+=value.toString(); if(text.length>131072) return process.exit(125);
  const end=text.indexOf(newline); if(end<0) return;
  received=true;clearTimeout(deadline);
- let launch;try{launch=JSON.parse(text.slice(0,end));}catch{return process.exit(125);}
+ let launch;try{launch=JSON.parse(text.slice(0,end));}catch{return process.exit(125);}text='';
  if(!launch||typeof launch.executable!=='string'||!launch.executable||!Array.isArray(launch.args)||launch.args.some(x=>typeof x!=='string')||!launch.env||typeof launch.env!=='object'||Array.isArray(launch.env)) return process.exit(125);
  const env={...launch.env};delete env.HOMEBOT_IDE_GATE_PIPE;delete env.HOMEBOT_IDE_GATE_CAP;
  // Root remains alive for the inherited shell's Ctrl+C/Break handling.
@@ -54,8 +59,13 @@ connection.on('data',value=>{
  child.once('error',()=>process.exit(126));
  child.once('spawn',()=>{
   if(!Number.isSafeInteger(child.pid)||child.pid<=0) return process.exit(126);
-  acknowledged=true;connection.end(JSON.stringify({pid:child.pid})+newline);
+  acknowledged=true;connection.write(JSON.stringify({type:'spawn',pid:child.pid})+newline);
  });
- child.once('exit',(code)=>process.exit(Number.isInteger(code)?code:1));
+ child.once('exit',(code)=>{
+  if(!acknowledged)return process.exit(126);
+  completed={type:'completed',pid:child.pid,exitCode:Number.isInteger(code)?code:1};
+  if(accepted)return process.exit(completed.exitCode);
+  connection.write(JSON.stringify(completed)+newline);
+ });
 });
 `;

@@ -1,6 +1,6 @@
 const handlers = new Map<string, Function>();
 const frame = {}; const sender = { id: 7, mainFrame: frame, isDestroyed: () => false, send: jest.fn(), once: jest.fn() };
-const manager = { list: jest.fn(async (_owner: number, _root: string) => [{ sessionId: 's1', output: 'retained output' }]), create: jest.fn(async (_owner: number, _request: any, _notify: any) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
+const manager = { list: jest.fn(async (_owner: number, _root: string) => [{ sessionId: 's1', output: 'retained output' }]), create: jest.fn(async (_owner: number, _request: any, _notify: any, _validate?: () => void) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
 jest.mock('electron', () => ({ ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn), removeHandler: (name: string) => handlers.delete(name) } }));
 jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: sender }) }));
 jest.mock('../workspace-terminal-pty', () => ({ workspacePtySessions: manager, workspaceTerminalProfiles: () => [{ id: 'cmd' }] }));
@@ -25,7 +25,7 @@ test('recovery binds the root query to the trusted window and rejects unexpected
 test('create rejects a renderer command and binds session events/cleanup to its owner', async () => {
   expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', command: 'evil' })).toMatchObject({ success: false });
   expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', profileId: 'cmd' })).toMatchObject({ success: true, session: { sessionId: 's1' } });
-  expect(manager.create).toHaveBeenCalledWith(7, { projectDir: 'x', profileId: 'cmd' }, expect.any(Function));
+  expect(manager.create).toHaveBeenCalledWith(7, { projectDir: 'x', profileId: 'cmd' }, expect.any(Function), expect.any(Function));
   const notify = manager.create.mock.calls[0][2] as any; notify({ sessionId: 's1', seq: 1, type: 'data', data: 'hello' });
   expect(sender.send).toHaveBeenCalledWith(WORKSPACE_TERMINAL_CHANNELS.EVENT, expect.objectContaining({ data: 'hello' }));
   sender.once.mock.calls[0][1](); expect(manager.closeOwner).toHaveBeenCalledWith(7);
@@ -56,4 +56,13 @@ test('create waits for native startup and returns the resolved session rather th
 test('native startup rejection is an IPC error instead of a successful promise-shaped session', async () => {
   manager.create.mockRejectedValueOnce(Error('Native terminal startup did not become ready'));
   expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', profileId: 'cmd' })).toEqual({ success: false, error: 'Native terminal startup did not become ready' });
+});
+
+test('the startup GO fence refuses the same WebContents after its main frame is replaced', async () => {
+  manager.create.mockImplementationOnce(async (_owner, _request, _notify, validate) => {
+    sender.mainFrame = {};
+    validate?.(); return { sessionId: 'must-not-publish' };
+  });
+  try { expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x' })).toMatchObject({ success: false, error: expect.stringContaining('frame changed') }); }
+  finally { sender.mainFrame = frame; }
 });

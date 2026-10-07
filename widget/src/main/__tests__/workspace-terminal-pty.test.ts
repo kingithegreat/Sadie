@@ -9,6 +9,7 @@ import { ownedWindowsPty } from '../workspace-pty-native-adapter';
 import { setWorkspaceRuntimeClosing } from '../workspace-runtime-admission';
 import type { WorkspacePtyStopResult } from '../workspace-pty-force-stop';
 import type { WorkspacePtyIdentity } from '../workspace-pty-identity';
+import type { WorkspaceApprovedLaunch } from '../workspace-windows-job';
 const windowsTest = process.platform === 'win32' ? test : test.skip;
 jest.setTimeout(15_000);
 let folder: string;
@@ -32,13 +33,19 @@ async function setup(autoExit = true, confirmed = true, captured?: { original: W
   const stopped = jest.fn(async () => confirmed);
   const force = jest.fn(async (_pid: number, _identity: unknown, _receipt?: unknown): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: true, receipt: [{ pid: 12345, creation: '638953000000000000', parent: process.pid }] }));
   const capture = jest.fn(async () => captured ? captured.original : { creation: '638953000000000000', parent: process.pid });
-  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force);
+  const job = { listening: Promise.resolve(), ready: Promise.resolve(), attach: jest.fn(async () => {}), authorize: jest.fn(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => { validate?.(); return 23456; }), queryEmpty: jest.fn(async () => true), stop: jest.fn(async () => {}) };
+  const jobs = jest.fn(() => job);
+  const manager = new WorkspacePtySessions(spawn, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force, jobs);
   const events = jest.fn(); const session = await manager.create(7, { projectDir: folder, profileId: 'cmd' }, events);
-  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force, capture };
+  return { pty, spawn, manager, session, events, data, exit, disposeData, disposeExit, stopped, force, capture, job, jobs };
 }
 test('stdin, resize and interrupt route only to the owned real PTY interface', async () => {
   const app = await setup();
-  expect(app.spawn).toHaveBeenCalledWith('cmd.exe', ['/D'], expect.objectContaining({ cwd: folder, cols: 100, rows: 30 }));
+  if (process.platform === 'win32') {
+    expect(app.spawn).toHaveBeenCalledWith(process.execPath, ['-e', expect.stringContaining("require('node:net')")], expect.objectContaining({ cwd: folder, cols: 100, rows: 30, env: expect.objectContaining({ NODE_OPTIONS: '', ELECTRON_RUN_AS_NODE: '1' }) }));
+    expect(app.job.authorize).toHaveBeenCalledWith(expect.objectContaining({ executable: 'cmd.exe', args: ['/D'] }), expect.any(Function));
+    expect(app.session).toMatchObject({ pid: 12345, shellPid: 23456 });
+  } else expect(app.spawn).toHaveBeenCalledWith('cmd.exe', ['/D'], expect.objectContaining({ cwd: folder, cols: 100, rows: 30 }));
   expect(app.spawn.mock.calls[0][2]).toMatchObject({ useConptyDll: false });
   app.manager.write(7, app.session.sessionId, 'answer\r'); app.manager.interrupt(7, app.session.sessionId); app.manager.resize(7, app.session.sessionId, 120, 40);
   expect(app.pty.write.mock.calls).toEqual([['answer\r'], ['\x03']]); expect(app.pty.resize).toHaveBeenCalledWith(120, 40);
@@ -117,69 +124,44 @@ test.each(['owner', 'all'])('%s cleanup joins every terminal even when the first
   expect(settled).toBe(true); close.mockRestore(); await app.manager.closeAll();
 });
 
-test('unproven force Stop keeps the live session and never reports successful Close', async () => {
-  const app = await setup(true, false); app.force.mockResolvedValue({ stopped: false, attempted: false });
-  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/process-tree exit/);
-  expect(app.pty.kill).not.toHaveBeenCalled();
-  app.manager.write(7, app.session.sessionId, 'still available');
-  expect(app.pty.write).toHaveBeenCalledWith('still available');
-  app.force.mockResolvedValue({ stopped: true, attempted: false }); app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
-});
-
-windowsTest('unknown startup identity guides manual exit, stays writable and never recaptures a PID on Retry', async () => {
-  const app = await setup(false, false, { original: undefined });
-  app.force.mockResolvedValue({ stopped: false, attempted: false });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/identity could not be verified at startup.*Nothing was stopped.*type exit/i);
-  }
-  expect(app.capture).toHaveBeenCalledTimes(1);
-  expect(app.force).toHaveBeenLastCalledWith(12345, undefined, undefined);
-  expect(app.pty.kill).not.toHaveBeenCalled();
-  app.manager.write(7, app.session.sessionId, 'exit\r');
-  expect(app.pty.write).toHaveBeenCalledWith('exit\r');
-  app.exit({ exitCode: 0 }); app.stopped.mockResolvedValue(true);
-  const forceCalls = app.force.mock.calls.length;
+windowsTest('uncertain Job Stop retains the same live session and retries without PID recapture', async () => {
+  const app = await setup(); app.job.stop.mockRejectedValueOnce(new Error('Job cleanup remains unverified'));
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/unverified/);
+  expect(app.pty.kill).not.toHaveBeenCalled(); app.manager.write(7, app.session.sessionId, 'still available');
   await app.manager.close(7, app.session.sessionId);
-  expect(app.force).toHaveBeenCalledTimes(forceCalls);
-  expect(app.capture).toHaveBeenCalledTimes(1);
-  expect(app.pty.kill).toHaveBeenCalledTimes(1); // Release only the exited PTY/worker.
-  expect(() => app.manager.write(7, app.session.sessionId, 'after close')).toThrow(/has closed/);
+  expect(app.jobs).toHaveBeenCalledTimes(1); expect(app.capture).toHaveBeenCalledTimes(1);
+  expect(app.job.stop).toHaveBeenCalledTimes(2); expect(app.force).not.toHaveBeenCalled();
 });
 
-test('initially missing process can close after disappearance without unknown-capture guidance', async () => {
-  const app = await setup(true, true, { original: null });
-  app.force.mockResolvedValue({ stopped: false, attempted: false });
+windowsTest('unknown startup birth releases only fixed bootstrap ownership and never authorizes project code', async () => {
+  await expect(setup(true, true, { original: undefined })).rejects.toThrow(/creation identity/);
+});
+
+windowsTest('natural root exit retains background Job members until explicit Close proves them gone', async () => {
+  const app = await setup(); app.job.queryEmpty.mockResolvedValue(false);
+  app.data('retained output'); app.exit({ exitCode: 0 });
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(app.job.stop).not.toHaveBeenCalled(); expect(app.pty.kill).not.toHaveBeenCalled();
+  const [retained] = await app.manager.list(7, folder);
+  expect(retained).toMatchObject({ exited: true, output: 'retained output', closeError: expect.stringContaining('background') });
+  app.job.stop.mockRejectedValueOnce(new Error('retained Job still uncertain'));
+  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/uncertain/);
   await app.manager.close(7, app.session.sessionId);
-  expect(app.capture).toHaveBeenCalledTimes(1);
-  expect(() => app.manager.write(7, app.session.sessionId, 'after close')).toThrow(/has closed/);
+  expect(app.capture).toHaveBeenCalledTimes(1); expect(app.jobs).toHaveBeenCalledTimes(1);
+  expect(app.force).not.toHaveBeenCalled(); expect(await app.manager.list(7, folder)).toEqual([]);
 });
 
-test('captured descendants remain recoverable after root exits during a partial Stop', async () => {
-  const app = await setup();
-  const receipt = [{ pid: 12345, creation: '638953000000000000', parent: process.pid }, { pid: 23456, creation: '638953000000000100', parent: 12345 }];
-  app.force.mockImplementationOnce(async () => { app.exit({ exitCode: 1 }); return { stopped: false, attempted: true, receipt }; });
-  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/captured identities/);
-  app.force.mockResolvedValue({ stopped: true, attempted: true, receipt });
-  await app.manager.close(7, app.session.sessionId);
-  expect(app.force).toHaveBeenLastCalledWith(12345, { creation: '638953000000000000', parent: process.pid }, receipt);
-  expect(app.pty.kill).toHaveBeenCalledTimes(1);
+windowsTest('unknown Job accounting on natural exit cannot release its Worker or erase cleanup retry', async () => {
+  const app = await setup(); app.job.queryEmpty.mockRejectedValue(new Error('account query failed'));
+  app.exit({ exitCode: 0 }); await new Promise<void>(resolve => setImmediate(resolve));
+  expect(app.job.stop).not.toHaveBeenCalled(); expect(app.pty.kill).not.toHaveBeenCalled();
+  expect((await app.manager.list(7, folder))[0].closeError).toContain('account query failed');
+  await app.manager.close(7, app.session.sessionId); expect(app.job.stop).toHaveBeenCalledTimes(1);
 });
 
-test('natural root exit before any force effect does not create a permanent Close refusal', async () => {
-  const app = await setup();
-  app.force.mockImplementationOnce(async () => { app.exit({ exitCode: 0 }); return { stopped: false, attempted: false }; });
-  await app.manager.close(7, app.session.sessionId);
-  expect(app.pty.kill).toHaveBeenCalledTimes(1);
-});
-
-test('corrupted force evidence cannot forget uncertainty after a later root exit', async () => {
-  const app = await setup(); app.force.mockResolvedValue({ stopped: false, attempted: true });
-  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/Stop evidence was corrupted or lost/);
-  app.exit({ exitCode: 1 });
-  await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/evidence was corrupted or lost/);
-});
 test('natural exit releases listeners/ConPTY exactly once; Close does not kill a reused PID', async () => {
   const app = await setup(); app.data('ready'); app.exit({ exitCode: 0 });
+  await new Promise<void>(resolve => setImmediate(resolve));
   expect(app.events).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'exit', exitCode: 0 }));
   expect(app.disposeData).toHaveBeenCalledTimes(1); expect(app.disposeExit).toHaveBeenCalledTimes(1);
   const kills = app.pty.kill.mock.calls.length;
@@ -210,10 +192,11 @@ function startup() {
   const capture = jest.fn(async () => ({ creation: '638953000000000000', parent: process.pid }));
   const stopped = jest.fn(async () => true);
   const force = jest.fn(async (): Promise<WorkspacePtyStopResult> => ({ stopped: true, attempted: false }));
-  const manager = new WorkspacePtySessions(() => pty, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force);
+  const job = { listening: Promise.resolve(), ready: Promise.resolve(), attach: jest.fn(async () => {}), authorize: jest.fn(async (_launch: WorkspaceApprovedLaunch, validate?: () => void) => { validate?.(); return 23456; }), queryEmpty: jest.fn(async () => true), stop: jest.fn(async () => {}) };
+  const manager = new WorkspacePtySessions(() => pty, () => [{ id: 'cmd', label: 'Command Prompt', executable: 'cmd.exe' }], { capture, stopped }, force, () => job);
   const create = () => manager.create(7, { projectDir: folder }, jest.fn());
   const connected = () => { pty.pid = 12345; ready.resolve(); };
-  return { manager, create, connected, pty, ready, killed, workerExit, capture, stopped, force };
+  return { manager, create, connected, pty, ready, killed, workerExit, capture, stopped, force, job };
 }
 
 test('startup reserves all four slots, waits for positive PID and LIST waits for that same project creation', async () => {
@@ -249,9 +232,10 @@ test('quit admission closing during startup never publishes a ghost session or c
   expect(() => app.create()).toThrow(/closing/);
   const closing = app.manager.closeAll();
   app.connected(); await app.killed.promise;
-  expect(app.capture).toHaveBeenCalledWith(12345);
+  if (process.platform === 'win32') expect(app.capture).not.toHaveBeenCalled();
+  else expect(app.capture).toHaveBeenCalledWith(12345);
   expect(app.capture).not.toHaveBeenCalledWith(0);
-  if (process.platform === 'win32') expect(app.force).toHaveBeenCalledWith(12345, { creation: '638953000000000000', parent: process.pid }, undefined);
+  expect(app.force).not.toHaveBeenCalled();
   app.workerExit.resolve(); await refusal; await closing;
   expect(await app.manager.list(7, folder)).toEqual([]);
 });

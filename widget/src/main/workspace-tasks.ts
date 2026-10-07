@@ -11,6 +11,7 @@
 import { ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import { stripAnsi, excerptForModel } from '../shared/ansi';
 import type {
@@ -22,6 +23,8 @@ import type {
 import { validateTrustedWorkspaceRoot } from './workspace-trust';
 import { workspacePtyLifecycle } from './workspace-pty-identity';
 import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
+import { createPendingWorkspaceWindowsJob } from './workspace-windows-job';
+import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
 
 const MAX_PACKAGE_BYTES = 1024 * 1024;
 const MAX_SCRIPT_COUNT = 500;
@@ -52,6 +55,11 @@ export interface WorkspaceNpmRunner {
 }
 
 export interface WorkspaceTaskExecutionOptions {
+  /** Main-owned originating-window/task key, never an executable authority. */
+  taskId?: string;
+  createWindowsJob?: typeof createPendingWorkspaceWindowsJob;
+  /** Revalidate the originating main renderer/frame immediately before GO. */
+  validateAuthority?: () => void;
   timeoutMs?: number;
   runner?: WorkspaceNpmRunner;
   spawnProcess?: (
@@ -70,7 +78,7 @@ export interface WorkspaceTaskExecutionOptions {
   onProgress?: (progress: { outputExcerpt: string; problems: WorkspaceProblem[] }) => void;
 }
 
-interface ActiveTask { stop(): Promise<boolean> }
+interface ActiveTask { id?: string; stop(): Promise<boolean> }
 const activeTasks = new Map<string, ActiveTask>();
 let closingTasks: Promise<void> | undefined;
 
@@ -380,6 +388,121 @@ export function closeAllWorkspaceTasks(): Promise<void> {
   return closingTasks;
 }
 
+/** Exact retained invocation; an old UI record can never stop its replacement. */
+export async function stopWorkspaceTask(taskId: string): Promise<boolean> {
+  const task = [...activeTasks.values()].find(value => value.id === taskId);
+  return task ? task.stop() : true;
+}
+
+async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runner: WorkspaceNpmRunner, options: WorkspaceTaskExecutionOptions): Promise<WorkspaceTaskRunResult> {
+  const targetEnv = { ...process.env, ...options.env, FORCE_COLOR: '0', NO_COLOR: '1' };
+  const launch = snapshotWorkspaceLaunch(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], targetEnv);
+  launch.kind = 'task';
+  const gate = createWorkspaceProcessGate(targetEnv);
+  const job = (options.createWindowsJob || createPendingWorkspaceWindowsJob)({ gate: { pipeName: gate.pipeName, capability: gate.capability } });
+  const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
+  const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
+  const startedAt = Date.now();
+  let output = '', child: ChildProcess | undefined, cancelled = false, timedOut = false, released = false;
+  let childEnded = false, exitCode: number | null = null, stopPending: Promise<boolean> | undefined;
+  let startupError: string | undefined, timer: NodeJS.Timeout | undefined;
+  let resolveExit!: () => void;
+  const exited = new Promise<void>(resolve => { resolveExit = resolve; });
+  let resolveResult!: (value: WorkspaceTaskRunResult) => void;
+  const result = new Promise<WorkspaceTaskRunResult>(resolve => { resolveResult = resolve; });
+  let resultPublished = false;
+  const publish = (cleanupPending: boolean, error?: string) => {
+    if (resultPublished) return;
+    resultPublished = true;
+    if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+    if (!cleanupPending && activeTasks.get(current.projectDir) === active) activeTasks.delete(current.projectDir);
+    resolveResult({ success: released && !cancelled && !timedOut && !startupError,
+      cancelled, timedOut, exitCode, cleanupPending,
+      durationMs: Date.now() - startedAt, problems: parser.finish(),
+      outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }),
+      ...(error || startupError ? { error: error || startupError } : {}),
+    });
+  };
+  const waitExit = async () => {
+    if (!child || childEnded) return;
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('The fixed task launcher has not confirmed exit.')), 10000);
+      void exited.then(() => { clearTimeout(timeout); resolve(); });
+    });
+  };
+  let startup!: Promise<void>;
+  const stop = () => {
+    if (stopPending) return stopPending;
+    // Queue after startup is assigned, including an immediately fired AbortSignal.
+    const operation = Promise.resolve().then(async () => {
+      await startup.catch(() => undefined);
+      const results = await Promise.allSettled([job.stop(), waitExit()]);
+      const proven = results.every(value => value.status === 'fulfilled');
+      if (proven && activeTasks.get(current.projectDir) === active) activeTasks.delete(current.projectDir);
+      return proven;
+    });
+    stopPending = operation;
+    void operation.then(() => { if (stopPending === operation) stopPending = undefined; }, () => { if (stopPending === operation) stopPending = undefined; });
+    return operation;
+  };
+  const active: ActiveTask = { id: options.taskId || randomUUID(), stop: async () => {
+    cancelled = true;
+    const proven = await stop();
+    publish(!proven, proven ? (timedOut ? 'Task stopped after its time limit.' : 'Task stopped.') : 'Task cleanup could not be confirmed. Its owned Job is retained; select Stop to retry.');
+    return proven;
+  } };
+  activeTasks.set(current.projectDir, active);
+  const abort = () => { cancelled = true; void active.stop(); };
+  options.signal?.addEventListener('abort', abort, { once: true });
+  startup = (async () => {
+    await job.listening;
+    if (cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
+    assertWorkspaceRuntimeOpen();
+    if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed during startup. Review the task again.');
+    child = spawnProcess(gate.executable, gate.args, { cwd: current.projectDir, windowsHide: true, detached: false, shell: false, env: gate.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const stream of ['stdout', 'stderr'] as const) child[stream]?.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString(); parser.push(stream, text); output = appendTail(output, text);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
+    });
+    child.once('error', error => {
+      startupError = `Could not start the contained task: ${failMessage(error)}`;
+      if (!child?.pid) { childEnded = true; resolveExit(); }
+    });
+    child.once('close', code => {
+      childEnded = true; exitCode = code; resolveExit();
+      void (async () => {
+        await startup.catch(() => undefined);
+        if (stopPending) { await stopPending; return; }
+        if (startupError || !released) { const proven = await stop(); publish(!proven, startupError || 'The task ended before confirmed startup.'); return; }
+        try {
+          if (await job.queryEmpty()) { await job.stop(); publish(false); }
+          else publish(true, 'The package task ended, but owned background programs remain. Select Stop to stop them.');
+        } catch { publish(true, 'The package task ended with unverified Job cleanup. Select Stop to retry.'); }
+      })().catch(() => publish(true, 'Task cleanup could not be confirmed. Select Stop to retry.'));
+    });
+    const original = child.pid ? await workspacePtyLifecycle.capture(child.pid) : undefined;
+    if (!original) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
+    await job.attach(child.pid!, original);
+    if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');
+    assertWorkspaceRuntimeOpen();
+    if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed during startup. Review the task again.');
+    await job.authorize(launch, () => {
+      options.validateAuthority?.();
+      if (cancelled || options.signal?.aborted || childEnded) throw new Error('Task startup was cancelled before execution.');
+      assertWorkspaceRuntimeOpen();
+      if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed before execution. Review the task again.');
+    }); released = true;
+  })();
+  void startup.catch(async error => {
+    startupError = failMessage(error);
+    const proven = await stop(); publish(!proven, startupError);
+  });
+  const timeoutMs = options.longRunning ? 0 : Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
+  if (timeoutMs) timer = setTimeout(() => { timedOut = true; void active.stop(); }, timeoutMs);
+  return result;
+}
+
 export async function executeWorkspacePackageTask(
   approved: WorkspaceTaskSnapshot,
   options: WorkspaceTaskExecutionOptions = {},
@@ -408,6 +531,7 @@ export async function executeWorkspacePackageTask(
 
   const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
   const platform = options.platform || process.platform;
+  if (platform === 'win32') return executeContainedWindowsTask(current, runner, options);
   const timeoutMs = options.longRunning ? 0 : Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
   const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
   let output = '';
@@ -457,7 +581,7 @@ export async function executeWorkspacePackageTask(
         scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
       });
     };
-    const activeTask: ActiveTask = { stop: async () => {
+    const activeTask: ActiveTask = { id: options.taskId, stop: async () => {
       aborted = true;
       if (timer) clearTimeout(timer);
       const proven = await stopTree();
@@ -466,6 +590,7 @@ export async function executeWorkspacePackageTask(
     } };
 
     try {
+      options.validateAuthority?.();
       child = spawnProcess(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], {
         cwd: current.projectDir,
         windowsHide: true,

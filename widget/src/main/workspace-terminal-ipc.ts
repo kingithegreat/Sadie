@@ -29,7 +29,9 @@ export function registerWorkspaceTerminalIpc(): void {
     if (!args || typeof args.projectDir !== 'string' || Object.keys(args).some(k => !['projectDir', 'profileId', 'cols', 'rows'].includes(k))) throw new Error('Invalid terminal request.');
     if (!owners.has(event.sender)) { owners.add(event.sender); event.sender.once('destroyed', () => { void workspacePtySessions.closeOwner(event.sender.id).catch(error => { console.error('[HomeBot-CATCH]', error); }); }); }
     const notify = (value: WorkspaceTerminalEvent) => { try { if (!event.sender.isDestroyed()) event.sender.send(WORKSPACE_TERMINAL_CHANNELS.EVENT, value); } catch { /* window disappeared */ } };
-    return { session: await workspacePtySessions.create(event.sender.id, args, notify) };
+    return { session: await workspacePtySessions.create(event.sender.id, args, notify, () => {
+      if (!trusted(event)) throw new Error('The originating terminal window or frame changed before execution.');
+    }) };
   }));
   ipcMain.handle(WORKSPACE_TERMINAL_CHANNELS.WRITE, protect((e, a) => workspacePtySessions.write(e.sender.id, a?.sessionId, a?.data)));
   ipcMain.handle(WORKSPACE_TERMINAL_CHANNELS.RESIZE, protect((e, a) => workspacePtySessions.resize(e.sender.id, a?.sessionId, a?.cols, a?.rows)));

@@ -15,6 +15,8 @@ export default function ProblemsPanel({
   const [problems, setProblems] = useState<WorkspaceProblem[]>([]);
   const [error, setError] = useState('');
   const [running, setRunning] = useState(false);
+  const [cleanupPending, setCleanupPending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [output, setOutput] = useState('');
   const [longRunning, setLongRunning] = useState(false);
   const taskId = useRef<string | null>(null);
@@ -42,12 +44,13 @@ export default function ProblemsPanel({
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     let alive = true;
-    taskId.current = null; setRunning(false); setOutput(''); setProblems([]);
+    taskId.current = null; setRunning(false); setCleanupPending(false); setStopping(false); setOutput(''); setProblems([]);
     const update = (task: any) => {
       if (!alive || task.projectDir !== root || (taskId.current && taskId.current !== task.taskId)) return;
       taskId.current = task.taskId; setRunning(task.running); setSelected(task.scriptName);
+      setCleanupPending(task.cleanupPending === true || task.result?.cleanupPending === true);
       setOutput(task.outputExcerpt || ''); setProblems(task.problems || []);
-      if (task.result?.error && !task.result.cancelled) setError(task.result.error);
+      if (task.result?.error && (!task.result.cancelled || task.cleanupPending)) setError(task.result.error);
     };
     const off = api?.onWorkspaceTaskEvent?.(update);
     void Promise.resolve(api?.workspaceTaskStatus?.({ projectDir: root })).then((res: any) => { if (res?.task) update(res.task); }).catch(() => { if (alive) setError('Could not restore the task status. Refresh or try again.'); });
@@ -55,7 +58,7 @@ export default function ProblemsPanel({
   }, [api, root]);
 
   const run = async () => {
-    if (!selected || running) return;
+    if (!selected || running || cleanupPending || stopping) return;
     setRunning(true);
     setError('');
     setOutput('');
@@ -65,6 +68,8 @@ export default function ProblemsPanel({
       const result = await api.workspaceTaskRun?.({ projectDir: root, scriptName: selected, taskId: taskId.current, longRunning });
       if (taskId.current !== submittedId) return;
       if (!result) { setError('Package tasks are unavailable.'); return; }
+      setCleanupPending(result.cleanupPending === true);
+      if (result.cleanupPending) setError(result.error || 'Owned background programs remain. Select Stop to clean them up.');
       if (result.cancelled) { onStatus?.('Task cancelled.'); return; }
       setProblems(result.problems || []);
       setOutput(result.outputExcerpt || '');
@@ -79,25 +84,30 @@ export default function ProblemsPanel({
   };
   const stop = async () => {
     const submittedId = taskId.current;
+    if (!submittedId || stopping) return;
+    setStopping(true);
     try {
       const res = await api?.workspaceTaskStop?.({ taskId: submittedId });
       if (taskId.current !== submittedId) return;
-      if (!res?.success) setError(res?.error || 'Could not stop this task.'); else onStatus?.('Stopping task…');
+      if (!res?.success) setError(res?.error || 'Could not stop this task.');
+      else { setCleanupPending(false); setError(''); onStatus?.('Task cleanup confirmed.'); }
     } catch { if (taskId.current === submittedId) setError('Could not stop this task. Try Stop again.'); }
+    finally { if (taskId.current === submittedId) setStopping(false); }
   };
 
   return (
     <div className="ws-problems">
       <div className="ws-problems-controls">
-        <select aria-label="Package script" value={selected} onChange={event => setSelected(event.target.value)} disabled={running || !tasks.length}>
+        <select aria-label="Package script" value={selected} onChange={event => setSelected(event.target.value)} disabled={running || cleanupPending || stopping || !tasks.length}>
           {!tasks.length && <option value="">No package scripts</option>}
           {tasks.map(task => <option key={task.name} value={task.name}>{task.name}</option>)}
         </select>
-        <button type="button" onClick={() => void run()} disabled={!selected || running}>{running ? 'Running…' : 'Run'}</button>
+        <button type="button" onClick={() => void run()} disabled={!selected || running || cleanupPending || stopping}>{running ? 'Running…' : 'Run'}</button>
         <button type="button" onClick={() => void refresh()} disabled={running} aria-label="Refresh package scripts">Refresh</button>
-        {running && <button type="button" onClick={() => { void stop(); }}>Stop</button>}
+        {(running || cleanupPending) && <button type="button" disabled={stopping} onClick={() => { void stop(); }}>Stop</button>}
       </div>
-      <label><input type="checkbox" checked={longRunning} disabled={running} onChange={e => setLongRunning(e.target.checked)} />Watch or dev server (runs until Stop)</label>
+      <label><input type="checkbox" checked={longRunning} disabled={running || cleanupPending || stopping} onChange={e => setLongRunning(e.target.checked)} />Watch or dev server (runs until Stop)</label>
+      {cleanupPending && <div role="status">Owned background programs require cleanup. Stop remains available for retry.</div>}
       <div className="ws-problems-consent">HomeBot shows the exact package.json command and npm lifecycle scripts before running anything.</div>
       {error && <div className="ws-problems-error" role="alert">{error}</div>}
       <div className="ws-problems-count">{problems.length} problem{problems.length === 1 ? '' : 's'}</div>

@@ -7,12 +7,14 @@ import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pt
 import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
 import { checkedWorkspacePath } from './workspace-files';
 import { ownedWindowsPty, type OwnedPtyProcess } from './workspace-pty-native-adapter';
+import { createPendingWorkspaceWindowsJob, type PendingWorkspaceWindowsJob } from './workspace-windows-job';
+import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
 import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../shared/workspace-terminal-types';
 
 type PtyProcess = OwnedPtyProcess;
 type PtyFactory = (file: string, args: string[], options: { name: string; cols: number; rows: number; cwd: string; env: NodeJS.ProcessEnv; useConpty?: boolean; useConptyDll?: boolean }) => PtyProcess;
-interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; killing?: Promise<void>; releasing?: Promise<void>; stopReceipt?: WorkspacePtyStopReceipt; stopReceiptLost?: boolean }
-interface PendingCreate { owner: number; cwd: string; done: Promise<WorkspaceTerminalSessionInfo>; pty?: PtyProcess; promoted: boolean; released: boolean; releasing?: Promise<void> }
+interface Session { owner: number; info: WorkspaceTerminalSessionInfo; pty: PtyProcess; job?: PendingWorkspaceWindowsJob; listeners: Array<{ dispose(): void }>; exited: boolean; released: boolean; killed: boolean; identity: Promise<WorkspacePtyIdentity | null | undefined>; exitWaiters: Set<() => void>; closing?: Promise<void>; killing?: Promise<void>; releasing?: Promise<void>; stopReceipt?: WorkspacePtyStopReceipt; stopReceiptLost?: boolean }
+interface PendingCreate { owner: number; cwd: string; done: Promise<WorkspaceTerminalSessionInfo>; pty?: PtyProcess; job?: PendingWorkspaceWindowsJob; promoted: boolean; released: boolean; releasing?: Promise<void> }
 const MAX_SESSIONS = 4;
 const MAX_OUTPUT = 256 * 1024;
 const RELEASE_TIMEOUT = 5500;
@@ -60,10 +62,11 @@ export class WorkspacePtySessions {
     // branch. System ClosePseudoConsole returns immediately on build >=26100:
     // https://learn.microsoft.com/en-us/windows/console/closepseudoconsole
     return ownedWindowsPty(native, binding);
-  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = stopWorkspacePtyTree) {}
+  }, private readonly profiles = workspaceTerminalProfiles, private readonly lifecycle = workspacePtyLifecycle, private readonly forceStop = stopWorkspacePtyTree, private readonly jobs = createPendingWorkspaceWindowsJob) {}
 
-  create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void): Promise<WorkspaceTerminalSessionInfo> {
+  create(owner: number, request: WorkspaceTerminalCreateRequest, notify: (event: WorkspaceTerminalEvent) => void, validateAuthority?: () => void): Promise<WorkspaceTerminalSessionInfo> {
     assertWorkspaceRuntimeOpen();
+    validateAuthority?.();
     if (process.platform === 'win32' && Number(os.release().split('.')[2]) < 26100) throw new Error('Interactive terminals require Windows 11 24H2 (build 26100) or newer for bounded native cleanup. Use the command terminal on this Windows version.');
     if (this.sessions.size + [...this.pendingCreates].filter(p => !p.promoted).length >= MAX_SESSIONS) throw new Error('Close a terminal before opening another (maximum four).');
     const cwd = checkedWorkspacePath(request.projectDir);
@@ -75,16 +78,24 @@ export class WorkspacePtySessions {
     const args = profile.id === 'powershell' || profile.id === 'pwsh' ? ['-NoLogo', '-NoProfile'] : profile.id === 'cmd' ? ['/D'] : [];
     const env: NodeJS.ProcessEnv = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' };
     delete env.ELECTRON_RUN_AS_NODE;
+    const approvedLaunch = snapshotWorkspaceLaunch(profile.executable, args, env);
+    const gate = process.platform === 'win32' ? createWorkspaceProcessGate(env) : undefined;
     const pending: PendingCreate = { owner, cwd, done: undefined as unknown as Promise<WorkspaceTerminalSessionInfo>, promoted: false, released: false };
     this.pendingCreates.add(pending);
     pending.done = (async () => {
       try {
-        const pty = this.spawnPty(profile.executable, args, { name: 'xterm-256color', ...size, cwd, env, useConpty: process.platform === 'win32', useConptyDll: false });
+        if (gate) {
+          pending.job = this.jobs({ gate: { pipeName: gate.pipeName, capability: gate.capability } });
+          await pending.job.listening;
+          assertWorkspaceRuntimeOpen();
+          if (checkedWorkspacePath(request.projectDir) !== cwd) throw new Error('The project folder changed during terminal startup.');
+        }
+        const pty = this.spawnPty(gate?.executable || profile.executable, gate?.args || args, { name: 'xterm-256color', ...size, cwd, env: gate?.env || env, useConpty: process.platform === 'win32', useConptyDll: false });
         pending.pty = pty;
         if (pty.ready) await bounded(pty.ready, 6000, 'Terminal startup did not complete. Its owned output worker must close before HomeBot can quit.');
         if (!Number.isSafeInteger(pty.pid) || pty.pid <= 0) throw new Error('Terminal startup did not provide a valid shell process.');
         const info: WorkspaceTerminalSessionInfo = { sessionId: randomUUID(), profileId: profile.id, cwd, pid: pty.pid, output: '', seq: 0 };
-        const session: Session = { owner, info, pty, listeners: [], exited: false, released: false, killed: false, identity: this.lifecycle.capture(pty.pid), exitWaiters: new Set() };
+        const session: Session = { owner, info, pty, job: pending.job, listeners: [], exited: false, released: false, killed: false, identity: this.lifecycle.capture(pty.pid), exitWaiters: new Set() };
         this.sessions.set(info.sessionId, session);
         pending.promoted = true;
         session.listeners.push(pty.onData(data => {
@@ -95,26 +106,51 @@ export class WorkspacePtySessions {
           session.exited = true;
           info.exited = true; info.exitCode = event.exitCode;
           for (const resolve of session.exitWaiters) resolve();
-          notify({ sessionId: info.sessionId, seq: ++info.seq, type: 'exit', exitCode: event.exitCode });
-          // ConPTY retains a worker even after the child exits. Release it now;
-          // later closing its transcript must never kill a potentially reused PID.
-          void this.release(session, process.platform === 'win32').catch(error => { console.error('[HomeBot-CATCH]', error); });
+          void (async () => {
+            if (session.closing) { await session.closing; return; }
+            if (session.job) {
+              if (!await session.job.queryEmpty()) throw new Error('The terminal root ended, but owned background programs remain. Select Close to stop them.');
+              await session.job.stop();
+            }
+            await this.release(session, process.platform === 'win32');
+          })().catch(error => {
+            info.closeError = error instanceof Error ? error.message : 'Terminal cleanup could not be confirmed. Select Close to retry.';
+          }).then(() => { try { notify({ sessionId: info.sessionId, seq: ++info.seq, type: 'exit', exitCode: event.exitCode, closeError: info.closeError }); } catch { /* original renderer disappeared */ } });
         }));
-        try { assertWorkspaceRuntimeOpen(); }
+        try {
+          if (pending.job) {
+            const original = await session.identity;
+            if (!original) throw new Error('The terminal bootstrap creation identity could not be verified. No shell was released.');
+            await pending.job.attach(pty.pid, original);
+            assertWorkspaceRuntimeOpen();
+            if (checkedWorkspacePath(request.projectDir) !== cwd) throw new Error('The project folder changed during terminal startup.');
+            info.shellPid = await pending.job.authorize(approvedLaunch, () => {
+              validateAuthority?.();
+              assertWorkspaceRuntimeOpen();
+              if (checkedWorkspacePath(request.projectDir) !== cwd) throw new Error('The project folder changed before terminal execution.');
+            });
+          }
+          assertWorkspaceRuntimeOpen();
+          validateAuthority?.();
+        }
         catch (error) { await this.close(owner, info.sessionId); throw error; }
         return { ...info };
       } catch (error) {
-        if (!pending.promoted && pending.pty) await this.releasePending(pending);
+        if (!pending.promoted && (pending.pty || pending.job)) await this.releasePending(pending);
         throw error;
       }
     })();
-    void pending.done.then(() => this.pendingCreates.delete(pending), () => { if (pending.promoted || pending.released || !pending.pty) this.pendingCreates.delete(pending); });
+    void pending.done.then(() => this.pendingCreates.delete(pending), () => { if (pending.promoted || pending.released || (!pending.pty && !pending.job)) this.pendingCreates.delete(pending); });
     return pending.done;
   }
   private async releasePending(pending: PendingCreate): Promise<void> {
-    if (pending.released || !pending.pty) return;
+    if (pending.released) return;
     if (!pending.releasing) {
-      try { pending.releasing = Promise.resolve(pending.pty.kill()); } catch (error) { pending.releasing = Promise.reject(error); }
+      pending.releasing = (async () => {
+        const results = await Promise.allSettled([pending.job?.stop(), Promise.resolve().then(() => pending.pty?.kill())]);
+        const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        if (failed) throw failed.reason;
+      })();
       void pending.releasing.catch(() => { pending.releasing = undefined; });
     }
     await bounded(pending.releasing, RELEASE_TIMEOUT, 'Terminal startup worker release could not be confirmed. Its owned worker is retained; try closing HomeBot again.');
@@ -189,7 +225,8 @@ export class WorkspacePtySessions {
     session.closing = (async () => {
       const original = await session.identity;
       if (session.stopReceiptLost) throw new Error('Terminal Stop evidence was corrupted or lost after a force attempt. Process-tree exit cannot safely be confirmed.');
-      if (process.platform === 'win32' && (!session.exited || session.stopReceipt)) {
+      if (session.job) await session.job.stop();
+      else if (process.platform === 'win32' && (!session.exited || session.stopReceipt)) {
         const result = await this.forceStop(session.pty.pid, original, session.stopReceipt);
         if (result.receipt) session.stopReceipt = result.receipt;
         if (result.attempted && !session.stopReceipt) session.stopReceiptLost = true;

@@ -7,11 +7,11 @@ export interface WorkspaceWindowsJob {
   queryEmpty(): Promise<boolean>;
   stop(): Promise<void>;
 }
-export interface WorkspaceApprovedLaunch { executable: string; args: string[]; env: NodeJS.ProcessEnv }
+export interface WorkspaceApprovedLaunch { executable: string; args: string[]; env: NodeJS.ProcessEnv; kind?: 'task' }
 export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   readonly listening: Promise<void>;
   attach(pid: number, original: WorkspacePtyIdentity): Promise<void>;
-  authorize(launch: WorkspaceApprovedLaunch): Promise<number>;
+  authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
 }
 interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capability: string } }
 type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown };
@@ -67,10 +67,13 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
         readyResolve();
       } catch (error) { readyReject(error instanceof Error ? error : new Error('Job assignment failed.')); throw error; }
     },
-    authorize: async launch => {
+    authorize: async (launch, validate) => {
       if (!options.gate || authorized) throw new Error('The startup handoff is single-use.');
       authorized = true; await ready;
       if (typeof launch.executable !== 'string' || !launch.executable || !Array.isArray(launch.args) || launch.args.some(arg => typeof arg !== 'string') || !launch.env || typeof launch.env !== 'object') throw new Error('A main-approved launch is required.');
+      if (launch.kind !== undefined && launch.kind !== 'task') throw new Error('The approved launch kind is invalid.');
+      // The originating main-owned scope must still hold after readiness.
+      validate?.();
       const result = await request('go', { launch });
       if (result.ok !== true || !Number.isSafeInteger(result.pid) || (result.pid as number) <= 0) throw new Error('The approved shell did not confirm a positive owned process. Its Job is retained for cleanup.');
       return result.pid as number;
@@ -174,10 +177,15 @@ public static class OwnedWindowsJob {
  static void RequireRoot() { bool member; if(root==IntPtr.Zero||WaitForSingleObject(root,0)!=258||!IsProcessInJob(root,job,out member)||!member) throw new Exception("root"); }
  public static void Attach(int pid,long expected,string capability) { root=OpenProcess(0x101101,false,pid); if(root==IntPtr.Zero) throw new Exception("open"); long born,exited,kernel,user; if(!GetProcessTimes(root,out born,out exited,out kernel,out user) || DateTime.FromFileTimeUtc(born).Ticks/10!=expected/10 || WaitForSingleObject(root,0)!=258) throw new Exception("identity"); if(!AssignProcessToJobObject(job,root)) throw new Exception("assign"); rootPid=pid; RequireRoot(); if(pipe!=null) { var connection=pipe.BeginWaitForConnection(null,null); if(!connection.AsyncWaitHandle.WaitOne(3500)) throw new Exception("peer-timeout"); pipe.EndWaitForConnection(connection); connection.AsyncWaitHandle.Close(); uint peer; if(!GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)||peer!=(uint)pid) throw new Exception("peer"); reader=new StreamReader(pipe,new UTF8Encoding(false),false,4096,true); writer=new StreamWriter(pipe,new UTF8Encoding(false),4096,true); writer.AutoFlush=true; var hello=ReadPeerLine(); if(hello!=capability) throw new Exception("capability"); RequireRoot(); } else { CloseHandle(root); root=IntPtr.Zero; } }
  static string ReadPeerLine() { var result=reader.ReadLineAsync(); if(!result.Wait(3500)) throw new Exception("peer-read-timeout"); string value=result.Result; if(value==null||value.Length>4096) throw new Exception("peer-input"); return value; }
- public static string Go(string launch) { RequireRoot(); uint peer; if(!GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)||peer!=(uint)rootPid) throw new Exception("peer"); writer.WriteLine(launch); return ReadPeerLine(); }
- public static bool VerifyChild(int pid) { IntPtr child=OpenProcess(0x1000,false,pid); if(child==IntPtr.Zero) return false; try { bool member; return IsProcessInJob(child,job,out member)&&member; } finally { CloseHandle(child); } }
+ static Accounting Account() { Accounting info; if(job==IntPtr.Zero||!QueryInformationJobObject(job,1,out info,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)) throw new Exception("query"); return info; }
+ public static string Go(string launch) { RequireRoot(); uint peer; if(!GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)||peer!=(uint)rootPid) throw new Exception("peer"); if(Account().Total!=1) throw new Exception("baseline"); writer.WriteLine(launch); return ReadPeerLine(); }
+ // 0 positively absent; 1 same Job member; -1 unknown/live nonmember.
+ public static int VerifyChild(int pid) { IntPtr child=OpenProcess(0x1000,false,pid); if(child==IntPtr.Zero) { int error=Marshal.GetLastWin32Error(); return error==87||error==1168?0:-1; } try { bool member; return IsProcessInJob(child,job,out member)&&member?1:-1; } finally { CloseHandle(child); } }
+ public static string ReadCompletion() { RequireRoot(); return ReadPeerLine(); }
+ public static bool CompletedTarget() { RequireRoot(); return Account().Total>=2; }
+ public static void Accept() { RequireRoot(); writer.WriteLine("accepted"); }
  public static void ReleaseGate() { if(pipe!=null) { pipe.Dispose();pipe=null; } if(root!=IntPtr.Zero) { CloseHandle(root);root=IntPtr.Zero; } }
- public static bool Empty() { Accounting info; if(job==IntPtr.Zero||!QueryInformationJobObject(job,1,out info,(uint)Marshal.SizeOf(typeof(Accounting)),IntPtr.Zero)) throw new Exception("query"); return info.Active==0; }
+ public static bool Empty() { return Account().Active==0; }
  public static bool Stop() { if(root!=IntPtr.Zero) { CloseHandle(root);root=IntPtr.Zero; } if(!Empty() && !TerminateJobObject(job,1)) { if(!Empty()) return false; } var elapsed=Stopwatch.StartNew(); while(!Empty()&&elapsed.ElapsedMilliseconds<1200) Thread.Sleep(20); return Empty(); }
  public static void Close() { if(pipe!=null) pipe.Dispose(); if(root!=IntPtr.Zero) { CloseHandle(root);root=IntPtr.Zero; } if(job!=IntPtr.Zero) { CloseHandle(job);job=IntPtr.Zero; } }
 }
@@ -195,7 +203,16 @@ try {
   if($request.id -isnot [int] -or $request.id -le 0) { throw 'request' }
   try {
    if($request.operation -eq 'attach' -and !$attached) { $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true} }
-   elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) { $authorized=$true; $ack=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | ConvertTo-Json -Compress -Depth 5))); if($ack.pid -isnot [int] -or $ack.pid -le 0 -or ![OwnedWindowsJob]::VerifyChild($ack.pid)) { throw 'child' }; [OwnedWindowsJob]::ReleaseGate(); Emit @{type='result';id=$request.id;ok=$true;pid=$ack.pid} }
+   elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
+    $authorized=$true; $ack=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | ConvertTo-Json -Compress -Depth 5)))
+    if($ack.type -ne 'spawn' -or $ack.pid -isnot [int] -or $ack.pid -le 0) { throw 'child' }
+    $member=[OwnedWindowsJob]::VerifyChild($ack.pid)
+    if($member -eq 0 -and $request.launch.kind -eq 'task') {
+     $done=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::ReadCompletion())
+     if($done.type -ne 'completed' -or $done.pid -ne $ack.pid -or $done.exitCode -isnot [int] -or ![OwnedWindowsJob]::CompletedTarget()) { throw 'completion' }
+    } elseif($member -ne 1) { throw 'membership' }
+    [OwnedWindowsJob]::Accept(); [OwnedWindowsJob]::ReleaseGate(); Emit @{type='result';id=$request.id;ok=$true;pid=$ack.pid}
+   }
    elseif($request.operation -eq 'query' -and $attached) { Emit @{type='result';id=$request.id;ok=$true;empty=[OwnedWindowsJob]::Empty()} }
    elseif($request.operation -eq 'stop') { $empty=[OwnedWindowsJob]::Stop(); Emit @{type='result';id=$request.id;ok=$true;empty=$empty}; if($empty) { exit 0 } }
    else { throw 'operation' }

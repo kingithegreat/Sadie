@@ -65,3 +65,37 @@ test('live task output is shown before completion and Stop targets its current I
   fireEvent.click(screen.getByText('Stop')); expect(stop).toHaveBeenCalledWith({ taskId: request.taskId });
   await act(async () => finish({ success: false, cancelled: true }));
 });
+
+test('completed background cleanup restores reachable Stop and refuses Run until the same task retry succeeds', async () => {
+  const stop = jest.fn().mockResolvedValueOnce({ success: false, error: 'Job state unknown' }).mockResolvedValueOnce({ success: true });
+  (window as any).electron = {
+    workspaceTaskList: async () => ({ success: true, tasks: [{ name: 'dev', command: 'watch' }] }),
+    workspaceTaskStatus: async () => ({ task: { projectDir: 'C:/fixture', taskId: 'retained-job', scriptName: 'dev', running: false, cleanupPending: true, result: { cleanupPending: true, error: 'Background programs remain' } } }),
+    workspaceTaskStop: stop,
+  };
+  render(<ProblemsPanel root="C:/fixture" onOpenFile={jest.fn()} />);
+  await screen.findByRole('button', { name: 'Stop' });
+  expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Job state unknown');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Stop' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument());
+  expect(stop.mock.calls).toEqual([[{ taskId: 'retained-job' }], [{ taskId: 'retained-job' }]]);
+  expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('late old-project Stop refusal cannot alter the new project or retain its cleanup button', async () => {
+  let reject!: (error: Error) => void;
+  (window as any).electron = {
+    workspaceTaskList: async () => ({ success: true, tasks: [{ name: 'check', command: 'check' }] }),
+    workspaceTaskStatus: async ({ projectDir }: { projectDir: string }) => ({ task: projectDir === 'C:/old' ? { projectDir, taskId: 'old-job', scriptName: 'check', running: false, cleanupPending: true } : null }),
+    workspaceTaskStop: () => new Promise((_resolve, failure) => { reject = failure; }),
+  };
+  const view = render(<ProblemsPanel root="C:/old" onOpenFile={jest.fn()} />); await screen.findByRole('button', { name: 'Stop' });
+  fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  view.rerender(<ProblemsPanel root="C:/new" onOpenFile={jest.fn()} />);
+  await act(async () => reject(new Error('old refusal')));
+  expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.getByRole('button', { name: 'Run' })).toBeEnabled();
+});

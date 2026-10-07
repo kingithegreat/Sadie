@@ -9,6 +9,7 @@ import {
   listWorkspacePackageTasks,
   prepareWorkspacePackageTask,
   workspaceTaskConfirmationMessage,
+  stopWorkspaceTask,
 } from './workspace-tasks';
 
 export const WORKSPACE_TASK_CHANNELS = {
@@ -37,17 +38,27 @@ export function registerWorkspaceTaskIpc(): void {
   ipcMain.removeHandler(WORKSPACE_TASK_CHANNELS.RUN);
   ipcMain.removeHandler(WORKSPACE_TASK_CHANNELS.STOP);
   ipcMain.removeHandler(WORKSPACE_TASK_CHANNELS.STATUS);
-  ipcMain.handle(WORKSPACE_TASK_CHANNELS.STOP, (event, args: unknown) => {
+  ipcMain.handle(WORKSPACE_TASK_CHANNELS.STOP, async (event, args: unknown) => {
     if (!trustedSender(event) || !objectArg(args) || typeof args.taskId !== 'string') return { success: false, error: 'Invalid task Stop request.' };
     const record = records.get(key(event.sender.id, args.taskId));
-    if (!record || !record.state.running) return { success: false, error: 'This task has already stopped or belongs to another window.' };
+    if (!record || (!record.state.running && !record.state.cleanupPending)) return { success: false, error: 'This task has already stopped or belongs to another window.' };
     record.controller.abort('user');
-    return { success: true };
+    try {
+      const stopped = await stopWorkspaceTask(key(event.sender.id, args.taskId));
+      record.state = { ...record.state, cleanupPending: !stopped,
+        ...(record.state.result ? { result: { ...record.state.result, cleanupPending: !stopped } } : {}) };
+      push(record);
+      return stopped ? { success: true } : { success: false, error: 'Task cleanup has not been confirmed. Its owned Job is retained; select Stop to retry.' };
+    } catch {
+      record.state.cleanupPending = true;
+      push(record);
+      return { success: false, error: 'Task cleanup has not been confirmed. Select Stop to retry.' };
+    }
   });
   ipcMain.handle(WORKSPACE_TASK_CHANNELS.STATUS, (event, args: unknown) => {
     if (!trustedSender(event) || !objectArg(args) || typeof args.projectDir !== 'string') return { success: false, error: 'Invalid task status request.' };
     const found = [...records.values()].filter(r => r.owner === event.sender && path.resolve(r.state.projectDir) === path.resolve(String(args.projectDir)));
-    const running = found.filter(record => record.state.running);
+    const running = found.filter(record => record.state.running || record.state.cleanupPending);
     return { success: true, task: (running[running.length - 1] || found[found.length - 1])?.state || null };
   });
 
@@ -100,6 +111,8 @@ export function registerWorkspaceTaskIpc(): void {
     try {
       push(record);
       const result = await executeWorkspacePackageTask(snapshot, {
+        taskId: key(event.sender.id, taskId),
+        validateAuthority: () => { if (!trustedSender(event)) throw new Error('The originating task window or frame changed before execution.'); },
         signal: controller.signal,
         longRunning: args.longRunning === true,
         onProgress: progress => {
@@ -116,7 +129,7 @@ export function registerWorkspaceTaskIpc(): void {
         // project canonicalises differently (junction/8.3/symlink homes).
         rawProjectDir: typeof args.projectDir === 'string' ? args.projectDir : undefined,
       });
-      record.state = { ...record.state, running: false, result, outputExcerpt: result.outputExcerpt || record.state.outputExcerpt, problems: result.problems || record.state.problems };
+      record.state = { ...record.state, running: false, cleanupPending: result.cleanupPending === true, result, outputExcerpt: result.outputExcerpt || record.state.outputExcerpt, problems: result.problems || record.state.problems };
       if (progressTimer) { clearTimeout(progressTimer); progressTimer = undefined; }
       push(record);
       return result;
@@ -125,7 +138,7 @@ export function registerWorkspaceTaskIpc(): void {
       event.sender.removeListener('destroyed', abort);
       record.state.running = false;
       // Retain recent results for reopening the panel, with bounded history.
-      for (const [id, prior] of [...records].slice(0, Math.max(0, records.size - 20))) if (!prior.state.running) records.delete(id);
+      for (const [id, prior] of [...records].slice(0, Math.max(0, records.size - 20))) if (!prior.state.running && !prior.state.cleanupPending) records.delete(id);
     }
   });
 }

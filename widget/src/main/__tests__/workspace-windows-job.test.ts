@@ -122,7 +122,16 @@ describe('creation-gated Windows Job ownership', () => {
     expect(source).toContain('GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)');
     expect(source).toContain('DateTime.FromFileTimeUtc(born).Ticks/10!=expected/10');
     expect(source).toContain('limits.Basic.Flags=0x2000');
-    expect(source).toContain('QueryInformationJobObject(job,1'); expect(source).toContain('return info.Active==0');
+    expect(source).toContain('QueryInformationJobObject(job,1'); expect(source).toContain('return Account().Active==0');
     expect(source).not.toContain('Get-CimInstance'); expect(source).not.toContain('TerminateProcess');
+  });
+
+  it('rechecks main-owned authority after readiness and cannot send GO when that fence rejects', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle(); fake.reply({ ok: true }); await attached;
+    const validate = jest.fn(() => { throw new Error('request scope expired'); });
+    await expect(job.authorize({ executable: 'approved.exe', args: [], env: {} }, validate)).rejects.toThrow('scope expired');
+    expect(fake.requests().filter(value => value.operation === 'go')).toEqual([]);
+    const stopped = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopped;
   });
 });
