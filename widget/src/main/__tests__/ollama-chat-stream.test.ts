@@ -15,7 +15,7 @@ jest.mock('../memory-manager', () => ({
   MemoryManager: { getConversation: jest.fn(() => null) },
 }));
 jest.mock('../tools', () => ({
-  initializeTools: jest.fn(), getSmallModelTools: jest.fn(() => []),
+  initializeTools: jest.fn(), getSmallModelTools: jest.fn(() => [{ type: 'function', function: { name: 'read_file' } }]),
   getFocusedOllamaTools: jest.fn(() => [{ type: 'function', function: { name: 'read_file' } }]),
   executeToolBatch: jest.fn(async () => []),
 }));
@@ -28,6 +28,8 @@ jest.mock('../stream-proxy-client', () => ({ __esModule: true, default: jest.fn(
 
 import { streamFromOllamaWithTools, setUncensoredMode, clearHistory } from '../message-router';
 import { executeToolBatch } from '../tools';
+import { getSettings } from '../config-manager';
+import { OLLAMA_CHAT_MODEL } from '../router/model-size';
 
 const post = axios.post as jest.Mock;
 const batch = executeToolBatch as jest.Mock;
@@ -38,6 +40,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   setUncensoredMode(false);
   clearHistory('local-stream-test');
+  (getSettings as jest.Mock).mockReturnValue({ chatModel: 'llama3.1:70b', ollamaUrl: 'http://127.0.0.1:11434' });
 });
 
 async function start(message = 'Explain how rainbows form') {
@@ -69,6 +72,15 @@ test('accepts a final done record without a trailing newline', async () => {
   await tick();
   expect(state.onChunk).toHaveBeenCalledWith('A complete response.');
   expect(state.onEnd).toHaveBeenCalledTimes(1);
+});
+
+test('a done record closes the remaining transport even when the server keeps it open', async () => {
+  const state = await start();
+  state.stream.write(record('A complete response.', true));
+  await tick();
+  expect(state.stream.destroyed).toBe(true);
+  expect(state.onEnd).toHaveBeenCalledTimes(1);
+  expect(state.onError).not.toHaveBeenCalled();
 });
 
 test.each([
@@ -129,6 +141,9 @@ test('cancelling while permission is pending prevents tool rerun and follow-up g
   allow({ decision: 'allow_once' });
   await tick();
   expect(batch).toHaveBeenCalledTimes(callsAtStop);
+  const actualToolCall = batch.mock.calls.find(call => call[0][0]?.name === 'read_file');
+  expect(actualToolCall?.[2]?.signal).toBeInstanceOf(AbortSignal);
+  expect(actualToolCall?.[2]?.signal.aborted).toBe(true);
   expect(post).toHaveBeenCalledTimes(1);
   expect(onToolResult).not.toHaveBeenCalled();
   expect(onEnd).toHaveBeenCalledTimes(1);
@@ -175,4 +190,44 @@ test('a synthesis request with noTools cannot execute hallucinated tool calls', 
   expect(post).toHaveBeenCalledTimes(1);
   expect(onEnd).toHaveBeenCalledTimes(1);
   expect(onError).not.toHaveBeenCalled();
+});
+
+test('model failover updates its badge and keeps the successful model for tool followup', async () => {
+  const primaryError = Object.assign(new Error('Model not found'), { response: { status: 404 } });
+  post.mockRejectedValueOnce(primaryError);
+  const fallback = new PassThrough(), followup = new PassThrough();
+  post.mockResolvedValueOnce({ data: fallback });
+  post.mockResolvedValueOnce({ data: followup });
+  batch.mockImplementation(async (calls: any[]) => calls[0]?.name === 'read_file'
+    ? [{ success: true, result: { text: 'File contents.' } }] : []);
+  const onMeta = jest.fn(), onEnd = jest.fn(), onError = jest.fn();
+  await streamFromOllamaWithTools('Read my file', undefined, 'local-stream-test', jest.fn(), jest.fn(), jest.fn(),
+    onEnd, onError, undefined, undefined, { conversationPrompt: 'Always mention the friendly tui.' }, onMeta);
+  await tick();
+  fallback.end(JSON.stringify({ message: { content: '', tool_calls: [{ function: { name: 'read_file', arguments: { path: 'one.txt' } } }] }, done: true }) + '\n');
+  await tick();
+  expect(post).toHaveBeenCalledTimes(3);
+  expect(post.mock.calls[2][1].model).toBe(OLLAMA_CHAT_MODEL);
+  expect(onMeta).toHaveBeenLastCalledWith({ model: OLLAMA_CHAT_MODEL });
+  expect(post.mock.calls[1][1].messages.some((entry: any) => entry.role === 'system' && entry.content.includes('Always mention the friendly tui.'))).toBe(true);
+  expect(post.mock.calls[1][1].options.num_ctx).toBe(4096);
+  followup.end(record('The friendly tui says the file has been read.', true));
+  await tick();
+  expect(onEnd).toHaveBeenCalledTimes(1);
+  expect(onError).not.toHaveBeenCalled();
+});
+
+test('a quality retry keeps tools disabled rather than offering them again', async () => {
+  (getSettings as jest.Mock).mockReturnValue({ chatModel: 'qwen2.5:3b', ollamaUrl: 'http://127.0.0.1:11434' });
+  const state = await start('Read my file');
+  const retry = new PassThrough();
+  post.mockResolvedValueOnce({ data: retry });
+  state.stream.end(record('', true));
+  await tick();
+  expect(post.mock.calls[0][1].tools).toHaveLength(1);
+  expect(post.mock.calls[1][1].tools).toBeUndefined();
+  retry.end(record('Here is a clear answer after the quality retry.', true));
+  await tick();
+  expect(state.onEnd).toHaveBeenCalledTimes(1);
+  expect(state.onError).not.toHaveBeenCalled();
 });

@@ -40,7 +40,7 @@ const mockSettings: Record<string, any> = {
   hideOnBlur: false,
 };
 jest.mock('../config-manager', () => ({
-  getSettings: jest.fn(() => Promise.resolve(mockSettings)),
+  getSettings: jest.fn(() => mockSettings),
   saveSettings: jest.fn(),
 }));
 
@@ -166,6 +166,23 @@ describe('streamFromLLM', () => {
       );
       expect(mockStreamFromCustomLLM).toHaveBeenCalledTimes(1);
       expect(typeof handle.cancel).toBe('function');
+    });
+
+    test('plain greeting does not give an unoffered tool call an execution callback', async () => {
+      mockStreamFromCustomLLM.mockImplementationOnce(async (...args: any[]) => {
+        args[9]?.({ name: 'read_file', arguments: { path: 'unrequested.txt' } });
+        args[5]();
+        return { cancel: jest.fn() };
+      });
+      const cbs = callbacks();
+      await streamFromLLM('hello', undefined, 'conv-no-offered-tools',
+        cbs.onChunk, cbs.onToolCall, cbs.onToolResult, cbs.onEnd, cbs.onError);
+      const args = mockStreamFromCustomLLM.mock.calls[0];
+      expect(args[8]).toBeUndefined();
+      expect(args[9]).toBeUndefined();
+      expect(cbs.onToolCall).not.toHaveBeenCalled();
+      expect(cbs.onToolResult).not.toHaveBeenCalled();
+      expect(cbs.onEnd).toHaveBeenCalledTimes(1);
     });
 
     test('image attachment ⇒ sends images to cloud LLM', async () => {

@@ -23,3 +23,21 @@ result against main ce53a7db. This bounded runner is retained privately at
 Final full Jest, TypeScript and native visible local/custom chat acceptance are
 root-owned and pending hosted execution. No owner profile, installed model,
 credential, shared dependency, paid provider, push or merge was changed.
+
+Integration review correction: custom and Code API providers receive a tool
+execution callback only when this request actually offers tool definitions.
+Local initial/rerun batches now receive the originating AbortSignal, so the
+executor can stop between asynchronous confirmation and actual handlers. Local
+done records destroy the remaining transport. A successful model failover
+updates the model badge, keeps that model for following tool rounds, updates
+its generation budget, and preserves conversation instructions. A quality retry
+carries an explicit no-tools flag into its new request.
+
+Bounded verification on integrated base b2d8c955: fourteen local product-path
+cases pass, including the new open-done socket, originating signal, failover
+badge/follow-up and quality-retry controls. A separate actual-router A/B proves
+the cloud greeting no-tools gate: unchanged integrated source executes the
+unoffered read_file and a follow-up; corrected source exposes no callback,
+executes no tool and ends once. These are isolated source-transpilation checks,
+not final Jest/compiler/native acceptance. The executor's optional signal type
+and enforcement are root-owned integration changes.

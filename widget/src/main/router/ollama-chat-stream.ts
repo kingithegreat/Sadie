@@ -33,7 +33,7 @@ export function readOllamaChatStream(
       catch { throw new Error(final ? 'The local model sent an incomplete response.' : 'The local model sent an invalid response.'); }
       if (record?.error) throw new Error(String(record.error));
       onRecord(record);
-      if (record?.done === true) { done = true; finish(); }
+      if (record?.done === true) { done = true; finish(); stream.destroy(); }
     }
 
     function data(chunk: Buffer | string): void {

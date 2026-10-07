@@ -2295,7 +2295,7 @@ export async function streamFromLLM(
         toolRoundTrip.onError,
         controller.signal,
         toolDefs,
-        providerSupportsTools ? toolRoundTrip.onToolCall : undefined,
+        toolDefs?.length ? toolRoundTrip.onToolCall : undefined,
         cloudImageData,
       )).catch(toolRoundTrip.onError);
 
@@ -2363,7 +2363,7 @@ export async function streamFromLLM(
         message, history.map(m => ({ role: m.role as any, content: m.content })),
         codeApiConfig, codeSystemPrompt,
         toolRoundTrip.onChunk, toolRoundTrip.onEnd, toolRoundTrip.onError, controller.signal,
-        codeToolDefs, codeProviderSupportsTools ? toolRoundTrip.onToolCall : undefined,
+        codeToolDefs, codeToolDefs?.length ? toolRoundTrip.onToolCall : undefined,
       )).catch(toolRoundTrip.onError);
       return { cancel: () => controller.abort() };
     } else {
@@ -2522,7 +2522,7 @@ export async function streamFromOllamaWithTools(
   const baseChatModel = (uncensoredModeEnabled && !willUseTools) ? preferredUncensoredModel
     : (isCodingQuery ? preferredCodeModel : preferredChatModel);
   const chatModel = baseChatModel || preferredChatModel;
-  const model = hasImages ? preferredVisionModel : chatModel;
+  let model = hasImages ? preferredVisionModel : chatModel;
   if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
   if (uncensoredModeEnabled && willUseTools) {
     console.log(`[HomeBot] Uncensored mode is on, but this turn needs tools — using ${model}, which supports them`);
@@ -2557,7 +2557,7 @@ export async function streamFromOllamaWithTools(
   const convPrompt = inlinePrompt || storedConv?.systemPrompt?.toString().trim();
 
   // ── Context budget: scale history window and digest to model size ──
-  const smallModel = isSmallModel(model);
+  let smallModel = isSmallModel(model);
   const maxHistoryForModel = smallModel ? SMALL_MODEL_HISTORY_MESSAGES : MAX_HISTORY_MESSAGES;
 
   const messages: ChatMessage[] = [];
@@ -2728,7 +2728,7 @@ export async function streamFromOllamaWithTools(
   // it twice is how the model came to be picked as if no tools were coming
   // while tools were in fact offered.
   const shouldOfferTools = willUseTools;
-  const tools = (modelSupportsTools && shouldOfferTools)
+  let tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
       // The message itself decides WHICH category tools get the few slots
       // available — without it they were taken in registration order, so a
@@ -2747,7 +2747,13 @@ export async function streamFromOllamaWithTools(
   };
 
   // Recursive function to handle tool calls
-  async function processResponse(round: number = 0): Promise<void> {
+  function generationOptions() {
+    const lowVram = getSettings().hardwareProfile === '4gb';
+    if (smallModel) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 };
+    if (lowVram) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.15, num_predict: 1024, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+    return { num_ctx: 8192, num_gpu: 99, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+  }
+  async function processResponse(round: number = 0, disableTools = false): Promise<void> {
     if (controller.signal.aborted || ended) return;
     if (round >= MAX_TOOL_ROUNDS) {
       console.error(`[HomeBot] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
@@ -2762,15 +2768,10 @@ export async function streamFromOllamaWithTools(
         stream: true,
         keep_alive: '30m',
         // mirostat 2 controls perplexity dynamically — temperature/top_p are ignored when mirostat is active
-        options: (() => {
-          const lowVram = getSettings().hardwareProfile === '4gb';
-          if (smallModel) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 };
-          if (lowVram)    return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.15, num_predict: 1024, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
-          return { num_ctx: 8192, num_gpu: 99, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
-        })()
+        options: generationOptions()
       };
       
-      if (tools && tools.length > 0) {
+      if (!disableTools && tools && tools.length > 0) {
         requestBody.tools = tools;
       }
       
@@ -2788,7 +2789,7 @@ export async function streamFromOllamaWithTools(
         const errMsg = (primaryErr?.response?.data?.error || primaryErr?.message || '').toLowerCase();
         const isModelError = status === 404 || errMsg.includes('not found') || errMsg.includes('model');
         
-        if (isModelError && !requestBody._failedOver) {
+        if (isModelError && round === 0) {
           // Build a fallback chain if the model is missing (do not failover on network/connection errors)
           const fallbacks = [OLLAMA_CHAT_MODEL, 'gemma4:e4b', 'qwen2.5-coder:7b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
@@ -2796,19 +2797,32 @@ export async function streamFromOllamaWithTools(
             console.warn(`[HomeBot] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
             onChunk(`⚠️ Model "${requestBody.model}" unavailable — switching to ${fallbackModel}\n\n`);
             requestBody.model = fallbackModel;
-            requestBody._failedOver = true;
             // Adjust system prompt for the fallback model's size
             const fbSmall = isSmallModel(fallbackModel);
             if (fbSmall !== smallModel) {
               const newPrompt = getSystemPromptForModel(fallbackModel, settings.chatGuidelines?.trim());
-              const sysIdx = messages.findIndex(m => m.role === 'system');
-              if (sysIdx >= 0) messages[sysIdx].content = newPrompt;
+              // Replace only HomeBot's framing, preserving user conversation
+              // instructions, recalled context and document snippets.
+              for (const entry of messages) {
+                if (entry.role === 'system') entry.content = String(entry.content).replace(systemPromptWithGuidelines, newPrompt);
+              }
+              smallModel = fbSmall;
+              if (!disableTools && willUseTools) {
+                tools = fbSmall && !isAgentic
+                  ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories, query: message })
+                  : getFocusedOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories });
+                if (tools?.length) requestBody.tools = tools;
+                else delete requestBody.tools;
+              }
+              requestBody.options = generationOptions();
             }
             response = await axios.post(`${ollamaBase}/api/chat`, requestBody, {
               responseType: 'stream',
               timeout: 0,
               signal: controller.signal
             });
+            model = fallbackModel;
+            onMeta?.({ model });
           } else {
             throw primaryErr;
           }
@@ -2852,7 +2866,7 @@ export async function streamFromOllamaWithTools(
             assistantContent += parsed.message.content;
             scheduleFlush();
           }
-          if (willUseTools && Array.isArray(parsed.message?.tool_calls)) {
+          if (willUseTools && !disableTools && Array.isArray(parsed.message?.tool_calls)) {
             pendingToolCalls.push(...parsed.message.tool_calls);
           }
         });
@@ -2864,7 +2878,7 @@ export async function streamFromOllamaWithTools(
       // If no explicit tool_calls were emitted but the assistant content
       // looks like raw tool JSON, parse and route it through the tool
       // execution pipeline rather than rendering it as plain text.
-      if (willUseTools && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
+      if (willUseTools && !disableTools && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
         // Try extracting tool calls from mixed text (models like mistral
         // often embed tool JSON inside descriptive prose)
         const extracted = extractToolCallsFromText(assistantContent);
@@ -2888,7 +2902,7 @@ export async function streamFromOllamaWithTools(
       // Final fallback: detect prose-style tool descriptions like
       // "write_file path='...' content='...'" that models sometimes output
       // instead of using the proper tool_call mechanism.
-      if (willUseTools && pendingToolCalls.length === 0) {
+      if (willUseTools && !disableTools && pendingToolCalls.length === 0) {
         const proseCalls = extractProseToolCalls(assistantContent);
         if (proseCalls && proseCalls.length > 0) {
           pendingToolCalls = proseCalls;
@@ -2923,8 +2937,7 @@ export async function streamFromOllamaWithTools(
           messages.length = 0;
           messages.push(...retryMessages);
           // Drop tools for the retry to reduce confusion
-          if (requestBody.tools) delete requestBody.tools;
-          await processResponse(round + 1);
+          await processResponse(round + 1, true);
           return;
         }
       }
@@ -2985,7 +2998,7 @@ export async function streamFromOllamaWithTools(
           onToolCall(call.name, call.arguments);
         }
         if (controller.signal.aborted || ended) return;
-        const batchResults = await executeToolBatch(calls, toolContext);
+        const batchResults = await executeToolBatch(calls, toolContext, { signal: controller.signal });
         if (controller.signal.aborted || ended) return;
 
         // Agentic mode: stream per-tool completion status
@@ -3025,7 +3038,7 @@ export async function streamFromOllamaWithTools(
               }
 
               if (resp.decision === 'allow_once') {
-                const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing });
+                const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing, signal: controller.signal });
                 if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
@@ -3040,7 +3053,7 @@ export async function streamFromOllamaWithTools(
                   saveSettings(s);
                 } catch (e) { console.error('[HomeBot] Failed to persist permission changes:', e); }
 
-                const rerun = await executeToolBatch(calls, toolContext);
+                const rerun = await executeToolBatch(calls, toolContext, { signal: controller.signal });
                 if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
