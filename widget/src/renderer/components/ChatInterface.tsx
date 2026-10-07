@@ -89,6 +89,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
             className={`guidelines-toggle-btn ${hasGuidelines ? 'has-content' : ''}`}
             onClick={() => setGuidelinesOpen(!guidelinesOpen)}
             title={guidelinesOpen ? 'Hide guidelines' : 'Set chat guidelines'}
+            aria-label={guidelinesOpen ? 'Hide chat guidelines' : 'Set chat guidelines'}
           >
             {hasGuidelines ? '📝' : '📋'}
           </button>

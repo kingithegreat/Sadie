@@ -170,6 +170,19 @@ test('post-setup compact discovery and editable draft survive Home navigation in
       await visibleControl(page, page.getByRole('button', { name: 'Send', exact: true }), `${theme} narrow Send`, 40, 28, bounds);
       await visibleControl(page, page.getByRole('button', { name: 'Remove first-user-meeting-notes.txt', exact: true }),
         `${theme} narrow attachment remove`, 16, 16, bounds);
+      await visibleControl(page, page.getByRole('button', { name: 'Set chat guidelines', exact: true }),
+        `${theme} narrow guidelines`, 24, 32, bounds);
+      const chatLayout = await page.locator('.chat-interface').evaluate(element => {
+        const edge = element.getBoundingClientRect();
+        return { width: element.clientWidth, scrollWidth: element.scrollWidth,
+          overflowing: Array.from(element.querySelectorAll('*')).flatMap(child => {
+            const box = child.getBoundingClientRect();
+            if (!box.width || !box.height || (box.left >= edge.left - 1 && box.right <= edge.right + 1)) return [];
+            return [{ tag: child.tagName, classes: child.className, label: child.getAttribute('aria-label'),
+              left: box.left, right: box.right, width: box.width, position: getComputedStyle(child).position }];
+          }).slice(0, 50) };
+      });
+      fs.writeFileSync(testInfo.outputPath(`first-user-chat-layout-${theme}.json`), JSON.stringify(chatLayout, null, 2));
       await expect.poll(() => page.locator('.chat-interface').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
       await page.mouse.move(0, 0);
       await page.screenshot({ path: testInfo.outputPath(`first-user-chat-narrow-${theme}.png`) });

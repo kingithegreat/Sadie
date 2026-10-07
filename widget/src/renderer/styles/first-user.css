@@ -41,4 +41,10 @@
     flex-wrap: wrap;
     justify-content: flex-end;
   }
+  .app-container .chat-interface .guidelines-toggle-btn {
+    position: static;
+    display: block;
+    min-height: 32px;
+    margin: 6px 0 0 auto;
+  }
 }

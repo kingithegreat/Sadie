@@ -73,6 +73,14 @@ narrow-screen full-width text row with controls below. Two stale model hints now
 describe the chosen uncensored model without falsely claiming tools are disabled.
 Widget TypeScript and scoped lint for those hints pass. Fresh compiled/native,
 current-head whole hosted checks, configured review and delivery remain pending.
+Run37553706922 again passes all three setup cases and the narrow composer now
+measures526px wide with Send/attachment controls inside the window. Discovery
+still rejects horizontal overflow. The existing guidelines control is positioned
+36px beyond its wrapper; root moves it into normal flow on narrow screens,
+labels it and explicitly checks its bounds, retaining descendant overflow data.
+The Linux shard3 install failed before tests in onnxruntime-node's external binary
+download (ETIMEDOUT/ENETUNREACH); its log is retained, not counted as a UI result.
+Supplemental acceptance TypeScript passes; fresh whole qualification remains pending.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
