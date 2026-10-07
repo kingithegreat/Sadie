@@ -235,7 +235,10 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
     if (configured) {
       try { return { success: true, path: validateTrustedWorkspaceRoot(configured) }; } catch { /* Fall back to home when an old project is unavailable. */ }
     }
-    return { success: true, path: os.homedir() };
+    // Use the same canonical trusted root as LIST/READ. macOS homes may be
+    // /var aliases of /private/var; lexical roots cannot own canonical drafts.
+    try { return { success: true, path: validateTrustedWorkspaceRoot(os.homedir()) }; }
+    catch (e) { return { success: false, error: fail(e) }; }
   });
 
   ipcMain.handle(WORKSPACE_CHANNELS.LIST, async (event, dirPath?: unknown, options?: { showHidden?: boolean }): Promise<WorkspaceListResult> => {

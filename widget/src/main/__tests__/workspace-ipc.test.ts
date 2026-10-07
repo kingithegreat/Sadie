@@ -152,7 +152,33 @@ describe('root', () => {
     (global as any).__handlers.clear();
     registerWorkspaceIpc(() => 'C:\\Windows');
     const r = await invoke(WORKSPACE_CHANNELS.ROOT);
-    expect(r.path).toBe(HOME);
+    expect(r.path).toBe(fs.realpathSync(HOME));
+  });
+  test('an aliased default home returns the same canonical root as its tree and file reads', async () => {
+    const alias = path.join(tmpDir, 'home-alias');
+    fs.symlinkSync(tmpDir, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const home = jest.spyOn(require('os') as typeof os, 'homedir').mockReturnValue(alias);
+    try {
+      registerWorkspaceIpc(() => undefined);
+      const root = await invoke(WORKSPACE_CHANNELS.ROOT);
+      const list = await invoke(WORKSPACE_CHANNELS.LIST, alias);
+      const file = await invoke(WORKSPACE_CHANNELS.READ, path.join(alias, 'hello.ts'));
+      expect(root).toEqual({ success: true, path: fs.realpathSync(tmpDir) });
+      expect(list).toMatchObject({ success: true, path: root.path });
+      expect(file).toMatchObject({ success: true, path: path.join(root.path, 'hello.ts') });
+      expect(path.relative(root.path, file.path)).toBe('hello.ts');
+    } finally { home.mockRestore(); fs.rmSync(alias, { force: true }); }
+  });
+  test('default home validation preserves protected-root and trusted-sender refusal', async () => {
+    const profile = (global as any).__workspaceProfile;
+    fs.mkdirSync(profile, { recursive: true });
+    const home = jest.spyOn(require('os') as typeof os, 'homedir').mockReturnValue(profile);
+    try {
+      registerWorkspaceIpc(() => undefined);
+      expect(await invoke(WORKSPACE_CHANNELS.ROOT)).toMatchObject({ success: false });
+      const handler = (global as any).__handlers.get(WORKSPACE_CHANNELS.ROOT);
+      expect(await handler({ sender: {}, senderFrame: {} })).toMatchObject({ success: false });
+    } finally { home.mockRestore(); }
   });
 });
 

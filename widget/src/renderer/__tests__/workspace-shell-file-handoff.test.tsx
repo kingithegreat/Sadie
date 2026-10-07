@@ -1,7 +1,7 @@
 /** @jest-environment jsdom */
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import WorkspaceShell from '../components/workspace/WorkspaceShell';
-jest.mock('../components/workspace/FileTree', () => ({ __esModule: true, default: ({ root }: any) => <div data-testid="explorer-root">{root}</div> }));
+jest.mock('../components/workspace/FileTree', () => ({ __esModule: true, default: ({ root, onOpenFile }: any) => <div data-testid="explorer-root">{root}{root.includes('/folders/') && <button onClick={() => onOpenFile(`${root}/draft.ts`)}>Open draft.ts</button>}</div> }));
 jest.mock('../components/workspace/CodeEditor', () => ({ __esModule: true, default: ({ value, onChange, onSave }: any) => <div><textarea aria-label="Code editor" value={value} onChange={event => onChange(event.target.value)} /><button onClick={() => onSave()}>Save editor</button></div> }));
 jest.mock('../components/TerminalPanel', () => ({ __esModule: true, default: ({ projectPath }: any) => <div data-testid="terminal-root">{projectPath}</div> }));
 
@@ -19,6 +19,18 @@ function setup() {
   };
   return { workspaceList, workspaceRead, workspaceSave, workspaceRecoveryLoad, workspaceRecoverySave };
 }
+
+test('a canonical Mac default root opens a tree file and retains its dirty recovery payload', async () => {
+  const api = setup(); const canonical = '/private/var/folders/isolated/home';
+  (window as any).electron.workspaceRoot = jest.fn(async () => ({ success: true, path: canonical }));
+  api.workspaceRead.mockImplementation(async input => ({ success: true, path: input.replace(/^\/var\//, '/private/var/'), content: 'Mac default-root file bytes', original: 'Mac default-root file bytes', version: 'mac-v1', language: 'typescript' }));
+  render(<WorkspaceShell open onClose={jest.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Open draft.ts' }));
+  expect(await screen.findByLabelText('Code editor')).toHaveValue('Mac default-root file bytes');
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent(canonical);
+  fireEvent.change(screen.getByLabelText('Code editor'), { target: { value: 'Mac unsaved draft' } });
+  await waitFor(() => expect(api.workspaceRecoverySave).toHaveBeenCalledWith(canonical, expect.objectContaining({ activePath: `${canonical}/draft.ts`, files: [expect.objectContaining({ path: `${canonical}/draft.ts`, content: 'Mac unsaved draft' })] })));
+});
 
 test('a fresh file handoff establishes the canonical parent and actually opens the requested editor', async () => {
   const api = setup(); const requested = 'C:/alias/project/hello.ts', canonical = 'C:/canonical/project';
