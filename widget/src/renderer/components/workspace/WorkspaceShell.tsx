@@ -113,9 +113,8 @@ export default function WorkspaceShell({
   /**
    * Context handed over when the assistant sent the user here with
    * navigate_to_mode. Only `path` means anything: a directory becomes the
-   * Explorer root, a file opens in its parent folder. Honoured only while no
-   * root is chosen yet, on the AutomationCenter principle — arriving a second
-   * time cannot yank the tree away from what the user is already looking at.
+   * Explorer root, a file opens in its project. A file outside the current
+   * project goes through the same draft-preserving switch as the project picker.
    */
   navContext?: Record<string, unknown> | null;
 }) {
@@ -162,6 +161,8 @@ export default function WorkspaceShell({
   // outlives leaving the view, so re-opening it must not re-apply the same
   // handoff and pull focus off the tab the user was actually working in.
   const appliedHandoffRef = useRef<Record<string, unknown> | null>(null);
+  const navContextRef = useRef(navContext);
+  navContextRef.current = navContext;
 
   const openFile = useCallback(async (path: string, line?: number) => {
     const project = rootRef.current;
@@ -181,6 +182,7 @@ export default function WorkspaceShell({
     if (rootRef.current !== project) return;
     if (!res?.success) { setStatus(res?.error || 'Could not open that file.'); return; }
     const targetPath = res.path || path;
+    if (!underPath(targetPath, project)) { setStatus('Open this file’s project first so its drafts can be recovered.'); return; }
     setFiles(prev => prev.some(f => pathKey(f.path) === pathKey(targetPath)) ? prev : [...prev, {
       path: targetPath,
       name: baseName(targetPath),
@@ -248,15 +250,22 @@ export default function WorkspaceShell({
     return () => { window.clearTimeout(timer); window.removeEventListener('blur', persist); };
   }, [files, activePath, root, recoveryReady, api, recoveryState]);
 
-  const changeProject = useCallback(async (next: string) => {
+  const changeProject = useCallback(async (next: string, onChanged?: () => void, authority?: () => boolean) => {
     if (next === root) return;
+    const current = () => rootRef.current === root && (!authority || authority());
     const change = async () => {
+      if (!current()) return;
+      const drafts = filesRef.current;
       if (api?.workspaceRecoverySave && root) {
         const result = await api.workspaceRecoverySave(root, recoveryState());
+        if (!current()) return;
         if (!result?.success) { setStatus(result?.error || 'Could not preserve drafts.'); return; }
       }
       const checked = await api?.workspaceList?.(next);
+      if (!current()) return;
       if (!checked?.success) { setStatus(checked?.error || 'Could not open that project.'); return; }
+      if (filesRef.current !== drafts) { setStatus('The tabs changed while preserving drafts. Try switching projects again.'); return; }
+      onChanged?.();
       setFiles([]); setActivePath(null); setRoot(checked.path || next); setStatus(null);
       setSplitPath(null); setSelection(null); setTerminalOutput('');
     };
@@ -270,12 +279,8 @@ export default function WorkspaceShell({
     else if (result?.error) setStatus(result.error);
   }, [api, changeProject]);
 
-  // Bootstrap root once. A whole-effect guard (`if (root) return`) silently
-  // drops every later handoff that carries a different starting point — the
-  // dead end the handoff exists to remove. Apply the no-clobber guard PER FIELD
-  // the way AutomationCenter does (`setFormName(prev => prev || name)`):
-  // re-root only when no root is chosen yet, but always honour the file part
-  // of the handoff so the targeted file lands in a tab.
+  // Bootstrap the initial root. Later file handoffs are handled separately
+  // after recovery, using the normal project switch when their parent is outside.
   useEffect(() => {
     if (!open || root) return;
     let cancelled = false;
@@ -310,11 +315,8 @@ export default function WorkspaceShell({
     return () => { cancelled = true; };
   }, [open, root, navContext, api]);
 
-  // Apply each new navContext handoff, even after root is set. Per-field
-  // guards: never replace the user's current root (it would yank the tree
-  // away mid-task), but always try to open the targeted file in whichever
-  // root is active. openFile itself is a no-op if the file is already open
-  // (it just focuses the existing tab), so this is safe to re-run.
+  // Apply file handoffs only under their recovery root. Outside-project files
+  // first join the ordinary draft-preserving switch, then recovery and opening.
   const ctxPath =
     typeof navContext?.path === 'string' ? navContext.path.trim() : '';
   useEffect(() => {
@@ -327,18 +329,29 @@ export default function WorkspaceShell({
       // If the handoff's path is a directory we could live under, adopt it
       // (per-field guard — `prev => prev || ctxPath` keeps an existing root).
       const asDir = await api?.workspaceList?.(ctxPath);
-      if (cancelled) return;
-      appliedHandoffRef.current = navContext ?? null;
+      if (cancelled || rootRef.current !== root || navContextRef.current !== navContext) return;
       if (asDir?.success) {
+        appliedHandoffRef.current = navContext ?? null;
         setRoot(prev => prev || (asDir.path || ctxPath));
         return;
       }
-      // File path: root and recovery are now established. Existing roots remain
-      // unchanged, and openFile still rejects reads completing after a switch.
+      if (!underPath(ctxPath, root)) {
+        const parent = parentPath(ctxPath);
+        const checked = parent && await api?.workspaceList?.(parent);
+        if (cancelled || rootRef.current !== root || navContextRef.current !== navContext) return;
+        if (!checked?.success) { appliedHandoffRef.current = navContext ?? null; setStatus(checked?.error || 'Could not open the handoff project.'); return; }
+        const next = checked.path || parent;
+        if (!underPath(next, root)) {
+          appliedHandoffRef.current = navContext ?? null;
+          await changeProject(next, () => { appliedHandoffRef.current = null; }, () => navContextRef.current === navContext);
+          return;
+        }
+      }
+      appliedHandoffRef.current = navContext ?? null;
       void openFile(ctxPath);
     })();
     return () => { cancelled = true; };
-  }, [open, root, recoveryReady, ctxPath, navContext, api, openFile]);
+  }, [open, root, recoveryReady, ctxPath, navContext, api, openFile, changeProject]);
 
 
   const closeTab = useCallback((path: string) => {

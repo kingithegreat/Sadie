@@ -46,17 +46,74 @@ test('a fresh file handoff establishes the canonical parent and actually opens t
   expect(await screen.findByLabelText('Code editor')).toHaveValue('edited handoff');
   expect(api.workspaceRead.mock.calls.length).toBe(count);
 });
-test('a later file handoff from another project opens its file without replacing the current root or dirty draft', async () => {
-  setup(); const onClose = jest.fn();
+test('an outside-project handoff preserves A then recovers edited B after a restart under B', async () => {
+  const api = setup(); const onClose = jest.fn(); const stored = new Map<string, any>();
+  api.workspaceRecoverySave.mockImplementation(async (root, state) => { stored.set(root, JSON.parse(JSON.stringify({ ...state, schema: 1 }))); return { success: true }; });
+  api.workspaceRecoveryLoad.mockImplementation(async root => ({ success: true, state: stored.get(root) || null }));
   const view = render(<WorkspaceShell open onClose={onClose} navContext={{ path: 'C:/first/a.ts' }} />);
   expect(await screen.findByLabelText('Code editor')).toHaveValue('disk:C:/first/a.ts');
   fireEvent.change(screen.getByLabelText('Code editor'), { target: { value: 'first project unsaved draft' } });
   view.rerender(<WorkspaceShell open onClose={onClose} navContext={{ path: 'C:/second/b.ts' }} />);
-  await waitFor(() => expect(screen.getByLabelText('Code editor')).toHaveValue('disk:C:/second/b.ts'));
-  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/first');
-  expect(screen.getByTestId('terminal-root')).toHaveTextContent('C:/first');
-  fireEvent.click(screen.getByRole('tab', { name: /a\.ts/ }));
+  await screen.findByRole('alertdialog', { name: 'Switch projects and keep drafts?' });
+  expect(api.workspaceRead).not.toHaveBeenCalledWith('C:/second/b.ts');
   expect(screen.getByLabelText('Code editor')).toHaveValue('first project unsaved draft');
+  fireEvent.click(screen.getByRole('button', { name: 'Keep drafts and switch' }));
+  await waitFor(() => expect(screen.getByLabelText('Code editor')).toHaveValue('disk:C:/second/b.ts'));
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/second');
+  expect(screen.getByTestId('terminal-root')).toHaveTextContent('C:/second');
+  expect(stored.get('C:/first').files[0].content).toBe('first project unsaved draft');
+  fireEvent.change(screen.getByLabelText('Code editor'), { target: { value: 'second project unsaved draft' } });
+  await waitFor(() => expect(stored.get('C:/second')?.files.some((f: any) => f.path === 'C:/second/b.ts' && f.content === 'second project unsaved draft')).toBe(true));
+  expect(stored.get('C:/second').files.every((f: any) => f.path.startsWith('C:/second/'))).toBe(true);
+  view.unmount();
+  render(<WorkspaceShell open onClose={onClose} navContext={{ path: 'C:/second/b.ts' }} />);
+  expect(await screen.findByLabelText('Code editor')).toHaveValue('second project unsaved draft');
+  expect(api.workspaceRecoveryLoad).toHaveBeenCalledWith('C:/second');
+  fireEvent.change(screen.getByLabelText('Recent projects'), { target: { value: 'C:/first' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Keep drafts and switch' }));
+  await waitFor(() => expect(screen.getByLabelText('Code editor')).toHaveValue('first project unsaved draft'));
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/first');
+  expect(api.workspaceSave).not.toHaveBeenCalled();
+});
+test('cancelled outside-project handoff leaves A draft and never opens B outside its recovery root', async () => {
+  const api = setup(); const view = render(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/first/a.ts' }} />);
+  await screen.findByLabelText('Code editor');
+  fireEvent.change(screen.getByLabelText('Code editor'), { target: { value: 'keep A dirty' } });
+  view.rerender(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/second/b.ts' }} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/first');
+  expect(screen.getByLabelText('Code editor')).toHaveValue('keep A dirty');
+  expect(api.workspaceRead).not.toHaveBeenCalledWith('C:/second/b.ts');
+});
+test('an untrusted handoff parent cannot replace the active root or read its file', async () => {
+  const api = setup(); const view = render(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/first/a.ts' }} />);
+  await screen.findByLabelText('Code editor');
+  api.workspaceList.mockImplementation(async input => input.startsWith('C:/denied') ? { success: false, error: 'Folder access denied.' } : { success: true, path: input, entries: [] });
+  view.rerender(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/denied/b.ts' }} />);
+  await screen.findByText('Folder access denied.');
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/first');
+  expect(api.workspaceRead).not.toHaveBeenCalledWith('C:/denied/b.ts');
+});
+test('late parent validation from an obsolete handoff cannot retarget the newer handoff', async () => {
+  const api = setup(); let release!: (result: any) => void;
+  const view = render(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/first/a.ts' }} />);
+  await screen.findByLabelText('Code editor');
+  api.workspaceList.mockImplementation(async input => input === 'C:/second' ? new Promise(resolve => { release = resolve; }) : /\.ts$/.test(input) ? { success: false } : { success: true, path: input, entries: [] });
+  view.rerender(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/second/b.ts' }} />);
+  await waitFor(() => expect(release).toBeDefined());
+  view.rerender(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/first/new.ts' }} />);
+  await waitFor(() => expect(screen.getByLabelText('Code editor')).toHaveValue('disk:C:/first/new.ts'));
+  await act(async () => release({ success: true, path: 'C:/second', entries: [] }));
+  expect(screen.getByTestId('explorer-root')).toHaveTextContent('C:/first');
+  expect(api.workspaceRead).not.toHaveBeenCalledWith('C:/second/b.ts');
+});
+test('a read canonicalized outside the active root cannot create an unrecoverable tab', async () => {
+  const api = setup();
+  api.workspaceRead.mockResolvedValue({ success: true, path: 'C:/second/b.ts', content: 'outside draft', version: 'b-v1', language: 'typescript' });
+  render(<WorkspaceShell open onClose={jest.fn()} navContext={{ path: 'C:/first/a.ts' }} />);
+  await screen.findByText('Open this file’s project first so its drafts can be recovered.');
+  expect(screen.queryByLabelText('Code editor')).not.toBeInTheDocument();
+  expect(api.workspaceSave).not.toHaveBeenCalled();
 });
 test('a fresh handoff waits for saved draft recovery before reading the same target', async () => {
   const api = setup(); let finish!: (result: any) => void;
