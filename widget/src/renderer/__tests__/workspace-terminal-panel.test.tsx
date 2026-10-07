@@ -153,6 +153,29 @@ test('retrying shell profiles preserves an already recovered terminal and its cl
   expect(close).toHaveBeenCalledWith({ sessionId: 's1' });
 });
 
+test('a fresh panel instance waits for old startup cleanup before recovering the same project', async () => {
+  let complete!: (result: any) => void;
+  const old = { sessionId: 'old', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 1, output: 'retained startup' };
+  let exists = false;
+  const create = jest.fn().mockImplementationOnce(() => { exists = true; return new Promise(resolve => { complete = resolve; }); });
+  const list = jest.fn(async () => ({ success: true, sessions: exists ? [old] : [] }));
+  const close = jest.fn(async () => ({ success: false, error: 'Native exit remains unconfirmed' }));
+  (window as any).electron = {
+    workspaceTerminalProfiles: async () => ({ success: true, profiles: [{ id: 'cmd', label: 'Command Prompt' }] }),
+    workspaceTerminalList: list, workspaceTerminalCreate: create, workspaceTerminalClose: close,
+  };
+  const first = render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1)); first.unmount();
+  render(<WorkspaceTerminalPanel projectPath="C:/project" onClose={jest.fn()} />);
+  expect(screen.getByText('New terminal')).toBeDisabled(); expect(list).toHaveBeenCalledTimes(1);
+  await act(async () => complete({ success: true, session: old }));
+  await screen.findByRole('tab', { name: '1: cmd' });
+  expect(close).toHaveBeenCalledTimes(1); expect(close).toHaveBeenCalledWith({ sessionId: 'old' });
+  expect(create).toHaveBeenCalledTimes(1); expect(list).toHaveBeenCalledTimes(2);
+  expect(emulators).toHaveLength(1); expect(emulators[0].write).toHaveBeenCalledWith('retained startup');
+  await act(async () => {}); expect(close).toHaveBeenCalledTimes(1);
+});
+
 test('project switches recover only that project and a failed recovery cannot start another shell', async () => {
   const retained = { sessionId: 's1', profileId: 'cmd', cwd: 'C:/project', pid: 42, seq: 1, output: 'old project output' };
   const create = jest.fn();

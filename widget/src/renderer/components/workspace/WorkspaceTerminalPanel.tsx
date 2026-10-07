@@ -6,6 +6,9 @@ import { excerptForModel } from '../../../shared/ansi';
 import type { WorkspaceTerminalEvent, WorkspaceTerminalProfile, WorkspaceTerminalSessionInfo } from '../../../shared/workspace-terminal-types';
 
 interface ClientSession { info: WorkspaceTerminalSessionInfo; events: WorkspaceTerminalEvent[]; exited?: boolean; exitCode?: number }
+// A panel can remount while IPC startup is still returning. Join that operation
+// across component instances so old cleanup cannot close a newly recovered tab.
+const pendingCreations = new WeakMap<object, Promise<void>>();
 function boundedEvents(events: WorkspaceTerminalEvent[]): WorkspaceTerminalEvent[] {
   let chars = 0; let start = events.length;
   while (start > 0 && events.length - start < 512 && chars + (events[start - 1].data?.length || 0) <= 256 * 1024) { start--; chars += events[start].data?.length || 0; }
@@ -65,7 +68,8 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   const generation = useRef(0);
   const api = (window as any).electron;
   const create = useCallback((profile?: string, requestFocus = true): Promise<void> => {
-    if (creation.current) return creation.current;
+    const pendingCreation = creation.current || (api && pendingCreations.get(api));
+    if (pendingCreation) return pendingCreation;
     const startedGeneration = generation.current;
     setCreating(true); setError('');
     const job = (async () => {
@@ -82,7 +86,11 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
     finally { if (alive.current && startedGeneration === generation.current) setCreating(false); }
     })();
     creation.current = job;
-    const release = () => { if (creation.current === job) creation.current = null; };
+    if (api) pendingCreations.set(api, job);
+    const release = () => {
+      if (creation.current === job) creation.current = null;
+      if (api && pendingCreations.get(api) === job) pendingCreations.delete(api);
+    };
     void job.then(release, release);
     return job;
   }, [api, projectPath, profileId]);
@@ -114,7 +122,7 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
     void (async () => {
       // A late shell belongs to its original project. Join its cleanup before
       // snapshotting this generation or starting this project's bootstrap.
-      await creation.current;
+      await (creation.current || (api && pendingCreations.get(api)));
       if (cancelled) return;
       const recovered = api?.workspaceTerminalList ? await api.workspaceTerminalList({ projectDir: projectPath }) : { success: true, sessions: [] };
       if (cancelled) return;
