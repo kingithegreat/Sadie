@@ -155,6 +155,7 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     busy.current = true; setNote(null);
     // Closing during an awaited context read cancels before a stream exists.
     cancelActive.current = () => { if (ownsView()) { operationOwner.current = null; busy.current = false; cancelActive.current = null; } };
+    let failActiveStream: ((message: string) => void) | null = null;
     try {
     const context: ContextItem[] = [];
     for (const item of attached) {
@@ -207,17 +208,24 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
       unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null;
       operationOwner.current = null; busy.current = false; setStreamingId(null);
     };
-    cancelActive.current = () => {
-      if (finished) return;
-      api?.cancelStream?.(streamId);
-      changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: `${t.text}${t.text ? '\n' : ''}[Stopped]`, error: true } : t));
+    const markStopped = () => changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: `${t.text}${t.text ? '\n' : ''}[Stopped]`, error: true } : t));
+    failActiveStream = message => {
+      if (finished || !ownsView()) return;
+      changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: t.text || message, error: true } : t));
       finish();
     };
+    cancelActive.current = () => {
+      if (finished || !ownsView()) return;
+      markStopped();
+      finish();
+      api?.cancelStream?.(streamId);
+    };
     const removeStream = api?.subscribeToStream?.(streamId, {
-      onStreamChunk: (data: { chunk: string }) => { if (!finished) changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: t.text + data.chunk } : t)); },
-      onStreamEnd: () => {
+      onStreamChunk: (data: { chunk: string }) => { if (!finished && ownsView()) changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, text: t.text + data.chunk } : t)); },
+      onStreamEnd: (data?: { cancelled?: boolean }) => {
         if (finished || !ownsView()) return;
-        changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, error: false } : t));
+        if (data?.cancelled) markStopped();
+        else changeTurns(prev => prev.map(t => t.id === streamId ? { ...t, error: false } : t));
         finish();
       },
       onStreamError: (err: { error?: string; message?: string }) => {
@@ -238,11 +246,9 @@ export default function WorkspaceAssistantPanel({ root, files, activePath, onClo
     } catch (error) {
       if (!ownsView()) return;
       const message = (error as Error).message || 'The assistant request failed.';
-      changeTurns(previous => {
-        const latest = previous[previous.length - 1];
-        return latest?.role === 'assistant' && !latest.text ? previous.map(t => t.id === latest.id ? { ...t, text: message, error: true } : t) : previous;
-      });
-      setNote(message); flushAssistantTurns(root, api); unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null; operationOwner.current = null; busy.current = false; setStreamingId(null);
+      setNote(message);
+      if (failActiveStream) { failActiveStream(message); return; }
+      flushAssistantTurns(root, api); unsubscribe.current?.(); unsubscribe.current = null; cancelActive.current = null; activeStreamId.current = null; operationOwner.current = null; busy.current = false; setStreamingId(null);
     }
   };
 

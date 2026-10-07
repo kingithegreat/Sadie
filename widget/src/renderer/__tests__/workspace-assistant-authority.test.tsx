@@ -132,3 +132,36 @@ test.each(['async', 'synchronous'])('a genuinely completed %s response persists 
   await waitFor(() => expect(screen.getByRole('log')).toHaveTextContent('Complete answer.'));
   expect(workspaceTranscriptModelMessages(persisted.get(restarted)!)).toHaveLength(2);
 });
+
+test.each(['partial', 'before-chunk'])('backend cancelled end %s retains incomplete recovery and cannot later become a completed pair', async delivery => {
+  render(panel()); await send();
+  if (delivery === 'partial') act(() => callbacks.onStreamChunk({ chunk: 'Backend-cancelled partial answer.' }));
+  act(() => callbacks.onStreamEnd({ cancelled: true }));
+  await flushAssistantTurns(root, api); const saved = persisted.get(root)!;
+  expect(saved[1]).toEqual(expect.objectContaining({ error: true, text: expect.stringContaining('[Stopped]') }));
+  if (delivery === 'partial') expect(saved[1].text).toBe('Backend-cancelled partial answer.\n[Stopped]');
+  expect(api.cancelStream).not.toHaveBeenCalled();
+  expect(workspaceTranscriptModelMessages(saved)).toEqual([]);
+  act(() => { callbacks.onStreamChunk({ chunk: 'late chunk' }); callbacks.onStreamEnd({ cancelled: false }); });
+  await flushAssistantTurns(root, api);
+  expect(persisted.get(root)).toEqual(saved); expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
+});
+
+test('a rejected dispatch freezes partial recovery against retained late chunk/end callbacks and permits a fresh response', async () => {
+  const request = deferred<void>(); const removed = jest.fn();
+  api.sendStreamMessage.mockReturnValueOnce(request.promise);
+  api.subscribeToStream.mockImplementationOnce((_id: string, stream: any) => { callbacks = stream; return removed; });
+  render(panel()); await send(); const oldCallbacks = callbacks;
+  act(() => oldCallbacks.onStreamChunk({ chunk: 'Preserve these original partial bytes.' }));
+  await act(async () => { request.reject(new Error('Dispatch rejected.')); });
+  await flushAssistantTurns(root, api); const saved = persisted.get(root)!;
+  expect(saved[1]).toEqual(expect.objectContaining({ text: 'Preserve these original partial bytes.', error: true }));
+  expect(removed).toHaveBeenCalledTimes(1); expect(screen.getByRole('status')).toHaveTextContent('Dispatch rejected.');
+  act(() => { oldCallbacks.onStreamChunk({ chunk: 'UNWANTED late bytes' }); oldCallbacks.onStreamEnd(); });
+  await flushAssistantTurns(root, api); expect(persisted.get(root)).toEqual(saved); expect(workspaceTranscriptModelMessages(saved)).toEqual([]);
+  await send(); act(() => { callbacks.onStreamChunk({ chunk: 'Fresh completed answer.' }); callbacks.onStreamEnd(); });
+  await flushAssistantTurns(root, api);
+  expect(workspaceTranscriptModelMessages(persisted.get(root)!)).toEqual([{ role: 'user', content: 'Explain this project.' }, { role: 'assistant', content: 'Fresh completed answer.' }]);
+  act(() => oldCallbacks.onStreamChunk({ chunk: 'OLD owner after replacement' }));
+  expect(screen.getByRole('log')).not.toHaveTextContent('OLD owner after replacement');
+});
