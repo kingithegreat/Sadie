@@ -123,12 +123,14 @@ export default function FirstRunModal({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const localGeneration = useRef(0);
   const localCheckInFlight = useRef<number | null>(null);
+  const localSetupActive = useRef(false);
   const downloadInFlight = useRef(false);
   const downloadGeneration = useRef<number | null>(null);
   const [backgroundDownload, setBackgroundDownload] = useState(false);
   const [downloadActive, setDownloadActive] = useState(false);
   const [plannedDownload, setPlannedDownload] = useState<{ name: string; sizeGB: number } | null>(null);
   const invalidateLocalCheck = useCallback(() => {
+    localSetupActive.current = false;
     localGeneration.current += 1;
     localCheckInFlight.current = null;
     if (downloadInFlight.current) setBackgroundDownload(true);
@@ -215,6 +217,7 @@ export default function FirstRunModal({
       cloudCheckGeneration.current += 1;
       cloudCheckInFlight.current = null;
       localGeneration.current += 1;
+      localSetupActive.current = false;
     };
   }, [open, invalidateCloudCheck, invalidateLocalCheck]);
 
@@ -316,7 +319,7 @@ export default function FirstRunModal({
       // The opt-in E2E mode retains its deterministic unavailable-service path.
       const env = await (window as any).electron?.getEnv?.();
       if (!current()) return;
-      if (env?.isE2E) { setLocalPhase('ollama-missing'); return; }
+      if (env?.isE2E) { setLocalPhase('ollama-missing'); return 'ollama-missing' as const; }
       await detectHardware();
       if (!current()) return;
       try {
@@ -339,21 +342,68 @@ export default function FirstRunModal({
       if (!running) {
         const installation = await (window as any).electron.checkOllamaInstalled?.();
         if (!current()) return;
-        if (!installation?.installed) { setLocalPhase('ollama-missing'); return; }
+        if (!installation?.installed) { setLocalPhase('ollama-missing'); return 'ollama-missing' as const; }
         setLocalPhase('starting-ollama');
         const start = await (window as any).electron.startOllama?.();
         if (!current()) return;
         if (!start?.success) throw new Error(start?.error || 'Could not start local AI. Retry or finish setup later.');
       }
-      await assessInstalledModels(generation);
+      const ready = await assessInstalledModels(generation);
+      if (current()) return ready ? 'ready' as const : 'download-offered' as const;
     } catch (error: any) {
       if (!current()) return;
       setOllamaError(error?.message || 'Could not check local AI. Please retry.');
       setLocalPhase('models-missing');
+      return 'models-missing' as const;
     } finally {
       if (localCheckInFlight.current === generation) localCheckInFlight.current = null;
     }
   }, [detectHardware, assessInstalledModels]);
+
+  const finishLocalDownload = async (originalGeneration: number, kind: 'ollama' | 'model', downloadError: string | null) => {
+    if (!localSetupActive.current) return;
+    setBackgroundDownload(false);
+    let generation = originalGeneration;
+    const current = () => localSetupActive.current && localGeneration.current === generation;
+    while (localSetupActive.current) {
+      try {
+        if (localGeneration.current !== generation) {
+          // Back invalidates old replies, but returning to local setup creates
+          // a new scope that must check the completed download's inventory.
+          // Keep the download lock until a check in that scope completes, even
+          // if navigation happens during the verification itself.
+          localCheckInFlight.current = null;
+          generation = localGeneration.current + 1;
+          const phase = await runLocalSetup();
+          if (!current()) continue;
+          if (downloadError) {
+            if (phase === 'models-missing') {
+              setOllamaError(previous => `${downloadError} ${previous || 'Local setup could not be checked. Please retry.'}`);
+            } else {
+              setOllamaError(`${downloadError} Local setup has been checked again.${phase === 'ready' ? '' : ' Retry to check before downloading again.'}`);
+            }
+            if (phase !== 'ready') setLocalPhase(kind === 'ollama' && phase === 'ollama-missing' ? 'ollama-missing' : 'models-missing');
+          } else if (kind === 'model' && phase === 'download-offered') {
+            throw new Error('No chat model is installed yet. Retry to check before downloading again.');
+          }
+          return;
+        }
+        if (downloadError) throw new Error(downloadError);
+        // Installing Ollama does not consent to a separate model download.
+        const ready = await assessInstalledModels(generation);
+        if (!current()) continue;
+        if (kind === 'model' && !ready) {
+          throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
+        }
+        return;
+      } catch (error: any) {
+        if (!current()) continue;
+        setOllamaError(error?.message || 'Could not check local AI. Please retry.');
+        setLocalPhase(kind === 'ollama' ? 'ollama-missing' : 'models-missing');
+        return;
+      }
+    }
+  };
 
   const handleDownloadOllama = async () => {
     if (downloadInFlight.current) return;
@@ -365,16 +415,15 @@ export default function FirstRunModal({
     setLocalPhase('downloading-ollama');
     setOllamaError(null);
     setDownloadProgress({ stage: 'downloading', percent: 0 });
+    let downloadError: string | null = null;
     try {
       const result = await (window as any).electron.downloadOllama?.();
-      if (localGeneration.current !== generation) return;
       if (!result?.success) throw new Error(result?.error || 'Installation failed. Please retry.');
-      // Installing the service does not consent to a separate model download.
-      await assessInstalledModels(generation);
     } catch (error: any) {
-      if (localGeneration.current !== generation) return;
-      setOllamaError(error?.message || 'Installation failed. Please retry.');
-      setLocalPhase('ollama-missing');
+      downloadError = error?.message || 'Installation failed. Please retry.';
+    }
+    try {
+      await finishLocalDownload(generation, 'ollama', downloadError);
     } finally {
       downloadInFlight.current = false;
       downloadGeneration.current = null;
@@ -395,19 +444,16 @@ export default function FirstRunModal({
     setOllamaError(null);
     setModelsPulled([]);
     setModelPullProgress({ model: plannedDownload.name, status: 'Starting download...', percent: 0, completedMB: null, totalMB: null });
+    let downloadError: string | null = null;
     try {
       const result = await (window as any).electron.pullModelStream?.(plannedDownload.name);
-      if (localGeneration.current !== generation) return;
       if (!result?.success) throw new Error(result?.error || 'The AI download did not complete. Please retry.');
-      setModelsPulled([plannedDownload.name]);
-      const ready = await assessInstalledModels(generation);
-      if (localGeneration.current === generation && !ready) {
-        throw new Error('No chat model is installed yet. Retry the download or finish setup later.');
-      }
+      if (localSetupActive.current && localGeneration.current === generation) setModelsPulled([plannedDownload.name]);
     } catch (error: any) {
-      if (localGeneration.current !== generation) return;
-      setOllamaError(error?.message || 'The AI download did not complete. Please retry.');
-      setLocalPhase('models-missing');
+      downloadError = error?.message || 'The AI download did not complete. Please retry.';
+    }
+    try {
+      await finishLocalDownload(generation, 'model', downloadError);
     } finally {
       downloadInFlight.current = false;
       downloadGeneration.current = null;
@@ -476,6 +522,7 @@ export default function FirstRunModal({
     setSetupPath(path);
     setStep('setup');
     if (path === 'local') {
+      localSetupActive.current = true;
       runLocalSetup();
     }
   };
@@ -555,7 +602,7 @@ export default function FirstRunModal({
 
         <div className="first-run-content">
           {saveError && <p role="alert" className="wizard-error-detail">{saveError}</p>}
-          {backgroundDownload && <p role="status" className="wizard-error-detail">The download you started continues in the background. It cannot be stopped here. Wait for it to finish before starting another download.</p>}
+          {backgroundDownload && <p role="status" className="wizard-error-detail">The setup you started continues in the background. It cannot be stopped here. Wait for it to finish before starting another download.</p>}
           {step === 'welcome' && (
             <div className="wizard-step">
               <div className="wizard-icon">✨</div>

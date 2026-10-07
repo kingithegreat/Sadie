@@ -514,6 +514,81 @@ test('a delayed send from A cannot appear in B, and the held original bytes are 
   act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
 });
 
+test('acknowledged deletion frees held recovery slots, while a failed deletion preserves them', async () => {
+  await mountReady();
+  for (let index = 0; index < 8; index++) {
+    if (index > 0) { await choose('A'); await expectActive('A'); }
+    typeDraft(`Earlier A request ${index}.`);
+    await attach(`held-a-${index}.txt`);
+    const inventory = deferred<{ success: boolean; models: { name: string }[] }>();
+    bridge.listOllamaModels.mockImplementationOnce(() => inventory.promise);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+    typeDraft(`Newer A request ${index}.`);
+    await choose('B');
+    await expectActive('B');
+    await act(async () => { inventory.resolve({ success: true, models: [{ name: 'qwen2.5:7b' }] }); });
+  }
+  await choose('A');
+  await expectActive('A');
+  expect(screen.getByRole('button', { name: 'Restore held request' })).toBeDisabled();
+  const deletion = deferred<Ack>();
+  bridge.deleteConversation.mockImplementationOnce(() => deletion.promise);
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Conversation A' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+  expect(screen.getByRole('button', { name: 'Restore held request' })).toBeDisabled();
+  await act(async () => { deletion.resolve({ success: false, error: 'Keep the conversation on failure.' }); });
+  expect(await screen.findByText('Keep the conversation on failure.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restore held request' })).toBeDisabled();
+  expect(conversations.has('A')).toBe(true);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Conversation A' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+  await waitFor(() => expect(conversations.has('A')).toBe(false));
+  await choose('B');
+  await expectActive('B');
+  typeDraft('Recover this B request after deletion.');
+  await attach('held-b.txt');
+  const inventory = deferred<{ success: boolean; models: { name: string }[] }>();
+  bridge.listOllamaModels.mockImplementationOnce(() => inventory.promise);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  typeDraft('Keep the newer B draft.');
+  await choose('C');
+  await expectActive('C');
+  await act(async () => { inventory.resolve({ success: true, models: [{ name: 'qwen2.5:7b' }] }); });
+  await choose('B');
+  await expectActive('B');
+  expect(screen.getByRole('button', { name: 'Restore held request' })).toBeDisabled();
+  typeDraft('');
+  fireEvent.click(screen.getByRole('button', { name: 'Restore held request' }));
+  expect(screen.getByRole('textbox', { name: 'Message HomeBot' })).toHaveValue('Recover this B request after deletion.');
+  expect(screen.getByText('held-b.txt')).toBeInTheDocument();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+}, 20_000);
+
+test('a late unsent request for an acknowledged deleted conversation is discarded without becoming a held request in another chat', async () => {
+  await mountReady();
+  typeDraft('Discard this request with its chat.');
+  await attach('deleted-request.txt');
+  const inventory = deferred<{ success: boolean; models: { name: string }[] }>();
+  bridge.listOllamaModels.mockImplementationOnce(() => inventory.promise);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Conversation A' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+  await waitFor(() => expect(conversations.has('A')).toBe(false));
+  await choose('B');
+  await expectActive('B');
+  typeDraft('Keep this B draft.');
+  await act(async () => { inventory.resolve({ success: true, models: [{ name: 'qwen2.5:7b' }] }); });
+  expect(screen.getByRole('textbox', { name: 'Message HomeBot' })).toHaveValue('Keep this B draft.');
+  expect(screen.queryByRole('button', { name: 'Restore held request' })).toBeNull();
+  expect(screen.queryByText('deleted-request.txt')).toBeNull();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+});
+
 test('a committed user row awaiting acknowledgement becomes recoverable in A without dispatching, restoring or duplicating it in B', async () => {
   await mountReady();
   typeDraft('Summarize these original attachments.');

@@ -925,6 +925,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       for (const [messageId, request] of retryRequestsRef.current) {
         if (request.conversation_id === id) retryRequestsRef.current.delete(messageId);
       }
+      const remainingHeld = heldSubmissionsRef.current.filter(scope => scope.conversationId !== id);
+      heldSubmissionsRef.current = remainingHeld;
+      setHeldSubmissions(remainingHeld);
       
       // Clear the deleted conversation only after the backend acknowledges it.
       // The next message can create its replacement without hiding a failed delete.
@@ -1123,6 +1126,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const preserveStoppedSubmission = useCallback((scope: SubmissionScope, message = 'This request was not sent because you changed conversations. Its draft is kept in the original conversation.') => {
     if (scope.retained) return;
     scope.retained = true;
+    // Successful deletion includes unsent work from this conversation, even
+    // when an earlier validation finishes after the deletion acknowledgement.
+    if (scope.conversationId && deletedConversationIdsRef.current.has(scope.conversationId)) return;
     if (scope.committed) {
       // The user turn is already durable. Restoring it as an unsent draft would
       // duplicate it on Send; offer Retry against that same turn instead.
@@ -1145,7 +1151,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
       return;
     }
-    if (scope.conversationId && deletedConversationIdsRef.current.has(scope.conversationId)) scope.conversationId = null;
     const current = scope.conversationId === conversationIdRef.current;
     const stored = current ? composerDraftRef.current : conversationDraftsRef.current.get(scope.conversationId || 'new');
     const recoveryRetention = !current ? prepareInactiveDraftRetention(conversationDraftsRef.current, {

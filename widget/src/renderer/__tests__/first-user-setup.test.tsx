@@ -109,6 +109,139 @@ function modeInvocations() {
   return (ipcRenderer.invoke as jest.Mock).mock.calls.filter(([channel]) => channel === 'homebot:set-uncensored-mode');
 }
 
+function held<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+async function startDownloadAndReturnToLocal() {
+  const electron = (window as any).electron;
+  const pull = held<{ success: boolean; error?: string }>();
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: [] });
+  electron.pullModelStream.mockReturnValueOnce(pull.promise);
+  await act(async () => { render(<App />); });
+  const welcome = await screen.findByRole('dialog', { name: 'Welcome to HomeBot' });
+  // App's real header checks inventory on mount. Count wizard checks from
+  // this user gesture without suppressing that independent production path.
+  electron.listOllamaModels.mockClear();
+  await act(async () => { fireEvent.click(within(welcome).getByRole('button', { name: /On this PC/ })); });
+  expect(electron.pullModelStream).not.toHaveBeenCalled();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  expect(screen.getByText(/continues in the background/)).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /On this PC/ })); });
+  expect(screen.getByRole('button', { name: 'Download AI' })).toBeDisabled();
+  expect(electron.listOllamaModels).toHaveBeenCalledTimes(2);
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  return { electron, pull };
+}
+
+test('returning to actual local setup verifies the original background download before enabling Finish, without another pull', async () => {
+  const { electron, pull } = await startDownloadAndReturnToLocal();
+  const inventory = held<{ success: boolean; models: { name: string }[] }>();
+  electron.listOllamaModels.mockReturnValueOnce(inventory.promise);
+  await act(async () => { pull.resolve({ success: true }); });
+  expect(electron.listOllamaModels).toHaveBeenCalledTimes(3);
+  expect(screen.getByText('Checking installed models...')).toBeInTheDocument();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Download AI' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Setting up...' })).toBeDisabled();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  await act(async () => { inventory.resolve({ success: true, models: [{ name: 'qwen2.5:3b' }] }); });
+  expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+  expect(screen.queryByText(/continues in the background/)).toBeNull();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ firstRun: false, chatModel: 'qwen2.5:3b', codeModel: 'qwen2.5:3b', uncensoredMode: false, useCustomLLM: false, customLLM: { enabled: false } });
+  expect(runtimeUncensored).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Ready to chat on this PC' })).toBeNull();
+});
+
+test('a background completion inventory check cannot overwrite the actual Online setup after Back', async () => {
+  const { electron, pull } = await startDownloadAndReturnToLocal();
+  const inventory = held<{ success: boolean; models: { name: string }[] }>();
+  electron.listOllamaModels.mockReturnValueOnce(inventory.promise);
+  await act(async () => { pull.resolve({ success: true }); });
+  expect(screen.getByText('Checking installed models...')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(screen.getByRole('button', { name: /Online/ }));
+  fireEvent.click(screen.getByRole('button', { name: /DeepSeek/ }));
+  fireEvent.change(screen.getByLabelText('AI service key'), { target: { value: 'fixture-only' } });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Prepare service' })); });
+  await act(async () => { inventory.resolve({ success: true, models: [{ name: 'late-local-model' }] }); });
+  expect(screen.getByRole('dialog', { name: 'Connect an AI service' })).toBeInTheDocument();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(screen.getByLabelText('AI service key')).toHaveValue('fixture-only');
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+  expect(persisted).toMatchObject({ chatModel: initialSettings.chatModel, useCustomLLM: true, customLLM: { provider: 'deepseek', enabled: true } });
+});
+
+test('Back and local reentry during completion verification also reconciles before releasing the original download', async () => {
+  const { electron, pull } = await startDownloadAndReturnToLocal();
+  const oldInventory = held<{ success: boolean; models: { name: string }[] }>();
+  electron.listOllamaModels.mockReturnValueOnce(oldInventory.promise);
+  await act(async () => { pull.resolve({ success: true }); });
+  expect(screen.getByText('Checking installed models...')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /On this PC/ })); });
+  expect(screen.getByRole('button', { name: 'Download AI' })).toBeDisabled();
+  const currentInventory = held<{ success: boolean; models: { name: string }[] }>();
+  electron.listOllamaModels.mockReturnValueOnce(currentInventory.promise);
+  await act(async () => { oldInventory.resolve({ success: true, models: [{ name: 'expired-model' }] }); });
+  expect(screen.getByText('Checking installed models...')).toBeInTheDocument();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  await act(async () => { currentInventory.resolve({ success: true, models: [{ name: 'qwen2.5:3b' }] }); });
+  expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+  expect(screen.queryByRole('option', { name: 'expired-model' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Download AI' })).toBeNull();
+  expect(electron.listOllamaModels).toHaveBeenCalledTimes(5);
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+});
+
+test.each(['reported', 'rejected'])('a %s background download failure rechecks and offers a deliberate retry rather than a second implicit pull', async failure => {
+  const { electron, pull } = await startDownloadAndReturnToLocal();
+  await act(async () => {
+    if (failure === 'reported') pull.resolve({ success: false, error: 'Fixture download interrupted' });
+    else pull.reject(new Error('Fixture download interrupted'));
+  });
+  expect(electron.listOllamaModels).toHaveBeenCalledTimes(3);
+  expect(screen.getByText(/Fixture download interrupted.*Local setup has been checked again/)).toBeInTheDocument();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Download AI' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+  expect(electron.listOllamaModels).toHaveBeenCalledTimes(4);
+  expect(screen.getByRole('button', { name: 'Download AI' })).toBeEnabled();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  const retry = held<{ success: boolean }>();
+  electron.pullModelStream.mockReturnValueOnce(retry.promise);
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(2);
+  electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }] });
+  await act(async () => { retry.resolve({ success: true }); });
+  expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(2);
+});
+
+test('a failed background download retains the inventory recheck error instead of claiming it was checked successfully', async () => {
+  const { electron, pull } = await startDownloadAndReturnToLocal();
+  electron.listOllamaModels.mockResolvedValue({ success: false, error: 'Fixture inventory unavailable' });
+  await act(async () => { pull.resolve({ success: false, error: 'Fixture download interrupted' }); });
+  expect(screen.getByText(/Fixture download interrupted.*Fixture inventory unavailable/)).toBeInTheDocument();
+  expect(screen.queryByText(/Local setup has been checked again/)).toBeNull();
+  expect(screen.queryByText('Ollama is ready!')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+});
+
 test('actual setup saves the installed local choice and waits for runtime acknowledgement before closing or the first send', async () => {
   let resolveMode!: (value: { success: boolean; enabled: boolean }) => void;
   modeResult = new Promise(resolve => { resolveMode = resolve; });

@@ -1104,6 +1104,80 @@ describe('FirstRunModal — first-user consent, routing and focus', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  test('background Ollama installation reconciles the reentered local path without another installation or model pull', async () => {
+    const electron = makeMockElectron();
+    const installation = deferred<{ success: boolean }>();
+    electron.checkConnection.mockResolvedValue({ ollama: 'offline' });
+    electron.checkOllamaInstalled.mockResolvedValue({ installed: false, path: '' });
+    electron.downloadOllama.mockReturnValueOnce(installation.promise);
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }] });
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Install Ollama automatically' })); });
+    fireEvent.click(screen.getByText('Back'));
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByRole('button', { name: 'Install Ollama automatically' })).toBeDisabled();
+    electron.checkConnection.mockResolvedValue({ ollama: 'online' });
+    await act(async () => { installation.resolve({ success: true }); });
+    expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+    expect(electron.checkConnection).toHaveBeenCalledTimes(3);
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(1);
+    expect(electron.downloadOllama).toHaveBeenCalledTimes(1);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
+  test('a failed background Ollama installation rechecks and can be retried deliberately', async () => {
+    const electron = makeMockElectron();
+    const installation = deferred<{ success: boolean; error: string }>();
+    electron.checkConnection.mockResolvedValue({ ollama: 'offline' });
+    electron.checkOllamaInstalled.mockResolvedValue({ installed: false, path: '' });
+    electron.downloadOllama.mockReturnValueOnce(installation.promise);
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Install Ollama automatically' })); });
+    fireEvent.click(screen.getByText('Back'));
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { installation.resolve({ success: false, error: 'Fixture installation interrupted' }); });
+    expect(electron.checkConnection).toHaveBeenCalledTimes(3);
+    expect(screen.getByText(/Fixture installation interrupted.*Local setup has been checked again/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+    expect(electron.downloadOllama).toHaveBeenCalledTimes(1);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+    expect(electron.checkConnection).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole('button', { name: 'Install Ollama automatically' })).toBeEnabled();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Install Ollama automatically' })); });
+    expect(electron.downloadOllama).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
+  test('download completion replaces an unfinished reentry check and ignores its later empty inventory', async () => {
+    const electron = makeMockElectron();
+    const pull = deferred<{ success: boolean }>();
+    const oldInventory = deferred<{ success: boolean; models: { name: string }[] }>();
+    electron.listOllamaModels.mockResolvedValueOnce({ success: true, models: [] })
+      .mockReturnValueOnce(oldInventory.promise)
+      .mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }] });
+    electron.pullModelStream.mockReturnValueOnce(pull.promise);
+    window.electron = electron as any;
+    render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Download AI' })); });
+    fireEvent.click(screen.getByText('Back'));
+    await act(async () => { fireEvent.click(screen.getByText('On this PC')); });
+    expect(screen.getByText('Checking installed models...')).toBeInTheDocument();
+    await act(async () => { pull.resolve({ success: true }); });
+    expect(screen.getByText('Ollama is ready!')).toBeInTheDocument();
+    await act(async () => { oldInventory.resolve({ success: true, models: [] }); });
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('qwen2.5:3b');
+    expect(screen.queryByRole('button', { name: 'Download AI' })).toBeNull();
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(3);
+    expect(electron.pullModelStream).toHaveBeenCalledTimes(1);
+  });
+
   test('fake-key catalogue success never claims a validated connection', async () => {
     const onSave = jest.fn();
     render(<FirstRunModal open settings={baseSettings} onSave={onSave} onClose={jest.fn()} />);
