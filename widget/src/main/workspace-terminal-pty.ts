@@ -160,8 +160,13 @@ export class WorkspacePtySessions {
     catch (error) { session.info.closeError = error instanceof Error ? error.message : String(error); throw error; }
     finally { session.closing = undefined; }
   }
-  async closeOwner(owner: number): Promise<void> { await Promise.all([...this.sessions].filter(([, s]) => s.owner === owner).map(([id]) => this.close(owner, id))); }
-  async closeAll(): Promise<void> { await Promise.all([...this.sessions].map(([id, s]) => this.close(s.owner, id))); }
+  private async joinCloses(sessions: Array<[string, Session]>): Promise<void> {
+    const outcomes = await Promise.allSettled(sessions.map(([id, session]) => this.close(session.owner, id)));
+    const failed = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected');
+    if (failed) throw failed.reason;
+  }
+  async closeOwner(owner: number): Promise<void> { await this.joinCloses([...this.sessions].filter(([, session]) => session.owner === owner)); }
+  async closeAll(): Promise<void> { await this.joinCloses([...this.sessions]); }
 }
 
 export const workspacePtySessions = new WorkspacePtySessions();

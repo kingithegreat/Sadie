@@ -92,6 +92,23 @@ test('recovery waits for an in-flight Close before deciding whether a session wa
   expect(await listing).toEqual([]);
 });
 
+test.each(['owner', 'all'])('%s cleanup joins every terminal even when the first Close refuses', async action => {
+  const app = setup();
+  const second = app.manager.create(7, { projectDir: folder, profileId: 'cmd' }, jest.fn());
+  let complete!: () => void;
+  const close = jest.spyOn(app.manager, 'close').mockImplementation(async (_owner, id) => {
+    if (id === app.session.sessionId) throw new Error('First terminal remains retained');
+    await new Promise<void>(resolve => { complete = resolve; });
+  });
+  let settled = false;
+  const cleanup = (action === 'owner' ? app.manager.closeOwner(7) : app.manager.closeAll()).finally(() => { settled = true; });
+  const refusal = expect(cleanup).rejects.toThrow('First terminal remains retained');
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(close).toHaveBeenCalledWith(7, app.session.sessionId); expect(close).toHaveBeenCalledWith(7, second.sessionId);
+  expect(settled).toBe(false); complete(); await refusal;
+  expect(settled).toBe(true); close.mockRestore(); await app.manager.closeAll();
+});
+
 test('unproven force Stop keeps the live session and never reports successful Close', async () => {
   const app = setup(true, false); app.force.mockResolvedValue({ stopped: false, attempted: false });
   await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/process-tree exit/);
