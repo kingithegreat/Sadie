@@ -24,6 +24,12 @@
 .widget-first-task span { color: var(--text-secondary, #555); }
 
 @media (max-width: 640px) {
+  /* Reserve a right-hand gutter for the floating voice/capture actions. */
+  .app-container .chat-interface .messages-container,
+  .app-container .chat-interface .suggested-prompts,
+  .app-container .dashboard-container {
+    padding-right: 64px;
+  }
   .app-container .chat-interface .daily-content {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

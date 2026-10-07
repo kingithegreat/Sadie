@@ -99,6 +99,11 @@ cleanup on Home navigation. Native checks now require each main control to be
 topmost at its center and both floating actions to remain outside the composer.
 Previous passing source/native evidence is retained; fresh qualification of this
 additional UI correction, review and separately launchable delivery remain pending.
+Run37555546597 passes all four cases and the new center-click/composer-clearance
+checks. Visual inspection confirms Send is clear but catches the camera touching
+the rightmost starter. Narrow chat/Home content now reserves a gutter for those
+actions; native acceptance checks all four starter bounds/click targets and each
+Home disclosure against floating-button overlap. Fresh qualification remains pending.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

@@ -44,6 +44,16 @@ async function noSentUserMessages(page: Page) {
   expect(conversations.flatMap(conversation => conversation.messages || []).filter(message => message.role === 'user')).toHaveLength(0);
 }
 
+async function clearOfFloatingActions(locator: Locator, label: string) {
+  expect(await locator.evaluate(element => {
+    const a = element.getBoundingClientRect();
+    return Array.from(document.querySelectorAll('.floating-feature-buttons button')).every(button => {
+      const b = button.getBoundingClientRect();
+      return !b.width || !b.height || a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right;
+    });
+  }), `${label} must not be covered by a floating action`).toBe(true);
+}
+
 function assertClosedReceipt(receipt: any) {
   expect(receipt).toBeTruthy();
   expect(receipt).toMatchObject({ closeOutcome: 'closed', forced: false, closeError: null, refusal: null,
@@ -188,6 +198,11 @@ test('post-setup compact discovery and editable draft survive Home navigation in
           return a.bottom <= b.top || a.top >= b.bottom || a.right <= b.left || a.left >= b.right;
         }), { message: `${label} must stay clear of the entire composer` }).toBe(true);
       }
+      for (const label of ['Draft a message', 'Explain something', 'Plan a task', 'Brainstorm ideas']) {
+        const choice = page.getByRole('button', { name: label, exact: true });
+        await visibleControl(page, choice, `${theme} narrow ${label}`, 70, 28, bounds);
+        await clearOfFloatingActions(choice, label);
+      }
       const chatLayout = await page.locator('.chat-interface').evaluate(element => {
         const edge = element.getBoundingClientRect();
         return { width: element.clientWidth, scrollWidth: element.scrollWidth,
@@ -211,6 +226,7 @@ test('post-setup compact discovery and editable draft survive Home navigation in
         // Home panel. Check their actual reachable bounds after user scrolling.
         await disclosure.scrollIntoViewIfNeeded();
         await visibleControl(page, disclosure, `${theme} narrow ${label}`, 200, 44, bounds);
+        await clearOfFloatingActions(disclosure, label);
       }
       await expect.poll(() => page.locator('.dashboard-container').evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
       await page.mouse.move(0, 0);
