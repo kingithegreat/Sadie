@@ -1028,7 +1028,7 @@ artwork retain their existing behavior.
 > IPC lists resolve literal channels and constant bindings without executing code.
 > Dynamically computed registration names require runtime inspection.
 
-**Preload methods (285)** — `window.electron`
+**Preload methods (286)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1098,14 +1098,14 @@ workspaceProposalReject             workspaceProposals                  workspac
 workspaceRecoveryLoad               workspaceRecoverySave               workspaceReplace                    workspaceRevokeFolder
 workspaceRoot                       workspaceSave                       workspaceSearch                     workspaceTaskList
 workspaceTaskRun                    workspaceTaskStatus                 workspaceTaskStop                   workspaceTerminalClose
-workspaceTerminalCreate             workspaceTerminalInterrupt          workspaceTerminalProfiles           workspaceTerminalResize
-workspaceTerminalWrite              workspaceTests                      workspaceTrustedFolders             writeClipboard
-writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
-youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
-youtubeUpload
+workspaceTerminalCreate             workspaceTerminalInterrupt          workspaceTerminalList               workspaceTerminalProfiles
+workspaceTerminalResize             workspaceTerminalWrite              workspaceTests                      workspaceTrustedFolders
+writeClipboard                      writeDocument                       youtubeCancel                       youtubeConnect
+youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh
+youtubeRemove                       youtubeUpload
 ```
 
-**IPC channels, renderer → main (253)**
+**IPC channels, renderer → main (254)**
 
 ```
 homebot:__e2e_get_router_logs                   homebot:__e2e_invoke_tool_batch
@@ -1232,9 +1232,9 @@ homebot:workspace:search                        homebot:workspace:tasks:list
 homebot:workspace:tasks:run                     homebot:workspace:tasks:status
 homebot:workspace:tasks:stop                    homebot:workspace:terminal:close
 homebot:workspace:terminal:create               homebot:workspace:terminal:interrupt
-homebot:workspace:terminal:profiles             homebot:workspace:terminal:resize
-homebot:workspace:terminal:write                homebot:workspace:tests
-homebot:write-document
+homebot:workspace:terminal:list                 homebot:workspace:terminal:profiles
+homebot:workspace:terminal:resize               homebot:workspace:terminal:write
+homebot:workspace:tests                         homebot:write-document
 ```
 
 **IPC channels, main → renderer (38)**

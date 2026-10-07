@@ -1,6 +1,6 @@
 const handlers = new Map<string, Function>();
 const frame = {}; const sender = { id: 7, mainFrame: frame, isDestroyed: () => false, send: jest.fn(), once: jest.fn() };
-const manager = { create: jest.fn((_owner: number, _request: any, _notify: any) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
+const manager = { list: jest.fn(async (_owner: number, _root: string) => [{ sessionId: 's1', output: 'retained output' }]), create: jest.fn((_owner: number, _request: any, _notify: any) => ({ sessionId: 's1' })), write: jest.fn(), resize: jest.fn(), interrupt: jest.fn(), close: jest.fn(async () => {}), closeOwner: jest.fn(async () => {}) };
 jest.mock('electron', () => ({ ipcMain: { handle: (name: string, fn: Function) => handlers.set(name, fn), removeHandler: (name: string) => handlers.delete(name) } }));
 jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: sender }) }));
 jest.mock('../workspace-terminal-pty', () => ({ workspacePtySessions: manager, workspaceTerminalProfiles: () => [{ id: 'cmd' }] }));
@@ -9,11 +9,18 @@ const event = { sender, senderFrame: frame };
 beforeEach(() => { jest.clearAllMocks(); registerWorkspaceTerminalIpc(); });
 test('foreign windows and child frames cannot create, write, resize, interrupt or close terminals', async () => {
   for (const e of [{ sender: {}, senderFrame: {} }, { sender, senderFrame: {} }]) {
-    for (const channel of [WORKSPACE_TERMINAL_CHANNELS.CREATE, WORKSPACE_TERMINAL_CHANNELS.WRITE, WORKSPACE_TERMINAL_CHANNELS.RESIZE, WORKSPACE_TERMINAL_CHANNELS.INTERRUPT, WORKSPACE_TERMINAL_CHANNELS.CLOSE]) {
+    for (const channel of [WORKSPACE_TERMINAL_CHANNELS.LIST, WORKSPACE_TERMINAL_CHANNELS.CREATE, WORKSPACE_TERMINAL_CHANNELS.WRITE, WORKSPACE_TERMINAL_CHANNELS.RESIZE, WORKSPACE_TERMINAL_CHANNELS.INTERRUPT, WORKSPACE_TERMINAL_CHANNELS.CLOSE]) {
       expect(await handlers.get(channel)!(e, { projectDir: 'x', sessionId: 's1', data: 'bad' })).toMatchObject({ success: false });
     }
   }
-  expect(manager.create).not.toHaveBeenCalled(); expect(manager.write).not.toHaveBeenCalled(); expect(manager.close).not.toHaveBeenCalled();
+  expect(manager.list).not.toHaveBeenCalled(); expect(manager.create).not.toHaveBeenCalled(); expect(manager.write).not.toHaveBeenCalled(); expect(manager.close).not.toHaveBeenCalled();
+});
+
+test('recovery binds the root query to the trusted window and rejects unexpected arguments', async () => {
+  expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.LIST)!(event, { projectDir: 'project', owner: 8 })).toMatchObject({ success: false });
+  expect(manager.list).not.toHaveBeenCalled();
+  expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.LIST)!(event, { projectDir: 'project' })).toMatchObject({ success: true, sessions: [{ sessionId: 's1', output: 'retained output' }] });
+  expect(manager.list).toHaveBeenCalledWith(7, 'project');
 });
 test('create rejects a renderer command and binds session events/cleanup to its owner', async () => {
   expect(await handlers.get(WORKSPACE_TERMINAL_CHANNELS.CREATE)!(event, { projectDir: 'x', command: 'evil' })).toMatchObject({ success: false });

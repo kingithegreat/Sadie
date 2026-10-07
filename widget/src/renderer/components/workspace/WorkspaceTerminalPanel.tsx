@@ -54,28 +54,36 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
   const [focusRequest, setFocusRequest] = useState({ sessionId: '', sequence: 0 });
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
+  const [recovering, setRecovering] = useState(true);
+  const [recoveryFailed, setRecoveryFailed] = useState(false);
+  const [recoveryAttempt, setRecoveryAttempt] = useState(0);
   const sessionsRef = useRef(sessions); sessionsRef.current = sessions;
   const pending = useRef(new Map<string, WorkspaceTerminalEvent[]>());
   const alive = useRef(true);
   const creation = useRef(false);
+  const generation = useRef(0);
   const api = (window as any).electron;
   const create = useCallback(async (profile?: string, requestFocus = true) => {
     if (creation.current) return;
+    const startedGeneration = generation.current;
     creation.current = true; setCreating(true); setError('');
     try {
       const result = await api?.workspaceTerminalCreate?.({ projectDir: projectPath, profileId: profile || profileId || undefined, cols: 100, rows: 30 });
       if (!result?.success || !result.session) throw new Error(result?.error || 'Interactive terminal is unavailable in this build.');
-      if (!alive.current) { await api?.workspaceTerminalClose?.({ sessionId: result.session.sessionId }); return; }
+      if (!alive.current || startedGeneration !== generation.current) { await api?.workspaceTerminalClose?.({ sessionId: result.session.sessionId }); return; }
       const info = result.session as WorkspaceTerminalSessionInfo;
       const events = (pending.current.get(info.sessionId) || []).filter(e => e.seq > info.seq); pending.current.delete(info.sessionId);
       const next = { info, events, exited: events.some(e => e.type === 'exit') };
       sessionsRef.current = [...sessionsRef.current, next]; setSessions(sessionsRef.current); setActive(info.sessionId);
       if (requestFocus) setFocusRequest(prev => ({ sessionId: info.sessionId, sequence: prev.sequence + 1 }));
-    } catch (e: any) { if (alive.current) setError(e?.message || 'Could not open an interactive terminal.'); }
-    finally { creation.current = false; if (alive.current) setCreating(false); }
+    } catch (e: any) { if (alive.current && startedGeneration === generation.current) setError(e?.message || 'Could not open an interactive terminal.'); }
+    finally { creation.current = false; if (alive.current && startedGeneration === generation.current) setCreating(false); }
   }, [api, projectPath, profileId]);
   useEffect(() => {
     alive.current = true;
+    generation.current++;
+    let cancelled = false;
+    sessionsRef.current = []; setSessions([]); setActive(''); setRecovering(true); setRecoveryFailed(false); setError('');
     const off = api?.onWorkspaceTerminalEvent?.((event: WorkspaceTerminalEvent) => {
       if (!sessionsRef.current.some(s => s.info.sessionId === event.sessionId)) {
         if (!pending.current.has(event.sessionId) && pending.current.size >= 8) return;
@@ -83,36 +91,52 @@ export default function WorkspaceTerminalPanel({ projectPath, onClose, onSendToC
       }
       setSessions(prev => { const next = prev.map(s => s.info.sessionId === event.sessionId ? { ...s, events: boundedEvents([...s.events, event]), ...(event.type === 'exit' ? { exited: true, exitCode: event.exitCode } : {}) } : s); sessionsRef.current = next; return next; });
     });
-    void Promise.resolve(api?.workspaceTerminalProfiles?.()).then((result: any) => {
-      if (!alive.current) return;
+    void (async () => {
+      const recovered = api?.workspaceTerminalList ? await api.workspaceTerminalList({ projectDir: projectPath }) : { success: true, sessions: [] };
+      if (cancelled) return;
+      if (!recovered?.success) { setRecoveryFailed(true); throw new Error(recovered?.error || 'Could not recover retained terminals. Retry before opening another shell.'); }
+      const restored: ClientSession[] = (recovered.sessions || []).map((info: WorkspaceTerminalSessionInfo) => {
+        const events = (pending.current.get(info.sessionId) || []).filter(event => event.seq > info.seq);
+        pending.current.delete(info.sessionId);
+        return { info, events, exited: info.exited || events.some(event => event.type === 'exit'), exitCode: info.exitCode };
+      });
+      sessionsRef.current = restored; setSessions(restored); setActive(restored[0]?.info.sessionId || '');
+      const retainedError = restored.find(session => session.info.closeError)?.info.closeError;
+      if (retainedError) setError(retainedError);
+      const result = await api?.workspaceTerminalProfiles?.();
+      if (cancelled) return;
       if (!result?.success) { setError(result?.error || 'No shell profiles are available.'); return; }
-      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || ''); void create(result.profiles?.[0]?.id, false);
-    }).catch((e: unknown) => { if (alive.current) setError(e instanceof Error ? e.message : 'Could not load shell profiles.'); });
-    return () => { alive.current = false; off?.(); for (const session of sessionsRef.current) void Promise.resolve(api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main owns final window/quit cleanup. */ }); };
-  // Project remount starts a fresh shell; user-entered cd stays in that shell.
+      setProfiles(result.profiles || []); setProfileId(result.profiles?.[0]?.id || '');
+      if (!restored.length) void create(result.profiles?.[0]?.id, false);
+    })().catch((e: unknown) => { if (!cancelled) { setRecoveryFailed(true); setError(e instanceof Error ? e.message : 'Could not recover terminal sessions.'); } })
+      .finally(() => { if (!cancelled) setRecovering(false); });
+    return () => { cancelled = true; alive.current = false; off?.(); for (const session of sessionsRef.current) void Promise.resolve().then(() => api?.workspaceTerminalClose?.({ sessionId: session.info.sessionId })).catch(() => { /* Main retains failed sessions for recovery on reopen. */ }); };
+  // Main retains failed cleanup attempts across panel and project remounts.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, projectPath]);
+  }, [api, projectPath, recoveryAttempt]);
   const closeSession = async (id: string) => {
+    const startedGeneration = generation.current;
     try {
     const result = await api?.workspaceTerminalClose?.({ sessionId: id });
-    if (!alive.current) return;
+    if (!alive.current || startedGeneration !== generation.current) return;
     if (!result?.success) { setError(result?.error || 'Could not close that terminal.'); return; }
     const next = sessionsRef.current.filter(s => s.info.sessionId !== id); sessionsRef.current = next; setSessions(next); setActive(next[0]?.info.sessionId || '');
-    } catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : 'Could not close that terminal.'); }
+    } catch (e: unknown) { if (alive.current && startedGeneration === generation.current) setError(e instanceof Error ? e.message : 'Could not close that terminal.'); }
   };
   const interrupt = async () => { try { const r = await api?.workspaceTerminalInterrupt?.({ sessionId: active }); if (alive.current && !r?.success) setError(r?.error || 'Interrupt failed.'); } catch (e: unknown) { if (alive.current) setError(e instanceof Error ? e.message : 'Interrupt failed.'); } };
   const current = sessions.find(s => s.info.sessionId === active);
   return <section className="terminal-panel" aria-label="Interactive terminal" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
     <header style={{ display: 'flex', gap: 6, flexWrap: 'wrap', padding: 4 }}>
       <strong>Terminal</strong><select aria-label="Shell profile" value={profileId} onChange={e => setProfileId(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select>
-      <button onClick={() => { void create(); }} disabled={creating || sessions.length >= 4 || !profileId}>{creating ? 'Opening…' : 'New terminal'}</button>
+      <button onClick={() => { void create(); }} disabled={recovering || recoveryFailed || creating || sessions.length >= 4 || !profileId}>{creating ? 'Opening…' : 'New terminal'}</button>
+      {recoveryFailed && <button onClick={() => setRecoveryAttempt(value => value + 1)}>Retry terminal recovery</button>}
       <button disabled={!current || current.exited} onClick={() => { void interrupt(); }}>Interrupt (Ctrl+C)</button>
       {onSendToChat && <button disabled={!current} onClick={() => { if (current) onSendToChat(excerptForModel(current.info.output + current.events.map(e => e.data || '').join(''), { maxLines: 100, maxChars: 20000 })); }}>Attach output to assistant</button>}
       <button aria-label="Close terminal panel" onClick={onClose}>Close panel</button>
       {onUseCommandTerminal && <button onClick={onUseCommandTerminal}>Use command terminal (no interactive stdin)</button>}
     </header>
     <div role="tablist" aria-label="Terminal sessions" style={{ display: 'flex', gap: 6, padding: 4 }}>{sessions.map((s, index) => <div key={s.info.sessionId}><button role="tab" aria-selected={active === s.info.sessionId} onClick={() => { setActive(s.info.sessionId); setFocusRequest(prev => ({ sessionId: s.info.sessionId, sequence: prev.sequence + 1 })); }}>{index + 1}: {s.info.profileId}{s.exited ? ' (exited)' : ''}</button><button aria-label={`Close terminal ${index + 1}`} onClick={() => { void closeSession(s.info.sessionId); }}>×</button></div>)}</div>
-    {error && <p role="alert">{error}</p>}{!sessions.length && !creating && <p>No terminal open. Choose a shell and select New terminal.</p>}
+    {error && <p role="alert">{error}</p>}{recovering && <p>Recovering terminal sessions…</p>}{!sessions.length && !creating && !recovering && !recoveryFailed && <p>No terminal open. Choose a shell and select New terminal.</p>}
     {sessions.map(s => <TerminalPane key={s.info.sessionId} session={s} visible={s.info.sessionId === active} focusRequest={focusRequest.sessionId === s.info.sessionId ? focusRequest.sequence : 0} onError={setError} />)}
   </section>;
 }

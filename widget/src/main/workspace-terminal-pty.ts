@@ -84,6 +84,7 @@ export class WorkspacePtySessions {
     }));
     session.listeners.push(pty.onExit(event => {
       session.exited = true;
+      info.exited = true; info.exitCode = event.exitCode;
       for (const resolve of session.exitWaiters) resolve();
       notify({ sessionId: info.sessionId, seq: ++info.seq, type: 'exit', exitCode: event.exitCode });
       // ConPTY retains a worker even after the child exits. Release it now;
@@ -97,6 +98,14 @@ export class WorkspacePtySessions {
     const session = this.sessions.get(id);
     if (!session || session.owner !== owner) throw new Error('This terminal belongs to a different window or has closed.');
     return session;
+  }
+  async list(owner: number, projectDir: string): Promise<WorkspaceTerminalSessionInfo[]> {
+    const root = checkedWorkspacePath(projectDir);
+    const matches = (session: Session) => session.owner === owner && session.info.cwd === root;
+    // Remount may race its old cleanup. Wait for those bounded attempts, then
+    // recover only sessions still retained by main, including their transcript.
+    await Promise.allSettled([...this.sessions.values()].filter(matches).map(session => session.closing).filter(Boolean));
+    return [...this.sessions.values()].filter(matches).map(session => ({ ...session.info, exited: session.exited }));
   }
   write(owner: number, id: string, data: string): void {
     const session = this.owned(owner, id);
@@ -147,7 +156,9 @@ export class WorkspacePtySessions {
       this.release(session, process.platform === 'win32');
       this.sessions.delete(id);
     })();
-    try { await session.closing; } finally { session.closing = undefined; }
+    try { await session.closing; }
+    catch (error) { session.info.closeError = error instanceof Error ? error.message : String(error); throw error; }
+    finally { session.closing = undefined; }
   }
   async closeOwner(owner: number): Promise<void> { await Promise.all([...this.sessions].filter(([, s]) => s.owner === owner).map(([id]) => this.close(owner, id))); }
   async closeAll(): Promise<void> { await Promise.all([...this.sessions].map(([id, s]) => this.close(s.owner, id))); }

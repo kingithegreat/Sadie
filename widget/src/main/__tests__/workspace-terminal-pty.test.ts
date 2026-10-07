@@ -60,6 +60,37 @@ test('an exit notification without native identity disappearance refuses Close a
   expect(app.pty.kill).toHaveBeenCalledTimes(1);
 });
 
+test('recovery retains failed Close evidence and transcript, scoped to owner and original project', async () => {
+  const app = setup(true, false);
+  app.data('important terminal output\r\n');
+  const other = fs.mkdtempSync(path.join(os.homedir(), 'homebot-pty-other-'));
+  try {
+    await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/could not be confirmed/);
+    expect(await app.manager.list(8, folder)).toEqual([]);
+    expect(await app.manager.list(7, other)).toEqual([]);
+    const [retained] = await app.manager.list(7, folder);
+    expect(retained).toMatchObject({ sessionId: app.session.sessionId, output: 'important terminal output\r\n', exited: true, exitCode: 0, closeError: expect.stringMatching(/could not be confirmed/) });
+    retained.output = 'renderer changed clone';
+    expect((await app.manager.list(7, folder))[0].output).toBe('important terminal output\r\n');
+    app.stopped.mockResolvedValue(true); await app.manager.close(7, app.session.sessionId);
+    expect(await app.manager.list(7, folder)).toEqual([]);
+  } finally { fs.rmSync(other, { recursive: true, force: true }); }
+});
+
+test('recovery waits for an in-flight Close before deciding whether a session was retained', async () => {
+  const app = setup();
+  let complete!: (value: boolean) => void;
+  app.stopped.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+  const close = app.manager.close(7, app.session.sessionId);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  expect(complete).toBeDefined();
+  let recovered = false;
+  const listing = app.manager.list(7, folder).then(result => { recovered = true; return result; });
+  await Promise.resolve(); expect(recovered).toBe(false);
+  complete(true); await close;
+  expect(await listing).toEqual([]);
+});
+
 test('unproven force Stop keeps the live session and never reports successful Close', async () => {
   const app = setup(true, false); app.force.mockResolvedValue({ stopped: false, attempted: false });
   await expect(app.manager.close(7, app.session.sessionId)).rejects.toThrow(/process-tree exit/);
