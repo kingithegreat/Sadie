@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 let mockProjectPath: string | undefined;
 jest.mock('electron', () => ({ app: { getPath: () => require('path').join(require('os').tmpdir(), 'homebot-proposal-test-profile') } }));
 jest.mock('../config-manager', () => ({ getSettings: () => ({ projectPath: mockProjectPath }) }));

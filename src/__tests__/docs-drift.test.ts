@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 /**
  * Docs drift gate.
  *

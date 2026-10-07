@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 /**
  * mcp-client.test.ts
  * Tests for src/main/mcp-client.ts (config I/O and query functions)
