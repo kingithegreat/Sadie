@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+// Real filesystem/loopback work uses the explicit timeout required by AGENTS.md.
+jest.setTimeout(15_000);
 const nativeFs: typeof import('fs') = jest.requireActual('fs');
 let mockHome: string;
 let mockUserData: string;
