@@ -21,7 +21,7 @@ ActiveProcesses zero, never a Job wait signal or reconstructed PID ancestry.
 Failed/unknown setup or helper loss retains ownership/refusal. No completion claim.
 Editor additionally owns an independent failure-only Windows wait-chain diagnostic
 module and its controlled tests; root owns its qualified shutdown-helper callsite.
-No memory dump, debugger attach, process suspension or guessed-PID termination.
+That wait-chain module does not attach a debugger, suspend processes or terminate guessed PIDs.
 Editor owns retained MCP stdio transport containment using public SDK APIs
 and the shared fixed pre-execution gate; root owns existing MCP client/quit wiring.
 Editor also owns Tests runner Job reservation, admission, retained cleanup and
@@ -50,6 +50,16 @@ fixed hash-bound runtime loading and Windows packaging validation. Root owns
 CI flags, complete built/native/delivery inventories, exact-head publication and
 independent evidence verification. Terminal resize correction is integrated;
 fresh task/terminal/file-handle qualification, merge and delivery are unfinished.
+Current root checkpoint: managed framing, supported small-pane resizing, captured
+inspector handshake and CI-only local Crashpad receipts are integrated. The local
+reporter starts only after native ownership capture and requires private paths,
+upload disabled and exact PID/nonce readback. Editor and Files independently
+reviewed their assigned changes. Root's combined limited checks passed 135 syntax
+files, discovered 60 prepared suite paths and executed 11 controlled groups;
+these do not substitute for semantic/Jest/build or actual native qualification.
+Published e7 required checks and both full widget suites passed; its original
+watch AV, terminal resize failure and flaky overlay AV remain failed evidence.
+Fresh same-head hosted qualification is required before merge and delivery.
 See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
 No shared dependency rebuild/install; no existing delivered build modifications.
 One guarded test/build at a time. Other sessions' processes and held PRs preserved.

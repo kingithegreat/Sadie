@@ -107,7 +107,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Managed helper build contracts
-        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
+        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
 
       # --forceExit is deliberate and NOT hiding a failure: every test passes.
       # The suite finishes in ~45s and then does not release the process. Two

@@ -106,6 +106,12 @@ jobs:
           EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
         run: node scripts/run-ide-native-zero-retry.cjs --terminal-tree --expected-head "$env:EXPECTED_PR_HEAD"
 
+      # Keep the first actual helper admission ahead of any pure PS framing
+      # controls, so a new control stage is not a cold-start warmup.
+      - name: Managed framing parser and pure controls
+        if: always() && steps.native_compile.outcome == 'success'
+        run: node --test widget/scripts/__tests__/windows-job-managed-framing.test.cjs
+
       - name: Upload all gate proof and failure artifacts
         if: always()
         uses: actions/upload-artifact@v4
