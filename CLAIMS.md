@@ -36,6 +36,13 @@ did not load their saved-message fixture before checking retention. After fixing
 the fixtures without relaxing production acknowledgement guards or assertions,
 the seven suites pass all 24 tests with TypeScript. Final full-suite checks remain
 pending; the first full run stopped before root tests and documentation checks.
+Final source checks: widget/root TypeScript, whole-widget lint (zero errors,
+seven existing warnings), all 5,102 widget assertions with 33 existing skips,
+all 232 root tests, and docs drift pass. The full widget run completed its JSON
+results but retained the documented main-process Jest handle; exact-owned cleanup
+was recorded rather than described as natural exit. Hosted CI already uses
+`--forceExit` for that existing limitation. Native acceptance is still pending
+the standing 5 GiB/2 GiB resource floor; current free disk is about 4.08 GiB.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 
