@@ -3,7 +3,9 @@ import * as path from 'path';
 import { createHash } from 'crypto';
 
 declare const HOMEBOT_WINDOWS_JOB_ASSET_IDENTITY: string | undefined;
+declare const HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY: string | undefined;
 const buildMarker = 'HOMEBOT_OWNED_WINDOWS_JOB_ASSET_V1:';
+const hostMarker = 'HOMEBOT_OWNED_WINDOWS_JOB_HOST_V1:';
 const sha = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 const hashPattern = /^[a-f0-9]{64}$/;
 
@@ -30,9 +32,9 @@ function readRegular(file: string, maximum: number): Buffer {
 
 /** Bundled output pins its hash. Unbundled source trusts ONLY its fixed product
  * source/manifest preparation boundary; no request, cwd or environment selects it. */
-export function verifiedWorkspaceWindowsJobAsset(): { assembly: string; sha256: string } {
+function resolveIdentity(): { assembly: string; host: string; sha256: string; hostSha256?: string } {
   const bundled = typeof HOMEBOT_WINDOWS_JOB_ASSET_IDENTITY !== 'undefined';
-  let assembly: string, expected: string;
+  let assembly: string, host: string, expected: string, hostExpected: string | undefined;
   if (bundled) {
     const identity = HOMEBOT_WINDOWS_JOB_ASSET_IDENTITY!;
     if (!identity.startsWith(buildMarker)) throw new Error('The managed Job build identity is invalid.');
@@ -40,21 +42,41 @@ export function verifiedWorkspaceWindowsJobAsset(): { assembly: string; sha256: 
     // Framework PowerShell cannot open Electron's virtual ASAR filesystem.
     const mainDirectory = __dirname.replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2');
     assembly = path.resolve(mainDirectory, 'assets', 'OwnedWindowsJob.dll');
+    host = path.resolve(mainDirectory, 'assets', 'OwnedWindowsJobHost.exe');
+    if (typeof HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY !== 'undefined') {
+      if (!HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY.startsWith(hostMarker)) throw new Error('The managed Job host build identity is invalid.');
+      hostExpected = HOMEBOT_WINDOWS_JOB_HOST_ASSET_IDENTITY.slice(hostMarker.length);
+    }
   } else {
     // Explicit source layout is required; a missing build define in out cannot
     // silently load a nearby source checkout or use cwd as an asset search path.
     if (path.basename(__dirname) !== 'main' || path.basename(path.dirname(__dirname)) !== 'src') throw new Error('The managed Job build hash is missing.');
     const native = path.resolve(__dirname, '../../native');
     assembly = path.join(native, 'generated', 'OwnedWindowsJob.dll');
+    host = path.join(native, 'generated', 'OwnedWindowsJobHost.exe');
     const value: unknown = JSON.parse(readRegular(path.join(native, 'generated', 'manifest.json'), 4096).toString('utf8'));
     if (!value || typeof value !== 'object') throw new Error('The managed Job product manifest is malformed.');
     const manifest = value as Record<string, unknown>;
     const referenceNames = ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'];
-    if (manifest.version !== 2 || typeof manifest.sourceSha256 !== 'string' || !hashPattern.test(manifest.sourceSha256) || typeof manifest.compilerSha256 !== 'string' || !hashPattern.test(manifest.compilerSha256) || typeof manifest.preparationSha256 !== 'string' || !hashPattern.test(manifest.preparationSha256) || typeof manifest.optionsSha256 !== 'string' || !hashPattern.test(manifest.optionsSha256) || typeof manifest.assemblySha256 !== 'string' || !hashPattern.test(manifest.assemblySha256) || !Array.isArray(manifest.references) || manifest.references.length !== referenceNames.length || manifest.references.some((value: unknown, index: number) => !value || typeof value !== 'object' || (value as Record<string, unknown>).name !== referenceNames[index] || typeof (value as Record<string, unknown>).sha256 !== 'string' || !hashPattern.test((value as Record<string, string>).sha256)) || sha(readRegular(path.join(native, 'OwnedWindowsJob.cs'), 1024 * 1024)) !== manifest.sourceSha256 || sha(readRegular(path.resolve(__dirname, '../../scripts/prepare-windows-job.cjs'), 1024 * 1024)) !== manifest.preparationSha256) throw new Error('The managed Job product manifest is stale or malformed.');
+    if (manifest.version !== 3 || typeof manifest.hostSourceSha256 !== 'string' || !hashPattern.test(manifest.hostSourceSha256) || typeof manifest.hostSha256 !== 'string' || !hashPattern.test(manifest.hostSha256) || typeof manifest.sourceSha256 !== 'string' || !hashPattern.test(manifest.sourceSha256) || typeof manifest.compilerSha256 !== 'string' || !hashPattern.test(manifest.compilerSha256) || typeof manifest.preparationSha256 !== 'string' || !hashPattern.test(manifest.preparationSha256) || typeof manifest.optionsSha256 !== 'string' || !hashPattern.test(manifest.optionsSha256) || typeof manifest.assemblySha256 !== 'string' || !hashPattern.test(manifest.assemblySha256) || !Array.isArray(manifest.references) || manifest.references.length !== referenceNames.length || manifest.references.some((value: unknown, index: number) => !value || typeof value !== 'object' || (value as Record<string, unknown>).name !== referenceNames[index] || typeof (value as Record<string, unknown>).sha256 !== 'string' || !hashPattern.test((value as Record<string, string>).sha256)) || sha(readRegular(path.join(native, 'OwnedWindowsJob.cs'), 1024 * 1024)) !== manifest.sourceSha256 || sha(readRegular(path.join(native, 'OwnedWindowsJobHost.cs'), 1024 * 1024)) !== manifest.hostSourceSha256 || sha(readRegular(path.resolve(__dirname, '../../scripts/prepare-windows-job.cjs'), 1024 * 1024)) !== manifest.preparationSha256) throw new Error('The managed Job product manifest is stale or malformed.');
     expected = manifest.assemblySha256;
+    hostExpected = manifest.hostSha256;
   }
   if (!hashPattern.test(expected)) throw new Error('The managed Job build hash is invalid.');
   const bytes = readRegular(assembly, 1024 * 1024);
   if (bytes.length < 512 || bytes.toString('ascii', 0, 2) !== 'MZ' || sha(bytes) !== expected) throw new Error('The managed Job product asset hash does not match its preparation.');
-  return { assembly, sha256: expected };
+  return { assembly, host, sha256: expected, hostSha256: hostExpected };
+}
+
+export function verifiedWorkspaceWindowsJobAsset(): { assembly: string; sha256: string } {
+  const value = resolveIdentity(); return { assembly: value.assembly, sha256: value.sha256 };
+}
+
+/** Fixed zero-argv console host. No workspace, cwd or environment selects either asset. */
+export function verifiedWorkspaceWindowsJobRuntime(): { host: string; hostSha256: string; assembly: string; sha256: string } {
+  const value = resolveIdentity();
+  if (!value.hostSha256 || !hashPattern.test(value.hostSha256)) throw new Error('The managed Job host build hash is missing or invalid.');
+  const bytes = readRegular(value.host, 1024 * 1024);
+  if (bytes.length < 512 || bytes.toString('ascii', 0, 2) !== 'MZ' || sha(bytes) !== value.hostSha256) throw new Error('The managed Job console host hash does not match its preparation.');
+  return { host: value.host, hostSha256: value.hostSha256, assembly: value.assembly, sha256: value.sha256 };
 }

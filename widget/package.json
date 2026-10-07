@@ -168,7 +168,8 @@
     },
     "asarUnpack": [
       "node_modules/node-pty/**/*",
-      "out/main/assets/OwnedWindowsJob.dll"
+      "out/main/assets/OwnedWindowsJob.dll",
+      "out/main/assets/OwnedWindowsJobHost.exe"
     ]
   },
   "browserslist": [

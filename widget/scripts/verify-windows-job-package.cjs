@@ -27,4 +27,8 @@ module.exports = function verifyManagedWindowsJob(context) {
   if (identities.length !== 1) throw new Error('Windows packaging requires exactly one pinned managed Job build identity. Build on Windows before packaging.');
   const bytes = readBounded(path.join(appDir, 'out', 'main', 'assets', 'OwnedWindowsJob.dll'), 1024 * 1024);
   if (bytes.length < 512 || bytes.toString('ascii', 0, 2) !== 'MZ' || crypto.createHash('sha256').update(bytes).digest('hex') !== identities[0][1]) throw new Error('Windows packaging requires the unchanged managed Job asset pinned by its actual build.');
+  const hostIdentities = [...main.matchAll(/HOMEBOT_OWNED_WINDOWS_JOB_HOST_V1:([a-f0-9]{64})/g)];
+  if (hostIdentities.length !== 1) throw new Error('Windows packaging requires exactly one pinned managed Job console host identity.');
+  const host = readBounded(path.join(appDir, 'out', 'main', 'assets', 'OwnedWindowsJobHost.exe'), 1024 * 1024);
+  if (host.length < 512 || host.toString('ascii', 0, 2) !== 'MZ' || crypto.createHash('sha256').update(host).digest('hex') !== hostIdentities[0][1]) throw new Error('Windows packaging requires the unchanged managed Job console host pinned by its actual build.');
 };

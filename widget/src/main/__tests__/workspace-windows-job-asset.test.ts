@@ -1,13 +1,15 @@
 import { createHash } from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
-import { verifiedWorkspaceWindowsJobAsset } from '../workspace-windows-job-asset';
+import { verifiedWorkspaceWindowsJobAsset, verifiedWorkspaceWindowsJobRuntime } from '../workspace-windows-job-asset';
 
 jest.mock('fs', () => ({ lstatSync: jest.fn(), realpathSync: { native: jest.fn() }, openSync: jest.fn(), fstatSync: jest.fn(), readSync: jest.fn(), closeSync: jest.fn() }));
 const native = path.resolve(__dirname, '../../../native');
 const asset = path.join(native, 'generated', 'OwnedWindowsJob.dll');
 const manifestFile = path.join(native, 'generated', 'manifest.json');
 const source = Buffer.from('immutable product-only C# source');
+const hostSource = Buffer.from('immutable console host source');
+const hostFile = path.join(native, 'generated', 'OwnedWindowsJobHost.exe');
 const preparation = Buffer.from('immutable preparation code');
 const preparationFile = path.resolve(__dirname, '../../../scripts/prepare-windows-job.cjs');
 const bytes = Buffer.alloc(512); bytes.write('MZ');
@@ -15,7 +17,7 @@ const digest = (value: Buffer) => createHash('sha256').update(value).digest('hex
 const stat = (size: number) => ({ dev: 1, ino: 2, size, isFile: () => true, isSymbolicLink: () => false });
 let files: Map<string, Buffer>, held: string;
 beforeEach(() => {
-  files = new Map([[asset, Buffer.from(bytes)], [path.join(native, 'OwnedWindowsJob.cs'), source], [preparationFile, preparation], [manifestFile, Buffer.from(JSON.stringify({ version: 2, sourceSha256: digest(source), preparationSha256: digest(preparation), compilerSha256: 'c'.repeat(64), optionsSha256: 'd'.repeat(64), references: ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'].map(name => ({ name, sha256: 'e'.repeat(64) })), assemblySha256: digest(bytes) }))]]);
+  files = new Map([[asset, Buffer.from(bytes)], [hostFile, Buffer.from(bytes)], [path.join(native, 'OwnedWindowsJob.cs'), source], [path.join(native, 'OwnedWindowsJobHost.cs'), hostSource], [preparationFile, preparation], [manifestFile, Buffer.from(JSON.stringify({ version: 3, hostSourceSha256: digest(hostSource), hostSha256: digest(bytes), sourceSha256: digest(source), preparationSha256: digest(preparation), compilerSha256: 'c'.repeat(64), optionsSha256: 'd'.repeat(64), references: ['mscorlib.dll', 'System.dll', 'System.Core.dll', 'System.Web.Extensions.dll'].map(name => ({ name, sha256: 'e'.repeat(64) })), assemblySha256: digest(bytes) }))]]);
   (fs.lstatSync as jest.Mock).mockImplementation(file => { const value = files.get(file); if (!value) throw new Error('missing'); return stat(value.length); });
   (fs.realpathSync.native as jest.Mock).mockImplementation(file => file);
   (fs.openSync as jest.Mock).mockClear().mockImplementation(file => { held = file; return 9; });
@@ -27,7 +29,7 @@ beforeEach(() => {
 it('loads only the fixed product-source asset and closes every held read', () => {
   expect(verifiedWorkspaceWindowsJobAsset()).toEqual({ assembly: asset, sha256: digest(bytes) });
   expect(fs.openSync).toHaveBeenCalledWith(asset, 'r');
-  expect(fs.closeSync).toHaveBeenCalledTimes(4);
+  expect(fs.closeSync).toHaveBeenCalledTimes(5);
 });
 it('rejects a missing asset without runtime preparation', () => {
   files.delete(asset); expect(() => verifiedWorkspaceWindowsJobAsset()).toThrow('missing');
@@ -63,4 +65,18 @@ it('rejects path substitution between validation and held open', () => {
 it('rejects a growing file even after its held stat passed', () => {
   (fs.readSync as jest.Mock).mockImplementation((_fd, target: Buffer, offset: number, length: number, position: number) => (held === asset ? Buffer.alloc(1024 * 1024 + 1) : files.get(held)!).copy(target, offset, position, position + length));
   expect(() => verifiedWorkspaceWindowsJobAsset()).toThrow('reading');
+});
+it('returns only the verified fixed console host and separately verified DLL', () => {
+  expect(verifiedWorkspaceWindowsJobRuntime()).toEqual({ host: hostFile, hostSha256: digest(bytes), assembly: asset, sha256: digest(bytes) });
+  expect(fs.openSync).toHaveBeenCalledWith(hostFile, 'r'); expect(fs.closeSync).toHaveBeenCalledTimes(6);
+});
+it('rejects changed host source or bytes instead of falling back to PowerShell', () => {
+  files.set(path.join(native, 'OwnedWindowsJobHost.cs'), Buffer.from('changed host source'));
+  expect(() => verifiedWorkspaceWindowsJobRuntime()).toThrow('stale');
+  files.set(path.join(native, 'OwnedWindowsJobHost.cs'), hostSource); files.get(hostFile)![511] = 1;
+  expect(() => verifiedWorkspaceWindowsJobRuntime()).toThrow('hash');
+});
+it('rejects a redirected host at its fixed filename', () => {
+  (fs.realpathSync.native as jest.Mock).mockImplementation(file => file === hostFile ? path.join(native, 'elsewhere.exe') : file);
+  expect(() => verifiedWorkspaceWindowsJobRuntime()).toThrow('regular');
 });
