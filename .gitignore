@@ -154,3 +154,6 @@ workspace/
 
 # Local movie projects and generated run state are user data, not Core source.
 /movie/
+
+# Build/dev/Jest-prepared managed product asset (immutable source is tracked).
+/widget/native/generated/

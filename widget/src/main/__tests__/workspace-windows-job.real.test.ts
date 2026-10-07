@@ -35,7 +35,7 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
         for (;;) {
           const newline = buffered.indexOf('\n'); if (newline < 0) break;
           const line = buffered.slice(0, newline); buffered = buffered.slice(newline + 1);
-          try { const value = JSON.parse(line); if (value.type === 'phase' && ['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'compile', 'create', 'listen', 'command', 'stop'].includes(value.phase)) {
+          try { const value = JSON.parse(line); if (value.type === 'phase' && ['entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'asset-load', 'asset-loaded', 'create', 'listen', 'command', 'stop'].includes(value.phase)) {
             phases.push(value.phase); observations.push({ event: 'phase', phase: value.phase, elapsedMs: Date.now() - started });
           } }
           catch { /* The production reader, not this passive observation, owns validity. */ }
@@ -56,7 +56,7 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       expect(held!.pid).toBeGreaterThan(0);
       expect(closeCode).toBe(0); expect(closeSignal).toBeNull();
       expect(held!.exitCode).toBe(0); expect(held!.signalCode).toBeNull();
-      expect(phases).toEqual(expect.arrayContaining(['utility-import', 'utility-imported', 'compile', 'create', 'command', 'stop']));
+      expect(phases).toEqual(expect.arrayContaining(['utility-import', 'utility-imported', 'asset-load', 'asset-loaded', 'create', 'command', 'stop']));
       expect(phases).not.toContain('attach'); expect(phases).not.toContain('go');
       if (sdkGate) { expect(listening!.ok).toBe(true); expect(phases).toContain('listen'); }
       expect(spy).toHaveBeenCalledTimes(1);

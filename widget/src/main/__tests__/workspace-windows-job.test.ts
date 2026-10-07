@@ -1,8 +1,12 @@
 import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
 import { createPendingWorkspaceWindowsJob, createWorkspaceWindowsJob } from '../workspace-windows-job';
+import * as fs from 'fs';
+import * as path from 'path';
+import { verifiedWorkspaceWindowsJobAsset } from '../workspace-windows-job-asset';
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
+jest.mock('../workspace-windows-job-asset', () => ({ verifiedWorkspaceWindowsJobAsset: jest.fn() }));
 const spawnMock = spawn as unknown as jest.Mock;
 const identity = { creation: '639269357577651780', parent: 44 };
 
@@ -20,7 +24,10 @@ async function settle() { for (let i = 0; i < 8; i++) await Promise.resolve(); }
 
 describe('creation-gated Windows Job ownership', () => {
   const oldSystemRoot = process.env.SystemRoot;
-  beforeEach(() => { process.env.SystemRoot = 'C:\\Windows'; jest.useFakeTimers(); spawnMock.mockReset(); });
+  beforeEach(() => {
+    process.env.SystemRoot = 'C:\\Windows'; jest.useFakeTimers(); spawnMock.mockReset();
+    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockReset().mockReturnValue({ assembly: 'C:\\HomeBot\\assets\\OwnedWindowsJob.dll', sha256: 'b'.repeat(64) });
+  });
   afterEach(() => { if (oldSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = oldSystemRoot; jest.clearAllTimers(); jest.useRealTimers(); });
 
   it('returns ownership before helper listening and resolves ready only after assignment', async () => {
@@ -31,6 +38,30 @@ describe('creation-gated Windows Job ownership', () => {
     expect(fake.requests()).toEqual([{ id: 1, operation: 'attach', pid: 90, creation: identity.creation }]);
     expect(ready).toBe(false);
     fake.reply({ ok: true }); await job.ready; expect(ready).toBe(true);
+  });
+
+  it.each(['missing', 'tampered'])('rejects %s assets before spawn and allows truthful no-owner cleanup', async reason => {
+    (verifiedWorkspaceWindowsJobAsset as jest.Mock).mockImplementationOnce(() => { throw new Error(reason); });
+    const job = createPendingWorkspaceWindowsJob();
+    await expect(job.ready).rejects.toThrow('could not start');
+    await expect(job.listening).rejects.toThrow('could not start');
+    await job.stop(); await job.stop();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(job.getStartupDiagnostics!()).toEqual({ phases: [], close: { observedMs: 0, outcome: 'not-started' }, noOwnerCleanupConfirmed: true });
+  });
+
+  it('allows no-owner cleanup on a synchronous spawn throw without changing rejected readiness', async () => {
+    spawnMock.mockImplementationOnce(() => { throw new Error('spawn failed before child'); });
+    const job = createPendingWorkspaceWindowsJob(); await expect(job.listening).rejects.toThrow('could not start');
+    await job.stop(); expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBe(true);
+  });
+
+  it('does not treat a returned ChildProcess error as no-owner cleanup', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    fake.child.emit('error', new Error('child-owned error')); fake.child.emit('close', null);
+    await expect(job.listening).rejects.toThrow('failed');
+    await expect(job.stop()).rejects.toThrow('lost');
+    expect(job.getStartupDiagnostics!().noOwnerCleanupConfirmed).toBeUndefined();
   });
 
   it('reports cold compile at the unchanged startup deadline without treating a phase as readiness', async () => {
@@ -235,11 +266,15 @@ describe('creation-gated Windows Job ownership', () => {
   it('generates exclusive OS-peer checked gated assignment and a retained-Job empty oracle', () => {
     helper(); createPendingWorkspaceWindowsJob();
     const args = spawnMock.mock.calls[0][1]; const source = Buffer.from(args.at(-1), 'base64').toString('utf16le');
-    expect(source).toContain('CreateNamedPipe'); expect(source).toContain('0x40080003');
-    expect(source).toContain('GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)');
-    expect(source).toContain('DateTime.FromFileTimeUtc(born).Ticks/10!=expected/10');
-    expect(source).toContain('limits.Basic.Flags=0x2000');
-    expect(source).toContain('QueryInformationJobObject(job,1'); expect(source).toContain('return Account().Active==0');
+    const managed = fs.readFileSync(path.resolve(__dirname, '../../../native/OwnedWindowsJob.cs'), 'utf8');
+    expect(managed).toContain('CreateNamedPipe'); expect(managed).toContain('0x40080003');
+    expect(managed).toContain('GetNamedPipeClientProcessId(pipe.SafePipeHandle,out peer)');
+    expect(managed).toContain('DateTime.FromFileTimeUtc(born).Ticks/10!=expected/10');
+    expect(managed).toContain('limits.Basic.Flags=0x2000');
+    expect(managed).toContain('QueryInformationJobObject(job,1'); expect(managed).toContain('return Account().Active==0');
+    expect(source).not.toContain('Add-Type'); expect(source).not.toContain('csc.exe');
+    expect(source).toContain('[System.Reflection.Assembly]::Load($assetBytes)');
+    expect(source.indexOf('$actualHash -cne $initial.asset.sha256')).toBeLessThan(source.indexOf('[System.Reflection.Assembly]::Load($assetBytes)'));
     expect(source).not.toContain('Get-CimInstance'); expect(source).not.toContain('TerminateProcess');
     expect(source).toContain('$inputEncoding=[System.Text.UTF8Encoding]::new($false)');
     expect(source).toContain('[Console]::InputEncoding=$inputEncoding');

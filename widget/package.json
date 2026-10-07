@@ -119,6 +119,7 @@
     "webpack-cli": "^5.1.4"
   },
   "build": {
+    "beforePack": "./scripts/verify-windows-job-package.cjs",
     "appId": "com.homebot.app",
     "productName": "HomeBot",
     "directories": {
@@ -166,7 +167,8 @@
       "runAfterFinish": true
     },
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/**/*",
+      "out/main/assets/OwnedWindowsJob.dll"
     ]
   },
   "browserslist": [
