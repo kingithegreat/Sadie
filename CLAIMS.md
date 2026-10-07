@@ -15,14 +15,14 @@ failure screenshot. No production timeout or acknowledgement gate is relaxed.
 IDE #474 and the character-preview owner retain their separate scopes; accepted
 test copies, shared dependencies and owner profiles are preserved.
 
-Source editing is frozen: both real App baseline cases saved the wrong 7B model;
+Both real App baseline cases saved the wrong 7B model;
 the correction passes all 108 focused tests in three suites, widget TypeScript,
 scoped lint and supplemental native TypeScript. Native discovery lists the same
 four cases; the installed-model case now delays an original 7B settings reply
 after an explicit 3B choice, retaining actual save/mode/HTTP handlers and closure
 oracles. A deliberate no-browser failed-first/passed-retry control proves the
 old trace mode loses the original trace and the new mode retains it. Local
-build/GUI remain below the 5 GiB disk floor. Current-head hosted tests, configured
+build/GUI remain subject to fresh capacity checks. Current-head hosted tests, configured
 review, landing and a separate updated test copy are still required.
 
 The follow-up also guards App's earlier mount read after a setup/settings save
@@ -35,6 +35,20 @@ Final source checks pass 114 tests in four suites, TypeScript and scoped lint
 without retries at the older9d81 head, including the real held7B/read/select3B/
 saved3B/HTTP3B chain. That evidence is preserved and does not qualify the new
 App source; fresh hosted/native/configured review are required for the follow-up.
+
+Final hosted qualification exposed an existing attachment-budget test timeout.
+The same five-second failure reproduces with both original-main and current App.
+Measured global sidebar Delete queries take 351–518ms each across the nine real
+navigations. Root scopes only that accessible-role query to the exact titled row;
+all actions, assertions and the five-second deadline remain unchanged. Two full
+ten-case runs pass naturally, with the budget case taking 1922ms and 1959ms.
+Independent read-only review finds no weakened oracle. Original failure logs and
+source-restoration receipts are retained outside Git. Source editing is frozen
+and released to root integration; current-head hosted/native/review gates and
+separate delivery remain pending. Disk is now above the build floor; RAM still
+requires a fresh qualifying check. This claim ends at integration/delivery;
+canonical Drive records final qualification and release without another source
+commit. Other owners retain their scopes.
 
 ## 2026-10-07 — FIRST-USER-EASE
 
