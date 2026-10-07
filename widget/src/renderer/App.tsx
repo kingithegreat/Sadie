@@ -271,6 +271,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     n8nUrl: 'http://localhost:5678',
     widgetHotkey: 'Ctrl+Shift+Space'
   });
+  const settingsMutationGenerationRef = useRef(0);
+  const settingsSavedGenerationRef = useRef(0);
+  const pendingSettingsSavesRef = useRef(new Set<Promise<void>>());
   const [isHydrated, setIsHydrated] = useState(false);
   // What the ROUTER says would answer right now — the header displays this,
   // never its own derivation. `settings.chatModel` as the header source is
@@ -496,6 +499,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // Load settings and conversation on boot
   useEffect(() => {
     let mounted = true;
+    const bootModelGeneration = settingsMutationGenerationRef.current;
+    const bootSaveGeneration = settingsSavedGenerationRef.current;
     (async () => {
       try {
         // Load settings and conversations in parallel for faster boot
@@ -503,7 +508,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           window.electron.getSettings(),
           window.electron.loadConversations?.(),
         ]);
-        if (mounted && loaded) setSettings(prev => ({ ...prev, ...loaded }));
+        while (pendingSettingsSavesRef.current.size) {
+          await Promise.all(Array.from(pendingSettingsSavesRef.current));
+        }
+        if (mounted && loaded) setSettings(prev => {
+          if (bootSaveGeneration !== settingsSavedGenerationRef.current) return prev;
+          // A startup fallback or the post-subscription refresh owns its newer
+          // model, while the initial read still supplies other saved settings.
+          return {
+            ...prev, ...loaded,
+            ...(bootModelGeneration !== settingsMutationGenerationRef.current && prev.chatModel ? { chatModel: prev.chatModel } : {}),
+          };
+        });
         // Check connection status on boot
         window.electron.checkConnection?.().then(c => {
           if (mounted && c) setStatus(c);
@@ -687,6 +703,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     const modelFbUnsub = window.electron.onModelFallback?.((data) => {
+      settingsMutationGenerationRef.current += 1;
       addToast(
         `Model "${data.from}" not installed — switched to "${data.to}"`,
         'warning',
@@ -704,11 +721,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
 
     // Re-read settings after subscribing to catch any model fallback that fired before mount
-    window.electron.getSettings?.().then(s => {
-      if (s?.chatModel) setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
-    });
+    const settingsRefreshGeneration = settingsMutationGenerationRef.current;
+    let settingsRefreshActive = true;
+    window.electron.getSettings?.().then(async s => {
+      while (pendingSettingsSavesRef.current.size) {
+        await Promise.all(Array.from(pendingSettingsSavesRef.current));
+      }
+      if (settingsRefreshActive && settingsRefreshGeneration === settingsMutationGenerationRef.current && s?.chatModel) {
+        settingsMutationGenerationRef.current += 1;
+        setSettings(prev => ({ ...prev, chatModel: s.chatModel }));
+      }
+    }).catch(() => {});
 
     return () => {
+      settingsRefreshActive = false;
       unsubscribe?.();
       permUnsub?.();
       reminderUnsub?.();
@@ -810,8 +836,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Save user settings to main process
    */
   const saveSettings = useCallback(async (newSettings: SharedSettings) => {
-    const updated = await window.electron.saveSettings(newSettings);
-    setSettings(prev => ({ ...prev, ...updated }));
+    // Reads wait for the acknowledgement. A rejected save has not changed
+    // model authority and must still allow valid startup replies to hydrate.
+    let finishSave!: () => void;
+    const pending = new Promise<void>(resolve => { finishSave = resolve; });
+    pendingSettingsSavesRef.current.add(pending);
+    try {
+      const updated = await window.electron.saveSettings(newSettings);
+      settingsMutationGenerationRef.current += 1;
+      settingsSavedGenerationRef.current += 1;
+      setSettings(prev => ({ ...prev, ...updated }));
+    } finally {
+      pendingSettingsSavesRef.current.delete(pending);
+      finishSave();
+    }
   }, []);
 
   const saveModelSettings = useCallback(async (newSettings: SharedSettings) => {

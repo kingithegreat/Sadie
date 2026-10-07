@@ -164,6 +164,10 @@ export default function FirstRunModal({
   const [ollamaError, setOllamaError] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<OllamaDownloadProgress | null>(null);
   const [models, setModels] = useState<string[]>([]);
+  // Inventory checks and explicit setup choices own this selection. Settings
+  // can refresh independently while the wizard is open.
+  const [localChatModel, setLocalChatModel] = useState<string | null>(null);
+  const localChatModelRef = useRef<string | null>(null);
   const [modelPullProgress, setModelPullProgress] = useState<ModelPullProgress | null>(null);
   const [modelsPulled, setModelsPulled] = useState<string[]>([]);
   const [gpuInfo, setGpuInfo] = useState<{ vramGB: number | null; gpuName: string | null } | null>(null);
@@ -290,8 +294,11 @@ export default function FirstRunModal({
     const chat = chatModelNames(result.models || []);
     setModels(chat);
     const rec = recommendModelsForVram(gpuInfoRef.current?.vramGB ?? null);
-    const selected = chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
+    const selected = chat.find(name => sameModel(name, localChatModelRef.current || ''))
+      || chat.find(name => sameModel(name, draftRef.current.chatModel || ''))
       || chat.find(name => sameModel(name, rec.chat.id)) || chat[0];
+    localChatModelRef.current = selected || null;
+    setLocalChatModel(selected || null);
     if (selected) {
       setDraft(d => ({ ...d, chatModel: selected, ...(rec.profile !== 'unknown' ? { hardwareProfile: rec.profile } : {}) }));
       setPlannedDownload(null);
@@ -537,6 +544,16 @@ export default function FirstRunModal({
     if (telemetryConsent) payload.telemetryConsentTimestamp = new Date().toISOString();
 
     if (setupPath === 'local' && localPhase === 'ready') {
+      const selected = models.find(name => sameModel(name, localChatModelRef.current || ''));
+      if (!selected) {
+        const message = 'Your selected AI is no longer available in the checked installed models. Check setup again before finishing.';
+        setSaveError(message);
+        setOllamaError(message);
+        setLocalPhase('models-missing');
+        setStep('setup');
+        return;
+      }
+      payload.chatModel = selected;
       payload.uncensoredMode = false;
       payload.useCustomLLM = false;
       // A first coding request must also use an installed model, rather than
@@ -799,14 +816,20 @@ export default function FirstRunModal({
                   {models.length > 0 && (
                     <div className="wizard-model-compact">
                       <p className="wizard-step-desc">
-                        {models.length} chat model{models.length > 1 ? 's' : ''} installed. Using: <strong>{draft.chatModel || models[0]}</strong>
+                        {models.length} chat model{models.length > 1 ? 's' : ''} installed. Using: <strong>{localChatModel}</strong>
                       </p>
                       {models.length > 0 && (
                         <select
                           className="first-run-input"
                           aria-label="Select chat model"
-                          value={draft.chatModel || models[0]}
-                          onChange={e => setDraft({ ...draft, chatModel: e.target.value })}
+                          value={localChatModel || ''}
+                          onChange={e => {
+                            const selected = models.find(name => sameModel(name, e.target.value));
+                            if (!selected) return;
+                            localChatModelRef.current = selected;
+                            setLocalChatModel(selected);
+                            setDraft(d => ({ ...d, chatModel: selected }));
+                          }}
                         >
                           {models.map(m => <option key={m} value={m}>{m}</option>)}
                         </select>

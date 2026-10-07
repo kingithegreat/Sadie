@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from '../App';
 import { resizeImageFile } from '../utils/imageUtils';
 import type { Message } from '../../shared/types';
@@ -114,7 +114,12 @@ function typeDraft(text: string) {
 
 async function choose(id: string) {
   fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
-  const deleteControl = await screen.findByRole('button', { name: `Delete ${conversations.get(id)!.title}` });
+  const title = conversations.get(id)!.title;
+  const titleControl = await screen.findByText(title, { selector: '.conv-title' });
+  // Check the target row's accessible control without recomputing every sidebar
+  // action's name during each of the nine real draft-retention navigations.
+  const row = titleControl.closest<HTMLElement>('.conversation-item')!;
+  const deleteControl = within(row).getByRole('button', { name: `Delete ${title}` });
   fireEvent.click(deleteControl.closest('.conversation-item')!);
 }
 

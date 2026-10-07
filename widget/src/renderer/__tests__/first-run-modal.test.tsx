@@ -1022,6 +1022,49 @@ describe('FirstRunModal — first-user consent, routing and focus', () => {
     expect(electron.pullModelStream).not.toHaveBeenCalled();
   });
 
+  test('a settings refresh preserves the explicit installed model while keeping unrelated settings current', async () => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'llama3.2:3b' }] });
+    window.electron = electron as any;
+    const onSave = jest.fn(), onClose = jest.fn();
+    const settings = { ...baseSettings, chatModel: 'qwen2.5:7b', theme: 'dark' as const };
+    const view = render(<FirstRunModal open settings={settings} onSave={onSave} onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: /On this PC/ }));
+    await screen.findByText('Ollama is ready!');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Select chat model' }), { target: { value: 'llama3.2:3b' } });
+    view.rerender(<FirstRunModal open settings={{ ...settings, theme: 'light', messageDensity: 'compact' }} onSave={onSave} onClose={onClose} />);
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue('llama3.2:3b');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: 'llama3.2:3b', codeModel: 'llama3.2:3b', theme: 'light', messageDensity: 'compact' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    { inventory: ['qwen2.5:3b', 'llama3.2:3b'], expected: 'llama3.2:3b' },
+    { inventory: ['qwen2.5:3b'], expected: 'qwen2.5:3b' },
+  ])('inventory recheck uses the retained choice only while installed ($expected)', async ({ inventory, expected }) => {
+    const electron = makeMockElectron();
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'llama3.2:3b' }] });
+    window.electron = electron as any;
+    const onSave = jest.fn();
+    render(<FirstRunModal open settings={{ ...baseSettings, chatModel: 'qwen2.5:3b' }} onSave={onSave} onClose={jest.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /On this PC/ }));
+    await screen.findByText('Ollama is ready!');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Select chat model' }), { target: { value: 'llama3.2:3b' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    electron.listOllamaModels.mockResolvedValue({ success: true, models: inventory.map(name => ({ name })) });
+    fireEvent.click(screen.getByRole('button', { name: /On this PC/ }));
+    await screen.findByText('Ollama is ready!');
+    expect(screen.getByRole('combobox', { name: 'Select chat model' })).toHaveValue(expected);
+    expect(electron.listOllamaModels).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Get Started' })); });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ chatModel: expected, codeModel: expected }));
+    expect(electron.pullModelStream).not.toHaveBeenCalled();
+  });
+
   test('local completion copy stays local after visiting a subscription choice', async () => {
     render(<FirstRunModal open settings={baseSettings} onSave={jest.fn()} onClose={jest.fn()} />);
     fireEvent.click(screen.getByText('Online'));
