@@ -6,7 +6,8 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './workspace-trust';
 import { rememberWorkspaceChild, stopWorkspaceChild } from './workspace-owned-process';
 import { workspacePtyLifecycle, type WorkspacePtyIdentity } from './workspace-pty-identity';
-import { createWorkspaceWindowsJob, type WorkspaceWindowsJob } from './workspace-windows-job';
+import { createPendingWorkspaceWindowsJob, type WorkspaceWindowsJob } from './workspace-windows-job';
+import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
 import type { WorkspaceDebugRequest, WorkspaceDebugResult, WorkspaceDebugFrame } from '../shared/workspace-debug-types';
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 function projectRoot(input: string): string {
@@ -20,7 +21,8 @@ function projectFile(root: string, file: unknown): string {
 }
 interface InspectorFrame { callFrameId: string; functionName: string; url: string; location: { scriptId: string; lineNumber: number; columnNumber: number }; scopeChain: Array<{ type: string; object: { objectId?: string } }> }
 interface OwnedDebugProgram {
-  child: ChildProcess; identity: Promise<WorkspacePtyIdentity | null | undefined>;
+  child: ChildProcess | null; identity: Promise<WorkspacePtyIdentity | null | undefined>;
+  targetPid?: number; bootstrapReleased?: boolean;
   ended: boolean; executed: boolean; job?: WorkspaceWindowsJob;
   stopping?: Promise<void>; stopRequested?: boolean; error?: string;
   exit: Promise<void>; resolveExit(): void;
@@ -53,40 +55,62 @@ class DebugSession {
   private requests = new Map<number, { resolve: (result: any) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private scripts = new Map<string, string>();
   private points = new Map<string, { path: string; line: number; id: string }>();
-  private ownedPrograms = new Map<ChildProcess, OwnedDebugProgram>();
+  private ownedPrograms = new Set<OwnedDebugProgram>();
+  private currentProgram: OwnedDebugProgram | null = null;
   constructor(root: string) { this.root = root; }
   hasCleanup(): boolean { return this.ownedPrograms.size > 0; }
   private rejectRequests(message: string): void {
     for (const request of this.requests.values()) { clearTimeout(request.timer); request.reject(new Error(message)); }
     this.requests.clear();
   }
-  async start(file: string, args: string[]) {
-    if (this.child) throw new Error('Stop the current debug session first.');
+  async start(file: string, args: string[], validateAuthority?: () => void) {
+    if (this.currentProgram) throw new Error('Stop the current debug session first.');
     const cleanupGeneration = debugCleanupGeneration;
     // Keep ended cleanup authority while freeing the live cap. A same-project
     // replacement waits for those retained records instead of discarding them.
     if (this.hasCleanup()) await this.stop();
     if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. Start again after cleanup finishes.');
     assertWorkspaceRuntimeOpen();
-    this.child = spawn(process.execPath, ['--inspect-brk=127.0.0.1:0', '--', file, ...args], { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
-    const child = this.child;
     let resolveExit!: () => void;
-    const program: OwnedDebugProgram = { child, identity: workspacePtyLifecycle.capture(child.pid!), ended: false, executed: false, exit: new Promise(resolve => { resolveExit = resolve; }), resolveExit: () => resolveExit() };
-    this.ownedPrograms.set(child, program);
+    const program: OwnedDebugProgram = { child: null, identity: Promise.resolve(undefined), ended: false, executed: false, exit: new Promise(resolve => { resolveExit = resolve; }), resolveExit: () => resolveExit() };
+    this.ownedPrograms.add(program); this.currentProgram = program;
+    const requireStartup = () => {
+      if (this.currentProgram !== program || program.ended) throw new Error('The debug session changed during startup.');
+      if (program.stopRequested) throw new Error('Debugger startup was stopped. No project code was run.');
+      if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. No project code was run.');
+      assertWorkspaceRuntimeOpen(); validateAuthority?.();
+      if (projectRoot(this.root) !== this.root || projectFile(this.root, file) !== file) throw new Error('The debug project or file changed during startup. No project code was run.');
+    };
     let rejectStartup: ((error: Error) => void) | undefined;
     try {
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' };
+    const targetArgs = ['--inspect-brk=127.0.0.1:0', '--', file, ...args];
+    const gate = process.platform === 'win32' ? createWorkspaceProcessGate(env) : undefined;
+    const launch = gate ? snapshotWorkspaceLaunch(process.execPath, targetArgs, env, { cwd: this.root }) : undefined;
+    const job = gate ? createPendingWorkspaceWindowsJob({ gate: { pipeName: gate.pipeName, capability: gate.capability } }) : undefined;
+    program.job = job; // Retain ownership before any helper readiness await.
+    if (job) await job.listening;
+    requireStartup(); // Stop/trust/origin can change while the helper starts.
+    const child = spawn(gate?.executable || process.execPath, gate?.args || targetArgs, { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: gate?.env || env });
+    program.child = child; this.child = child;
+    if (!gate) { program.identity = workspacePtyLifecycle.capture(child.pid!); program.targetPid = child.pid; }
     rememberWorkspaceChild(child);
-    const url = await new Promise<string>((resolve, reject) => {
+    let urlTimeout: ReturnType<typeof setTimeout> | undefined;
+    let rejectUrl!: (error: Error) => void;
+    const urlReady = new Promise<string>((resolve, reject) => {
+      rejectUrl = reject;
       let stderr = '';
-      const timeout = setTimeout(() => reject(new Error('The debugger did not start in time.')), 5000);
-      child.stderr!.on('data', chunk => { stderr = (stderr + chunk).slice(-16_384); this.output = (this.output + chunk).slice(-256_000); const match = stderr.match(/Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9-]+)/); if (match) { clearTimeout(timeout); resolve(match[1]); } });
-      child.stdout!.on('data', chunk => { this.output = (this.output + chunk).slice(-256_000); });
+      // Listen before GO. The target may report its inspector before authorize
+      // returns its verified PID; buffer the URL without connecting early.
+      child.stderr!.on('data', chunk => { if (this.currentProgram && this.currentProgram !== program) return; stderr = (stderr + chunk).slice(-16_384); this.output = (this.output + chunk).slice(-256_000); const match = stderr.match(/Debugger listening on (ws:\/\/127\.0\.0\.1:\d+\/[a-f0-9-]+)/); if (match) { clearTimeout(urlTimeout); resolve(match[1]); } });
+      child.stdout!.on('data', chunk => { if (!this.currentProgram || this.currentProgram === program) this.output = (this.output + chunk).slice(-256_000); });
       child.once('error', error => {
-        clearTimeout(timeout);
+        clearTimeout(urlTimeout);
         // Failed spawn has no native PID and emits no exit. There is no process
         // authority to retain or wait for; errors after a real spawn keep it.
         if (!Number.isSafeInteger(child.pid) || child.pid! <= 0) {
-          program.ended = true; program.resolveExit(); this.ownedPrograms.delete(child);
+          program.ended = true; program.resolveExit();
+          if (!program.job) this.ownedPrograms.delete(program);
           if (this.child === child) this.child = null;
         }
         reject(error);
@@ -95,12 +119,13 @@ class DebugSession {
         program.ended = true; program.resolveExit();
         rejectStartup?.(new Error('The debug session changed during startup.'));
         // Project code has not run if inspect-brk was never released.
-        if (!program.executed && !program.job) this.ownedPrograms.delete(child);
-        clearTimeout(timeout);
+        if (!program.executed && !program.job) this.ownedPrograms.delete(program);
+        clearTimeout(urlTimeout);
+        reject(new Error('The program exited before the debugger connected.'));
         if (!this.socket) reject(new Error('The program exited before the debugger connected.'));
         if (this.child === child) {
           const endedSocket = this.socket;
-          this.child = null; this.socket = null; this.paused = false; this.frames = [];
+          this.child = null; this.currentProgram = null; this.socket = null; this.paused = false; this.frames = [];
           // Breakpoint/script IDs belong to this inspector connection. A later
           // Start must not advertise points that were never installed there.
           this.points.clear(); this.scripts.clear(); this.rejectRequests('The debug program exited.');
@@ -108,7 +133,19 @@ class DebugSession {
         }
       });
     });
-    if (this.child !== child) throw new Error('The debug program exited before its connection was ready.');
+    void urlReady.catch(() => undefined); // Early exit is awaited after admission.
+    if (job) {
+      if (!job.attachChild) throw new Error('The authenticated debugger startup handoff is unavailable. No project code was run.');
+      program.identity = job.attachChild(child.pid!);
+      await program.identity; requireStartup();
+      program.targetPid = await job.authorize(launch!, () => { requireStartup(); program.bootstrapReleased = true; });
+      requireStartup();
+    }
+    // The five-second inspector wait starts after fixed-launcher admission;
+    // each Job operation retains its existing independent 4,500ms bound.
+    urlTimeout = setTimeout(() => rejectUrl(new Error('The debugger did not start in time.')), 5000);
+    let url: string; try { url = await urlReady; } finally { clearTimeout(urlTimeout); }
+    requireStartup();
     this.socket = new WebSocket(url);
     const socket = this.socket;
     socket.addEventListener('message', event => {
@@ -135,42 +172,34 @@ class DebugSession {
       socket.addEventListener('error', () => finish(new Error('The debugger connection failed.')), { once: true });
     });
     const initialize = async (method: string, params: Record<string, unknown> = {}) => {
-      const requireOwner = () => { if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.'); };
+      const requireOwner = () => { requireStartup(); if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.'); };
       requireOwner(); await this.command(method, params); requireOwner();
     };
     await initialize('Runtime.enable'); await initialize('Debugger.enable');
     await initialize('NodeRuntime.notifyWhenWaitingForDisconnect', { enabled: true });
-    const original = await program.identity;
-    if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
-    if (process.platform === 'win32' && !original) throw new Error('The debug program creation identity could not be verified. No project code was run; try Start again.');
-    if (process.platform === 'win32') {
-      // inspect-brk still gates project code. Retain this synchronous ownership
-      // even if assignment fails; readiness alone permits releasing execution.
-      program.job = createWorkspaceWindowsJob(child.pid!, original!);
-      await program.job.ready;
-      if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.');
-    }
-    if (cleanupGeneration !== debugCleanupGeneration || stoppingAll) throw new Error('Debugger cleanup is in progress. No project code was run.');
-    if (program.stopRequested) throw new Error('Debugger startup was stopped. No project code was run.');
-    assertWorkspaceRuntimeOpen();
+    if (!gate) await program.identity; // Preserve the existing POSIX startup boundary.
+    requireStartup();
     program.executed = true;
     await initialize('Runtime.runIfWaitingForDebugger');
     } catch (error) {
       // An ended startup may finish after a subsequent Start. Its failure must
       // never stop that replacement, or a program rejected by duplicate Start.
-      if (this.child === child) await this.stop();
+      try {
+        if (this.currentProgram === program) await this.stop();
+        else await this.stopProgram(program);
+      } catch { /* same Job remains reachable for retry; preserve startup error */ }
       throw error;
     }
   }
   private async complete(program: OwnedDebugProgram, socket: WebSocket): Promise<void> {
-    if (!this.ownedPrograms.has(program.child)) return;
+    if (!this.ownedPrograms.has(program)) return;
     if (process.platform === 'win32') {
       // Kernel membership was established before project execution and survives
       // parent exit/late forks. Check the retained helper is still authoritative
       // before releasing only this inspector; its live leader is not empty yet.
       if (!program.job) throw new Error('The debug program has no retained Windows Job. Cleanup is unverified.');
       await program.job.queryEmpty();
-      if (this.child === program.child && this.socket === socket) socket.close();
+      if (this.currentProgram === program && this.socket === socket) socket.close();
     } else {
       // POSIX signals the still-owned detached group before releasing its leader.
       // This is cleanup, not a claim of natural OS exit zero.
@@ -179,7 +208,7 @@ class DebugSession {
     }
   }
   private stopProgram(program: OwnedDebugProgram): Promise<void> {
-    if (!this.ownedPrograms.has(program.child)) return Promise.resolve();
+    if (!this.ownedPrograms.has(program)) return Promise.resolve();
     // Per-project Stop may race assignment independently of global cleanup.
     // Fence the awaited startup before either cleanup operation can suspend.
     program.stopRequested = true;
@@ -191,25 +220,27 @@ class DebugSession {
         // even when retained Job cleanup refuses. Both outcomes remain required.
         const cleanup = await Promise.allSettled([
           Promise.resolve().then(() => program.job!.stop()),
-          !program.executed && !program.ended ? Promise.resolve().then(() => stopWorkspaceChild(program.child)) : Promise.resolve(),
+          program.child && !program.executed && !program.ended ? Promise.resolve().then(() => stopWorkspaceChild(program.child!)) : Promise.resolve(),
         ]);
         const failure = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected');
         if (failure) throw failure.reason;
-        await waitForOwnedExit(program);
+        if (program.child) await waitForOwnedExit(program);
       } else if (!program.executed) {
         // inspect-brk has not released project code, so there are no project
         // descendants yet. This exact ChildProcess still owns startup cleanup.
-        if (!program.ended) await stopWorkspaceChild(program.child);
-        await waitForOwnedExit(program);
+        if (program.child && !program.ended) await stopWorkspaceChild(program.child);
+        if (program.child) await waitForOwnedExit(program);
       } else if (process.platform === 'win32') {
         throw new Error('The debug program has no retained Windows Job. Cleanup is unverified; stop its remaining programs before closing HomeBot.');
       } else {
         // After leader exit, only query absence; never signal an old/reused PGID.
+        if (!program.child) throw new Error('The debug process group is unavailable. Cleanup is unverified.');
         if (!program.ended) await stopWorkspaceChild(program.child);
         if (!await waitForGroup(program.child.pid!)) throw new Error('The debug program ended but its process group has not confirmed exit. Cleanup is unverified; stop its remaining programs and retry Stop.');
         await waitForOwnedExit(program);
       }
-      this.ownedPrograms.delete(program.child); program.error = undefined;
+      this.ownedPrograms.delete(program); program.error = undefined;
+      if (!program.child) { program.ended = true; program.resolveExit(); }
     })();
     program.stopping = operation;
     void operation.catch(error => { program.error = error instanceof Error ? error.message : String(error); });
@@ -229,7 +260,7 @@ class DebugSession {
       return { id: frame.callFrameId, name: frame.functionName || '(anonymous)', path: within(this.root, file) ? file : '', line: frame.location.lineNumber + 1, column: frame.location.columnNumber + 1 };
     });
     const retained = [...this.ownedPrograms.values()].filter(program => program.ended || program.error);
-    return { success: true, running: !!this.child, cleanupPending: retained.length > 0, error: retained.find(program => program.error)?.error, paused: this.paused, output: this.output, pid: this.child?.pid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
+    return { success: true, running: !!this.currentProgram && !this.currentProgram.ended && !this.currentProgram.stopRequested, cleanupPending: retained.length > 0, error: retained.find(program => program.error)?.error, paused: this.paused, output: this.output, pid: this.currentProgram?.targetPid, frames, breakpoints: [...this.points.values()].map(point => ({ path: point.path, line: point.line })) };
   }
   async breakpoint(file: string, line: number, remove: boolean) {
     const key = `${file}:${line}`; const previous = this.points.get(key);
@@ -255,6 +286,7 @@ class DebugSession {
   }
   async stop(): Promise<void> {
     const child = this.child;
+    const program = this.currentProgram;
     const socket = this.socket;
     this.rejectRequests('Debug session stopped.');
     // Keep the inspector attached while owned Job cleanup is pending. A failed
@@ -262,9 +294,10 @@ class DebugSession {
     const results = await Promise.allSettled([...this.ownedPrograms.values()].map(program => this.stopProgram(program)));
     const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
     if (failed) throw failed.reason;
-    if (this.child && this.child !== child) return;
+    if (this.currentProgram && this.currentProgram !== program) return;
     if (this.socket === socket) { this.socket = null; socket?.close(); }
     if (this.child === child) this.child = null;
+    if (this.currentProgram === program) this.currentProgram = null;
     this.paused = false; this.frames = []; this.points.clear(); this.scripts.clear();
   }
 }
@@ -285,7 +318,7 @@ export function stopWorkspaceDebuggers(): Promise<void> {
   const owned = pending.finally(() => { if (stoppingAll === owned) stoppingAll = null; });
   stoppingAll = owned; return owned;
 }
-export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Promise<WorkspaceDebugResult> {
+export async function performWorkspaceDebug(request: WorkspaceDebugRequest, validateAuthority?: () => void): Promise<WorkspaceDebugResult> {
   try {
     if (!request || typeof request.root !== 'string') throw new Error('Choose a project folder.');
     const root = projectRoot(request.root);
@@ -305,7 +338,7 @@ export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Pro
         const liveRoots = new Set([...startingRoots, ...[...sessions.entries()].filter(([, current]) => current.child).map(([key]) => key)]);
         if (liveRoots.size >= 2) throw new Error('Close another project debug session first.');
         startingRoots.add(root);
-        try { await session.start(file, args); } finally { startingRoots.delete(root); }
+        try { await session.start(file, args, validateAuthority); } finally { startingRoots.delete(root); }
         break;
       }
       case 'state': break;

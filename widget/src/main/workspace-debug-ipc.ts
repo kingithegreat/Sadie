@@ -8,7 +8,7 @@ export function registerWorkspaceDebugIpc(): void {
   ipcMain.removeHandler(WORKSPACE_DEBUG_CHANNEL);
   ipcMain.handle(WORKSPACE_DEBUG_CHANNEL, async (event, request: WorkspaceDebugRequest) => {
     const window = getMainWindow();
-    const trusted = () => !!window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
+    const trusted = () => !!window && getMainWindow() === window && !window.isDestroyed() && event.sender === window.webContents && !!event.senderFrame && event.senderFrame === window.webContents.mainFrame;
     if (!trusted()) return { success: false, error: 'Open Debug in the HomeBot workspace.' };
     if (!request || typeof request.action !== 'string') return { success: false, error: 'Invalid debugger request.' };
     if (request.action === 'start') {
@@ -16,6 +16,8 @@ export function registerWorkspaceDebugIpc(): void {
       if (!trusted()) return { success: false, error: 'Debug launch cancelled because the window closed.' };
       event.sender.once('destroyed', () => { void stopWorkspaceDebuggers(); });
     }
-    return performWorkspaceDebug(request);
+    return performWorkspaceDebug(request, () => {
+      if (!trusted()) throw new Error('Debug launch cancelled because the window closed.');
+    });
   });
 }
