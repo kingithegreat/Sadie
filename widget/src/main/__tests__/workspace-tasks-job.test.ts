@@ -10,6 +10,9 @@ jest.mock('../user-paths', () => ({ homeDir: () => process.env.HOMEBOT_JOB_TASK_
 jest.mock('electron', () => ({ app: { getPath: () => process.env.HOMEBOT_JOB_TASK_PROFILE! } }));
 import { executeWorkspacePackageTask, prepareWorkspacePackageTask, stopWorkspaceTask, closeAllWorkspaceTasks } from '../workspace-tasks';
 
+// Real temporary files and main-owned asset/discovery reads need an explicit I/O test budget.
+jest.setTimeout(15_000);
+
 let home: string, project: string;
 const owned: Array<{ job: { stop: jest.Mock }; finish: () => void }> = [];
 const original = { creation: '639269357577651780', parent: process.pid };
