@@ -130,6 +130,89 @@ beforeEach(() => {
 
 afterEach(() => { cleanup(); delete (window as any).electron; });
 
+test.each([false, true])('overlapping sends Retry their own user turns after reopening (custom=%s)', async useCustomLLM => {
+  const settings = await bridge.getSettings();
+  bridge.getSettings.mockResolvedValue({ ...settings, useCustomLLM });
+  await mountReady();
+  const writes = [deferred<void>(), deferred<void>()];
+  const originalAdd = bridge.addMessage.getMockImplementation()!;
+  const userIds: string[] = [];
+  bridge.addMessage.mockImplementation(async (id: string, message: Message) => {
+    if (message.role === 'user') {
+      const index = userIds.push(message.id!) - 1;
+      await writes[index].promise;
+    }
+    return originalAdd(id, message);
+  });
+  try {
+    for (const text of ['First overlapping question.', 'Second overlapping question.']) {
+      await act(async () => {
+        fireEvent.change(screen.getByRole('textbox', { name: 'Message HomeBot' }), { target: { value: text } });
+        fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+      });
+    }
+    expect(userIds).toHaveLength(2);
+    await act(async () => { writes[0].resolve(undefined); });
+    await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+    await act(async () => { writes[1].resolve(undefined); });
+    await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(2));
+    const originals = bridge.sendStreamMessage.mock.calls.map(([request]) => request);
+    for (const request of originals) await terminal(subscriptions.get(request.streamId)!.handlers, request.streamId, 'error');
+    await choose('B');
+    await choose('A');
+    for (let index = 0; index < originals.length; index++) {
+      const request = originals[index];
+      const bubble = document.querySelector(`[data-message-id="${request.streamId}"]`)!;
+      await act(async () => { fireEvent.click(within(bubble as HTMLElement).getByRole('button', { name: 'Retry' })); });
+      expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(3 + index);
+      expect(bridge.sendStreamMessage.mock.calls[2 + index][0]).toMatchObject({
+        streamId: request.streamId, conversation_id: 'A', message: request.message, retry: true,
+      });
+      await terminal(subscriptions.get(request.streamId)!.handlers, request.streamId, 'finished');
+    }
+    expect(conversations.get('A')!.messages.filter(row => row.role === 'user')).toHaveLength(2);
+  } finally {
+    await act(async () => { writes.forEach(write => write.resolve(undefined)); });
+  }
+});
+
+test('switching from local to custom during user persistence still permits Retry of that request', async () => {
+  const settings = await bridge.getSettings();
+  bridge.getSettings.mockResolvedValue({ ...settings, customLLM: {
+    enabled: false, provider: 'custom', apiUrl: 'http://127.0.0.1:9/v1', model: 'fixture-model', name: 'Fixture online',
+  } });
+  bridge.saveSettings = jest.fn(async saved => saved);
+  await mountReady();
+  const write = deferred<void>();
+  const originalAdd = bridge.addMessage.getMockImplementation()!;
+  bridge.addMessage.mockImplementation(async (id: string, message: Message) => {
+    if (message.role === 'user') await write.promise;
+    return originalAdd(id, message);
+  });
+  try {
+    await act(async () => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Message HomeBot' }), { target: { value: 'Question before the model switch.' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    });
+    expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.click(document.querySelector('.model-selector-button')!); });
+    await act(async () => { fireEvent.click(screen.getByText('Fixture online')); });
+    expect(bridge.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ useCustomLLM: true }));
+    expect(screen.getByText(/Switched to.*fixture-model/)).toBeInTheDocument();
+  } finally {
+    await act(async () => { write.resolve(undefined); });
+  }
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  await terminal(subscriptions.get(request.streamId)!.handlers, request.streamId, 'error');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Retry' })); });
+  expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage.mock.calls[1][0]).toMatchObject({
+    streamId: request.streamId, message: 'Question before the model switch.', retry: true,
+  });
+  await terminal(subscriptions.get(request.streamId)!.handlers, request.streamId, 'finished');
+});
+
 async function mountReady() {
   await act(async () => { render(<App />); });
   expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
