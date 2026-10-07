@@ -75,7 +75,7 @@ test('closing HomeBot stops an approved running watch task and its owned childre
     HOMEBOT_E2E: '1', NODE_ENV: 'test', HOME: home, USERPROFILE: home,
     HOMEBOT_MOVIE_PROJECTS_DIR: path.join(home, 'movie-projects'),
   }, profile);
-  let closed = false;
+  let closed = false, primaryFailure = false;
   try {
     await waitForAppReady(page);
     await dismissFirstRun(page);
@@ -110,7 +110,16 @@ test('closing HomeBot stops an approved running watch task and its owned childre
       else throw error;
     }
     expect(alive).toBe(false);
+  } catch (error) {
+    primaryFailure = true;
+    throw error;
   } finally {
-    if (!closed) await closeElectronApp(app, 'watch task failure');
+    if (!closed) {
+      try { await closeElectronApp(app, 'watch task failure'); }
+      catch (error) {
+        if (!primaryFailure) throw error;
+        console.error('Watch task cleanup also refused:', String(error));
+      }
+    }
   }
 });
