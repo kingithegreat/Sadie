@@ -592,9 +592,17 @@ export function discoverExternalMcpServers(): void {
 export function shutdownMcpServers(): Promise<void> {
   if (!shutdownPromise) {
     // Only fully connected servers qualify for a later explicit Keep open.
-    // A new quit replaces this snapshot and aborts any previous restoration.
+    // Keep cleaned candidates across refused retries: the connected list is
+    // already empty on Try closing again. Explicit Keep open consumes this
+    // snapshot; current named versions prevent stale generations returning.
     const connectedClients = new Set(connectedServers.map(server => server.client));
-    refusedQuitCandidates = [...ownedServers].filter(server => connectedClients.has(server.client));
+    const candidates = new Map(refusedQuitCandidates
+      .filter(server => connectionVersions.get(server.config.name) === server.version)
+      .map(server => [server.config.name, server]));
+    for (const server of ownedServers) {
+      if (connectedClients.has(server.client)) candidates.set(server.config.name, server);
+    }
+    refusedQuitCandidates = [...candidates.values()];
     shutdownSignal.abort();
     connectedServers.length = 0;
     // Join every bounded attempt. Refusal keeps ownership and allows another
@@ -605,6 +613,7 @@ export function shutdownMcpServers(): Promise<void> {
         shutdownPromise = undefined;
         throw failure.reason;
       }
+      refusedQuitCandidates = [];
     });
   }
   return shutdownPromise;
