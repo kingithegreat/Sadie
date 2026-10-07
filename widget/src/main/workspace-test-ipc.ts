@@ -16,7 +16,7 @@ export function registerWorkspaceTestIpc(): void {
         if (!trusted()) return { success: false, error: 'Test run cancelled because the window closed.' };
         event.sender.once('destroyed', () => { void stopWorkspaceTestRuns().catch(() => { console.warn('Workspace test cleanup remains pending after the window closed.'); }); });
       }
-      return performWorkspaceTests(request, () => { if (!trusted()) throw new Error('Test run cancelled because the window changed.'); });
+      return await performWorkspaceTests(request, () => { if (!trusted()) throw new Error('Test run cancelled because the window changed.'); });
     } catch (error) { return { success: false, error: String(error) }; }
   });
 }
