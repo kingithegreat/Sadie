@@ -18,9 +18,11 @@ export interface PendingWorkspaceWindowsJob extends WorkspaceWindowsJob {
   authorize(launch: WorkspaceApprovedLaunch, validate?: () => void): Promise<number>;
 }
 interface JobOptions { env?: NodeJS.ProcessEnv; gate?: { pipeName: string; capability: string } }
-type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown };
+type Reply = { type?: unknown; id?: unknown; ok?: unknown; empty?: unknown; pid?: unknown; phase?: unknown; code?: unknown };
 const OPERATION_TIMEOUT = 4500;
 const MAX_LINE = 4096;
+const DIAGNOSTIC_PHASES = new Set(['compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+const DIAGNOSTIC_CODES = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
 
 /** Return cleanup ownership before asynchronous helper startup or assignment. */
 export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): PendingWorkspaceWindowsJob {
@@ -33,6 +35,8 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
   let zeroConfirmed = false;
   let stopping: Promise<void> | undefined;
   let nextId = 0, lineBuffer = '';
+  let phase = 'unobserved', diagnosticFailure: string | undefined;
+  const diagnostic = () => ` Helper phase: ${phase}.${diagnosticFailure ? ` Last fixed helper error: ${diagnosticFailure}.` : ''}`;
   const pending = new Map<number, { operation: string; resolve(value: Reply): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
   const stopRequests = new Set<number>();
   const ready = new Promise<void>((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
@@ -47,7 +51,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     if (!child || closed) return Promise.reject(new Error('The owned Job helper is unavailable; process cleanup is unverified.'));
     const id = ++nextId;
     return new Promise<Reply>((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('The owned Job did not confirm its state in time. Its cleanup ownership is retained.')); }, OPERATION_TIMEOUT);
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error('The owned Job did not confirm its state in time. Its cleanup ownership is retained.' + diagnostic())); }, OPERATION_TIMEOUT);
       pending.set(id, { operation, resolve, reject, timer });
       if (operation === 'stop') { stopRequests.add(id); if (stopRequests.size > 16) stopRequests.delete(stopRequests.values().next().value!); }
       const encoded = JSON.stringify({ ...fields, id, operation }) + '\n';
@@ -67,7 +71,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       attached = true;
       try {
         await listening; const result = await request('attach', { pid, creation: original.creation });
-        if (result.ok !== true) throw new Error('Job assignment or startup peer verification failed. No project execution was released.');
+        if (result.ok !== true) throw new Error('Job assignment or startup peer verification failed. No project execution was released.' + diagnostic());
         readyResolve();
       } catch (error) { readyReject(error instanceof Error ? error : new Error('Job assignment failed.')); throw error; }
     },
@@ -79,12 +83,12 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       // The originating main-owned scope must still hold after readiness.
       validate?.();
       const result = await request('go', { launch });
-      if (result.ok !== true || !Number.isSafeInteger(result.pid) || (result.pid as number) <= 0) throw new Error('The approved shell did not confirm a positive owned process. Its Job is retained for cleanup.');
+      if (result.ok !== true || !Number.isSafeInteger(result.pid) || (result.pid as number) <= 0) throw new Error('The approved shell did not confirm a positive owned process. Its Job is retained for cleanup.' + diagnostic());
       return result.pid as number;
     },
     queryEmpty: async () => {
       await ready; const result = await request('query');
-      if (result.ok !== true || typeof result.empty !== 'boolean') throw new Error('The owned Job state is unverified.');
+      if (result.ok !== true || typeof result.empty !== 'boolean') throw new Error('The owned Job state is unverified.' + diagnostic());
       return result.empty;
     },
     stop: () => {
@@ -93,7 +97,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
         await listening.catch(() => undefined);
         if (!closed) {
           const result = await request('stop');
-          if (result.ok !== true || result.empty !== true) throw new Error('The owned Job did not confirm all its processes exited. Retry Stop.');
+          if (result.ok !== true || result.empty !== true) throw new Error('The owned Job did not confirm all its processes exited. Retry Stop.' + diagnostic());
           zeroConfirmed = true;
         }
         if (!zeroConfirmed) throw new Error('The owned Job helper was lost without verified cleanup.');
@@ -120,7 +124,7 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     const helperExecutable = path.win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
     child = spawn(helperExecutable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-EncodedCommand', Buffer.from(windowsJobSource(), 'utf16le').toString('base64')], { windowsHide: true, env: options.env, stdio: ['pipe', 'pipe', 'pipe'] });
   } catch { closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
-  const startupTimer = setTimeout(() => fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.'), OPERATION_TIMEOUT);
+  const startupTimer = setTimeout(() => fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.' + diagnostic()), OPERATION_TIMEOUT);
   child.stdin.on('error', () => fail('The owned Job control pipe failed. Cleanup ownership is retained.'));
   child.stdout.on('data', (chunk: Buffer | string) => {
     lineBuffer += chunk.toString();
@@ -132,7 +136,13 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
       let message: Reply;
       try { const value: unknown = JSON.parse(line); if (!value || typeof value !== 'object') throw new Error(); message = value as Reply; }
       catch { fail('The owned Job helper returned invalid state evidence.'); continue; }
-      if (message.type === 'listening') { clearTimeout(startupTimer); listenResolve(); }
+      if (message.type === 'phase' && typeof message.phase === 'string' && DIAGNOSTIC_PHASES.has(message.phase) && (message.code === undefined || typeof message.code === 'string' && DIAGNOSTIC_CODES.has(message.code))) {
+        // Observability only: a phase never proves listening, assignment or zero accounting.
+        phase = message.phase;
+        if (typeof message.code === 'string') diagnosticFailure = `${phase}/${message.code}`;
+        else if (['attach', 'go', 'query', 'stop'].includes(phase)) diagnosticFailure = undefined;
+      }
+      else if (message.type === 'listening') { clearTimeout(startupTimer); listenResolve(); }
       else if (message.type === 'result' && Number.isSafeInteger(message.id)) {
         if (stopRequests.has(message.id as number) && message.ok === true && message.empty === true) zeroConfirmed = true;
         const item = pending.get(message.id as number); if (!item) continue;
@@ -156,6 +166,8 @@ export function createWorkspaceWindowsJob(pid: number, original: WorkspacePtyIde
 function windowsJobSource(): string {
   return `$ErrorActionPreference='Stop'
 [Console]::InputEncoding=New-Object System.Text.UTF8Encoding($false)
+function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
+Emit @{type='phase';phase='compile'}
 Add-Type -TypeDefinition @'
 using System; using System.Runtime.InteropServices; using System.Diagnostics; using System.Threading; using System.IO; using System.IO.Pipes; using System.Text; using Microsoft.Win32.SafeHandles;
 public static class OwnedWindowsJob {
@@ -195,18 +207,20 @@ public static class OwnedWindowsJob {
  public static void Close() { if(pipe!=null) pipe.Dispose(); if(root!=IntPtr.Zero) { CloseHandle(root);root=IntPtr.Zero; } if(job!=IntPtr.Zero) { CloseHandle(job);job=IntPtr.Zero; } }
 }
 '@
-function Emit($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -Compress)); [Console]::Out.Flush() }
 try {
  $initial=ConvertFrom-Json -InputObject ([Console]::In.ReadLine())
+ Emit @{type='phase';phase='create'}
  [OwnedWindowsJob]::Create()
- if($initial.gate) { [OwnedWindowsJob]::Listen([string]$initial.gate.pipeName) }
+ if($initial.gate) { Emit @{type='phase';phase='listen'}; [OwnedWindowsJob]::Listen([string]$initial.gate.pipeName) }
  Emit @{type='listening'}
  $attached=$false; $authorized=$false
  while($true) {
+  Emit @{type='phase';phase='command'}
   $line=[Console]::In.ReadLine(); if($null -eq $line) { if([OwnedWindowsJob]::Stop()) { exit 0 }; exit 1 }
   if($line.Length -gt 131072) { throw 'input' }; $request=ConvertFrom-Json -InputObject $line
   if($request.id -isnot [int] -or $request.id -le 0) { throw 'request' }
   try {
+   if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation} }
    if($request.operation -eq 'attach' -and !$attached) { $attached=$true; [OwnedWindowsJob]::Attach([int]$request.pid,[long]$request.creation,[string]$initial.gate.capability); Emit @{type='result';id=$request.id;ok=$true} }
    elseif($request.operation -eq 'go' -and $attached -and $initial.gate -and !$authorized) {
     $authorized=$true; $ack=ConvertFrom-Json -InputObject ([OwnedWindowsJob]::Go(($request.launch | ConvertTo-Json -Compress -Depth 5)))
@@ -221,7 +235,12 @@ try {
    elseif($request.operation -eq 'query' -and $attached) { Emit @{type='result';id=$request.id;ok=$true;empty=[OwnedWindowsJob]::Empty()} }
    elseif($request.operation -eq 'stop') { $empty=[OwnedWindowsJob]::Stop(); Emit @{type='result';id=$request.id;ok=$true;empty=$empty}; if($empty) { exit 0 } }
    else { throw 'operation' }
-  } catch { Emit @{type='result';id=$request.id;ok=$false} }
+  } catch {
+   $exception=$_.Exception; while($exception.InnerException) { $exception=$exception.InnerException }
+   $code='unknown'; if($exception.Message -in @('create','limits','pipe','open','identity','assign','root','peer-timeout','peer','capability','peer-read-timeout','peer-input','query','baseline','child','completion','membership','operation')) { $code=$exception.Message }
+   if($request.operation -in @('attach','go','query','stop')) { Emit @{type='phase';phase=[string]$request.operation;code=$code} }
+   Emit @{type='result';id=$request.id;ok=$false}
+  }
  }
 } finally { [OwnedWindowsJob]::Close() }
 `;

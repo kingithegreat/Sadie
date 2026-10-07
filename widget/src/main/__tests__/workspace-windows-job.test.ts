@@ -33,6 +33,35 @@ describe('creation-gated Windows Job ownership', () => {
     fake.reply({ ok: true }); await job.ready; expect(ready).toBe(true);
   });
 
+  it('reports cold compile at the unchanged startup deadline without treating a phase as readiness', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    let ready = false; void job.ready.then(() => { ready = true; }, () => {});
+    fake.send({ type: 'phase', phase: 'compile', empty: true }); await settle();
+    expect(ready).toBe(false); expect(fake.requests()).toHaveLength(0);
+    const rejected = expect(job.listening).rejects.toThrow('Helper phase: compile');
+    jest.advanceTimersByTime(4500); await rejected;
+    fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
+  });
+
+  it('keeps fixed helper errors diagnostic-only and requires a real zero response even after a stop phase', async () => {
+    const fake = helper(); const job = createWorkspaceWindowsJob(90, identity);
+    fake.send({ type: 'listening' }); await settle(); fake.reply({ ok: true }); await job.ready;
+    const stopped = job.stop(); await settle();
+    fake.send({ type: 'phase', phase: 'stop', code: 'query', empty: true, ok: true });
+    fake.send({ type: 'phase', phase: 'command' });
+    const rejected = expect(stopped).rejects.toThrow('Last fixed helper error: stop/query');
+    jest.advanceTimersByTime(4500); await rejected;
+    fake.child.emit('close', 0); await expect(job.stop()).rejects.toThrow('lost');
+  });
+
+  it('rejects non-allowlisted diagnostic text without reflecting it into user errors', async () => {
+    const fake = helper(); const job = createPendingWorkspaceWindowsJob();
+    fake.send({ type: 'phase', phase: 'compile', code: 'private-command-canary' });
+    await expect(job.listening).rejects.toThrow('unknown state evidence');
+    await expect(job.ready).rejects.not.toThrow('private-command-canary');
+    fake.child.emit('close', 0);
+  });
+
   it('keeps cleanup authority after failed assignment and never authorizes a launch', async () => {
     const fake = helper(); const job = createPendingWorkspaceWindowsJob();
     fake.send({ type: 'listening' }); const attached = job.attach(90, identity); await settle();
