@@ -106,6 +106,9 @@ jobs:
         working-directory: widget
         run: npx tsc --noEmit
 
+      - name: Managed helper build contracts
+        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs
+
       # --forceExit is deliberate and NOT hiding a failure: every test passes.
       # The suite finishes in ~45s and then does not release the process. Two
       # causes were found and fixed (a setInterval cleared only on Electron's
