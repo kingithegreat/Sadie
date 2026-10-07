@@ -1,6 +1,6 @@
 /** @jest-environment jsdom */
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import App from '../App';
 import { resizeImageFile } from '../utils/imageUtils';
 import type { HomeBotRequestWithImages, Message } from '../../shared/types';
@@ -67,7 +67,9 @@ async function mountReady(initialMessages?: Message[]) {
 async function attachPhoto() {
   const photo = new File([new Uint8Array([137, 80, 78, 71])], 'photo.png', { type: 'image/png' });
   fireEvent.change(screen.getByLabelText('Attach images'), { target: { files: [photo] } });
-  await waitFor(() => expect(screen.getByRole('img', { name: 'photo.png' })).toBeInTheDocument());
+  // A prior sent message also shows this filename. Wait for the next file to
+  // reach the actual composer before sending it, rather than its old thumbnail.
+  await waitFor(() => expect(within(document.querySelector('.input-box')!).getByRole('img', { name: 'photo.png' })).toBeInTheDocument());
 }
 
 async function attachDocument() {
@@ -169,7 +171,13 @@ test('editing a failed request changes Retry wording while retaining its origina
   await send('Summarize these notes.');
   await waitFor(() => expect(sendStreamMessage).toHaveBeenCalledTimes(1));
   const original = sendStreamMessage.mock.calls[0][0] as SentRequest;
-  act(() => { handlers.get(original.streamId)!.onStreamError({ streamId: original.streamId, error: 'Disposable provider failure.' }); });
+  // Retry deliberately refuses while the terminal reply is still being saved.
+  // Complete its acknowledged persistence before exercising a later edit/Retry.
+  await act(async () => {
+    handlers.get(original.streamId)!.onStreamError({ streamId: original.streamId, error: 'Disposable provider failure.' });
+  });
+  expect(window.electron.updateMessage).toHaveBeenCalledWith('retry-conversation', original.streamId,
+    expect.objectContaining({ streamingState: 'error', error: true }));
   fireEvent.contextMenu(document.querySelector('[data-role="user-message"]')!);
   fireEvent.click(screen.getByText('Edit'));
   const revised = '[Document attached: notes.txt]\n\nList the action items instead.';

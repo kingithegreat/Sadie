@@ -3,7 +3,8 @@ import UpdateBanner from './components/UpdateBanner';
 import { debug as logDebug } from '../shared/logger';
 import { chatIdeaToJobInput } from '../shared/chat-idea';
 import ChatInterface from "./components/ChatInterface";
-import { createEmptyComposerDraft, type ComposerDraft } from './components/InputBox';
+import { createEmptyComposerDraft, mergeComposerAttachments, type ComposerDraft,
+  type ComposerAttachmentBatch, type ComposerAttachmentScope } from './components/InputBox';
 import { prepareInactiveDraftRetention } from './utils/composerDraftBudget';
 import { retainRetryRequest } from './utils/retryRequestBudget';
 import './styles/first-user.css';
@@ -39,8 +40,7 @@ const NotificationHistory = lazy(() => import("./components/NotificationHistory"
 const DashboardPanel = lazy(() => import("./components/DashboardPanel"));
 const VoiceConversation = lazy(() => import("./components/VoiceConversation"));
 import type {
-  ChatMessage,
-  StreamingState
+  ChatMessage
 } from "./types";
 import type {
   Message as SharedMessage,
@@ -92,6 +92,8 @@ interface SubmissionScope {
   retained?: boolean;
   committed?: boolean;
   assistantId?: string;
+  creationFlow?: ConversationPromptFlow;
+  creationPending?: boolean;
 }
 
 interface ConversationPromptFlow {
@@ -103,6 +105,21 @@ interface ConversationPromptFlow {
   savedRevision: number;
   promise: Promise<boolean> | null;
   predecessor?: Promise<boolean> | null;
+  purpose?: 'draft';
+  hasSubmission?: boolean;
+  pendingSubmissions?: number;
+}
+
+interface StreamReply {
+  conversationId: string;
+  message: ChatMessage;
+  placeholderSaved: Promise<boolean>;
+  terminal: boolean;
+  failed?: boolean;
+  saving: boolean;
+  save: (repair?: boolean) => Promise<void>;
+  finish: (updates: Partial<ChatMessage>) => void;
+  stop: () => void;
 }
 
 const App: React.FC<AppProps> = ({ initialMessages }) => {
@@ -266,11 +283,90 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const conversationNavigationRef = useRef(0);
+  const conversationNavigationPreparationRef = useRef(0);
   const conversationActivationRef = useRef<Promise<void>>(Promise.resolve());
   const [composerDraft, setComposerDraft] = useState<ComposerDraft>(createEmptyComposerDraft);
   const composerDraftRef = useRef(composerDraft);
   composerDraftRef.current = composerDraft;
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>());
+  const attachmentGenerationRef = useRef(0);
+  const attachmentDraftGenerationsRef = useRef(new Map<string, number>());
+  const attachmentDraftOwnersRef = useRef(new Map<number, string>());
+  const pendingAttachmentReadsRef = useRef(new Map<number, number>());
+  const [, refreshPendingAttachmentReads] = useState(0);
+  const attachmentGenerationFor = useCallback((key: string) => {
+    let generation = attachmentDraftGenerationsRef.current.get(key);
+    if (generation === undefined) {
+      generation = ++attachmentGenerationRef.current;
+      attachmentDraftGenerationsRef.current.set(key, generation);
+      attachmentDraftOwnersRef.current.set(generation, key);
+    }
+    return generation;
+  }, []);
+  const invalidateAttachmentDraft = useCallback((key: string) => {
+    const generation = attachmentDraftGenerationsRef.current.get(key);
+    if (generation !== undefined) attachmentDraftOwnersRef.current.delete(generation);
+    attachmentDraftGenerationsRef.current.delete(key);
+  }, []);
+  const migrateAttachmentDraft = useCallback((from: string, to: string) => {
+    if (from === to) return;
+    const generation = attachmentDraftGenerationsRef.current.get(from);
+    invalidateAttachmentDraft(to);
+    if (generation === undefined) return;
+    attachmentDraftGenerationsRef.current.delete(from);
+    attachmentDraftGenerationsRef.current.set(to, generation);
+    attachmentDraftOwnersRef.current.set(generation, to);
+  }, [invalidateAttachmentDraft]);
+  const hasPendingNullAttachments = useCallback(() => {
+    const generation = attachmentDraftGenerationsRef.current.get('new');
+    return generation !== undefined && (pendingAttachmentReadsRef.current.get(generation) || 0) > 0;
+  }, []);
+  // Empty inactive scopes without reads have nothing to retain. Never recycle a
+  // generation: late callbacks cannot gain authority on an A → B → A visit.
+  const activeDraftKey = conversationId || 'new';
+  for (const [key, generation] of attachmentDraftGenerationsRef.current) {
+    if (key !== activeDraftKey && !conversationDraftsRef.current.has(key) && !pendingAttachmentReadsRef.current.has(generation)) {
+      attachmentDraftGenerationsRef.current.delete(key);
+      attachmentDraftOwnersRef.current.delete(generation);
+    }
+  }
+  const activeDraftGeneration = attachmentGenerationFor(activeDraftKey);
+  const handleAttachmentReadStart = useCallback((scope: ComposerAttachmentScope) => {
+    pendingAttachmentReadsRef.current.set(scope.generation, (pendingAttachmentReadsRef.current.get(scope.generation) || 0) + 1);
+    refreshPendingAttachmentReads(revision => revision + 1);
+  }, []);
+  const handleAttachmentReadEnd = useCallback((scope: ComposerAttachmentScope) => {
+    const remaining = (pendingAttachmentReadsRef.current.get(scope.generation) || 1) - 1;
+    if (remaining > 0) pendingAttachmentReadsRef.current.set(scope.generation, remaining);
+    else pendingAttachmentReadsRef.current.delete(scope.generation);
+    refreshPendingAttachmentReads(revision => revision + 1);
+  }, []);
+  const handleAttachmentsReady = useCallback((batch: ComposerAttachmentBatch) => {
+    const owner = attachmentDraftOwnersRef.current.get(batch.scope.generation);
+    if (!owner || deletedConversationIdsRef.current.has(owner) || attachmentDraftGenerationsRef.current.get(owner) !== batch.scope.generation) {
+      return { success: false, error: 'That draft was sent, cleared, or deleted while the file was loading. Reattach the file to the draft you want to use.' };
+    }
+    const currentKey = conversationIdRef.current || 'new';
+    if (owner === 'new' && currentKey !== 'new') {
+      return { success: false, error: 'The new draft changed while the file was loading. Reattach the file in the chat you want to use.' };
+    }
+    const previous = owner === currentKey ? composerDraftRef.current
+      : conversationDraftsRef.current.get(owner) || createEmptyComposerDraft();
+    const merged = mergeComposerAttachments(previous, batch);
+    if (!merged.success) return merged;
+    if (owner === currentKey) {
+      composerDraftRef.current = merged.draft;
+      setComposerDraft(merged.draft);
+    } else {
+      const retention = prepareInactiveDraftRetention(conversationDraftsRef.current,
+        { key: owner, draft: merged.draft, activatingKey: currentKey });
+      if (!retention.allowed) return { success: false,
+        error: 'There is not enough room to keep this file in the original chat. Send or clear an unfinished draft, then reattach the file there.' };
+      conversationDraftsRef.current = retention.nextDrafts;
+      addToast('The file is ready in its original chat. Open that chat to review and send it.', 'info', 8000);
+    }
+    return { success: true };
+  }, [addToast]);
   const knownConversationIdsRef = useRef(new Set<string>());
   const unusedConversationCleanupRef = useRef(new Set<string>());
   const deletedConversationIdsRef = useRef(new Set<string>());
@@ -348,6 +444,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
 
     // active stream subscriptions by streamId (use Map for convenience)
     const streamSubsRef = useRef<Map<string, { unsubscribe: () => void }>>(new Map());
+    // Live replies, pending writes and failed recovery copies own their content
+    // independently of the visible chat. Dispatch caps this set without eviction.
+    const streamRepliesRef = useRef(new Map<string, StreamReply>());
+    const streamReplyReservationsRef = useRef(new Set<string>());
+    // Stop saves immediately and keeps at most eight terminal listeners for a
+    // genuine end confirmation. These markers contain no draft or reply bytes.
+    const stoppedStreamConfirmationsRef = useRef(new Map<string, {
+      conversationId: string; token: symbol; reconciling?: boolean;
+    }>());
+    const [unsavedReplyIds, setUnsavedReplyIds] = useState<string[]>([]);
     // test-only watchdog timers per stream to avoid hanging 'streaming' state in tests
     const streamWatchersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -466,6 +572,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         try { subs.unsubscribe(); } catch (e) {}
       }
       streamSubsRef.current.clear();
+      stoppedStreamConfirmationsRef.current.clear();
     };
   }, []);
 
@@ -688,11 +795,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // Helper to update a persisted message
   const updatePersistedMessage = useCallback(async (messageId: string, updates: Partial<SharedMessage>, convIdOverride?: string) => {
     const convId = convIdOverride || conversationId;
-    if (!convId) return;
+    if (!convId) return false;
     try {
-      await window.electron.updateMessage?.(convId, messageId, updates);
+      const result = await window.electron.updateMessage?.(convId, messageId, updates);
+      return result?.success === true;
     } catch (err) {
       console.error('Failed to update persisted message:', err);
+      return false;
     }
   }, [conversationId]);
 
@@ -737,6 +846,13 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // backend's final selection after the newest navigation has completed.
     const activation = conversationActivationRef.current.then(async () => {
       if (generation !== conversationNavigationRef.current) return false;
+      const unownedDraft = () => !options?.preserveCurrentDraft && !conversationIdRef.current &&
+        (!!composerDraftRef.current.text || !!composerDraftRef.current.images.length || !!composerDraftRef.current.documents.length ||
+          !!(conversationPromptFlowRef.current?.promise && conversationPromptFlowRef.current.hasSubmission) || hasPendingNullAttachments());
+      const explainUnownedDraft = () => addToast('Your new draft is kept here. Open the destination again so HomeBot can keep it in its own chat before switching.', 'warning', 8000);
+      // A draft may appear after navigation started (including deletion while
+      // a selection read is pending). Never commit it under a synthetic key.
+      if (unownedDraft()) { explainUnownedDraft(); return false; }
       // Lazy guidelines adoption keeps this exact composer active. It must not
       // retain a second, inaccessible copy under the old null-ID "new" key.
       const planRetention = () => prepareDraftNavigation(options?.preserveCurrentDraft ? conversationIdRef.current || 'new' : id);
@@ -744,7 +860,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const result = await window.electron.setActiveConversation?.(id);
       if (result?.success !== true) throw new Error(result?.error || 'Could not open this conversation. Please try again.');
       const retention = planRetention();
-      if (generation !== conversationNavigationRef.current || !retention.allowed) {
+      if (generation !== conversationNavigationRef.current || !retention.allowed || unownedDraft()) {
+        if (unownedDraft()) explainUnownedDraft();
         const adopted = conversationIdRef.current;
         if (adopted && adopted !== id) {
           const restored = await window.electron.setActiveConversation?.(adopted);
@@ -759,7 +876,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     });
     conversationActivationRef.current = activation.then(() => undefined, () => undefined);
     return activation;
-  }, [prepareDraftNavigation]);
+  }, [prepareDraftNavigation, addToast, hasPendingNullAttachments]);
 
   const cleanUnusedConversation = useCallback(async (created: import('../shared/types').StoredConversation) => {
     const id = created.id;
@@ -814,12 +931,24 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     return rebased;
   }, []);
 
+  const getOrCreateNullConversationFlow = useCallback(() => {
+    const current = getCurrentConversationPromptFlow();
+    if (current) return current;
+    const flow: ConversationPromptFlow = {
+      generation: conversationNavigationRef.current, originConversationId: null, conversationId: null,
+      prompt: conversationSystemPromptRef.current, revision: 0,
+      savedRevision: conversationSystemPromptRef.current ? -1 : 0, promise: null, purpose: 'draft',
+    };
+    conversationPromptFlowRef.current = flow;
+    return flow;
+  }, [getCurrentConversationPromptFlow]);
+
   const runConversationPromptFlow = useCallback((flow: ConversationPromptFlow): Promise<boolean> => {
     if (flow.promise) return flow.promise;
     const current = () => conversationPromptFlowRef.current === flow &&
       flow.generation === conversationNavigationRef.current && flow.conversationId === conversationIdRef.current;
     if (!current()) return Promise.resolve(false);
-    if (flow.savedRevision === flow.revision) return Promise.resolve(true);
+    if (flow.conversationId && flow.savedRevision === flow.revision) return Promise.resolve(true);
     flow.promise = (async () => {
       let created: import('../shared/types').StoredConversation | undefined;
       try {
@@ -837,6 +966,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           const replacement = created;
           const adopted = await activateConversation(replacement.id, flow.generation, drafts => {
             if (!current() || deletedConversationIdsRef.current.has(replacement.id) || conversationPromptDeletionRef.current.has(replacement.id)) return;
+            migrateAttachmentDraft(conversationIdRef.current || 'new', replacement.id);
             conversationDraftsRef.current = drafts;
             flow.conversationId = replacement.id;
             pendingConversationPromptsRef.current.set(replacement.id, flow);
@@ -846,7 +976,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             conversationSystemPromptRef.current = flow.prompt;
             setConversationSystemPrompt(flow.prompt);
             window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
-              detail: { ...replacement, messageCount: replacement.messages.length },
+              detail: { ...replacement, messageCount: replacement.messages?.length || 0 },
             }));
           }, { preserveCurrentDraft: true });
           if (!adopted || flow.conversationId !== replacement.id) { await cleanUnusedConversation(replacement); return false; }
@@ -885,16 +1015,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       } catch (error) {
         console.error('Could not save conversation guidelines:', error);
         if (created && flow.conversationId !== created.id) await cleanUnusedConversation(created);
-        if (current()) addToast(flow.conversationId
-          ? 'Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.'
-          : 'Could not open a chat for these guidelines. Your edits are kept. Edit them again or retry your message.', 'error', 0);
+        if (current()) addToast(flow.purpose === 'draft'
+          ? 'Could not open a chat to keep this draft. Your text and attachments are kept. Please try again.'
+          : flow.conversationId
+            ? 'Could not save these chat guidelines. Your edits are kept. Edit them again or retry your message.'
+            : 'Could not open a chat for these guidelines. Your edits are kept. Edit them again or retry your message.', 'error', 0);
         return false;
       } finally {
         flow.promise = null;
       }
     })();
     return flow.promise;
-  }, [activateConversation, cleanUnusedConversation, addToast]);
+  }, [activateConversation, cleanUnusedConversation, addToast, migrateAttachmentDraft]);
 
   const updateConversationSystemPrompt = useCallback((prompt: string) => {
     let flow = getCurrentConversationPromptFlow();
@@ -916,12 +1048,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       flow.prompt = prompt;
       flow.revision += 1;
     }
+    flow.purpose = undefined;
     if (owner) pendingConversationPromptsRef.current.set(owner, flow);
     if (!owner || !conversationPromptDeletionRef.current.has(owner)) void runConversationPromptFlow(flow);
   }, [getCurrentConversationPromptFlow, runConversationPromptFlow, addToast]);
 
   const handleNewConversation = async () => {
+    const preparation = ++conversationNavigationPreparationRef.current;
     if (!prepareDraftNavigation().allowed) return;
+    if (!conversationIdRef.current && (composerDraftRef.current.text || composerDraftRef.current.images.length ||
+        composerDraftRef.current.documents.length || getCurrentConversationPromptFlow()?.hasSubmission || hasPendingNullAttachments())) {
+      if (!await runConversationPromptFlow(getOrCreateNullConversationFlow())) return;
+      if (preparation !== conversationNavigationPreparationRef.current || !prepareDraftNavigation().allowed) return;
+    }
     const generation = ++conversationNavigationRef.current;
     let created: import('../shared/types').StoredConversation | undefined;
     try {
@@ -967,11 +1106,19 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       addToast('This unused chat is being removed. Choose another conversation.', 'warning', 8000);
       return;
     }
+    const preparation = ++conversationNavigationPreparationRef.current;
     if (!prepareDraftNavigation(id).allowed) return;
     // Protect selection intent before any awaited read can race cleanup.
     knownConversationIdsRef.current.add(id);
+    if (!conversationIdRef.current && (composerDraftRef.current.text || composerDraftRef.current.images.length ||
+        composerDraftRef.current.documents.length || getCurrentConversationPromptFlow()?.hasSubmission || hasPendingNullAttachments())) {
+      if (!await runConversationPromptFlow(getOrCreateNullConversationFlow())) return;
+      if (preparation !== conversationNavigationPreparationRef.current || !prepareDraftNavigation(id).allowed) return;
+    }
     const generation = ++conversationNavigationRef.current;
     try {
+      const replyOwners = new Map(Array.from(streamRepliesRef.current.entries())
+        .filter(([, reply]) => reply.conversationId === id));
       const convData = await window.electron.getConversation?.(id);
       if (generation !== conversationNavigationRef.current) return;
       if (!convData?.success || !convData.data) throw new Error(convData?.error || 'Could not load conversation');
@@ -985,6 +1132,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           setComposerDraft(nextDraft);
 
           // Convert stored messages to ChatMessage format
+          for (const [messageId, reply] of streamRepliesRef.current) {
+            if (reply.conversationId === id) replyOwners.set(messageId, reply);
+          }
           const loadedMsgs: ChatMessage[] = selectedConversation.messages.map((m: SharedMessage) => ({
             id: m.id ?? newId(),
             role: m.role as any,
@@ -992,7 +1142,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             createdAt: Date.parse(m.timestamp) || Date.now(),
             streamingState: (m.streamingState as any) || undefined,
             error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+            ...(replyOwners.get(m.id || '')?.message || {}),
           }));
+          for (const [messageId, reply] of replyOwners) {
+            if (!loadedMsgs.some(message => message.id === messageId)) loadedMsgs.push({ ...reply.message });
+          }
           // Viewing a saved reply must preserve its title without another model call.
           // A conversation with no completed reply can still get its first title.
           if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
@@ -1041,8 +1195,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const handleDeleteConversation = async (id: string) => {
     conversationPromptDeletionRef.current.add(id);
     try {
-      // A full-record guidelines save must settle before deletion so its late
-      // acknowledgement cannot resurrect an acknowledged deleted record.
+      // Guidelines and reply recovery writes settle before deletion, preventing
+      // a late full-record save or missing-row repair from recreating the record.
       const promptWrite = conversationPromptWritesRef.current.get(id);
       if (promptWrite) await promptWrite;
       const result = await window.electron.deleteConversation?.(id);
@@ -1050,6 +1204,25 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       conversationDraftsRef.current.delete(id);
       pendingConversationPromptsRef.current.delete(id);
       deletedConversationIdsRef.current.add(id);
+      for (const [streamId, confirmation] of stoppedStreamConfirmationsRef.current) {
+        if (confirmation.conversationId !== id) continue;
+        unsubscribeStream(streamId);
+        stoppedStreamConfirmationsRef.current.delete(streamId);
+      }
+      invalidateAttachmentDraft(id);
+      setUnsavedReplyIds(previous => previous.filter(streamId => streamRepliesRef.current.get(streamId)?.conversationId !== id));
+      for (const [streamId, reply] of streamRepliesRef.current) {
+        if (reply.conversationId !== id) continue;
+        reply.terminal = true;
+        streamRepliesRef.current.delete(streamId);
+        const subscription = streamSubsRef.current.get(streamId);
+        try { subscription?.unsubscribe(); } catch {}
+        streamSubsRef.current.delete(streamId);
+        const watcher = streamWatchersRef.current.get(streamId);
+        if (watcher) clearTimeout(watcher);
+        streamWatchersRef.current.delete(streamId);
+        try { window.electron.cancelStream?.(streamId); } catch {}
+      }
       for (const [messageId, request] of retryRequestsRef.current) {
         if (request.conversation_id === id) retryRequestsRef.current.delete(messageId);
       }
@@ -1090,172 +1263,198 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
   }, []);
 
-  const subscribeToStream = useCallback((streamId: string, assistantId: string, requestConversationId: string) => {
-    // A newly created request can subscribe before its conversation ID reaches
-    // React state. Terminal persistence belongs to the request's captured ID.
-    // prevent double subscription
+  const subscribeToStream = useCallback((streamId: string, seed: ChatMessage, requestConversationId: string,
+    placeholderSaved: Promise<boolean> = Promise.resolve(true)) => {
+    if (stoppedStreamConfirmationsRef.current.has(streamId)) unsubscribeStream(streamId);
+    stoppedStreamConfirmationsRef.current.delete(streamId);
     if (streamSubsRef.current.has(streamId)) return;
-
+    const stopToken = Symbol(streamId);
+    const assistantId = seed.id;
+    const reply: StreamReply = {
+      conversationId: requestConversationId, message: { ...seed }, placeholderSaved,
+      terminal: false, saving: false, save: async () => {}, finish: () => {}, stop: () => {},
+    };
+    streamRepliesRef.current.set(streamId, reply);
+    setUnsavedReplyIds(previous => previous.filter(id => id !== streamId));
+    const publish = () => {
+      if (deletedConversationIdsRef.current.has(requestConversationId)) return;
+      const snapshot = reply.message;
+      setMessages(previous => conversationIdRef.current !== requestConversationId ? previous
+        : previous.map(message => message.id === assistantId ? { ...message, ...snapshot } : message));
+    };
+    reply.save = async (repair = false) => {
+      if (reply.saving || streamRepliesRef.current.get(streamId) !== reply || deletedConversationIdsRef.current.has(requestConversationId)) return;
+      reply.saving = true;
+      let saved = false;
+      const ownsRecord = () => streamRepliesRef.current.get(streamId) === reply &&
+        !deletedConversationIdsRef.current.has(requestConversationId) && !conversationPromptDeletionRef.current.has(requestConversationId);
+      const write = (conversationPromptWritesRef.current.get(requestConversationId) || Promise.resolve()).then(async () => {
+        const placeholderExists = await reply.placeholderSaved;
+        if (!ownsRecord() || (!placeholderExists && !repair)) return false;
+        if (repair) {
+          // Confirm the chat and inspect an uncertain add acknowledgement before
+          // repairing a row. The deletion barrier also owns this explicit write.
+          const record = await window.electron.getConversation?.(requestConversationId);
+          if (!ownsRecord() || record?.success !== true || record.data?.id !== requestConversationId) return false;
+          if (!record.data.messages.some(message => message.id === assistantId)) return persistMessage(reply.message, requestConversationId);
+        }
+        return updatePersistedMessage(assistantId, {
+          content: reply.message.content,
+          streamingState: reply.message.streamingState === 'cancelling' ? 'cancelled' : reply.message.streamingState,
+          error: !!reply.message.error,
+        }, requestConversationId);
+      });
+      const barrier = write.then(() => undefined, () => undefined);
+      conversationPromptWritesRef.current.set(requestConversationId, barrier);
+      try {
+        saved = await write;
+      } catch (error) {
+        console.error('Could not finish saving the reply:', error);
+      } finally {
+        if (conversationPromptWritesRef.current.get(requestConversationId) === barrier) conversationPromptWritesRef.current.delete(requestConversationId);
+        reply.saving = false;
+        if (streamRepliesRef.current.get(streamId) === reply) {
+          if (saved || deletedConversationIdsRef.current.has(requestConversationId)) {
+            streamRepliesRef.current.delete(streamId);
+            setUnsavedReplyIds(previous => previous.filter(id => id !== streamId));
+          } else {
+            reply.failed = true;
+            setUnsavedReplyIds(previous => previous.includes(streamId) ? previous : [...previous, streamId]);
+            addToast('This reply could not be saved. Open its original chat to copy it or retry saving before closing HomeBot.', 'error', 10000);
+          }
+        }
+      }
+    };
+    reply.finish = updates => {
+      if (reply.terminal) return;
+      reply.terminal = true;
+      const watcher = streamWatchersRef.current.get(streamId);
+      if (watcher) clearTimeout(watcher);
+      streamWatchersRef.current.delete(streamId);
+      reply.message = { ...reply.message, ...updates, updatedAt: Date.now() };
+      publish();
+      if (stoppedStreamConfirmationsRef.current.get(streamId)?.token !== stopToken) unsubscribeStream(streamId);
+      void reply.save();
+    };
+    reply.stop = () => {
+      if (reply.terminal) return;
+      const confirmations = stoppedStreamConfirmationsRef.current;
+      confirmations.set(streamId, { conversationId: requestConversationId, token: stopToken });
+      if (confirmations.size > 8) {
+        const oldestId = confirmations.keys().next().value!;
+        unsubscribeStream(oldestId);
+        confirmations.delete(oldestId);
+      }
+      reply.finish({ streamingState: 'cancelled' });
+    };
+    // Reserve ownership before registering callbacks, including a synchronous end.
+    streamSubsRef.current.set(streamId, { unsubscribe: () => {} });
     const unsubscribe = window.electron.subscribeToStream?.(streamId, {
-      // payload may have an optional streamId coming from the main process listener
       onStreamChunk: (payload: { streamId?: string; chunk: string }) => {
-        setMessages(prev => {
-          return prev.map(m => {
-            if (m.id !== assistantId) return m;
-            if (m.streamingState !== "streaming") return m; // ignore late chunks
-            // If chunk starts with ___REPLACE___, replace the entire content
-            // (used when tool JSON was partially streamed and needs to be cleaned)
-            const replaceMarker = '\n___REPLACE___';
-            if (payload.chunk.startsWith(replaceMarker)) {
-              return {
-                ...m,
-                content: payload.chunk.slice(replaceMarker.length),
-                updatedAt: Date.now(),
-              };
-            }
-            return {
-              ...m,
-              content: m.content + payload.chunk,
-              updatedAt: Date.now(),
-            };
-          });
-        });
+        if (reply.terminal || deletedConversationIdsRef.current.has(requestConversationId)) return;
+        const marker = '\n___REPLACE___';
+        reply.message = { ...reply.message,
+          content: payload.chunk.startsWith(marker) ? payload.chunk.slice(marker.length) : reply.message.content + payload.chunk,
+          updatedAt: Date.now(),
+        };
+        publish();
       },
       onStreamEnd: (payload: { streamId?: string; cancelled?: boolean; model?: string }) => {
-        // Clear any test-only watchdog timer if set
-        try {
-          const t = streamWatchersRef.current.get(streamId);
-          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
-        } catch (e) {}
-        setMessages(prev => {
-          const updated = prev.map(m => {
-            if (m.id !== assistantId) return m;
-
-            const cancelled = !!payload.cancelled;
-            const nextState: StreamingState = cancelled ? "cancelled" : "finished";
-            const durationMs = Date.now() - m.createdAt;
-
-            // A reply that WROTE OUT a tool call instead of making one.
-            //
-            // Reported live: asked to test its tools, HomeBot printed
-            // `<|tool_call_begin|> functions.run_terminal_command …` and then
-            // said "Done", having executed nothing. Being told a job was done
-            // that never started is the worst failure this app has.
-            //
-            // Handled here rather than in the router because every one of the
-            // router's many completion paths funnels through this one place,
-            // and because the raw markup must not reach conversation history —
-            // a later model reads it back and copies the pattern, which is how
-            // a local qwen came to emit Anthropic-shaped markup it would never
-            // invent on its own.
-            const leaked = cancelled ? [] : detectLeakedToolCalls(m.content);
-            const content = leaked.length > 0
-              ? `${stripLeakedToolCalls(m.content)}\n\n⚠️ ${describeLeak(leaked)}`
-              : m.content;
-
-            const updatedMsg = {
-              ...m,
-              content,
-              streamingState: nextState,
-              updatedAt: Date.now(),
-              ...(nextState === "finished" ? { durationMs } : {}),
-              ...(payload.model ? { model: payload.model } : {}),
-            };
-
-            // Persist the final message content
-            updatePersistedMessage(assistantId, {
-              content: updatedMsg.content,
-              streamingState: nextState,
-              error: !!updatedMsg.error,
+        if (reply.terminal) {
+          const confirmation = stoppedStreamConfirmationsRef.current.get(streamId);
+          const ownsConfirmation = () => stoppedStreamConfirmationsRef.current.get(streamId)?.token === stopToken &&
+            !deletedConversationIdsRef.current.has(requestConversationId) &&
+            !conversationPromptDeletionRef.current.has(requestConversationId) &&
+            (!streamRepliesRef.current.has(streamId) || streamRepliesRef.current.get(streamId) === reply);
+          if (!confirmation || confirmation.reconciling || !ownsConfirmation()) return;
+          confirmation.reconciling = true;
+          unsubscribeStream(streamId);
+          // This corrects status only: stopped content remains immutable, and a
+          // prior generation cannot replace a same-ID Retry's result.
+          reply.message = { ...reply.message, streamingState: payload.cancelled ? 'cancelled' : 'finished',
+            ...(!payload.cancelled ? { durationMs: Date.now() - reply.message.createdAt } : {}),
+            ...(payload.model ? { model: payload.model } : {}),
+          };
+          publish();
+          try {
+            (window as any).__e2eEvents = (window as any).__e2eEvents || [];
+            (window as any).__e2eEvents.push('homebot:stream-end');
+            if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-end', payload);
+          } catch {}
+          const write = (conversationPromptWritesRef.current.get(requestConversationId) || Promise.resolve()).then(async () => {
+            if (!ownsConfirmation()) return;
+            const saved = await updatePersistedMessage(assistantId, {
+              streamingState: payload.cancelled ? 'cancelled' : 'finished',
             }, requestConversationId);
-            
-            return updatedMsg;
+            if (!saved && ownsConfirmation() && !reply.failed) {
+              addToast('Your partial reply is kept, but its final status could not be saved.', 'warning', 10000);
+            }
           });
-          return updated;
+          const barrier = write.then(() => undefined, () => undefined);
+          conversationPromptWritesRef.current.set(requestConversationId, barrier);
+          void barrier.finally(() => {
+            if (conversationPromptWritesRef.current.get(requestConversationId) === barrier) conversationPromptWritesRef.current.delete(requestConversationId);
+            if (stoppedStreamConfirmationsRef.current.get(streamId)?.token === stopToken) stoppedStreamConfirmationsRef.current.delete(streamId);
+          });
+          return;
+        }
+        const leaked = payload.cancelled ? [] : detectLeakedToolCalls(reply.message.content);
+        const content = leaked.length > 0
+          ? stripLeakedToolCalls(reply.message.content) + '\n\n⚠️ ' + describeLeak(leaked)
+          : reply.message.content;
+        reply.finish({ content, streamingState: payload.cancelled ? 'cancelled' : 'finished',
+          ...(!payload.cancelled ? { durationMs: Date.now() - reply.message.createdAt } : {}),
+          ...(payload.model ? { model: payload.model } : {}),
         });
-        unsubscribeStream(streamId);
-        // E2E: record that stream-end was received
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('homebot:stream-end');
           if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-end', payload);
-        } catch (e) {}
+        } catch {}
       },
       onStreamError: (payload: { streamId?: string; error?: string; message?: string; recoveryHint?: any }) => {
-        // Clear any test-only watchdog timer if set
         try {
-          const t = streamWatchersRef.current.get(streamId);
-          if (t) { clearTimeout(t); streamWatchersRef.current.delete(streamId); }
-        } catch (e) {}
-        // If the main process included diagnostics, log them and update status
-        try {
-          const diag = (payload as any)?.diagnostic;
-          if (diag) {
-            console.error(`[STREAM ERROR] url=${diag.url} error=${diag.errorText} n8nResponded=${diag.n8nResponded} httpStatus=${diag.httpStatus}`);
-            try { (window as any).homebotCapture?.log(`[Renderer] STREAM ERROR url=${diag.url} status=${diag.httpStatus} n8nResponded=${diag.n8nResponded}`); } catch (e) {}
-            try {
-              setBackendDiagnostic(typeof diag === 'string' ? diag : JSON.stringify(diag, null, 2));
-            } catch (e) { setBackendDiagnostic(String(diag)); }
-            setStatus(prev => ({ ...prev, n8n: 'offline' }));
+          const diagnostic = (payload as any)?.diagnostic;
+          if (diagnostic) {
+            console.error(`[STREAM ERROR] url=${diagnostic.url} error=${diagnostic.errorText} n8nResponded=${diagnostic.n8nResponded} httpStatus=${diagnostic.httpStatus}`);
+            try { (window as any).homebotCapture?.log(`[Renderer] STREAM ERROR url=${diagnostic.url} status=${diagnostic.httpStatus} n8nResponded=${diagnostic.n8nResponded}`); } catch {}
+            if (!reply.terminal) {
+              setBackendDiagnostic(typeof diagnostic === 'string' ? diagnostic : JSON.stringify(diagnostic, null, 2));
+              setStatus(previous => ({ ...previous, n8n: 'offline' }));
+            }
           }
-        } catch (e) {}
-
-        // Use the human-readable message from classifyError when available.
-        //
-        // It says "when available" and then did not use it: payload.message is
-        // the RAW internal label — 'Upstream error (n8n unavailable)',
-        // 'Streaming error' — which is what classifyError takes as INPUT, not
-        // what it produces for a reader. Those strings have to keep their
-        // product names because the classifier matches on them, so the friendly
-        // text has to be preferred here instead.
-        const errorText =
-          payload.recoveryHint?.userMessage ||
-          payload.message ||
-          (typeof payload.error === 'string' ? payload.error : undefined) ||
-          'Something went wrong.';
-
-        setMessages(prev => {
-          return prev.map(m => {
-            if (m.id !== assistantId) return m;
-            if (m.streamingState === 'finished' || m.streamingState === 'cancelled') return m;
-            const updatedMsg = {
-              ...m,
-              streamingState: "error" as StreamingState,
-              error: errorText,
-              recoveryHint: payload.recoveryHint || null,
-              updatedAt: Date.now(),
-            };
-            
-            // Persist the error state
-            updatePersistedMessage(assistantId, {
-              content: updatedMsg.content,
-              streamingState: "error",
-              error: true,
-            }, requestConversationId);
-            
-            return updatedMsg;
-          });
-        });
-        unsubscribeStream(streamId);
-        // E2E: record that stream-error was received
+        } catch {}
+        if (reply.terminal) return;
+        const error = payload.recoveryHint?.userMessage || payload.message ||
+          (typeof payload.error === 'string' ? payload.error : undefined) || 'Something went wrong.';
+        reply.finish({ streamingState: 'error', error, recoveryHint: payload.recoveryHint || null });
         try {
           (window as any).__e2eEvents = (window as any).__e2eEvents || [];
           (window as any).__e2eEvents.push('homebot:stream-error');
           if ((window as any).__e2eMode) console.log('[E2E-TRACE] renderer received homebot:stream-error', payload);
-        } catch (e) {}
+        } catch {}
       },
     });
-
-    streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
-  }, [unsubscribeStream, updatePersistedMessage]);
+    if (reply.terminal) { try { unsubscribe?.(); } catch {} }
+    else streamSubsRef.current.set(streamId, { unsubscribe: unsubscribe ?? (() => {}) });
+  }, [addToast, unsubscribeStream, updatePersistedMessage, persistMessage]);
 
   const rememberRetryRequest = useCallback((assistantId: string, request: HomeBotRequestWithImages) => {
     retainRetryRequest(retryRequestsRef.current, assistantId, request);
   }, []);
 
+  const releaseSubmissionCreation = useCallback((scope: SubmissionScope) => {
+    streamReplyReservationsRef.current.delete(scope.id);
+    if (!scope.creationPending || !scope.creationFlow) return;
+    scope.creationPending = false;
+    const flow = scope.creationFlow;
+    flow.pendingSubmissions = Math.max(0, (flow.pendingSubmissions || 1) - 1);
+    flow.hasSubmission = flow.pendingSubmissions > 0;
+  }, []);
   const preserveStoppedSubmission = useCallback((scope: SubmissionScope, message = 'This request was not sent because you changed conversations. Its draft is kept in the original conversation.') => {
     if (scope.retained) return;
     scope.retained = true;
+    releaseSubmissionCreation(scope);
     // Successful deletion includes unsent work from this conversation, even
     // when an earlier validation finishes after the deletion acknowledgement.
     if (scope.conversationId && deletedConversationIdsRef.current.has(scope.conversationId)) return;
@@ -1310,16 +1509,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     heldSubmissionsRef.current = next;
     setHeldSubmissions(next);
     addToast('Your earlier request was not sent. Your newer draft is kept. Return to its conversation and clear or send the newer draft to restore the held request.', 'warning', 8000);
-  }, [addToast, persistMessage]);
+  }, [addToast, persistMessage, releaseSubmissionCreation]);
 
   const guardSubmission = useCallback((scope: SubmissionScope) => {
+    const originalFlow = scope.creationFlow || conversationPromptFlowRef.current;
     const promptFlow = getCurrentConversationPromptFlow();
     // Lazy guideline creation adopts the same previously empty chat. It is
     // not explicit navigation, so an already prepared Send still owns it.
-    if (scope.conversationId === null && scope.generation === conversationNavigationRef.current &&
-        promptFlow?.generation === scope.generation && promptFlow.originConversationId === null &&
-        promptFlow.conversationId === conversationIdRef.current) {
-      scope.conversationId = promptFlow.conversationId;
+    const owningFlow = originalFlow?.generation === scope.generation ? originalFlow : promptFlow;
+    if (scope.conversationId === null && owningFlow?.generation === scope.generation && owningFlow.originConversationId === null) {
+      scope.creationFlow = owningFlow;
+      if (owningFlow.conversationId) scope.conversationId = owningFlow.conversationId;
     }
     if (scope.generation === conversationNavigationRef.current && scope.conversationId === conversationIdRef.current) return true;
     preserveStoppedSubmission(scope);
@@ -1335,6 +1535,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const restoreHeldSubmission = (scope: SubmissionScope) => {
     const current = composerDraftRef.current;
     if (current.text || current.images.length || current.documents.length) return;
+    invalidateAttachmentDraft(conversationIdRef.current || 'new');
     composerDraftRef.current = scope.draft;
     setComposerDraft(scope.draft);
     const next = heldSubmissionsRef.current.filter(item => item.id !== scope.id);
@@ -1359,6 +1560,15 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
     if (!guardSubmission(scope)) return;
 
+    // Keep at most eight live/unsaved reply owners without evicting a recovery
+    // copy. A ninth request remains editable until an earlier reply is saved.
+    if (streamRepliesRef.current.size + streamReplyReservationsRef.current.size >= 8) {
+      await Promise.resolve(); // Let the originating composer complete Send's reset.
+      preserveStoppedSubmission(scope, 'Eight replies are still running or waiting to be saved. Finish or save an earlier reply, then send this kept draft again.');
+      return;
+    }
+    streamReplyReservationsRef.current.add(scope.id);
+
     // Even an older editor scope's already-issued full-record save must finish
     // before this conversation gains a user turn (including A → B → A).
     const outstandingPromptWrite = scope.conversationId && conversationPromptWritesRef.current.get(scope.conversationId);
@@ -1366,52 +1576,21 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       await outstandingPromptWrite;
       if (!guardSubmission(scope)) return;
     }
-    const promptFlow = getCurrentConversationPromptFlow();
+    const promptFlow = scope.conversationId ? getCurrentConversationPromptFlow() : getOrCreateNullConversationFlow();
     if (promptFlow && promptFlow.generation === scope.generation && promptFlow.conversationId === scope.conversationId &&
-        promptFlow.savedRevision !== promptFlow.revision) {
+        (!promptFlow.conversationId || promptFlow.savedRevision !== promptFlow.revision)) {
+      if (!scope.conversationId) scope.creationFlow = promptFlow;
       const saved = await runConversationPromptFlow(promptFlow);
       if (!guardSubmission(scope)) return;
       if (!saved) {
-        preserveStoppedSubmission(scope, 'This request was not sent because its chat guidelines could not be saved. Your message is kept. Retry after saving the guidelines.');
+        preserveStoppedSubmission(scope, promptFlow.purpose === 'draft'
+          ? 'This request was not sent because HomeBot could not open a conversation. Your draft is kept. Please try again.'
+          : 'This request was not sent because its chat guidelines could not be saved. Your message is kept. Retry after saving the guidelines.');
         return;
       }
     }
 
-    // Ensure we have an active conversation before persisting messages.
-    // If none exists, create one and use its id for immediate persistence.
-    let activeConvId = scope.conversationId;
-    if (!activeConvId) {
-      try {
-        const created = await window.electron.createConversation?.();
-        if (!guardSubmission(scope)) {
-          if (created?.success && created.data) await cleanUnusedConversation(created.data);
-          return;
-        }
-        if (!created?.success || !created.data) throw new Error(created?.error || 'Could not create conversation');
-        if (created?.success && created.data) {
-          const createdConversation = created.data;
-          activeConvId = created.data.id;
-          if (!await activateConversation(activeConvId!, scope.generation, drafts => {
-            conversationDraftsRef.current = drafts;
-            scope.conversationId = activeConvId;
-            knownConversationIdsRef.current.add(activeConvId!);
-            conversationIdRef.current = activeConvId;
-            setConversationId(activeConvId);
-            conversationSystemPromptRef.current = createdConversation.systemPrompt || '';
-            setConversationSystemPrompt(createdConversation.systemPrompt || '');
-          })) {
-            await cleanUnusedConversation(created.data);
-            preserveStoppedSubmission(scope);
-            return;
-          }
-          if (!guardSubmission(scope)) return;
-        }
-      } catch (e) {
-        console.error('Failed to create conversation before send:', e);
-        preserveStoppedSubmission(scope, 'This request was not sent because HomeBot could not open a conversation. Your draft is kept. Please try again.');
-        return;
-      }
-    }
+    const activeConvId = scope.conversationId;
 
     if (!guardSubmission(scope)) return;
     // Add user message
@@ -1472,45 +1651,49 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       streamingState: 'streaming'
     };
     setMessages(prev => [...prev, assistantPlaceholder]);
-    persistMessage(assistantPlaceholder, activeConvId ?? undefined);
-    subscribeToStream(assistantId, assistantId, streamRequest.conversation_id);
+    const placeholderSaved = persistMessage(assistantPlaceholder, activeConvId ?? undefined);
+    subscribeToStream(assistantId, assistantPlaceholder, streamRequest.conversation_id, placeholderSaved);
+    streamReplyReservationsRef.current.delete(scope.id);
 
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
       try { (window as any).homebotCapture?.log(`[Renderer] Sending stream request streamId=${assistantId}`); } catch (e) {}
       await window.electron.sendStreamMessage?.({ ...streamRequest, streamId: assistantId });
-      if (process.env.NODE_ENV === 'test') {
+      if (process.env.NODE_ENV === 'test' && streamRepliesRef.current.get(assistantId)?.terminal === false) {
         const timeoutMs = Number(process.env.HOMEBOT_E2E_PROBE_TIMEOUT_MS) || 6000;
         try {
           const t = setTimeout(() => {
             try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = { error: 'probe_timeout', streamId: assistantId }; } catch (e) {}
-            updateMessage(assistantId, m => ({ ...m, streamingState: 'error' as StreamingState, error: 'Upstream error (probe timeout)' }));
-            unsubscribeStream(assistantId);
+            streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: 'Upstream error (probe timeout)' });
           }, timeoutMs);
           streamWatchersRef.current.set(assistantId, t);
         } catch (e) {}
       }
     } catch (err: any) {
       console.error(err);
-      updateMessage(assistantId, m => ({
-        ...m,
-        streamingState: 'error',
-        error: err?.message ?? 'Failed to send',
-      }));
+      streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: err?.message ?? 'Failed to send' });
       if (process.env.NODE_ENV === 'test') {
         try { (window as any).__homebot_error_received = true; (window as any).__homebot_error_event = err; } catch (e) {}
       }
       unsubscribeStream(assistantId);
     }
-  }, [conversationId, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage, guardSubmission, preserveStoppedSubmission, activateConversation, rememberRetryRequest, cleanUnusedConversation, getCurrentConversationPromptFlow, runConversationPromptFlow]);
+    releaseSubmissionCreation(scope);
+  }, [conversationId, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage, guardSubmission, preserveStoppedSubmission, rememberRetryRequest, getCurrentConversationPromptFlow, getOrCreateNullConversationFlow, runConversationPromptFlow, releaseSubmissionCreation]);
 
   const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim() ?? '';
     if (!text && (!images || images.length === 0) && (!documents || documents.length === 0)) return;
+    invalidateAttachmentDraft(conversationIdRef.current || 'new');
     const scope: SubmissionScope = {
       id: newId(), generation: conversationNavigationRef.current, conversationId: conversationIdRef.current,
       draft: { text: content, images: (images || []).map(image => ({ ...image, id: (image as { id?: string }).id || newId() })), documents: documents || [] },
     };
+    if (!scope.conversationId) {
+      scope.creationFlow = getOrCreateNullConversationFlow();
+      scope.creationPending = true;
+      scope.creationFlow.pendingSubmissions = (scope.creationFlow.pendingSubmissions || 0) + 1;
+      scope.creationFlow.hasSubmission = true;
+    }
 
     let messageText = text;
     if (images && images.length > 0) {
@@ -1572,7 +1755,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
     if (!guardSubmission(scope)) return;
     await dispatchMessage(text, messageText, images, documents, modelOverride, scope);
-  }, [addToast, dispatchMessage, settings.chatModel, settings.codeModel, settings.modelRoutingMode, settings.useCustomLLM, settings.visionModel, newId, guardSubmission]);
+  }, [addToast, dispatchMessage, settings.chatModel, settings.codeModel, settings.modelRoutingMode, settings.useCustomLLM, settings.visionModel, newId, guardSubmission, getOrCreateNullConversationFlow, invalidateAttachmentDraft]);
 
 
   /**
@@ -1610,6 +1793,23 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (idx <= 0) return;
     const prevUser = messages[idx - 1];
     if (!prevUser || prevUser.role !== "user") return;
+    const previousReply = streamRepliesRef.current.get(assistantId);
+    if (previousReply?.saving || stoppedStreamConfirmationsRef.current.get(assistantId)?.reconciling) {
+      addToast('This reply is still being saved. Wait for the save to finish before Retry; its text is kept.', 'warning', 8000);
+      return;
+    }
+    if (previousReply?.failed) {
+      const generation = conversationNavigationRef.current;
+      const owner = conversationIdRef.current;
+      await previousReply.save(true);
+      if (generation !== conversationNavigationRef.current || owner !== conversationIdRef.current ||
+          deletedConversationIdsRef.current.has(previousReply.conversationId)) return;
+      if (streamRepliesRef.current.get(assistantId) === previousReply) return;
+    }
+    if (!streamRepliesRef.current.has(assistantId) && streamRepliesRef.current.size + streamReplyReservationsRef.current.size >= 8) {
+      addToast('Eight replies are still running or waiting to be saved. Finish or save an earlier reply before Retry.', 'warning', 8000);
+      return;
+    }
     const hasDocumentAttachmentMarker = /\[document attached:/i.test(prevUser.content);
     const hasImageAttachment = !!prevUser.images?.length || /\[image attached:/i.test(prevUser.content);
     const originalRequest = retryRequestsRef.current.get(assistantId);
@@ -1644,7 +1844,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
 
     const retryConversationId = originalRequest?.conversation_id || conversationId || 'default';
-    subscribeToStream(assistantId, assistantId, retryConversationId);
+    const retrySeed: ChatMessage = { ...messages[idx], content: '', error: null, streamingState: 'streaming',
+      createdAt: Date.now(), durationMs: undefined };
+    subscribeToStream(assistantId, retrySeed, retryConversationId);
 
     try {
       logDebug('[Renderer] Retry sending stream request', { streamId: assistantId, message: prevUser.content });
@@ -1657,29 +1859,16 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         retry: true,
       });
     } catch (err: any) {
-      updateMessage(assistantId, m => ({
-        ...m,
-        streamingState: "error",
-        error: err?.message ?? "Retry failed",
-      }));
+      streamRepliesRef.current.get(assistantId)?.finish({ streamingState: 'error', error: err?.message ?? 'Retry failed' });
       unsubscribeStream(assistantId);
     }
-  }, [messages, subscribeToStream, unsubscribeStream, updateMessage, conversationId]);
+  }, [messages, subscribeToStream, unsubscribeStream, updateMessage, conversationId, addToast]);
 
-  // Optimistic cancellation requested by the user in the UI.
   const handleUserCancel = (id: string) => {
-    // Optimistically mark message cancelled in UI
-    setMessages(prev => prev.map(m => m.id === id ? { ...m, streamingState: 'cancelled' } : m));
-
-    // Also tear down our local subscription for this stream immediately so
-    // in-flight chunks that still arrive won't be appended to the message.
-    const subs = streamSubsRef.current.get(id);
-    if (subs) {
-      try { subs.unsubscribe(); } catch (e) {}
-    }
-    streamSubsRef.current.delete(id);
-    // Tell main process to cancel the stream as well (best-effort)
-    try { window.electron.cancelStream?.(id); } catch(e) { /* ignore */ }
+    const reply = streamRepliesRef.current.get(id);
+    if (reply) reply.stop();
+    else setMessages(previous => previous.map(message => message.id === id ? { ...message, streamingState: 'cancelled' } : message));
+    try { window.electron.cancelStream?.(id); } catch {}
   };
 
   // Toggle bookmark on a message
@@ -2023,6 +2212,20 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         </div>
       )}
 
+          {unsavedReplyIds.map(id => {
+            const reply = streamRepliesRef.current.get(id);
+            if (!reply) return null;
+            return <div role="alert" className="unsaved-reply-notice" key={id}>
+              <p>This reply could not be saved. Copy it before leaving this chat or closing HomeBot.</p>
+              {reply.conversationId !== conversationId && <button type="button" onClick={() => void handleSelectConversation(reply.conversationId)}>Open chat with unsaved reply</button>}
+              <button type="button" onClick={async () => {
+                const copied = await copyTextToClipboard(reply.message.content);
+                addToast(copied ? 'Unsaved reply copied.' : 'Could not copy this reply. Open its chat to select and copy the text.', copied ? 'info' : 'error');
+              }}>Copy unsaved reply</button>
+              <button type="button" onClick={() => void reply.save(true)}>Retry saving reply</button>
+            </div>;
+          })}
+
       {/* Main Content Area */}
       {mode === 'dashboard' ? (
         <Suspense fallback={<div className="mode-loading">Loading...</div>}>
@@ -2053,6 +2256,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             draft={composerDraft}
             onDraftChange={next => { composerDraftRef.current = next; setComposerDraft(next); }}
             draftKey={conversationId || 'new'}
+            draftGeneration={activeDraftGeneration}
+            pendingAttachmentReads={pendingAttachmentReadsRef.current.get(activeDraftGeneration) || 0}
+            onAttachmentsReady={handleAttachmentsReady}
+            onAttachmentReadStart={handleAttachmentReadStart}
+            onAttachmentReadEnd={handleAttachmentReadEnd}
+            onAttachmentReadError={message => addToast(message, 'warning', 10000)}
             onBookmark={handleBookmark}
             onReact={handleReact}
             onEdit={handleEdit}

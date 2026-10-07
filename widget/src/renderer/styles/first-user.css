@@ -65,3 +65,15 @@
     margin: 6px 0 0 auto;
   }
 }
+.unsaved-reply-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.unsaved-reply-notice p { flex: 1 1 240px; margin: 0; }
+.unsaved-reply-notice button { min-height: 44px; white-space: normal; }

@@ -35,6 +35,8 @@ describe('retry flow (renderer)', () => {
       loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
       createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'retry-fixture', systemPrompt: '' } }),
       setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
+      addMessage: jest.fn().mockResolvedValue({ success: true }),
+      updateMessage: jest.fn().mockResolvedValue({ success: true }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => {
         capturedStreamId = payload.streamId;

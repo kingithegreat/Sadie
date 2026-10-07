@@ -795,6 +795,316 @@ test('rapid guideline edits after acknowledged deletion share one replacement an
   expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
 });
 
+test.each(['New', 'Select'])('%s after active deletion gives a text/image/document draft a real recoverable chat without sending it', async navigation => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Recover this unsent original draft.');
+  await attachPhoto();
+  await attach('recover-null-draft.txt');
+  const creates = bridge.createConversation.mock.calls.length;
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('recoverable-null-draft') }));
+  if (navigation === 'New') {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('new-after-null-draft') }));
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    await waitFor(() => expect(backendActive).toBe('new-after-null-draft'));
+  } else {
+    await choose('B');
+    await expectActive('B');
+  }
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates + (navigation === 'New' ? 2 : 1));
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(conversations.get('recoverable-null-draft')!.messages).toEqual([]);
+  expect(conversations.has('A')).toBe(false);
+  await choose('recoverable-null-draft');
+  await waitFor(() => expect(backendActive).toBe('recoverable-null-draft'));
+  expect(inputValue()).toBe('Recover this unsent original draft.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('recover-null-draft.txt')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe('recoverable-null-draft');
+  expect(request.images[0].data).toBe(PHOTO_DATA);
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'recover-null-draft.txt', data: btoa('Exact bytes for recover-null-draft.txt') }));
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test.each([
+  ['New', 'create'], ['New', 'activate'], ['Select', 'create'], ['Select', 'activate'],
+])('%s refuses to leave a nonempty null editor when draft %s fails, retaining editable text and attachments', async (navigation, failure) => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Keep the draft when recovery fails.');
+  await attachPhoto();
+  await attach('failed-null-draft.txt');
+  if (failure === 'create') bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture draft creation refused.' });
+  else {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('failed-draft-activation') }));
+    bridge.setActiveConversation.mockResolvedValueOnce({ success: false, error: 'Fixture draft activation refused.' });
+  }
+  if (navigation === 'New') fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  else await choose('B');
+  expect(await screen.findByText('Could not open a chat to keep this draft. Your text and attachments are kept. Please try again.')).toBeInTheDocument();
+  expect(inputValue()).toBe('Keep the draft when recovery fails.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('failed-null-draft.txt')).toBeInTheDocument();
+  expect(backendActive).toBeNull();
+  expect(bridge.getConversation).not.toHaveBeenCalledWith('B');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(conversations.has('A')).toBe(false);
+  typeDraft('Still editable after recovery failed.');
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('retried-null-draft') }));
+  await choose('B');
+  await expectActive('B');
+  await choose('retried-null-draft');
+  await waitFor(() => expect(backendActive).toBe('retried-null-draft'));
+  expect(inputValue()).toBe('Still editable after recovery failed.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('failed-null-draft.txt')).toBeInTheDocument();
+});
+
+test('overlapping null-editor New, Select, guidelines and Send share one adoption while preserving the latest draft and held original bytes', async () => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('The original null-editor request.');
+  await attachPhoto();
+  await attach('original-null-overlap.txt');
+  const creation = deferred<ConversationReply>();
+  let created!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { created = createEmptyConversation('shared-null-adoption'); return creation.promise; });
+  fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  await waitFor(() => expect(bridge.createConversation).toHaveBeenCalledTimes(2));
+  await choose('B');
+  editGuidelines('Latest guidelines during shared draft adoption.');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  typeDraft('Newer words while adoption is still pending.');
+  await attach('newer-null-overlap.txt');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await act(async () => { creation.resolve({ success: true, data: created }); });
+  await expectActive('B');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+  expect(conversations.get(created.id)?.systemPrompt).toBe('Latest guidelines during shared draft adoption.');
+  await choose(created.id);
+  await waitFor(() => expect(backendActive).toBe(created.id));
+  expect(inputValue()).toBe('Newer words while adoption is still pending.');
+  expect(screen.getByText('newer-null-overlap.txt')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Restore held request' })).toBeDisabled();
+  typeDraft('');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove newer-null-overlap.txt' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Restore held request' }));
+  expect(inputValue()).toBe('The original null-editor request.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('original-null-overlap.txt')).toBeInTheDocument();
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.sendStreamMessage).toHaveBeenCalledTimes(1));
+  const request = bridge.sendStreamMessage.mock.calls[0][0];
+  expect(request.conversation_id).toBe(created.id);
+  expect(request.conversationPrompt).toBe('Latest guidelines during shared draft adoption.');
+  expect(request.images[0].data).toBe(PHOTO_DATA);
+  expect(request.documents[0]).toEqual(expect.objectContaining({ filename: 'original-null-overlap.txt', data: btoa('Exact bytes for original-null-overlap.txt') }));
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
+});
+
+test('a null-editor Send already creating its chat shares adoption with Select and guideline edits, preserving newer typing in the original chat', async () => {
+  await mountReady();
+  await deleteActiveA();
+  const creation = deferred<ConversationReply>();
+  let created!: Conversation;
+  bridge.createConversation.mockImplementationOnce(() => { created = createEmptyConversation('send-first-null-adoption'); return creation.promise; });
+  typeDraft('The first request starts creating its null-editor chat.');
+  await attach('send-first-null.txt');
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await waitFor(() => expect(bridge.createConversation).toHaveBeenCalledTimes(2));
+  typeDraft('Newer draft while the first request prepares.');
+  await attach('send-first-newer.txt');
+  await choose('B');
+  editGuidelines('Guidelines added to the shared Send creation.');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  await act(async () => { creation.resolve({ success: true, data: created }); });
+  await expectActive('B');
+  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await waitFor(() => expect(conversations.get(created.id)?.messages.filter(row => row.streamingState === 'error')).toHaveLength(1));
+  expect(conversations.get(created.id)?.systemPrompt).toBe('Guidelines added to the shared Send creation.');
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByText(conversations.get(created.id)!.title));
+  await waitFor(() => expect(backendActive).toBe(created.id));
+  expect(inputValue()).toBe('Newer draft while the first request prepares.');
+  expect(screen.getByText('send-first-newer.txt')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+});
+
+test.each(['New', 'Select'])('%s after active deletion leaves an empty editor unchanged without creating a draft-only chat', async navigation => {
+  await mountReady();
+  await deleteActiveA();
+  const creates = bridge.createConversation.mock.calls.length;
+  if (navigation === 'New') {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('empty-null-next') }));
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    await waitFor(() => expect(backendActive).toBe('empty-null-next'));
+  } else {
+    await choose('B');
+    await expectActive('B');
+  }
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates + (navigation === 'New' ? 1 : 0));
+  expect(inputValue()).toBe('');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+});
+
+test.each(['New', 'Select'])('after failed null Send and explicit draft clearing, %s creates only its requested destination', async navigation => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Restore this failed null-editor request before clearing it.');
+  await attachPhoto();
+  await attach('cleared-failed-null-send.txt');
+  bridge.createConversation.mockResolvedValueOnce({ success: false, error: 'Fixture null Send creation refused.' });
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  await screen.findByText('This request was not sent because HomeBot could not open a conversation. Your draft is kept. Please try again.');
+  expect(inputValue()).toBe('Restore this failed null-editor request before clearing it.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('cleared-failed-null-send.txt')).toBeInTheDocument();
+  expect(backendActive).toBeNull();
+  typeDraft('');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove original-photo.png' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Remove cleared-failed-null-send.txt' }));
+  expect(inputValue()).toBe('');
+  const creates = bridge.createConversation.mock.calls.length;
+  if (navigation === 'New') {
+    bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('new-after-cleared-failed-send') }));
+    fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+    await waitFor(() => expect(backendActive).toBe('new-after-cleared-failed-send'));
+  } else {
+    await choose('B');
+    await expectActive('B');
+  }
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates + (navigation === 'New' ? 1 : 0));
+  expect(conversations.size).toBe(navigation === 'New' ? 4 : 3);
+  expect(conversations.has('A')).toBe(false);
+  expect(inputValue()).toBe('');
+  expect(screen.queryByAltText('original-photo.png')).toBeNull();
+  expect(screen.queryByText('cleared-failed-null-send.txt')).toBeNull();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  expect(bridge.addMessage).not.toHaveBeenCalled();
+});
+
+test('a selection begun before deletion refuses to strand the new null-editor draft when its lookup returns', async () => {
+  await mountReady();
+  const lookup = deferred<ConversationReply>();
+  bridge.getConversation.mockReturnValueOnce(lookup.promise);
+  await choose('B');
+  await deleteActiveA();
+  typeDraft('New draft typed after the original chat was deleted.');
+  await attach('late-null-selection.txt');
+  await act(async () => { lookup.resolve({ success: true, data: copyRecord(conversations.get('B')!) }); });
+  expect(await screen.findByText('Your new draft is kept here. Open the destination again so HomeBot can keep it in its own chat before switching.')).toBeInTheDocument();
+  expect(bridge.setActiveConversation).not.toHaveBeenCalledWith('B');
+  expect(inputValue()).toBe('New draft typed after the original chat was deleted.');
+  expect(screen.getByText('late-null-selection.txt')).toBeInTheDocument();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('late-null-selection-original') }));
+  await choose('B');
+  await expectActive('B');
+  await choose('late-null-selection-original');
+  await waitFor(() => expect(backendActive).toBe('late-null-selection-original'));
+  expect(inputValue()).toBe('New draft typed after the original chat was deleted.');
+  expect(screen.getByText('late-null-selection.txt')).toBeInTheDocument();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('typing into an empty null editor during New activation refuses the switch and preserves recoverable latest attachments', async () => {
+  await mountReady();
+  await deleteActiveA();
+  const activation = deferred<Ack>();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('empty-new-now-unused') }));
+  bridge.setActiveConversation.mockImplementationOnce((id: string) => activation.promise.then(reply => { if (reply.success) activate(id); return reply; }));
+  fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  await waitFor(() => expect(bridge.setActiveConversation).toHaveBeenCalledWith('empty-new-now-unused'));
+  typeDraft('Latest draft typed while an empty chat was opening.');
+  await attachPhoto();
+  await attach('late-null-activation.txt');
+  await act(async () => { activation.resolve({ success: true }); });
+  await waitFor(() => expect(conversations.has('empty-new-now-unused')).toBe(false));
+  expect(screen.getByText('Your new draft is kept here. Open the destination again so HomeBot can keep it in its own chat before switching.')).toBeInTheDocument();
+  expect(inputValue()).toBe('Latest draft typed while an empty chat was opening.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('late-null-activation.txt')).toBeInTheDocument();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('late-null-activation-original') }));
+  await choose('B');
+  await expectActive('B');
+  await choose('late-null-activation-original');
+  await waitFor(() => expect(backendActive).toBe('late-null-activation-original'));
+  expect(inputValue()).toBe('Latest draft typed while an empty chat was opening.');
+  expect(screen.getByAltText('original-photo.png')).toBeInTheDocument();
+  expect(screen.getByText('late-null-activation.txt')).toBeInTheDocument();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('null-draft navigation respects eight inactive chats and can recover through a retained destination without a synthetic capacity ghost', async () => {
+  await fillInactiveDraftCapacity();
+  fireEvent.click(screen.getByRole('button', { name: 'Open conversations' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Delete Conversation budget-7' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+  await waitFor(() => expect(backendActive).toBeNull());
+  typeDraft('Recover this full-capacity null draft.');
+  await attach('null-capacity.txt');
+  const creates = bridge.createConversation.mock.calls.length;
+  fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates);
+  expect(await screen.findByText('Too many unfinished chats. Send or clear a draft before switching chats. Your current draft is kept.')).toBeInTheDocument();
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('null-capacity-original') }));
+  await choose('budget-0');
+  await expectActive('budget-0');
+  await choose('null-capacity-original');
+  await waitFor(() => expect(backendActive).toBe('null-capacity-original'));
+  expect(inputValue()).toBe('Recover this full-capacity null draft.');
+  expect(screen.getByText('null-capacity.txt')).toBeInTheDocument();
+  typeDraft('');
+  fireEvent.click(screen.getByRole('button', { name: 'Remove null-capacity.txt' }));
+  await choose('budget-1');
+  await expectActive('budget-1');
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('new-without-null-ghost') }));
+  fireEvent.keyDown(window, { ctrlKey: true, key: 'n' });
+  await waitFor(() => expect(backendActive).toBe('new-without-null-ghost'));
+  expect(bridge.createConversation).toHaveBeenCalledTimes(creates + 2);
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
+test('null-draft navigation refuses an attachment byte overflow and keeps the draft editable until capacity is available', async () => {
+  await mountReady();
+  await deleteActiveA();
+  typeDraft('Keep this draft when inactive bytes would overflow.');
+  await attach('null-byte-overflow.txt');
+  const limits = COMPOSER_DRAFT_RETENTION_LIMITS as { maxEstimatedBytes: number };
+  const originalLimit = limits.maxEstimatedBytes;
+  const creates = bridge.createConversation.mock.calls.length;
+  limits.maxEstimatedBytes = 64;
+  try {
+    await choose('B');
+    expect(bridge.createConversation).toHaveBeenCalledTimes(creates);
+    expect(bridge.getConversation).not.toHaveBeenCalledWith('B');
+    expect(backendActive).toBeNull();
+    expect(await screen.findByText('These unfinished chats contain too many files to keep while switching. Send a draft or remove some attachments first. Your current draft is kept.')).toBeInTheDocument();
+    expect(inputValue()).toBe('Keep this draft when inactive bytes would overflow.');
+    expect(screen.getByText('null-byte-overflow.txt')).toBeInTheDocument();
+  } finally {
+    limits.maxEstimatedBytes = originalLimit;
+  }
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('null-bytes-recovered') }));
+  await choose('B');
+  await expectActive('B');
+  await choose('null-bytes-recovered');
+  await waitFor(() => expect(backendActive).toBe('null-bytes-recovered'));
+  expect(inputValue()).toBe('Keep this draft when inactive bytes would overflow.');
+  expect(screen.getByText('null-byte-overflow.txt')).toBeInTheDocument();
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+});
+
 test.each(['finished', 'cancelled', 'error'] as const)('the first reply after active deletion persists its %s content to the actual replacement and survives selection reload', async terminalState => {
   await mountReady();
   await deleteActiveA();
@@ -1023,7 +1333,7 @@ test.each(['New', 'Select'])('failed %s during null-editor creation preserves la
   act(() => { bridge.subscribeToStream.mock.calls[0][1].onStreamEnd({ streamId: request.streamId, cancelled: false }); });
 });
 
-test('successful navigation still invalidates a rebased null-editor request awaiting its older creation', async () => {
+test('successful navigation invalidates a rebased null-editor request after giving its recovery a real conversation owner', async () => {
   await mountReady();
   await deleteActiveA();
   const creation = deferred<ConversationReply>();
@@ -1036,14 +1346,20 @@ test('successful navigation still invalidates a rebased null-editor request awai
   editGuidelines('Rebased guidelines that still belong to the original editor.');
   typeDraft('Original editor request.');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Send' })); });
+  bridge.createConversation.mockImplementationOnce(async () => ({ success: true, data: createEmptyConversation('recoverable-rebased-request') }));
   await choose('B');
+  expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
+  await act(async () => { creation.resolve({ success: true, data: unused }); });
   await expectActive('B');
   typeDraft('Keep the successfully selected B draft.');
-  await act(async () => { creation.resolve({ success: true, data: unused }); });
   await waitFor(() => expect(conversations.has(unused.id)).toBe(false));
-  expect(bridge.createConversation).toHaveBeenCalledTimes(2);
+  expect(bridge.createConversation).toHaveBeenCalledTimes(3);
   expect(bridge.sendStreamMessage).not.toHaveBeenCalled();
-  expect(bridge.addMessage).not.toHaveBeenCalled();
+  await waitFor(() => expect(conversations.get('recoverable-rebased-request')?.messages.filter(row => row.streamingState === 'error')).toHaveLength(1));
+  expect(conversations.get('recoverable-rebased-request')?.messages.filter(row => row.role === 'user')).toEqual([
+    expect.objectContaining({ content: 'Original editor request.' }),
+  ]);
+  expect(conversations.get('B')!.messages).toEqual([expect.objectContaining({ id: 'reply-B', content: 'Saved reply from B.' })]);
   expect(backendActive).toBe('B');
   expect(inputValue()).toBe('Keep the successfully selected B draft.');
   expect(screen.getByRole('textbox', { name: 'Conversation system prompt' })).toHaveValue('');

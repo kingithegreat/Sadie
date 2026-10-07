@@ -2,7 +2,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
-import { InputBox, type ComposerDraft } from './InputBox';
+import { InputBox, type ComposerDraft, type ComposerAttachmentBatch,
+  type ComposerAttachmentScope, type ComposerAttachmentDeliveryResult } from './InputBox';
 import SuggestedPrompts from './SuggestedPrompts';
 import type { ChatMessage } from '../types';
 import type { ImageAttachment as SharedImageAttachment, DocumentAttachment } from '../../shared/types';
@@ -16,6 +17,12 @@ interface ChatInterfaceProps {
   draft?: ComposerDraft;
   onDraftChange?: (draft: ComposerDraft) => void;
   draftKey?: string;
+  draftGeneration?: number;
+  pendingAttachmentReads?: number;
+  onAttachmentsReady?: (batch: ComposerAttachmentBatch) => ComposerAttachmentDeliveryResult;
+  onAttachmentReadStart?: (scope: ComposerAttachmentScope) => void;
+  onAttachmentReadEnd?: (scope: ComposerAttachmentScope) => void;
+  onAttachmentReadError?: (message: string) => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -26,7 +33,7 @@ interface ChatInterfaceProps {
   onUpdateSystemPrompt?: (prompt: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onOpenSettings, draft, onDraftChange, draftKey, onBookmark, onReact, onEdit, onSendToMediaStudio, systemPrompt, onUpdateSystemPrompt }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onOpenSettings, draft, onDraftChange, draftKey, draftGeneration, pendingAttachmentReads, onAttachmentsReady, onAttachmentReadStart, onAttachmentReadEnd, onAttachmentReadError, onBookmark, onReact, onEdit, onSendToMediaStudio, systemPrompt, onUpdateSystemPrompt }) => {
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -109,7 +116,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
           </div>
         )}
         <div ref={composerRef} className="input-wrapper">
-          <InputBox onSendMessage={handleSend} draft={draft} onDraftChange={onDraftChange} draftKey={draftKey} suggestion={suggestion} />
+          <InputBox onSendMessage={handleSend} draft={draft} onDraftChange={onDraftChange} draftKey={draftKey}
+            draftGeneration={draftGeneration} onAttachmentsReady={onAttachmentsReady}
+            pendingAttachmentReads={pendingAttachmentReads}
+            onAttachmentReadStart={onAttachmentReadStart} onAttachmentReadEnd={onAttachmentReadEnd}
+            onAttachmentReadError={onAttachmentReadError} suggestion={suggestion} />
           <button
             type="button"
             className={`guidelines-toggle-btn ${hasGuidelines ? 'has-content' : ''}`}

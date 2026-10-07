@@ -65,6 +65,54 @@ export type ComposerDraft = {
 
 export const createEmptyComposerDraft = (): ComposerDraft => ({ text: '', images: [], documents: [] });
 
+export const COMPOSER_ATTACHMENT_LIMITS = {
+  maxImages: IMAGE_LIMITS.MAX_IMAGES,
+  maxPerImageBytes: IMAGE_LIMITS.MAX_PER_IMAGE_BYTES,
+  maxTotalImageBytes: IMAGE_LIMITS.MAX_TOTAL_BYTES,
+  maxDocuments: 3,
+  maxPerDocumentBytes: 10 * 1024 * 1024,
+} as const;
+
+export interface ComposerAttachmentScope {
+  draftKey: string | undefined;
+  /** Parent-owned draft lifecycle token; navigation and typing keep this token. */
+  generation: number;
+}
+
+export type ComposerAttachments = Pick<ComposerDraft, 'images' | 'documents'>;
+export interface ComposerAttachmentBatch extends ComposerAttachments {
+  scope: ComposerAttachmentScope;
+}
+export type ComposerAttachmentDeliveryResult = { success: boolean; error?: string };
+export type ComposerAttachmentMergeResult = { success: true; draft: ComposerDraft } | { success: false; error: string };
+
+/** Merge into the latest origin draft, preserving its text and other files.
+ * Revalidate at completion: concurrent picks may have consumed attachment slots.
+ * The parent separately checks lifecycle ownership and inactive retention bytes.
+ */
+export function mergeComposerAttachments(previous: ComposerDraft, attachments: ComposerAttachments): ComposerAttachmentMergeResult {
+  const images = [...previous.images, ...attachments.images];
+  const documents = [...previous.documents, ...attachments.documents];
+  if (images.length > COMPOSER_ATTACHMENT_LIMITS.maxImages) return { success: false, error: `You can attach up to ${COMPOSER_ATTACHMENT_LIMITS.maxImages} images.` };
+  if (images.some(image => (image.size || 0) > COMPOSER_ATTACHMENT_LIMITS.maxPerImageBytes)) return { success: false, error: `Each image must be <= ${COMPOSER_ATTACHMENT_LIMITS.maxPerImageBytes / (1024 * 1024)} MB.` };
+  if (images.reduce((total, image) => total + (image.size || 0), 0) > COMPOSER_ATTACHMENT_LIMITS.maxTotalImageBytes) return { success: false, error: `Total attachments must be <= ${COMPOSER_ATTACHMENT_LIMITS.maxTotalImageBytes / (1024 * 1024)} MB.` };
+  if (documents.length > COMPOSER_ATTACHMENT_LIMITS.maxDocuments) return { success: false, error: `You can attach up to ${COMPOSER_ATTACHMENT_LIMITS.maxDocuments} documents.` };
+  if (documents.some(document => document.size > COMPOSER_ATTACHMENT_LIMITS.maxPerDocumentBytes)) return { success: false, error: `Each document must be <= ${COMPOSER_ATTACHMENT_LIMITS.maxPerDocumentBytes / (1024 * 1024)} MB.` };
+  return { success: true, draft: { ...previous, images, documents } };
+}
+
+interface AttachmentReadContext {
+  scope: ComposerAttachmentScope;
+  visitGeneration: number;
+  initialImageCount: number;
+  initialImageBytes: number;
+  initialDocumentCount: number;
+  deliver?: (batch: ComposerAttachmentBatch) => ComposerAttachmentDeliveryResult;
+  reportError?: (message: string) => void;
+  start?: (scope: ComposerAttachmentScope) => void;
+  end?: (scope: ComposerAttachmentScope) => void;
+}
+
 interface ComposerVoiceSession {
   generation: number;
   draftKey: string | undefined;
@@ -83,6 +131,14 @@ export type InputBoxProps = {
   draft?: ComposerDraft;
   onDraftChange?: (draft: ComposerDraft) => void;
   draftKey?: string;
+  draftGeneration?: number;
+  pendingAttachmentReads?: number;
+  /** Must route by origin token, validate and merge into the latest origin draft. */
+  onAttachmentsReady?: (batch: ComposerAttachmentBatch) => ComposerAttachmentDeliveryResult;
+  /** Parent notification remains available when mode navigation unmounts this box. */
+  onAttachmentReadError?: (message: string) => void;
+  onAttachmentReadStart?: (scope: ComposerAttachmentScope) => void;
+  onAttachmentReadEnd?: (scope: ComposerAttachmentScope) => void;
   suggestion?: { id: number; text: string } | null;
 };
 
@@ -96,7 +152,7 @@ const PLACEHOLDER_HINTS = [
   'Drop a PDF here to chat about it',
 ];
 
-export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange, draftKey, suggestion }: InputBoxProps) {
+export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange, draftKey, draftGeneration, pendingAttachmentReads = 0, onAttachmentsReady, onAttachmentReadError, onAttachmentReadStart, onAttachmentReadEnd, suggestion }: InputBoxProps) {
   const [localDraft, setLocalDraft] = useState<ComposerDraft>(createEmptyComposerDraft);
   const currentDraft = draft ?? localDraft;
   const draftRef = useRef(currentDraft);
@@ -107,6 +163,14 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
   onDraftChangeRef.current = onDraftChange;
   const draftKeyRef = useRef(draftKey);
   draftKeyRef.current = draftKey;
+  const attachmentVisitRef = useRef({ key: draftKey, parentGeneration: draftGeneration, generation: 0 });
+  const attachmentReadsRef = useRef(new Map<number, number>());
+  const parentAttachmentReadsRef = useRef(pendingAttachmentReads);
+  parentAttachmentReadsRef.current = pendingAttachmentReads;
+  const [, refreshAttachmentReads] = useState(0);
+  if (attachmentVisitRef.current.key !== draftKey || attachmentVisitRef.current.parentGeneration !== draftGeneration) {
+    attachmentVisitRef.current = { key: draftKey, parentGeneration: draftGeneration, generation: attachmentVisitRef.current.generation + 1 };
+  }
   const draftRevisionRef = useRef(0);
   const mountedRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -476,8 +540,73 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
   const dropRef = useRef<HTMLDivElement | null>(null);
 
   const { MAX_IMAGES, MAX_PER_IMAGE_BYTES: MAX_PER_IMAGE, MAX_TOTAL_BYTES: MAX_TOTAL } = IMAGE_LIMITS;
-  const MAX_DOCUMENTS = 3;
-  const MAX_DOC_SIZE = 10 * 1024 * 1024; // 10MB per document
+  const MAX_DOCUMENTS = COMPOSER_ATTACHMENT_LIMITS.maxDocuments;
+  const MAX_DOC_SIZE = COMPOSER_ATTACHMENT_LIMITS.maxPerDocumentBytes;
+
+  const captureAttachmentRead = (): AttachmentReadContext => ({
+    scope: { draftKey: draftKeyRef.current, generation: draftGeneration ?? attachmentVisitRef.current.generation },
+    visitGeneration: attachmentVisitRef.current.generation,
+    // Reads only need initial constraints, not a second retained snapshot of
+    // every existing encoded attachment while an asynchronous decoder waits.
+    initialImageCount: draftRef.current.images.length,
+    initialImageBytes: draftRef.current.images.reduce((total, image) => total + (image.size || 0), 0),
+    initialDocumentCount: draftRef.current.documents.length,
+    deliver: onAttachmentsReady,
+    reportError: onAttachmentReadError,
+    start: onAttachmentReadStart,
+    end: onAttachmentReadEnd,
+  });
+
+  const reportAttachmentError = (context: AttachmentReadContext, message: string) => {
+    if (context.reportError) {
+      try { context.reportError(message); return; } catch { /* Fall back to the mounted composer. */ }
+    }
+    if (mountedRef.current) setErrorMessage(message);
+  };
+
+  const trackAttachmentRead = async (context: AttachmentReadContext, read: () => Promise<void>) => {
+    const generation = context.scope.generation;
+    attachmentReadsRef.current.set(generation, (attachmentReadsRef.current.get(generation) || 0) + 1);
+    if (mountedRef.current) refreshAttachmentReads(revision => revision + 1);
+    try {
+      context.start?.(context.scope);
+      await read();
+    } catch {
+      reportAttachmentError(context, 'HomeBot could not attach the file. Your draft is kept. Choose the file again in the original chat.');
+    } finally {
+      const remaining = (attachmentReadsRef.current.get(generation) || 1) - 1;
+      if (remaining > 0) attachmentReadsRef.current.set(generation, remaining);
+      else attachmentReadsRef.current.delete(generation);
+      if (mountedRef.current) refreshAttachmentReads(revision => revision + 1);
+      try { context.end?.(context.scope); }
+      catch { reportAttachmentError(context, 'HomeBot could not finish keeping this attachment. Check the original chat and choose the file again if it is missing.'); }
+    }
+  };
+
+  const deliverAttachments = (context: AttachmentReadContext, attachments: ComposerAttachments) => {
+    if (!attachments.images.length && !attachments.documents.length) return;
+    const names = [...attachments.images, ...attachments.documents].map(file => file.filename || 'file').join(', ');
+    const failed = (reason: string) => reportAttachmentError(context,
+      `${names} was not attached to its original draft. ${reason} Your current draft is kept. You can choose the file again in the chat you want.`);
+    if (context.deliver) {
+      // The captured parent callback owns retention even while another chat or
+      // mode is visible. Never substitute the current visible key for the origin.
+      try {
+        const result = context.deliver({ scope: context.scope, ...attachments });
+        if (result?.success !== true) failed(result?.error || 'HomeBot could not keep the attachment.');
+      } catch { failed('HomeBot could not keep the attachment.'); }
+      return;
+    }
+    if (!mountedRef.current || context.scope.draftKey !== draftKeyRef.current ||
+      context.visitGeneration !== attachmentVisitRef.current.generation) {
+      failed('The original composer changed while the file was being read.');
+      return;
+    }
+    const merged = mergeComposerAttachments(draftRef.current, attachments);
+    if (!merged.success) { failed(merged.error); return; }
+    updateDraft(() => merged.draft);
+    setErrorMessage(null);
+  };
 
   const validateImages = (images: ImageAttachment[]): string | null => {
     const total = images.reduce((s, img) => s + (img.size || 0), 0);
@@ -508,6 +637,11 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
 
   const handleSend = useCallback(() => {
     if (disabled) return;
+    const generation = attachmentVisitRef.current.parentGeneration ?? attachmentVisitRef.current.generation;
+    if (attachmentReadsRef.current.has(generation) || parentAttachmentReadsRef.current > 0) {
+      setErrorMessage('Please wait for the selected files to finish loading, then choose Send. Your draft is kept.');
+      return;
+    }
     const trimmed = inputValue.trim();
     if (!trimmed && attachedImages.length === 0 && attachedDocuments.length === 0) return;
 
@@ -524,6 +658,9 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     }
 
     invalidateVoiceSession();
+    // A late local read cannot append to the next unsent message after Send.
+    // Controlled parents revoke their own lifecycle token in the send/reset path.
+    attachmentVisitRef.current.generation += 1;
     setIsListening(false);
     onSendMessage(
       trimmed, 
@@ -575,55 +712,59 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     }
   };
 
-  const processFiles = async (files: FileList | File[]) => {
+  const processFiles = async (files: FileList | File[], context = captureAttachmentRead()) => {
     if (!files || files.length === 0) return;
-    const scope = draftKeyRef.current;
     const incoming = Array.from(files).filter((f) => f.type.startsWith('image/'));
     if (incoming.length === 0) return;
 
-    let total = attachedImages.reduce((s, img) => s + (img.size || 0), 0);
-    const newImages: ComposerImage[] = [];
+    await trackAttachmentRead(context, async () => {
+      let total = context.initialImageBytes;
+      const newImages: ComposerImage[] = [];
+      const errors: string[] = [];
 
-    for (const file of incoming) {
-      if (attachedImages.length + newImages.length >= MAX_IMAGES) {
-        setErrorMessage(`You can attach up to ${MAX_IMAGES} images.`);
-        break;
-      }
-
-      try {
-        const resized = await resizeImageFile(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.8 });
-        const size = resized.size || file.size || 0;
-        if (size > MAX_PER_IMAGE) {
-          setErrorMessage(`Image ${file.name} exceeds per-image limit.`);
-          continue;
+      for (const file of incoming) {
+        if (context.initialImageCount + newImages.length >= MAX_IMAGES) {
+          errors.push(`You can attach up to ${MAX_IMAGES} images.`);
+          break;
         }
-        if (total + size > MAX_TOTAL) { setErrorMessage(`Adding ${file.name} would exceed total size limit.`); break; }
-        total += size;
-        const id = `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-        const url = resized.url;
-        newImages.push({ ...resized, filename: resized.filename ?? file.name, mimeType: resized.mimeType ?? file.type, size, url, id } as ComposerImage);
-      } catch {
-        // fallback -> make a dataURL
-        try {
-          const readerResult = await new Promise<string>((resolve, reject) => {
-            const r = new FileReader(); r.onload = () => resolve(r.result as string); r.onerror = reject; r.readAsDataURL(file);
-          });
-          const size = file.size || 0;
-          if (size > MAX_PER_IMAGE) { setErrorMessage(`Image ${file.name} exceeds per-image limit.`); continue; }
-          if (total + size > MAX_TOTAL) { setErrorMessage(`Adding ${file.name} would exceed total size limit.`); break; }
-          total += size; const id = `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-          const [prefix, base64Part] = readerResult.split(',');
-          const data = base64Part || '';
-          const mimeType = prefix?.match(/data:(.*);base64/)?.[1] || file.type;
-          newImages.push({ filename: file.name, mimeType, data, url: readerResult, size, id } as ComposerImage);
-        } catch { continue; }
-      }
-    }
 
-    if (newImages.length && mountedRef.current && scope === draftKeyRef.current) {
-      setAttachedImages((prev) => [...prev, ...newImages]);
-      setErrorMessage(null);
-    }
+        try {
+          const resized = await resizeImageFile(file, { maxWidth: 1600, maxHeight: 1600, quality: 0.8 });
+          const size = resized.size || file.size || 0;
+          if (size > MAX_PER_IMAGE) {
+            errors.push(`Image ${file.name} exceeds per-image limit.`);
+            continue;
+          }
+          if (total + size > MAX_TOTAL) { errors.push(`Adding ${file.name} would exceed total size limit.`); break; }
+          total += size;
+          const id = `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+          const url = resized.url;
+          newImages.push({ ...resized, filename: resized.filename ?? file.name, mimeType: resized.mimeType ?? file.type, size, url, id } as ComposerImage);
+        } catch {
+          // fallback -> make a dataURL
+          try {
+            const readerResult = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.onabort = reject;
+              reader.readAsDataURL(file);
+            });
+            const size = file.size || 0;
+            if (size > MAX_PER_IMAGE) { errors.push(`Image ${file.name} exceeds per-image limit.`); continue; }
+            if (total + size > MAX_TOTAL) { errors.push(`Adding ${file.name} would exceed total size limit.`); break; }
+            total += size; const id = `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+            const [prefix, base64Part] = readerResult.split(',');
+            const data = base64Part || '';
+            const mimeType = prefix?.match(/data:(.*);base64/)?.[1] || file.type;
+            newImages.push({ filename: file.name, mimeType, data, url: readerResult, size, id } as ComposerImage);
+          } catch { errors.push(`Could not read ${file.name}. Choose the file again in the original chat.`); }
+        }
+      }
+
+      deliverAttachments(context, { images: newImages, documents: [] });
+      if (errors.length) reportAttachmentError(context, errors.join(' '));
+    });
   };
 
   // Supported document types
@@ -644,65 +785,67 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     return DOCUMENT_EXTENSIONS.includes(ext);
   };
 
-  const processDocuments = async (files: File[]) => {
-    const scope = draftKeyRef.current;
-    const newDocs: ComposerDocument[] = [];
+  const processDocuments = async (files: File[], context = captureAttachmentRead()) => {
+    if (!files.length) return;
+    await trackAttachmentRead(context, async () => {
+      const newDocs: ComposerDocument[] = [];
+      const errors: string[] = [];
 
-    for (const file of files) {
-      if (attachedDocuments.length + newDocs.length >= MAX_DOCUMENTS) {
-        setErrorMessage(`You can attach up to ${MAX_DOCUMENTS} documents.`);
-        break;
+      for (const file of files) {
+        if (context.initialDocumentCount + newDocs.length >= MAX_DOCUMENTS) {
+          errors.push(`You can attach up to ${MAX_DOCUMENTS} documents.`);
+          break;
+        }
+
+        if (file.size > MAX_DOC_SIZE) {
+          errors.push(`Document ${file.name} exceeds ${MAX_DOC_SIZE / (1024 * 1024)} MB limit.`);
+          continue;
+        }
+
+        try {
+          // Read file as base64
+          const data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const result = reader.result as string;
+              // Extract base64 part from data URL
+              const base64 = result.split(',')[1] || '';
+              resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.onabort = reject;
+            reader.readAsDataURL(file);
+          });
+
+          const id = `doc-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+          newDocs.push({
+            id,
+            filename: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            size: file.size,
+            data
+          });
+        } catch (err) {
+          console.error('Error reading document:', err);
+          errors.push(`Could not read ${file.name}. Choose the file again in the original chat.`);
+        }
       }
 
-      if (file.size > MAX_DOC_SIZE) {
-        setErrorMessage(`Document ${file.name} exceeds ${MAX_DOC_SIZE / (1024 * 1024)} MB limit.`);
-        continue;
-      }
-
-      try {
-        // Read file as base64
-        const data = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            const result = reader.result as string;
-            // Extract base64 part from data URL
-            const base64 = result.split(',')[1] || '';
-            resolve(base64);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-
-        const id = `doc-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-        newDocs.push({
-          id,
-          filename: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          size: file.size,
-          data
-        });
-      } catch (err) {
-        console.error('Error reading document:', err);
-        setErrorMessage(`Failed to read ${file.name}`);
-      }
-    }
-
-    if (newDocs.length && mountedRef.current && scope === draftKeyRef.current) {
-      setAttachedDocuments((prev) => [...prev, ...newDocs]);
-      setErrorMessage(null);
-    }
+      deliverAttachments(context, { images: [], documents: newDocs });
+      if (errors.length) reportAttachmentError(context, errors.join(' '));
+    });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files; if (files) await processFiles(files); if (fileInputRef.current) fileInputRef.current.value = '';
+    const files = Array.from(e.currentTarget.files || []);
+    e.currentTarget.value = '';
+    if (files.length) await processFiles(files);
   };
 
   const handleDocChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      await processDocuments(Array.from(files));
-    }
-    if (docInputRef.current) docInputRef.current.value = '';
+    const files = Array.from(e.currentTarget.files || []);
+    e.currentTarget.value = '';
+    if (files.length) await processDocuments(files);
   };
 
   const handleAttachClick = () => fileInputRef.current?.click();
@@ -755,9 +898,11 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
     const docFiles = files.filter(f => isDocumentFile(f) && !f.type.startsWith('image/'));
     const ragFiles = files.filter(f => !f.type.startsWith('image/') && !isDocumentFile(f) && looksLikeRagFile(f));
-    if (imageFiles.length) await processFiles(imageFiles);
+    const context = captureAttachmentRead();
+    // Start both reads before either can settle, so origin ownership has no
+    // zero-pending gap between the image and document parts of one selection.
+    await Promise.all([processFiles(imageFiles, context), processDocuments(docFiles, context)]);
     if (docFiles.length) {
-      await processDocuments(docFiles);
       // Also index document files into RAG for future queries
       const ragEligible = docFiles.filter(f => (f as any).path);
       if (ragEligible.length) handleRagIndex(ragEligible).catch(() => {});
@@ -784,11 +929,11 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     const items = e.clipboardData?.items; if (!items) return; const files: File[] = [];
     for (let i = 0; i < items.length; i++) { const it = items[i]; if (it.kind === 'file') { const file = it.getAsFile(); if (file) files.push(file); } }
     if (files.length) { 
+      e.preventDefault();
+      const context = captureAttachmentRead();
       const imageFiles = files.filter(f => f.type.startsWith('image/'));
       const docFiles = files.filter(f => isDocumentFile(f) && !f.type.startsWith('image/'));
-      if (imageFiles.length) await processFiles(imageFiles);
-      if (docFiles.length) await processDocuments(docFiles);
-      e.preventDefault(); 
+      await Promise.all([processFiles(imageFiles, context), processDocuments(docFiles, context)]);
     }
   };
 
@@ -804,6 +949,8 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
         </div>
       )}
       {suggestionNote && <div role="status" className="improve-note">{suggestionNote}</div>}
+      {(pendingAttachmentReads > 0 || attachmentReadsRef.current.has(draftGeneration ?? attachmentVisitRef.current.generation)) &&
+        <div role="status" aria-live="polite" className="improve-note">Preparing selected files. Your draft is kept.</div>}
 
       <div className="input-top">
         <textarea ref={textareaRef} className="input-field" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={PLACEHOLDER_HINTS[placeholderIndex]} rows={2} aria-label="Message HomeBot" maxLength={4000} disabled={disabled} />
@@ -875,7 +1022,7 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
               </button>
             </>
           )}
-          <button className="send-button" onClick={handleSend} disabled={disabled || (!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0)}>
+          <button className="send-button" onClick={handleSend} disabled={disabled || pendingAttachmentReads > 0 || attachmentReadsRef.current.has(draftGeneration ?? attachmentVisitRef.current.generation) || (!inputValue.trim() && attachedImages.length === 0 && attachedDocuments.length === 0)}>
             <Icon name="send" />
             <span>Send</span>
           </button>

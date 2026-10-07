@@ -217,7 +217,7 @@ test.describe('First-run onboarding and config persistence', () => {
       await modal.screenshot({ path: pendingScreenshot });
       await testInfo.attach('old-reply-current-check-pending', { path: pendingScreenshot, contentType: 'image/png' });
       await app.evaluate(() => (globalThis as any).firstRunRaceFixture.requests[1].resolve({ success: true, models: [{ id: 'fixture-current-model' }] }));
-      await expect(modal.getByText('Service choice prepared', { exact: true })).toBeVisible();
+      await expect(modal.getByText('Service choice prepared. Your key and ability to chat have not been verified.', { exact: true })).toBeVisible();
       const connectedScreenshot = testInfo.outputPath('current-check-connected.png');
       await modal.screenshot({ path: connectedScreenshot });
       await testInfo.attach('current-check-connected', { path: connectedScreenshot, contentType: 'image/png' });
