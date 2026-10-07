@@ -55,6 +55,12 @@ jobs:
           try { npm ci --ignore-scripts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
           finally { Pop-Location }
 
+      - name: Actual pending Windows Job Stop before any bootstrap attachment
+        working-directory: widget
+        env:
+          HOMEBOT_LIVE_TASK_TREE: '1'
+        run: npx jest --config=jest.config.ts --runInBand --no-coverage --runTestsByPath src/main/__tests__/workspace-windows-job.real.test.ts --json --outputFile=../artifacts/ide-native-zero-retry/pending-job-jest.json
+
       - name: Build SQLite against Node in both fresh dependency trees
         shell: pwsh
         run: |
