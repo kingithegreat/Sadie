@@ -35,16 +35,17 @@ function harness(keepExistingWindow = false) {
     globalShortcut: { unregisterAll: jest.fn() }, supervisorHandle: { stop: jest.fn() },
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
+  const resumeMcpServersAfterRefusedQuit = jest.fn();
   const safeCatch = jest.fn();
   const dialog = { showMessageBox: jest.fn(async () => ({ response: 1 })) };
   const windowHandlers = new Map<string, (...args: any[]) => void>();
   const ownedWindow = { isDestroyed: () => false, on: jest.fn((name: string, handler: any) => windowHandlers.set(name, handler)), removeListener: jest.fn() };
   const createMainWindow = jest.fn(() => ownedWindow);
-  const context = { app, ...otherCleanup, shutdownMcpServers, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
+  const context = { app, ...otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
   vm.runInNewContext(compiled, context);
   vm.runInNewContext('createMainWindow()', context);
   createMainWindow.mockClear();
-  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
+  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
 // Flush the native and VM promise queues through a real event-loop turn.
 // Cleanup phases may add microtasks without changing the quit contract.
@@ -81,6 +82,7 @@ test('native window close retains its owning renderer through a refusal, then pe
   h.resolve(); await settle();
   expect(h.nativeQuits()).toBe(0);
   expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
   expect(h.createMainWindow).not.toHaveBeenCalled();
   const retryClose = { preventDefault: jest.fn() };
   h.windowHandlers.get('close')!(retryClose);
@@ -134,6 +136,7 @@ test('native quit waits for package task ownership and keeps the renderer availa
   expect(h.nativeQuits()).toBe(1);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
+  expect(h.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
 });
 

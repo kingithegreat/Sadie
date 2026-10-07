@@ -49,7 +49,7 @@ import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
 import { installConsoleGate } from './utils/console-gate';
 import { initLogging, logStartup } from './utils/logger';
-import { shutdownMcpServers } from './mcp-client';
+import { shutdownMcpServers, resumeMcpServersAfterRefusedQuit } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
@@ -702,6 +702,7 @@ app.on('before-quit', event => {
     }
   }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
     if (!runtimeReady) {
+      resumeMcpServersAfterRefusedQuit();
       mcpQuitPending = false;
       setWorkspaceRuntimeClosing(false);
       resumeCalendarHelpers();

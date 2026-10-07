@@ -55,6 +55,7 @@ interface OwnedServer {
   config: McpServerConfig;
   client: Client;
   cancellation: AbortController;
+  toolDisposers: Array<() => void>;
   closeTransport?: () => Promise<void>;
   closing?: Promise<void>;
 }
@@ -62,7 +63,7 @@ interface OwnedServer {
 // handshake or tool discovery finishes. The UI list intentionally stays separate.
 const ownedServers = new Set<OwnedServer>();
 const connectionVersions = new Map<string, number>();
-const shutdownSignal = new AbortController();
+let shutdownSignal = new AbortController();
 let shutdownPromise: Promise<void> | undefined;
 
 const MCP_CONNECT_TIMEOUT = 15_000;
@@ -73,35 +74,37 @@ const MCP_TOOL_DISCOVERY_RETRIES = 2;
 const MCP_TOOL_DISCOVERY_RETRY_DELAY = 800;
 const MCP_CLOSE_TIMEOUT = 5_000;
 
-function assertRunning(): void {
-  if (shutdownSignal.signal.aborted) throw new Error('MCP is shutting down');
+function assertRunning(lifecycle = shutdownSignal.signal): void {
+  if (lifecycle.aborted) throw new Error('MCP is shutting down');
 }
 
 function sleep(ms: number, signal = shutdownSignal.signal): Promise<void> {
-  assertRunning();
+  const lifecycle = shutdownSignal.signal;
+  assertRunning(lifecycle);
   if (signal.aborted) return Promise.reject(new Error('MCP connection was cancelled'));
   return new Promise((resolve, reject) => {
     const onAbort = () => {
       clearTimeout(timer);
-      shutdownSignal.signal.removeEventListener('abort', onAbort);
+      lifecycle.removeEventListener('abort', onAbort);
       signal.removeEventListener('abort', onAbort);
       reject(new Error('MCP connection was cancelled'));
     };
     const timer = setTimeout(() => {
-      shutdownSignal.signal.removeEventListener('abort', onAbort);
+      lifecycle.removeEventListener('abort', onAbort);
       signal.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
-    shutdownSignal.signal.addEventListener('abort', onAbort, { once: true });
+    lifecycle.addEventListener('abort', onAbort, { once: true });
     signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string, cancelOnShutdown = true, signal?: AbortSignal): Promise<T> {
+  const lifecycle = shutdownSignal.signal;
   return new Promise<T>((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timer);
-      shutdownSignal.signal.removeEventListener('abort', onAbort);
+      lifecycle.removeEventListener('abort', onAbort);
       signal?.removeEventListener('abort', onAbort);
     };
     const onAbort = () => { cleanup(); reject(new Error('MCP is shutting down')); };
@@ -110,8 +113,8 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMes
     // completions cannot register tools, and late rejections are still handled.
     promise.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
     if (cancelOnShutdown) {
-      shutdownSignal.signal.addEventListener('abort', onAbort, { once: true });
-      if (shutdownSignal.signal.aborted) onAbort();
+      lifecycle.addEventListener('abort', onAbort, { once: true });
+      if (lifecycle.aborted) onAbort();
     }
     signal?.addEventListener('abort', onAbort, { once: true });
     if (signal?.aborted) onAbort();
@@ -123,6 +126,7 @@ function closeOwnedServer(server: OwnedServer): Promise<void> {
   if (!server.closing) {
     server.closing = withTimeout(
       Promise.allSettled([
+        ...server.toolDisposers.map(dispose => Promise.resolve().then(dispose)),
         Promise.resolve().then(() => server.client.close()),
         Promise.resolve().then(() => server.closeTransport?.()),
       ]).then(results => {
@@ -224,8 +228,9 @@ export function saveMcpConfig(config: McpServersFile): void {
  * @param registerTool  HomeBot's registerTool function
  */
 export async function initializeMcpServers(
-  registerTool: (name: string, definition: any, handler: any) => void
+  registerTool: (name: string, definition: any, handler: any) => void | (() => void)
 ): Promise<void> {
+  const lifecycle = shutdownSignal.signal;
   // Never spawn real MCP servers from a unit test.
   //
   // loadMcpConfig() reads the developer's actual config out of userData, so on
@@ -238,7 +243,7 @@ export async function initializeMcpServers(
   // JEST_WORKER_ID is set only by Jest, so this cannot affect the real app or
   // the Playwright E2E runs (which drive a genuinely launched Electron app and
   // *should* connect their servers).
-  if (process.env.JEST_WORKER_ID !== undefined || shutdownSignal.signal.aborted) {
+  if (process.env.JEST_WORKER_ID !== undefined || lifecycle.aborted) {
     return;
   }
 
@@ -256,19 +261,19 @@ export async function initializeMcpServers(
     let connected = false;
     for (let attempt = 0; attempt <= MCP_MAX_RETRIES && !connected; attempt++) {
       try {
-        assertRunning();
+        assertRunning(lifecycle);
         if (attempt > 0) {
           console.log(`[MCP] Retrying "${config.name}" (attempt ${attempt + 1}/${MCP_MAX_RETRIES + 1})...`);
-          await sleep(MCP_RETRY_DELAY);
+          await sleep(MCP_RETRY_DELAY, lifecycle);
         }
         if (connectionVersions.get(config.name) !== version) break;
         await closeServersNamed(config.name);
-        assertRunning();
+        assertRunning(lifecycle);
         if (connectionVersions.get(config.name) !== version) break;
-        await connectServer(config, registerTool, version);
+        await connectServer(config, registerTool, version, lifecycle);
         connected = true;
       } catch (err: any) {
-        if (shutdownSignal.signal.aborted) return;
+        if (lifecycle.aborted) return;
         if (connectionVersions.get(config.name) !== version) break;
         const msg = err?.message || String(err);
         if (attempt === MCP_MAX_RETRIES) {
@@ -283,10 +288,11 @@ export async function initializeMcpServers(
 
 async function connectServer(
   config: McpServerConfig,
-  registerTool: (name: string, definition: any, handler: any) => void,
+  registerTool: (name: string, definition: any, handler: any) => void | (() => void),
   version = (connectionVersions.get(config.name) ?? 0) + 1,
+  lifecycle = shutdownSignal.signal,
 ): Promise<void> {
-  assertRunning();
+  assertRunning(lifecycle);
   // Freeze caller-owned configuration before transport startup or any await.
   config = config.type === 'stdio' ? { ...config, args: [...(config.args ?? [])], env: config.env && { ...config.env } } : { ...config };
   if (Array.from(ownedServers).some(server => server.config.name === config.name)) {
@@ -295,7 +301,7 @@ async function connectServer(
   connectionVersions.set(config.name, version);
   const cancellation = new AbortController();
   const assertCurrent = () => {
-    assertRunning();
+    assertRunning(lifecycle);
     if (cancellation.signal.aborted || connectionVersions.get(config.name) !== version) throw new Error('MCP connection was cancelled');
   };
   const client = new Client(
@@ -323,7 +329,7 @@ async function connectServer(
     transport = new SSEClientTransport(new URL(config.url));
   }
 
-  const owned: OwnedServer = { config, client, cancellation, closeTransport };
+  const owned: OwnedServer = { config, client, cancellation, closeTransport, toolDisposers: [] };
   ownedServers.add(owned);
   try {
     await withTimeout(
@@ -389,7 +395,8 @@ async function connectServer(
         }
       };
 
-      registerTool(prefixedName, definition, handler);
+      const dispose = registerTool(prefixedName, definition, handler);
+      if (typeof dispose === 'function') owned.toolDisposers.push(dispose);
       console.log(`[MCP]   Registered tool: ${prefixedName}`);
     }
 
@@ -595,6 +602,15 @@ export function shutdownMcpServers(): Promise<void> {
   return shutdownPromise;
 }
 
+/** Reopen admission only after refused cleanup, without reviving old work. */
+export function resumeMcpServersAfterRefusedQuit(): void {
+  if (shutdownSignal.signal.aborted && !shutdownPromise) {
+    // Old connections/retries retain their original aborted lifecycle signal.
+    // Uncertain transports stay owned until their exact cleanup succeeds.
+    shutdownSignal = new AbortController();
+  }
+}
+
 /**
  * Returns a summary of connected servers and their tool counts (for the UI).
  */
@@ -640,9 +656,10 @@ async function closeServersNamed(name: string): Promise<void> {
  */
 export async function connectSingleServer(
   config: McpServerConfig,
-  registerTool: (name: string, definition: any, handler: any) => void
+  registerTool: (name: string, definition: any, handler: any) => void | (() => void)
 ): Promise<{ connected: boolean; toolCount: number; error?: string }> {
-  if (shutdownSignal.signal.aborted) {
+  const lifecycle = shutdownSignal.signal;
+  if (lifecycle.aborted) {
     return { connected: false, toolCount: 0, error: 'MCP is shutting down' };
   }
   // A re-add of an existing name replaces the config; drop the old live
@@ -652,11 +669,11 @@ export async function connectSingleServer(
     const version = (connectionVersions.get(config.name) ?? 0) + 1;
     connectionVersions.set(config.name, version);
     await closeServersNamed(config.name);
-    assertRunning();
+    assertRunning(lifecycle);
     if (connectionVersions.get(config.name) !== version) throw new Error('MCP connection was replaced');
     if (config.enabled === false) return { connected: false, toolCount: 0 };
-    await connectServer(config, registerTool, version);
-    assertRunning();
+    await connectServer(config, registerTool, version, lifecycle);
+    assertRunning(lifecycle);
     if (connectionVersions.get(config.name) !== version) throw new Error('MCP connection was replaced');
     const entry = connectedServers.find(s => s.config.name === config.name);
     if (!entry) throw new Error('MCP connection is no longer active');

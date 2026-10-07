@@ -54,6 +54,60 @@ beforeEach(() => {
 });
 afterEach(() => { jest.clearAllTimers(); jest.useRealTimers(); });
 
+test('disconnect removes advertised tools even when exact transport cleanup is refused', async () => {
+  const advertised = new Map<string, object>();
+  register.mockImplementation((name: string) => {
+    const entry = {}; advertised.set(name, entry);
+    return () => { if (advertised.get(name) === entry) advertised.delete(name); };
+  });
+  await mcp.connectSingleServer(config, register);
+  await mcp.connectSingleServer({ ...config, name: 'other' }, register);
+  closeTransport.mockRejectedValueOnce(new Error('cleanup refused'));
+  await expect(mcp.disconnectMcpServer('owned')).rejects.toThrow(/refused/);
+  expect([...advertised.keys()]).toEqual(['mcp_other_read']);
+  await mcp.disconnectMcpServer('owned');
+  expect([...advertised.keys()]).toEqual(['mcp_other_read']);
+  await mcp.shutdownMcpServers(); expect(advertised.size).toBe(0);
+});
+
+test('replacement removes tools absent from the next generation', async () => {
+  const advertised = new Set<string>();
+  register.mockImplementation((name: string) => { advertised.add(name); return () => { advertised.delete(name); }; });
+  client.listTools.mockResolvedValueOnce({ tools: [tool, { ...tool, name: 'removed' }] });
+  await mcp.connectSingleServer(config, register);
+  expect(advertised.has('mcp_owned_removed')).toBe(true);
+  await mcp.connectSingleServer(config, register);
+  expect([...advertised]).toEqual(['mcp_owned_read']);
+  await mcp.shutdownMcpServers();
+});
+
+test('refused quit reopens new admission but keeps the old discovery cancelled and owner retained', async () => {
+  const discovery = deferred<{ tools: typeof tool[] }>();
+  client.listTools.mockReturnValueOnce(discovery.promise);
+  const old = mcp.connectSingleServer(config, register); await settle();
+  closeTransport.mockRejectedValue(new Error('cleanup refused'));
+  await expect(mcp.shutdownMcpServers()).rejects.toThrow(/refused/);
+  mcp.resumeMcpServersAfterRefusedQuit();
+  expect(await mcp.connectSingleServer(config, register)).toMatchObject({ connected: false });
+  expect(createClient).toHaveBeenCalledTimes(1); // Exact old owner blocks replacement.
+  expect(await mcp.connectSingleServer({ ...config, name: 'fresh' }, register)).toMatchObject({ connected: true });
+  discovery.resolve({ tools: [{ ...tool, name: 'late' }] }); await settle();
+  expect((await old).connected).toBe(false);
+  expect(register.mock.calls.map(call => call[0])).toEqual(['mcp_fresh_read']);
+  closeTransport.mockResolvedValue(undefined); await mcp.shutdownMcpServers();
+});
+
+test('resume cannot reopen admission during pending or successful shutdown', async () => {
+  await mcp.connectSingleServer(config, register);
+  const closing = deferred<void>(); closeTransport.mockReturnValue(closing.promise);
+  const shutdown = mcp.shutdownMcpServers(); await settle();
+  mcp.resumeMcpServersAfterRefusedQuit();
+  expect((await mcp.connectSingleServer({ ...config, name: 'pending' }, register)).connected).toBe(false);
+  closing.resolve(); await shutdown; mcp.resumeMcpServersAfterRefusedQuit();
+  expect((await mcp.connectSingleServer({ ...config, name: 'finished' }, register)).connected).toBe(false);
+  expect(createClient).toHaveBeenCalledTimes(1);
+});
+
 test('control: completed connection registers tools and shutdown closes its client', async () => {
   expect(await mcp.connectSingleServer(config, register)).toMatchObject({ connected: true, toolCount: 1 });
   expect(register).toHaveBeenCalledTimes(1);
