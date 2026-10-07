@@ -22,7 +22,7 @@ type NativePty = OwnedPtyProcess & EventEmitter & {
     _conoutSocketWorker: {
       dispose(): void;
       onReady(callback: () => void): { dispose(): void };
-      _worker: EventEmitter & { threadId: number };
+      _worker: EventEmitter & { threadId: number; terminate(): Promise<number> };
     };
   };
 };
@@ -33,17 +33,17 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
   const connection = agent?._conoutSocketWorker;
   const worker = connection?._worker;
   const baton = native._pty;
-  if (!worker || typeof worker.on !== 'function' || typeof connection.dispose !== 'function' || typeof connection.onReady !== 'function' || typeof agent.onError !== 'function' || typeof agent._clearConnectionTimeout !== 'function' || !Number.isInteger(baton)) {
-    // Do not guess a PID or silently continue with an incompatible native package.
-    if (Number.isInteger(baton)) binding.kill(baton, false);
-    throw new Error('The installed terminal package does not support verified startup and owned worker cleanup.');
-  }
-  let workerExited = worker.threadId === -1;
+  const hasWorker = !!worker && typeof worker.once === 'function' && typeof worker.threadId === 'number';
+  const compatible = hasWorker && typeof connection.dispose === 'function' && typeof connection.onReady === 'function' && typeof agent.onError === 'function' && typeof agent._clearConnectionTimeout === 'function' && Number.isInteger(baton);
+  const incompatible = new Error('The installed terminal package does not support verified startup and owned worker cleanup.');
+  // An incompatible spawn still has ownership: return a failed ready adapter so
+  // the manager retains and joins its available captured worker on cleanup.
+  let workerExited = hasWorker && worker.threadId === -1;
   let resolveWorker!: () => void;
   let rejectReady!: (error: Error) => void;
   const workerExit = new Promise<void>(resolve => { resolveWorker = resolve; });
   if (workerExited) resolveWorker();
-  worker.once('exit', () => {
+  if (hasWorker) worker.once('exit', () => {
     workerExited = true; resolveWorker();
     rejectReady?.(new Error('The terminal output worker exited before the shell was ready.'));
   });
@@ -52,6 +52,7 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
   const failReady = (error: Error) => rejectReady(error);
   const ready = new Promise<void>((resolve, reject) => {
     rejectReady = reject;
+    if (!compatible) { reject(incompatible); return; }
     if (workerExited) { reject(new Error('The terminal output worker has already exited.')); return; }
     if (Number.isSafeInteger(agent.innerPid) && agent.innerPid > 0) { resolve(); return; }
     errorListener = agent.onError(failReady);
@@ -64,26 +65,50 @@ export function ownedWindowsPty(native: NativePty, binding: { kill(id: number, u
   const clearReady = () => { readyListener?.dispose(); errorListener?.dispose(); };
   void ready.then(clearReady, clearReady);
   let killing: Promise<void> | undefined;
+  let consoleClosed = false;
+  let disposal: Promise<void> | undefined;
+  let disposeFailed = false;
   return {
     // WindowsTerminal updates its public cached pid later at ready_datapipe.
     // The agent already holds the actual shell PID after its READY callback.
-    get pid() { return agent.innerPid; }, ready,
-    write: native.write.bind(native), resize: native.resize.bind(native),
-    onData: native.onData.bind(native), onExit: native.onExit.bind(native),
+    get pid() { return agent?.innerPid ?? native.pid; }, ready,
+    write: (...args) => native.write(...args), resize: (...args) => native.resize(...args),
+    onData: (...args) => native.onData(...args), onExit: (...args) => native.onExit(...args),
     kill: () => {
       if (killing) return killing;
       // Cancel the held agent's pending connect before disposing its held worker.
-      agent._pendingPtyInfo = undefined;
-      agent._clearConnectionTimeout();
+      if (agent) agent._pendingPtyInfo = undefined;
+      if (typeof agent?._clearConnectionTimeout === 'function') agent._clearConnectionTimeout();
       rejectReady(new Error('Terminal startup was cancelled.'));
       let failure: unknown;
-      try { binding.kill(baton, false); } catch (error) { failure = error; }
-      try { connection.dispose(); } catch (error) { failure ??= error; }
-      if (agent.innerPid <= 0) { agent._inSocket.destroy(); agent._outSocket.destroy(); }
+      let termination: Promise<number> | undefined;
+      try {
+        if (!consoleClosed) {
+          if (!Number.isInteger(baton)) throw incompatible;
+          binding.kill(baton, false);
+          consoleClosed = true;
+        }
+      } catch (error) { failure = error; }
+      try {
+        if (!hasWorker) throw new Error('The spawned terminal worker cannot be identified. Its cleanup ownership is retained.');
+        if (!disposal) {
+          if (!disposeFailed && typeof connection?.dispose === 'function' && connection._worker === worker) connection.dispose();
+          else if (typeof worker.terminate === 'function') termination = worker.terminate();
+          else throw incompatible;
+          const release = termination ? termination.then(() => workerExit) : workerExit;
+          disposal = release;
+          void release.catch(() => { if (disposal === release) disposal = undefined; });
+        }
+      } catch (error) { disposeFailed = true; failure ??= error; }
+      if ((agent?.innerPid ?? native.pid) <= 0) { agent?._inSocket?.destroy(); agent?._outSocket?.destroy(); }
       // dispose() schedules a drain and asynchronous terminate(); its void return
       // is not proof of release. Wait for THIS captured Worker's actual exit.
-      killing = workerExit.then(() => { if (failure) throw failure; });
-      return killing;
+      // Failed cleanup can be retried against these SAME captured objects.
+      // Successful/pending disposal stays memoized, so it is not terminated twice.
+      const attempt = failure ? Promise.reject<void>(failure) : disposal!;
+      killing = attempt;
+      void attempt.catch(() => { if (killing === attempt) killing = undefined; });
+      return attempt;
     },
   };
 }

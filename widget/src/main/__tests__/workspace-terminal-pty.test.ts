@@ -304,7 +304,7 @@ windowsTest('natural exit joins exactly one pending ConPTY release and preserves
 });
 
 test('native adapter awaits the captured Worker exit and cancels only its held pending connection', async () => {
-  const worker = Object.assign(new EventEmitter(), { threadId: 17 });
+  const worker = Object.assign(new EventEmitter(), { threadId: 17, terminate: jest.fn(async () => 0) });
   const ready = new EventEmitter(); const native = new EventEmitter() as any;
   native.pid = 0; native._pty = 42;
   native.write = jest.fn(); native.resize = jest.fn(); native.onData = jest.fn(); native.onExit = jest.fn();
@@ -318,11 +318,12 @@ test('native adapter awaits the captured Worker exit and cancels only its held p
   expect(native.pid).toBe(0); expect(adapter.pid).toBe(222);
   const replacement = new EventEmitter(); native._agent._conoutSocketWorker._worker = replacement;
   let released = false; const release = Promise.resolve(adapter.kill()).then(() => { released = true; });
-  expect(binding.kill).toHaveBeenCalledWith(42, false); expect(dispose).toHaveBeenCalledTimes(1);
+  expect(binding.kill).toHaveBeenCalledWith(42, false); expect(dispose).not.toHaveBeenCalled();
+  expect(worker.terminate).toHaveBeenCalledTimes(1);
   expect(clearTimeout).toHaveBeenCalledTimes(1); expect(native._agent._pendingPtyInfo).toBeUndefined();
   replacement.emit('exit', 0); await Promise.resolve(); expect(released).toBe(false);
   worker.emit('exit', 0); await release; await adapter.kill();
-  expect(binding.kill).toHaveBeenCalledTimes(1); expect(dispose).toHaveBeenCalledTimes(1);
+  expect(binding.kill).toHaveBeenCalledTimes(1); expect(dispose).not.toHaveBeenCalled(); expect(worker.terminate).toHaveBeenCalledTimes(1);
 });
 
 test('native startup failure rejects readiness and still waits for that worker to exit', async () => {
@@ -341,4 +342,39 @@ test('native startup failure rejects readiness and still waits for that worker t
   expect(native._agent._inSocket.destroy).toHaveBeenCalledTimes(1); expect(native._agent._outSocket.destroy).toHaveBeenCalledTimes(1);
   worker.emit('exit', 0); await releasing;
   expect(binding.kill).toHaveBeenCalledWith(42, false);
+});
+
+test.each(['binding', 'dispose'])('native %s failure can Retry the same held baton/worker without replaying successful release', async failing => {
+  const worker = Object.assign(new EventEmitter(), { threadId: 17, terminate: jest.fn(async () => 0) }); const native = new EventEmitter() as any;
+  native.pid = 99; native._pty = 42; native.write = jest.fn(); native.resize = jest.fn(); native.onData = jest.fn(); native.onExit = jest.fn();
+  const dispose = jest.fn(); const binding = { kill: jest.fn() };
+  if (failing === 'binding') binding.kill.mockImplementationOnce(() => { throw new Error('native kill failed'); });
+  else dispose.mockImplementationOnce(() => { throw new Error('native dispose failed'); });
+  native._agent = { innerPid: 99, _clearConnectionTimeout: jest.fn(), onError: () => ({ dispose: jest.fn() }),
+    _inSocket: { destroy: jest.fn() }, _outSocket: { destroy: jest.fn() },
+    _conoutSocketWorker: { _worker: worker, dispose, onReady: () => ({ dispose: jest.fn() }) },
+  };
+  const adapter = ownedWindowsPty(native, binding); await adapter.ready;
+  await expect(adapter.kill()).rejects.toThrow(/native .* failed/);
+  let released = false; const retry = Promise.resolve(adapter.kill()).then(() => { released = true; });
+  await Promise.resolve(); expect(released).toBe(false);
+  expect(binding.kill.mock.calls).toEqual(failing === 'binding' ? [[42, false], [42, false]] : [[42, false]]);
+  worker.emit('exit', 0); await retry; await adapter.kill();
+  expect(binding.kill).toHaveBeenCalledTimes(failing === 'binding' ? 2 : 1); expect(dispose).toHaveBeenCalledTimes(1);
+  expect(worker.terminate).toHaveBeenCalledTimes(failing === 'dispose' ? 1 : 0);
+});
+
+test('an incompatible startup adapter retains its available captured worker for joined cleanup', async () => {
+  const worker = Object.assign(new EventEmitter(), { threadId: 17, terminate: jest.fn(async () => 0) }); const native = new EventEmitter() as any;
+  native.pid = 0; native._pty = 42; native.write = jest.fn(); native.resize = jest.fn(); native.onData = jest.fn(); native.onExit = jest.fn();
+  native._agent = { innerPid: 0, _pendingPtyInfo: { pty: 42 }, _clearConnectionTimeout: jest.fn(),
+    _inSocket: { destroy: jest.fn() }, _outSocket: { destroy: jest.fn() }, _conoutSocketWorker: { _worker: worker },
+  };
+  const binding = { kill: jest.fn() }; const adapter = ownedWindowsPty(native, binding);
+  await expect(adapter.ready).rejects.toThrow(/installed terminal package/);
+  let released = false; const closing = Promise.resolve(adapter.kill()).then(() => { released = true; });
+  await Promise.resolve(); expect(released).toBe(false);
+  expect(binding.kill).toHaveBeenCalledWith(42, false); expect(worker.terminate).toHaveBeenCalledTimes(1);
+  worker.emit('exit', 0); await closing;
+  expect(worker.terminate).toHaveBeenCalledTimes(1);
 });
