@@ -2,7 +2,7 @@
 
 ## 2026-10-07 NZ — IDE completion team (Codex root)
 
-Current follow-up: root integrated canonical default workspace ROOT validation plus the first lazy Settings bounded finder and streaming reply identity correction. Original e2e574 PR widget and Mac1 failures/Mac3 retry remain preserved. Root88 actual focused cases/full widget TypeScript and6+9+7 mocked/DOM controls pass; fresh hosted full widget, every strict duplicate/allnine/native/review qualification remains required. Product4500ms/query1800ms/trust/ownership/cleanup bounds remain unchanged. Root owns serial publication, fresh main, qualified merge/build/normal-profile shortcut; agents preserve original receipts without rerun/cancel/foreign cleanup. No final app delivery.
+Current follow-up: root integrated task-only native held-child/live-peer challenge admission and bounded mocked-helper fixture diagnostics from exact74ce. Original74ce PR task-query/mock8s failures remain preserved; allnine zero-retry positives cannot qualify the failed whole head. Root148 actual focused cases,15 fixture follow-ups/full TypeScript/scoped lint,16 task mock checks and12 managed native-free controls pass with source-bound receipts. Independent review found no concrete blocker. Production4500/query1800/trust/GO/ownership fences remain. Fresh exact-head wholeCI/native/review, qualified merge/fresh-main normal-profile delivery remain pending. Agents source editing is released to root; no final shortcut exists.
 
 User explicitly requested agents finish the IDE audit gaps. Root integrates on
 `claude/ide-finish-20261007`, private `ide-finish-20261007`, fresh main79ffc386.
