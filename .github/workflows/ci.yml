@@ -141,6 +141,7 @@ jobs:
           HOMEBOT_LIVE_TASK_TREE: '1'
           HOMEBOT_LIVE_MCP_TREE: '1'
           HOMEBOT_LIVE_TEST_TREE: '1'
+          HOMEBOT_LIVE_DIFF_HANDLES: '1'
         run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
 
       - name: Build
