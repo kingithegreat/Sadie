@@ -63,6 +63,18 @@ describe('fixed process bootstrap before Job assignment', () => {
     expect(f.pipe.write).toHaveBeenCalledWith('{"type":"completed","pid":91,"exitCode":7}\n');
     expect(() => f.accept()).toThrow('exit:7');
   });
+  it('accepts the exact token with Windows CRLF, including a split CR/LF packet', () => {
+    const f = bootstrap(); f.go(); f.child.emit('spawn');
+    f.pipe.emit('data', Buffer.from('accepted\r')); expect(f.pipe.end).not.toHaveBeenCalled();
+    f.pipe.emit('data', Buffer.from('\n')); expect(f.pipe.end).toHaveBeenCalledTimes(1);
+    expect(f.process.exit).not.toHaveBeenCalled();
+    expect(() => f.child.emit('exit', 7)).toThrow('exit:7');
+  });
+  it.each([' accepted\r\n', 'accepted \r\n', 'accepted\r\r\n', 'accepted-other\r\n'])('rejects a modified acceptance token %j', token => {
+    const f = bootstrap(); f.go(); f.child.emit('spawn');
+    expect(() => f.pipe.emit('data', Buffer.from(token))).toThrow('exit:125');
+    expect(f.pipe.end).not.toHaveBeenCalled();
+  });
   it('bounds malformed and oversize input, startup waiting, and disconnected handoff', () => {
     const malformed = bootstrap(); expect(() => malformed.pipe.emit('data', Buffer.from('bad-json\n'))).toThrow('exit:125');
     expect(malformed.spawn).not.toHaveBeenCalled();

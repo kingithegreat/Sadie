@@ -55,7 +55,8 @@ connection.on('data',value=>{
  if(received) {
   text+=value.toString();if(text.length>4096)return process.exit(125);
   const end=text.indexOf(newline);if(end<0)return;
-  if(accepted||text.slice(0,end)!=='accepted')return process.exit(125);
+  const token=text.slice(0,end);
+  if(accepted||(token!=='accepted'&&token!=='accepted'+String.fromCharCode(13)))return process.exit(125);
   accepted=true;clearTimeout(deadline);connection.end();if(completed)process.exit(completed.exitCode);return;
  }
  text+=value.toString(); if(text.length>131072) return process.exit(125);
