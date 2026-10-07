@@ -333,6 +333,32 @@ test('failed task shutdown rejects and retries the retained stopper after its ro
 });
 
 const liveTreeTest = process.env.HOMEBOT_LIVE_TASK_TREE === '1' ? test : test.skip;
+/** Diagnostic metadata only; never evidence of readiness or cleanup authority. */
+function boundedJobStartupDiagnostic(error: unknown): Record<string, string | number> {
+  const message = typeof error === 'string' ? error : error instanceof Error ? error.message : '';
+  const phases = new Set(['unobserved', 'entry', 'encoding', 'encoding-constructed', 'encoding-set', 'utility-import', 'utility-imported', 'compile', 'create', 'listen', 'command', 'attach', 'go', 'query', 'stop']);
+  const codes = new Set(['create', 'limits', 'pipe', 'open', 'identity', 'assign', 'root', 'peer-timeout', 'peer', 'capability', 'peer-read-timeout', 'peer-input', 'query', 'baseline', 'child', 'completion', 'membership', 'operation', 'unknown']);
+  const phase = /Helper phase: ([a-z-]{1,24})\./.exec(message)?.[1];
+  if (!phase || !phases.has(phase)) return {};
+  const result: Record<string, string | number> = { helperPhase: phase };
+  const milliseconds = / Observed (\d{1,5})ms after helper spawn began\./.exec(message)?.[1];
+  if (milliseconds !== undefined && Number(milliseconds) <= 60_000) result.helperObservedMs = Number(milliseconds);
+  const failure = / Last fixed helper error: ([a-z-]{1,24})\/([a-z-]{1,24})\./.exec(message);
+  if (failure && phases.has(failure[1]) && codes.has(failure[2])) { result.helperErrorPhase = failure[1]; result.helperErrorCode = failure[2]; }
+  return result;
+}
+test('native task startup diagnostics retain only fixed phase, bounded milliseconds and fixed native code', () => {
+  expect(boundedJobStartupDiagnostic('The owned Job helper did not become ready in time. Helper phase: compile. Observed 4321ms after helper spawn began. Last fixed helper error: attach/identity.')).toEqual({ helperPhase: 'compile', helperObservedMs: 4321, helperErrorPhase: 'attach', helperErrorCode: 'identity' });
+  expect(boundedJobStartupDiagnostic('Helper phase: unobserved.')).toEqual({ helperPhase: 'unobserved' });
+});
+test('native task startup diagnostics reject unknown metadata and never copy raw errors or capabilities', () => {
+  const privateCanary = 'PRIVATE_ENV_ARG_PIPE_CAP_CANARY';
+  expect(boundedJobStartupDiagnostic(`${privateCanary} Helper phase: arbitrary-phase. Observed 1ms after helper spawn began.`)).toEqual({});
+  expect(boundedJobStartupDiagnostic(`${privateCanary} Helper phase: listen. Observed 60001ms after helper spawn began. Last fixed helper error: go/arbitrary-code.`)).toEqual({ helperPhase: 'listen' });
+  const safe = boundedJobStartupDiagnostic(`${privateCanary} Helper phase: compile. Observed 123456ms after helper spawn began. Last fixed helper error: arbitrary-phase/identity.`);
+  expect(safe).toEqual({ helperPhase: 'compile' }); expect(JSON.stringify(safe)).not.toContain(privateCanary);
+  expect(boundedJobStartupDiagnostic({ error: privateCanary, toString: () => { throw new Error('Do not stringify unknown objects.'); } })).toEqual({});
+});
 function generatedCancellationTreeScript(pidFile: string): string {
   return [
     "const { spawn } = require('child_process');",
@@ -372,7 +398,7 @@ liveTreeTest('real npm cancellation terminates its disposable parent and grandch
       },
     });
     void running.then(result => report('result-settled', { success: result.success, exitCode: result.exitCode, cancelled: result.cancelled, cleanupPending: result.cleanupPending,
-      hasError: !!result.error, errorCategory: /helper did not become ready/.test(result.error || '') ? 'helper-listener-timeout' : /did not confirm its state/.test(result.error || '') ? 'helper-state-timeout' : result.error ? 'other-error' : 'none' }), () => report('result-rejected'));
+      hasError: !!result.error, errorCategory: /helper did not become ready/.test(result.error || '') ? 'helper-listener-timeout' : /did not confirm its state/.test(result.error || '') ? 'helper-state-timeout' : result.error ? 'other-error' : 'none', ...boundedJobStartupDiagnostic(result.error) }), () => report('result-rejected'));
     for (let attempt = 0; attempt < 100 && !fs.existsSync(pidFile); attempt++) {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
