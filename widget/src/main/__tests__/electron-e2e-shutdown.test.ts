@@ -99,6 +99,43 @@ test('native exit diagnostics survive main teardown without relying on a dispose
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]); expect(receipt.productionAtExit).toEqual(diagnostic);
 });
 
+test.each([0, 1])('destroyed evaluation context waits for the same held native exit code %i', async code => {
+  const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  f.app.evaluate.mockImplementationOnce(async () => {
+    setTimeout(() => f.finish({ code }), 5);
+    throw new Error('electronApplication.evaluate: Execution context was destroyed, most likely because of a navigation.');
+  });
+  const closed = closeElectronApp(f.app);
+  if (code === 0) {
+    await closed;
+    expect(f.monitor.cleanup).not.toHaveBeenCalled();
+    expect(f.monitor.verify).toHaveBeenCalledWith(f.tree);
+  } else await expect(closed).rejects.toThrow(/nonzero OS code/);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.nativeExit).toMatchObject({ code });
+  expect(receipt.driverTeardownErrors).toEqual([expect.stringContaining('Execution context was destroyed')]);
+  expect(receipt.graceful).toBe(code === 0);
+});
+
+test('destroyed context without qualified exit remains a timeout and never passes through cleanup', async () => {
+  jest.useFakeTimers(); const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  f.app.evaluate.mockRejectedValue(new Error('Execution context was destroyed'));
+  const failed = expect(closeElectronApp(f.app)).rejects.toThrow(/Native evaluation exceeded close budget/);
+  await jest.advanceTimersByTimeAsync(CLOSE_BUDGET_MS); await failed;
+  expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.graceful).toBe(false); expect(receipt.cleanupExit).toMatchObject({ code: 1 });
+});
+
+test('unrelated evaluation errors remain failures even if native cleanup succeeds', async () => {
+  const f = fixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
+  f.app.evaluate.mockRejectedValueOnce(new Error('application diagnostic failed'));
+  await expect(closeElectronApp(f.app)).rejects.toThrow(/application diagnostic failed/);
+  expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.graceful).toBe(false); expect(receipt.driverTeardownErrors).toBeUndefined();
+});
+
 function inspectorFixture() {
   const f = fixture();
   const socket = { readyState: 1, terminate: jest.fn(() => { socket.readyState = 3; f.finish({ code: 0 }); }) };

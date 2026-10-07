@@ -130,10 +130,22 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
         // Never wait for an event loop that has already irreversibly exited.
         const whileRunnable = async <T>(evaluate: () => Promise<T>): Promise<{ value: T } | { finished: true }> => {
           if (owned.exitEventObserved || owned.nativeExit) return { finished: true };
-          return bounded(Promise.race([
+          const finished = Promise.race([
             owned.irreversibleExit.then(() => ({ finished: true as const })),
             owned.monitor.exit.then(() => ({ finished: true as const })),
-            evaluate().then(value => ({ value })),
+          ]);
+          return bounded(Promise.race([
+            finished,
+            evaluate().then(value => ({ value })).catch(error => {
+              // A driver context can disappear before stdout/held OS-exit
+              // observers deliver their receipts. That error proves no exit:
+              // wait for the original qualified oracle within the same budget.
+              const message = error instanceof Error ? error.message : String(error);
+              if (!/Execution context was destroyed|Target (?:page, context or browser|closed)|Session closed|Connection closed/.test(message)) throw error;
+              const failures = (receipt.driverTeardownErrors ||= []) as string[];
+              failures.push(message); persist();
+              return finished;
+            }),
           ]), deadline - Date.now(), 'Native evaluation exceeded close budget');
         };
         const diagnostics = await whileRunnable(() => app.evaluate(() => (global as any).__homebotE2eShutdown));
