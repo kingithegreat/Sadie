@@ -104,6 +104,26 @@ checks. Visual inspection confirms Send is clear but catches the camera touching
 the rightmost starter. Narrow chat/Home content now reserves a gutter for those
 actions; native acceptance checks all four starter bounds/click targets and each
 Home disclosure against floating-button overlap. Fresh qualification remains pending.
+Configured review at732488f6 found four P2 issues: committed turns restored as
+duplicate drafts after navigation, unused New records left in storage, unbounded
+inactive draft attachments, and an incomplete native workflow path filter.
+Root is integrating same-turn Retry recovery after persistence, adopted-ID and
+pending-selection-safe empty-record cleanup with ordered backend/UI adoption,
+eight inactive drafts/128MiB estimated-string retention with refusal rather than
+eviction, and native acceptance on every PR. The first integrated three-suite
+run caught backend reconciliation preceding UI adoption; the ordered adoption
+correction and capacity controls pass all32 affected tests, TypeScript and scoped
+lint. Supplemental cleanup/late Retry-visibility controls are being prepared in
+the released navigation test file by intent_recovery_audit. Root owns all App
+integration, serial broader checks, fresh CI/native/review and delivery. No
+source changes are qualified by the earlier732488f6 native/hosted receipts.
+Frozen review-fix source now passes all262 tests in23 affected suites, both
+TypeScript projects and scoped lint; the native workflow YAML parses and every
+PR is eligible. New controls cover pending selection during cleanup, refusal
+while an unused record is being deleted, and both late Retry-row persistence
+orderings without duplicates. All source/test editing is released to root.
+Fresh compiled native, current-head whole CI/configured review and separately
+launchable merged-main delivery remain pending; original failed receipts retained.
 
 ## 2026-10-07 — STUDIO-WORKFLOW-UI
 

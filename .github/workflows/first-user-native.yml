@@ -2,13 +2,6 @@ name: First-user native acceptance
 
 on:
   pull_request:
-    paths:
-      - 'widget/src/renderer/App.tsx'
-      - 'widget/src/renderer/components/**'
-      - 'widget/src/renderer/styles/**'
-      - 'widget/src/main/**'
-      - 'widget/acceptance/first-user/**'
-      - '.github/workflows/first-user-native.yml'
   workflow_dispatch:
 
 permissions:

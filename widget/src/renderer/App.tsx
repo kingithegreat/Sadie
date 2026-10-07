@@ -4,6 +4,7 @@ import { debug as logDebug } from '../shared/logger';
 import { chatIdeaToJobInput } from '../shared/chat-idea';
 import ChatInterface from "./components/ChatInterface";
 import { createEmptyComposerDraft, type ComposerDraft } from './components/InputBox';
+import { prepareInactiveDraftRetention } from './utils/composerDraftBudget';
 import './styles/first-user.css';
 import StatusIndicator from "./components/StatusIndicator";
 import ActionConfirmation from "./components/ActionConfirmation";
@@ -88,6 +89,8 @@ interface SubmissionScope {
   conversationId: string | null;
   draft: ComposerDraft;
   retained?: boolean;
+  committed?: boolean;
+  assistantId?: string;
 }
 
 const App: React.FC<AppProps> = ({ initialMessages }) => {
@@ -256,6 +259,8 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const composerDraftRef = useRef(composerDraft);
   composerDraftRef.current = composerDraft;
   const conversationDraftsRef = useRef(new Map<string, ComposerDraft>());
+  const knownConversationIdsRef = useRef(new Set<string>());
+  const unusedConversationCleanupRef = useRef(new Set<string>());
   const deletedConversationIdsRef = useRef(new Set<string>());
   const retryRequestsRef = useRef(new Map<string, HomeBotRequestWithImages>());
   const [heldSubmissions, setHeldSubmissions] = useState<SubmissionScope[]>([]);
@@ -384,9 +389,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           if (mounted && r?.success && r.vramGB) setVramGB(r.vramGB);
         }).catch(() => {});
         if (mounted && convResult?.success && convResult.data) {
+          for (const item of Object.values(convResult.data.conversations || {})) knownConversationIdsRef.current.add(item.id);
           // Always start with a fresh chat — history is accessible via the sidebar
           const newConv = await window.electron.createConversation?.();
           if (newConv?.success && newConv.data) {
+            knownConversationIdsRef.current.add(newConv.data.id);
             setConversationId(newConv.data.id);
             setConversationSystemPrompt(newConv.data.systemPrompt || '');
             try { await window.electron.setActiveConversation?.(newConv.data.id); } catch (e) {}
@@ -395,6 +402,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           // No conversations yet - create first one
           const newConv = await window.electron.createConversation?.();
           if (mounted && newConv?.success && newConv.data) {
+            knownConversationIdsRef.current.add(newConv.data.id);
             setConversationId(newConv.data.id);
           }
         }
@@ -635,7 +643,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   // creating a new conversation without relying on state propagation.
   const persistMessage = useCallback(async (msg: ChatMessage, convIdOverride?: string) => {
     const convId = convIdOverride || conversationId;
-    if (!convId) return;
+    if (!convId) return false;
     try {
       // Map renderer StreamingState to shared type (exclude 'cancelling' which is renderer-only)
       const mappedStreamingState = msg.streamingState === 'cancelling' ? 'cancelled' : msg.streamingState;
@@ -651,9 +659,11 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       try { (window as any).__HOMEBOT_RENDERER_LOGS = (window as any).__HOMEBOT_RENDERER_LOGS || []; (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage conv=${convId} id=${msg.id} len=${String(msg.content).length}`); } catch (e) {}
       const res = await window.electron.addMessage?.(convId, sharedMsg);
       try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage result=${JSON.stringify(res)}`); } catch (e) {}
+      return res?.success === true;
     } catch (err) {
       console.error('Failed to persist message:', err);
       try { (window as any).__HOMEBOT_RENDERER_LOGS.push(`[Renderer] addMessage error=${String(err)}`); } catch (e) {}
+      return false;
     }
   }, [conversationId]);
 
@@ -724,45 +734,113 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   /**
    * Handle creating a new conversation
    */
-  const activateConversation = useCallback(async (id: string, generation: number) => {
+  const prepareDraftNavigation = useCallback((destination?: string) => {
+    const result = prepareInactiveDraftRetention(conversationDraftsRef.current, {
+      key: conversationIdRef.current || 'new', draft: composerDraftRef.current, activatingKey: destination,
+    });
+    if (!result.allowed) addToast(result.reason === 'bytes'
+      ? 'These unfinished chats contain too many files to keep while switching. Send a draft or remove some attachments first. Your current draft is kept.'
+      : 'Too many unfinished chats. Send or clear a draft before switching chats. Your current draft is kept.', 'warning', 8000);
+    return result;
+  }, [addToast]);
+
+  const activateConversation = useCallback(async (id: string, generation: number, adopt?: (drafts: Map<string, ComposerDraft>) => void) => {
     // Serial acknowledgements keep a slower older activation from becoming the
     // backend's final selection after the newest navigation has completed.
     const activation = conversationActivationRef.current.then(async () => {
       if (generation !== conversationNavigationRef.current) return false;
+      if (!prepareDraftNavigation(id).allowed) return false;
       const result = await window.electron.setActiveConversation?.(id);
       if (result?.success !== true) throw new Error(result?.error || 'Could not open this conversation. Please try again.');
-      return generation === conversationNavigationRef.current;
+      const retention = prepareDraftNavigation(id);
+      if (generation !== conversationNavigationRef.current || !retention.allowed) {
+        const adopted = conversationIdRef.current;
+        if (adopted && adopted !== id) {
+          const restored = await window.electron.setActiveConversation?.(adopted);
+          if (restored?.success !== true) throw new Error('Could not restore the current conversation.');
+        }
+        return false;
+      }
+      // Commit the adopted renderer identity within this same serial operation,
+      // before cleanup or the next activation can inspect it.
+      adopt?.(retention.nextDrafts);
+      return true;
     });
     conversationActivationRef.current = activation.then(() => undefined, () => undefined);
     return activation;
-  }, []);
+  }, [prepareDraftNavigation]);
+
+  const cleanUnusedConversation = useCallback(async (created: import('../shared/types').StoredConversation) => {
+    const id = created.id;
+    try {
+      if (!knownConversationIdsRef.current.has(id) && id !== conversationIdRef.current && !created.messages.length) {
+        const latest = await window.electron.getConversation?.(id);
+        if (latest?.success && latest.data && latest.data.createdAt === created.createdAt && !latest.data.messages.length &&
+            !knownConversationIdsRef.current.has(id) && id !== conversationIdRef.current) {
+          unusedConversationCleanupRef.current.add(id);
+          try {
+            const removed = await window.electron.deleteConversation?.(id);
+            if (removed?.success !== true) throw new Error('Could not remove the unused conversation.');
+          } finally {
+            unusedConversationCleanupRef.current.delete(id);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Could not clean up unused conversation:', error);
+      addToast('HomeBot could not remove an unused empty chat. You can remove it from conversations.', 'warning', 8000);
+    } finally {
+      // createConversation also selects its new record in main. Reconcile at
+      // execution time, after queued acknowledgements, with the adopted UI ID.
+      const reconciliation = conversationActivationRef.current.then(async () => {
+        const adopted = conversationIdRef.current;
+        if (!adopted) return;
+        try {
+          const result = await window.electron.setActiveConversation?.(adopted);
+          if (result?.success !== true) throw new Error(result?.error || 'Active chat was not acknowledged.');
+        } catch (error) {
+          console.error('Could not reconcile active conversation:', error);
+          addToast('HomeBot could not restore the active chat. Open it again from conversations before continuing.', 'error', 0);
+        }
+      });
+      conversationActivationRef.current = reconciliation.then(() => undefined, () => undefined);
+      await reconciliation;
+    }
+  }, [addToast]);
 
   const handleNewConversation = async () => {
+    if (!prepareDraftNavigation().allowed) return;
     const generation = ++conversationNavigationRef.current;
+    let created: import('../shared/types').StoredConversation | undefined;
     try {
       const result = await window.electron.createConversation?.();
-      if (generation !== conversationNavigationRef.current) return;
       if (!result?.success || !result.data) throw new Error(result?.error || 'Could not create conversation');
+      created = result.data;
+      if (generation !== conversationNavigationRef.current) { await cleanUnusedConversation(created); return; }
       if (result?.success && result.data) {
-        if (!await activateConversation(result.data.id, generation)) return;
-        conversationDraftsRef.current.set(conversationIdRef.current || 'new', composerDraftRef.current);
-        const nextDraft = createEmptyComposerDraft();
-        composerDraftRef.current = nextDraft;
-        setComposerDraft(nextDraft);
-        retryRequestsRef.current.clear();
-        conversationIdRef.current = result.data.id;
-        setConversationId(result.data.id);
-        setConversationSystemPrompt(result.data.systemPrompt || '');
-        setMessages([]);
-        window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
-          detail: {
-            ...result.data,
-            messageCount: result.data.messages?.length || 0,
-          }
-        }));
+        const newConversation = result.data;
+        const adopted = await activateConversation(newConversation.id, generation, drafts => {
+          conversationDraftsRef.current = drafts;
+          const nextDraft = createEmptyComposerDraft();
+          composerDraftRef.current = nextDraft;
+          setComposerDraft(nextDraft);
+          knownConversationIdsRef.current.add(newConversation.id);
+          conversationIdRef.current = newConversation.id;
+          setConversationId(newConversation.id);
+          setConversationSystemPrompt(newConversation.systemPrompt || '');
+          setMessages([]);
+          window.dispatchEvent(new CustomEvent('homebot:conversation-created', {
+            detail: {
+              ...newConversation,
+              messageCount: newConversation.messages?.length || 0,
+            }
+          }));
+        });
+        if (!adopted) await cleanUnusedConversation(created);
       }
     } catch (err) {
       console.error('Failed to create conversation:', err);
+      if (created) await cleanUnusedConversation(created);
       if (generation === conversationNavigationRef.current) addToast('Could not start a new conversation. Your draft is kept. Please try again.', 'error');
     }
   };
@@ -772,52 +850,61 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
    * Handle selecting a different conversation
    */
   const handleSelectConversation = async (id: string, scrollToMessageId?: string) => {
+    if (unusedConversationCleanupRef.current.has(id)) {
+      addToast('This unused chat is being removed. Choose another conversation.', 'warning', 8000);
+      return;
+    }
+    if (!prepareDraftNavigation(id).allowed) return;
+    // Protect selection intent before any awaited read can race cleanup.
+    knownConversationIdsRef.current.add(id);
     const generation = ++conversationNavigationRef.current;
     try {
       const convData = await window.electron.getConversation?.(id);
       if (generation !== conversationNavigationRef.current) return;
       if (!convData?.success || !convData.data) throw new Error(convData?.error || 'Could not load conversation');
       if (convData?.success && convData.data) {
-        if (!await activateConversation(id, generation)) return;
-        conversationDraftsRef.current.set(conversationIdRef.current || 'new', composerDraftRef.current);
-        const nextDraft = conversationDraftsRef.current.get(id) || createEmptyComposerDraft();
-        composerDraftRef.current = nextDraft;
-        setComposerDraft(nextDraft);
-        retryRequestsRef.current.clear();
+        const selectedConversation = convData.data;
+        await activateConversation(id, generation, drafts => {
+          const nextDraft = id === conversationIdRef.current ? composerDraftRef.current
+            : conversationDraftsRef.current.get(id) || createEmptyComposerDraft();
+          conversationDraftsRef.current = drafts;
+          composerDraftRef.current = nextDraft;
+          setComposerDraft(nextDraft);
 
-        // Convert stored messages to ChatMessage format
-        const loadedMsgs: ChatMessage[] = convData.data.messages.map((m: SharedMessage) => ({
-          id: m.id ?? newId(),
-          role: m.role as any,
-          content: m.content,
-          createdAt: Date.parse(m.timestamp) || Date.now(),
-          streamingState: (m.streamingState as any) || undefined,
-          error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
-        }));
-        // Viewing a saved reply must preserve its title without another model call.
-        // A conversation with no completed reply can still get its first title.
-        if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
-          (!m.streamingState || m.streamingState === 'finished'))) {
-          titleGeneratedRef.current.add(id);
-        }
-        conversationIdRef.current = id;
-        setConversationId(id);
-        setConversationSystemPrompt(convData.data.systemPrompt || '');
-        setMessages(loadedMsgs);
+          // Convert stored messages to ChatMessage format
+          const loadedMsgs: ChatMessage[] = selectedConversation.messages.map((m: SharedMessage) => ({
+            id: m.id ?? newId(),
+            role: m.role as any,
+            content: m.content,
+            createdAt: Date.parse(m.timestamp) || Date.now(),
+            streamingState: (m.streamingState as any) || undefined,
+            error: typeof (m as any).error === 'string' ? (m as any).error : ((m as any).error ? 'error' : null),
+          }));
+          // Viewing a saved reply must preserve its title without another model call.
+          // A conversation with no completed reply can still get its first title.
+          if (loadedMsgs.some(m => m.role === 'assistant' && m.content &&
+            (!m.streamingState || m.streamingState === 'finished'))) {
+            titleGeneratedRef.current.add(id);
+          }
+          conversationIdRef.current = id;
+          setConversationId(id);
+          setConversationSystemPrompt(selectedConversation.systemPrompt || '');
+          setMessages(loadedMsgs);
 
-        // Scroll to the target message after render
-        if (scrollToMessageId) {
-          requestAnimationFrame(() => {
-            setTimeout(() => {
-              const el = document.querySelector(`[data-message-id="${scrollToMessageId}"]`);
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                el.classList.add('search-flash');
-                setTimeout(() => el.classList.remove('search-flash'), 2000);
-              }
-            }, 100);
-          });
-        }
+          // Scroll to the target message after render
+          if (scrollToMessageId) {
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                const el = document.querySelector(`[data-message-id="${scrollToMessageId}"]`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  el.classList.add('search-flash');
+                  setTimeout(() => el.classList.remove('search-flash'), 2000);
+                }
+              }, 100);
+            });
+          }
+        });
       }
     } catch (err) {
       console.error('Failed to load conversation:', err);
@@ -834,6 +921,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       if (!result?.success) throw new Error(result?.error || 'Could not delete this conversation. Please try again.');
       conversationDraftsRef.current.delete(id);
       deletedConversationIdsRef.current.add(id);
+      for (const [messageId, request] of retryRequestsRef.current) {
+        if (request.conversation_id === id) retryRequestsRef.current.delete(messageId);
+      }
       
       // Clear the deleted conversation only after the backend acknowledges it.
       // The next message can create its replacement without hiding a failed delete.
@@ -841,7 +931,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         const nextDraft = createEmptyComposerDraft();
         composerDraftRef.current = nextDraft;
         setComposerDraft(nextDraft);
-        retryRequestsRef.current.clear();
         setMessages([]);
         conversationIdRef.current = null;
         setConversationId(null);
@@ -1026,18 +1115,59 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     streamSubsRef.current.set(streamId, { unsubscribe: (unsubscribe ?? (() => {})) as () => void });
   }, [unsubscribeStream, conversationId, updatePersistedMessage]);
 
+  const rememberRetryRequest = useCallback((assistantId: string, request: HomeBotRequestWithImages) => {
+    const payloadSize = (item: HomeBotRequestWithImages) => (item.message?.length || 0) +
+      (item.images || []).reduce((total, image) => total + (image.data || image.base64 || image.dataUrl || '').length, 0) +
+      (item.documents || []).reduce((total, document) => total + document.data.length, 0);
+    if (payloadSize(request) > 32 * 1024 * 1024) return;
+    retryRequestsRef.current.set(assistantId, request);
+    let retainedSize = Array.from(retryRequestsRef.current.values()).reduce((total, item) => total + payloadSize(item), 0);
+    while (retryRequestsRef.current.size > 8 || retainedSize > 32 * 1024 * 1024) {
+      const oldest = retryRequestsRef.current.keys().next().value;
+      if (!oldest) break;
+      retainedSize -= payloadSize(retryRequestsRef.current.get(oldest)!);
+      retryRequestsRef.current.delete(oldest);
+    }
+  }, []);
+
   const preserveStoppedSubmission = useCallback((scope: SubmissionScope, message = 'This request was not sent because you changed conversations. Its draft is kept in the original conversation.') => {
     if (scope.retained) return;
     scope.retained = true;
+    if (scope.committed) {
+      // The user turn is already durable. Restoring it as an unsent draft would
+      // duplicate it on Send; offer Retry against that same turn instead.
+      if (scope.conversationId && scope.assistantId && !deletedConversationIdsRef.current.has(scope.conversationId)) {
+        const recovery: ChatMessage = {
+          id: scope.assistantId, role: 'assistant', createdAt: Date.now(), streamingState: 'error',
+          content: 'Your request is saved here. It was not sent because you changed conversations. Choose Retry to continue.',
+          error: 'Request saved but not sent.',
+        };
+        setMessages(previous => conversationIdRef.current === scope.conversationId ? [...previous, recovery] : previous);
+        void persistMessage(recovery, scope.conversationId).then(saved => {
+          if (!saved) {
+            addToast('Your request is saved, but HomeBot could not save its Retry control. Return to the original chat to review it.', 'error', 0);
+          } else {
+            setMessages(previous => conversationIdRef.current === scope.conversationId && !previous.some(row => row.id === recovery.id)
+              ? [...previous, recovery] : previous);
+          }
+        });
+        addToast('Your request is saved in its original chat. Return there and choose Retry to continue.', 'warning', 8000);
+      }
+      return;
+    }
     if (scope.conversationId && deletedConversationIdsRef.current.has(scope.conversationId)) scope.conversationId = null;
     const current = scope.conversationId === conversationIdRef.current;
     const stored = current ? composerDraftRef.current : conversationDraftsRef.current.get(scope.conversationId || 'new');
-    if ((scope.conversationId !== null || current) && (!stored || (!stored.text && !stored.images.length && !stored.documents.length))) {
+    const recoveryRetention = !current ? prepareInactiveDraftRetention(conversationDraftsRef.current, {
+      key: scope.conversationId || 'new', draft: scope.draft,
+    }) : null;
+    if ((scope.conversationId !== null || current) && (!stored || (!stored.text && !stored.images.length && !stored.documents.length)) &&
+        (current || recoveryRetention?.allowed)) {
       if (current) {
         composerDraftRef.current = scope.draft;
         setComposerDraft(scope.draft);
       } else {
-        conversationDraftsRef.current.set(scope.conversationId || 'new', scope.draft);
+        if (recoveryRetention?.allowed) conversationDraftsRef.current = recoveryRetention.nextDrafts;
       }
       addToast(message, 'warning', 8000);
       return;
@@ -1055,7 +1185,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     heldSubmissionsRef.current = next;
     setHeldSubmissions(next);
     addToast('Your earlier request was not sent. Your newer draft is kept. Return to its conversation and clear or send the newer draft to restore the held request.', 'warning', 8000);
-  }, [addToast]);
+  }, [addToast, persistMessage]);
 
   const guardSubmission = useCallback((scope: SubmissionScope) => {
     if (scope.generation === conversationNavigationRef.current && scope.conversationId === conversationIdRef.current) return true;
@@ -1103,19 +1233,27 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (!activeConvId) {
       try {
         const created = await window.electron.createConversation?.();
-        if (!guardSubmission(scope)) return;
+        if (!guardSubmission(scope)) {
+          if (created?.success && created.data) await cleanUnusedConversation(created.data);
+          return;
+        }
         if (!created?.success || !created.data) throw new Error(created?.error || 'Could not create conversation');
         if (created?.success && created.data) {
+          const createdConversation = created.data;
           activeConvId = created.data.id;
-          if (!await activateConversation(activeConvId!, scope.generation)) {
+          if (!await activateConversation(activeConvId!, scope.generation, drafts => {
+            conversationDraftsRef.current = drafts;
+            scope.conversationId = activeConvId;
+            knownConversationIdsRef.current.add(activeConvId!);
+            conversationIdRef.current = activeConvId;
+            setConversationId(activeConvId);
+            setConversationSystemPrompt(createdConversation.systemPrompt || '');
+          })) {
+            await cleanUnusedConversation(created.data);
             preserveStoppedSubmission(scope);
             return;
           }
           if (!guardSubmission(scope)) return;
-          scope.conversationId = activeConvId;
-          conversationIdRef.current = activeConvId;
-          setConversationId(activeConvId);
-          setConversationSystemPrompt(created.data.systemPrompt || '');
         }
       } catch (e) {
         console.error('Failed to create conversation before send:', e);
@@ -1136,8 +1274,18 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
         ? { images: images.map(img => ({ url: img.url || img.dataUrl || (img.data ? `data:${img.mimeType || 'image/png'};base64,${img.data}` : ''), filename: img.filename })).filter(i => i.url) }
         : {}),
     };
+    const assistantId = newId();
+    scope.assistantId = assistantId;
+    const streamRequest: HomeBotRequestWithImages & { streamId?: string } = {
+      user_id: 'desktop_user', conversation_id: activeConvId || conversationId || 'default',
+      message: messageText, timestamp: new Date().toISOString(),
+      conversationPrompt: conversationSystemPrompt || undefined, modelOverride,
+      ...(images?.length ? { images, ...(images.length === 1 ? { image: images[0] } : {}) } : {}),
+      ...(documents?.length ? { documents } : {}),
+    };
+    rememberRetryRequest(assistantId, streamRequest);
     setMessages(prev => [...prev, userMsg]);
-    await persistMessage(userMsg, activeConvId ?? undefined);
+    scope.committed = await persistMessage(userMsg, activeConvId ?? undefined);
     if (!guardSubmission(scope)) return;
 
     if (messages.length === 0 && (activeConvId || conversationId) && text) {
@@ -1165,7 +1313,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
 
     if (!guardSubmission(scope)) return;
-    const assistantId = newId();
     const assistantPlaceholder: ChatMessage = {
       id: assistantId,
       role: 'assistant',
@@ -1176,39 +1323,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     setMessages(prev => [...prev, assistantPlaceholder]);
     persistMessage(assistantPlaceholder, activeConvId ?? undefined);
     subscribeToStream(assistantId, assistantId);
-
-    const streamRequest: (HomeBotRequestWithImages & { streamId?: string }) = {
-      user_id: 'desktop_user',
-      conversation_id: activeConvId || conversationId || 'default',
-      message: messageText,
-      timestamp: new Date().toISOString(),
-      conversationPrompt: conversationSystemPrompt || undefined,
-      modelOverride,
-    };
-    if (images && images.length > 0) {
-      streamRequest.images = images;
-      if (images.length === 1) streamRequest.image = images[0];
-    }
-    if (documents && documents.length > 0) {
-      streamRequest.documents = documents;
-    }
-
-    // Retain the original request in memory for a faithful Retry, including its
-    // attachment bytes and one-request model choice. Never write this cache to disk.
-    const payloadSize = (request: HomeBotRequestWithImages) =>
-      (request.message?.length || 0) +
-      (request.images || []).reduce((total, image) => total + (image.data || image.base64 || image.dataUrl || '').length, 0) +
-      (request.documents || []).reduce((total, document) => total + document.data.length, 0);
-    if (payloadSize(streamRequest) <= 32 * 1024 * 1024) {
-      retryRequestsRef.current.set(assistantId, streamRequest);
-      let retainedSize = Array.from(retryRequestsRef.current.values()).reduce((total, request) => total + payloadSize(request), 0);
-      while (retryRequestsRef.current.size > 8 || retainedSize > 32 * 1024 * 1024) {
-        const oldest = retryRequestsRef.current.keys().next().value;
-        if (!oldest) break;
-        retainedSize -= payloadSize(retryRequestsRef.current.get(oldest)!);
-        retryRequestsRef.current.delete(oldest);
-      }
-    }
 
     try {
       logDebug('[Renderer] Sending stream request', { streamId: assistantId, payload: streamRequest });
@@ -1237,7 +1351,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       }
       unsubscribeStream(assistantId);
     }
-  }, [conversationId, conversationSystemPrompt, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage, guardSubmission, preserveStoppedSubmission, activateConversation]);
+  }, [conversationId, conversationSystemPrompt, messages.length, newId, persistMessage, subscribeToStream, unsubscribeStream, updateMessage, guardSubmission, preserveStoppedSubmission, activateConversation, rememberRetryRequest, cleanUnusedConversation]);
 
   const handleSendMessage = useCallback(async (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim() ?? '';
@@ -1785,7 +1899,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             onRetry={retryMessage}
             onOpenSettings={() => setSettingsOpen(true)}
             draft={composerDraft}
-            onDraftChange={setComposerDraft}
+            onDraftChange={next => { composerDraftRef.current = next; setComposerDraft(next); }}
             draftKey={conversationId || 'new'}
             onBookmark={handleBookmark}
             onReact={handleReact}
