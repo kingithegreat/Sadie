@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ImageAttachment, DocumentAttachment } from '../../shared/types';
 import { IMAGE_LIMITS } from '../../shared/constants';
 import { resizeImageFile } from '../utils/imageUtils';
 import Tooltip from './Tooltip';
 import Icon from './Icon';
-import { resolveVoiceEngine, whisperTranscribeOnce, type RecordingController } from '../utils/speech';
+import { resolveVoiceEngine, whisperTranscribeOnce, type RecordingController, type VoiceEngine } from '../utils/speech';
 
 // Web Speech API types
 interface SpeechRecognitionEvent extends Event {
@@ -64,6 +64,18 @@ export type ComposerDraft = {
 };
 
 export const createEmptyComposerDraft = (): ComposerDraft => ({ text: '', images: [], documents: [] });
+
+interface ComposerVoiceSession {
+  generation: number;
+  draftKey: string | undefined;
+  autoSend: boolean;
+  engine?: VoiceEngine;
+  controller?: RecordingController;
+  recognition?: SpeechRecognition;
+  stopRequested: boolean;
+  finished: boolean;
+  hasFinalTranscript: boolean;
+}
 
 export type InputBoxProps = {
   onSendMessage: (content: string, images?: ImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
@@ -201,11 +213,44 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
   const [voiceAutoSend, setVoiceAutoSend] = useState(false);
   const [listenTimer, setListenTimer] = useState(0);
   const listenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const voiceAutoSendPending = useRef(false);
+  const voiceGenerationRef = useRef(0);
+  const voiceSessionRef = useRef<ComposerVoiceSession | null>(null);
+  const voiceAutoSendPending = useRef<{ session: ComposerVoiceSession; revision: number } | null>(null);
+  const voiceAutoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [voiceAutoSendEpoch, setVoiceAutoSendEpoch] = useState(0);
   const [uncensoredMode, setUncensoredMode] = useState(false);
   const [ragStatus, setRagStatus] = useState<null | 'indexing' | { ok: boolean; message: string }>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const whisperControllerRef = useRef<RecordingController | null>(null);
+  const isCurrentVoiceSession = useCallback((session: ComposerVoiceSession) =>
+    mountedRef.current && voiceSessionRef.current === session &&
+    voiceGenerationRef.current === session.generation && draftKeyRef.current === session.draftKey, []);
+
+  const queueVoiceAutoSend = useCallback((session: ComposerVoiceSession) => {
+    if (!session.autoSend || !isCurrentVoiceSession(session)) return;
+    voiceAutoSendPending.current = { session, revision: draftRevisionRef.current };
+    // WebSpeech may end after manual Stop already cleared the listening state.
+    setVoiceAutoSendEpoch(epoch => epoch + 1);
+  }, [isCurrentVoiceSession]);
+
+  const invalidateVoiceSession = useCallback(() => {
+    const session = voiceSessionRef.current;
+    // Revoke authority before cancel/abort can synchronously emit callbacks.
+    voiceSessionRef.current = null;
+    voiceGenerationRef.current += 1;
+    voiceAutoSendPending.current = null;
+    if (voiceAutoSendTimerRef.current) clearTimeout(voiceAutoSendTimerRef.current);
+    voiceAutoSendTimerRef.current = null;
+    try { session?.controller?.cancel(); } catch { /* Already stopped. */ }
+    try { session?.recognition?.abort(); } catch { /* Already stopped. */ }
+    if (session?.engine === 'sapi' && !session.finished) {
+      try { void window.electron?.stopSpeechRecognition?.().catch(() => {}); } catch { /* Best-effort cancellation. */ }
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    setIsListening(false);
+    setErrorMessage(null);
+    return invalidateVoiceSession;
+  }, [draftKey, invalidateVoiceSession]);
 
   // Rotate placeholder hints every 5 seconds when input is empty
   useEffect(() => {
@@ -253,117 +298,131 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
   // Start voice input using the engine selected in Settings → Voice.
   // Default is local Whisper — accurate with any accent, no training needed.
   const startListening = useCallback(async () => {
+    if (voiceSessionRef.current && !voiceSessionRef.current.finished && !voiceSessionRef.current.stopRequested) return;
+    invalidateVoiceSession();
+    const session: ComposerVoiceSession = {
+      generation: ++voiceGenerationRef.current, draftKey: draftKeyRef.current, autoSend: voiceAutoSend,
+      stopRequested: false, finished: false, hasFinalTranscript: false,
+    };
+    voiceSessionRef.current = session;
+    const current = () => isCurrentVoiceSession(session);
+    setIsListening(true);
+    setErrorMessage(null);
     let settings: any = {};
-    try { settings = (await (window as any).electron?.getSettings?.()) || {}; } catch { /* defaults */ }
+    try { settings = (await window.electron?.getSettings?.()) || {}; } catch { /* Defaults. */ }
+    if (!current()) return;
+    if (session.stopRequested) {
+      session.finished = true;
+      setIsListening(false);
+      return;
+    }
 
     const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
     const engine = resolveVoiceEngine(settings.voiceEngine, {
-      hasSapi: typeof (window as any).electron?.startSpeechRecognition === 'function',
+      hasSapi: typeof window.electron?.startSpeechRecognition === 'function',
       hasWebSpeech: !!SpeechRecognitionCtor,
     });
+    session.engine = engine;
+    const receiveTranscript = (text: string) => {
+      if (!current()) return;
+      session.finished = true;
+      session.controller = undefined;
+      setIsListening(false);
+      if (text) {
+        setInputValue(previous => previous + (previous ? ' ' : '') + text);
+        setErrorMessage(null);
+        queueVoiceAutoSend(session);
+      } else {
+        setErrorMessage('No speech detected — try speaking louder or check your microphone in Settings → Voice.');
+      }
+    };
 
     if (engine === 'whisper') {
-      setIsListening(true);
       try {
         const { text } = await whisperTranscribeOnce({
           modelSize: settings.whisperModel,
           language: settings.voiceLanguage,
           micDeviceId: settings.voiceMicDeviceId,
           silenceStopSec: settings.voiceSilenceStopSec,
-          onStatus: (s) => setErrorMessage(s),
-          onController: (c) => { whisperControllerRef.current = c; },
+          onStatus: status => { if (current() && !session.finished) setErrorMessage(status); },
+          onController: controller => {
+            if (!current() || session.finished) {
+              try { controller.cancel(); } catch { /* Best-effort cancellation of a late microphone. */ }
+              return;
+            }
+            session.controller = controller;
+            if (session.stopRequested) controller.stop();
+          },
         });
+        receiveTranscript(text);
+      } catch (error: any) {
+        if (!current()) return;
+        session.finished = true;
+        session.controller = undefined;
+        console.error('[Voice] Whisper error:', error);
         setIsListening(false);
-        whisperControllerRef.current = null;
-        if (text) {
-          setInputValue(prev => prev + (prev ? ' ' : '') + text);
-          setErrorMessage(null);
-          if (voiceAutoSend) voiceAutoSendPending.current = true;
-        } else {
-          setErrorMessage('No speech detected — try speaking louder or pick your microphone in Settings → Voice.');
-        }
-      } catch (err: any) {
-        console.error('[Voice] Whisper error:', err);
-        setIsListening(false);
-        whisperControllerRef.current = null;
-        const msg = String(err?.message || err);
-        setErrorMessage(
-          /Permission|NotAllowed/i.test(msg)
-            ? 'Microphone access denied. Please allow it in system settings.'
-            : 'Voice error: ' + msg
-        );
+        const message = String(error?.message || error);
+        setErrorMessage(/Permission|NotAllowed/i.test(message)
+          ? 'Microphone access denied. Please allow it in system settings.'
+          : 'Voice error: ' + message);
       }
       return;
     }
 
-    // Legacy engine: Windows SAPI (offline, but far less accurate — improves
-    // if you train your Windows voice profile)
     if (engine === 'sapi') {
-      setIsListening(true);
       setErrorMessage('🎤 Listening… speak now');
-      
       try {
-        const result = await (window as any).electron.startSpeechRecognition();
-        setIsListening(false);
-        
-        if (result.success && result.text) {
-          setInputValue(prev => prev + (prev ? ' ' : '') + result.text);
-          setErrorMessage(null);
-          if (voiceAutoSend) voiceAutoSendPending.current = true;
-        } else if (result.success && !result.text) {
-          setErrorMessage('No speech detected — try speaking louder or check your microphone.');
-        } else {
+        const result = await window.electron!.startSpeechRecognition!();
+        if (!current()) return;
+        if (result.success) receiveTranscript(result.text);
+        else {
+          session.finished = true;
+          setIsListening(false);
           setErrorMessage('Voice error: ' + (result.error || 'Speech recognition failed'));
         }
-      } catch (err: any) {
-        console.error('[Voice] Error:', err);
+      } catch (error: any) {
+        if (!current()) return;
+        session.finished = true;
+        console.error('[Voice] Error:', error);
         setIsListening(false);
-        setErrorMessage('Voice error: ' + (err.message || String(err)));
+        setErrorMessage('Voice error: ' + (error?.message || String(error)));
       }
       return;
     }
 
-    // Fallback to Web Speech API (requires internet / Chromium speech service)
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    if (!SpeechRecognitionCtor) {
+      session.finished = true;
+      setIsListening(false);
       setErrorMessage('Speech recognition not supported in this browser.');
       return;
     }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.abort();
-    }
-
-    const recognition = new SpeechRecognition();
+    const recognition = new SpeechRecognitionCtor();
+    session.recognition = recognition;
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = settings.voiceLanguage && settings.voiceLanguage !== 'en' ? settings.voiceLanguage : 'en-US';
-
     recognition.onstart = () => {
+      if (!current() || session.finished || session.stopRequested) return;
       setIsListening(true);
       setErrorMessage(null);
     };
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        }
+    recognition.onresult = event => {
+      if (!current() || session.finished) return;
+      let transcript = '';
+      for (let index = event.resultIndex; index < event.results.length; index++) {
+        if (event.results[index].isFinal) transcript += event.results[index][0].transcript;
       }
-
-      if (finalTranscript) {
-        setInputValue(prev => prev + (prev ? ' ' : '') + finalTranscript);
+      if (transcript.trim()) {
+        session.hasFinalTranscript = true;
+        setInputValue(previous => previous + (previous ? ' ' : '') + transcript);
       }
     };
-
-    recognition.onerror = (event) => {
+    recognition.onerror = event => {
+      if (!current() || session.finished) return;
+      session.finished = true;
       console.error('Speech recognition error:', event.error);
+      voiceAutoSendPending.current = null;
       setIsListening(false);
-      
-      // Handle specific errors
       switch (event.error) {
         case 'network':
           setErrorMessage('Voice input requires internet connection. Please check your network and try again.');
@@ -373,54 +432,43 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
           setErrorMessage('Microphone access denied. Please allow in browser/system settings.');
           break;
         case 'no-speech':
-          // Silent - just means user didn't speak, no error needed
-          break;
         case 'aborted':
-          // User cancelled - no error needed
           break;
         default:
-          setErrorMessage(`Voice error: ${event.error}`);
+          setErrorMessage('Voice error: ' + event.error);
       }
     };
-
     recognition.onend = () => {
+      if (!current() || session.finished) return;
+      session.finished = true;
+      session.recognition = undefined;
       setIsListening(false);
+      if (session.hasFinalTranscript) queueVoiceAutoSend(session);
     };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [voiceAutoSend, setInputValue]);
+    try {
+      recognition.start();
+    } catch (error: any) {
+      if (!current()) return;
+      session.finished = true;
+      setIsListening(false);
+      setErrorMessage('Voice error: ' + (error?.message || String(error)));
+    }
+  }, [voiceAutoSend, setInputValue, invalidateVoiceSession, isCurrentVoiceSession, queueVoiceAutoSend]);
 
   const stopListening = useCallback(() => {
-    // Whisper: stop the recording early — transcription of what was captured
-    // still runs, so a manual stop behaves like "I'm done talking".
-    if (whisperControllerRef.current) {
-      whisperControllerRef.current.stop();
-      return;
-    }
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
+    const session = voiceSessionRef.current;
+    if (!session || !isCurrentVoiceSession(session)) return;
+    session.stopRequested = true;
+    // Stop finishes the current recording; navigation/unmount cancel it.
+    if (session.controller) { session.controller.stop(); return; }
+    session.recognition?.stop();
     setIsListening(false);
-  }, []);
+  }, [isCurrentVoiceSession]);
 
   const toggleVoiceInput = useCallback(() => {
-    if (isListening) {
-      stopListening();
-    } else {
-      startListening();
-    }
+    if (isListening) stopListening();
+    else startListening();
   }, [isListening, startListening, stopListening]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
-    };
-  }, []);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const docInputRef = useRef<HTMLInputElement | null>(null);
@@ -475,6 +523,8 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
       return;
     }
 
+    invalidateVoiceSession();
+    setIsListening(false);
     onSendMessage(
       trimmed, 
       attachedImages.length ? attachedImages : undefined,
@@ -486,17 +536,25 @@ export function InputBox({ onSendMessage, disabled = false, draft, onDraftChange
     setRewrittenText(null);
     setSuggestionNote(null);
     setErrorMessage(null);
-  }, [inputValue, attachedImages, attachedDocuments, onSendMessage, disabled, updateDraft]);
+  }, [inputValue, attachedImages, attachedDocuments, onSendMessage, disabled, updateDraft, invalidateVoiceSession]);
 
   // Voice auto-send: trigger handleSend once the input value updates after voice recognition
   useEffect(() => {
-    if (voiceAutoSendPending.current && inputValue.trim()) {
-      voiceAutoSendPending.current = false;
-      // Small delay to let state settle
-      const t = setTimeout(() => handleSend(), 100);
-      return () => clearTimeout(t);
-    }
-  }, [inputValue, handleSend]);
+    const pending = voiceAutoSendPending.current;
+    if (!pending) return;
+    voiceAutoSendPending.current = null;
+    if (!isCurrentVoiceSession(pending.session) || pending.revision !== draftRevisionRef.current || !inputValue.trim()) return;
+    const capturedDraft = draftRef.current;
+    const timer = setTimeout(() => {
+      voiceAutoSendTimerRef.current = null;
+      if (isCurrentVoiceSession(pending.session) && pending.revision === draftRevisionRef.current && draftRef.current === capturedDraft) handleSend();
+    }, 100);
+    voiceAutoSendTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (voiceAutoSendTimerRef.current === timer) voiceAutoSendTimerRef.current = null;
+    };
+  }, [inputValue, handleSend, voiceAutoSendEpoch, isCurrentVoiceSession]);
 
   // Keyboard shortcut: Ctrl+Shift+V toggles voice input
   useEffect(() => {
