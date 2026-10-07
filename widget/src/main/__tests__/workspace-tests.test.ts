@@ -80,6 +80,20 @@ test('config detection never inspects an enclosing directory outside the chosen 
   expect(prepareWorkspaceTestCommand({ root, action: 'run', file }).args[0]).toBe(path.join(root, 'node_modules/vitest/vitest.mjs'));
   expect(stats.mock.calls.some(call => path.basename(String(call[0])).startsWith('jest.config.') && path.dirname(String(call[0])) !== root)).toBe(false);
 });
+test('file-based config recognition matches native Windows filename case behavior', () => {
+  bothInstalled(root); fs.writeFileSync(file, 'test("configured globals", () => {});');
+  const name = process.platform === 'win32' ? 'Jest.Config.JS' : 'jest.config.js';
+  fs.writeFileSync(path.join(root, name), 'throw new Error("Never load config");');
+  expect(discoverWorkspaceTests(root)[0].runner).toBe('jest');
+  expect(prepareWorkspaceTestCommand({ root, action: 'run', file }).args[0]).toBe(path.join(root, 'node_modules/jest/bin/jest.js'));
+});
+test('canonical filename case is accepted only on Windows without accepting another target', () => {
+  bothInstalled(root); fs.writeFileSync(file, 'test("configured globals", () => {});');
+  const config = path.join(root, 'jest.config.js'); fs.writeFileSync(config, 'throw new Error("Never load config");');
+  const original = nativeFs.realpathSync;
+  jest.spyOn(nativeFs, 'realpathSync').mockImplementation(((input: any, options: any) => String(input) === config ? path.join(root, 'Jest.Config.JS') : original(input, options)) as any);
+  expect(discoverWorkspaceTests(root)[0].runner).toBe(process.platform === 'win32' ? 'jest' : 'vitest');
+});
 test('runs one selected actual Node test, reports a nonzero pass count and collects coverage output', async () => {
   const started = await performWorkspaceTests({ root, action: 'run', file, testName: 'math adds correctly', coverage: true });
   expect(started.success).toBe(true); expect(started.running || started.exitCode === 0).toBe(true);

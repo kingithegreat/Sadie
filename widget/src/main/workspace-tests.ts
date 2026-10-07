@@ -38,7 +38,9 @@ function hasJestConfig(root: string, directory: string): boolean {
     const file = path.join(directory, name);
     try {
       const stat = fs.lstatSync(file);
-      return stat.isFile() && !stat.isSymbolicLink() && stat.size <= 1024 * 1024 && checkedTrustedWorkspacePath(root, file) === file;
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) return false;
+      const canonical = checkedTrustedWorkspacePath(root, file);
+      return process.platform === 'win32' ? canonical.toLowerCase() === file.toLowerCase() : canonical === file;
     } catch { return false; }
   });
 }
