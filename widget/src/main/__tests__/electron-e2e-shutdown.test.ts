@@ -129,6 +129,8 @@ test('destroyed context without qualified exit remains a timeout and never passe
   expect(f.monitor.cleanup).toHaveBeenCalledWith(f.tree);
   const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
   expect(receipt.graceful).toBe(false); expect(receipt.cleanupExit).toMatchObject({ code: 1 });
+  expect(f.app.evaluate.mock.calls.filter(([fn]: [unknown]) => String(fn).includes('setImmediate'))).toHaveLength(1);
+  expect(receipt.ownedInspectorConnectionCloseRequested).toBeUndefined();
 });
 
 test('unrelated evaluation errors remain failures even if native cleanup succeeds', async () => {
@@ -192,18 +194,45 @@ test.each([false, true])('qualified irreversible exit (stderr wait=%s) releases 
   expect(receipt).toMatchObject({ graceful: true, nativeExit: { code: 0 }, inspectorQualification: { mainPid: 100, matchingExitNonce: true, stderrWaitObserved: stderrWait }, capturedIdentitiesGone: true });
 });
 
-test.each(['diagnostics', 'quit'])('qualified exit during pending %s evaluation releases inspector without waiting for that evaluation', async stage => {
+test.each(['returned', 'pending'])('qualified exit during the combined quit/diagnostics evaluation (%s) releases inspector without another evaluation', async stage => {
   const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js');
   const callsBeforeClose = f.app.evaluate.mock.calls.length;
   f.app.evaluate.mockImplementation((fn: unknown) => {
-    if (stage === 'quit' && !String(fn).includes('setImmediate')) return Promise.resolve({ helpers: [], refusals: [] });
+    expect(String(fn)).toContain('setImmediate');
     f.exiting(true, false);
-    return new Promise(() => {});
+    return stage === 'returned' ? Promise.resolve({ helpers: [], refusals: [] }) : new Promise(() => {});
   });
   await closeElectronApp(f.app);
-  expect(f.app.evaluate).toHaveBeenCalledTimes(callsBeforeClose + (stage === 'quit' ? 2 : 1));
+  expect(f.app.evaluate).toHaveBeenCalledTimes(callsBeforeClose + 1);
   expect(f.socket.terminate).toHaveBeenCalledTimes(1); expect(f.monitor.cleanup).not.toHaveBeenCalled();
   expect(f.monitor.verify).toHaveBeenCalled();
+});
+
+test.each([0, 1])('quit is scheduled before a generic diagnostics result failure and still requires held OS exit code %i', async code => {
+  const f = inspectorFixture();
+  f.socket.terminate.mockImplementation(() => { f.socket.readyState = 3; f.finish({ code }); });
+  await prepareElectronShutdown(f.app, '/owned/index.js');
+  const callsBeforeClose = f.app.evaluate.mock.calls.length;
+  const quit = jest.fn(() => f.exiting(true, false));
+  f.app.evaluate.mockImplementationOnce(async (run: Function) => {
+    // Execute the actual serialized callback first, then simulate a generic
+    // driver error while returning its optional diagnostics result.
+    run({ app: { quit } });
+    expect(quit).not.toHaveBeenCalled();
+    throw new Error('Execution context was destroyed, most likely because of a navigation.');
+  });
+  const closing = closeElectronApp(f.app);
+  if (code === 0) await closing;
+  else await expect(closing).rejects.toThrow('nonzero OS code');
+  expect(quit).toHaveBeenCalledTimes(1);
+  expect(f.app.evaluate).toHaveBeenCalledTimes(callsBeforeClose + 1);
+  const receipt = JSON.parse((fs.writeFileSync as jest.Mock).mock.calls.at(-1)[1]);
+  expect(receipt.nativeExit).toMatchObject({ code });
+  expect(receipt.driverTeardownErrors).toEqual([expect.stringContaining('Execution context was destroyed')]);
+  expect(receipt.inspectorQualification).toMatchObject({ mainPid: 100, matchingExitNonce: true });
+  expect(receipt.productionBeforeQuit).toBeUndefined();
+  expect(receipt.graceful).toBe(code === 0);
+  if (code === 0) expect(f.monitor.cleanup).not.toHaveBeenCalled();
 });
 test.each([false, true])('qualified exit (stderr wait=%s) releases only the held inspector websocket and still requires actual OS0', async stderrWait => {
   const f = inspectorFixture(); await prepareElectronShutdown(f.app, '/owned/index.js'); f.exiting(true, stderrWait);

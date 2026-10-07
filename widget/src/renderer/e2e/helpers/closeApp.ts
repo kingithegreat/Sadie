@@ -156,10 +156,14 @@ async function closePreparedApp(app: ElectronApplication, label: string): Promis
             }),
           ]), deadline - Date.now(), 'Native evaluation exceeded close budget');
         };
-        const diagnostics = await whileRunnable(() => app.evaluate(() => (global as any).__homebotE2eShutdown));
+        // Request normal quit before optional diagnostics are returned. A driver
+        // serialization error must not prevent the one owned quit request.
+        const diagnostics = await whileRunnable(() => app.evaluate(({ app }) => {
+          setImmediate(() => app.quit());
+          return (global as any).__homebotE2eShutdown;
+        }));
         if ('value' in diagnostics) {
           receipt.productionBeforeQuit = diagnostics.value; persist();
-          await whileRunnable(() => app.evaluate(({ app }) => { setImmediate(() => app.quit()); }));
         }
       }
     }
