@@ -51,6 +51,8 @@ test('a program exiting without Stop clears installed points; restart installs a
   const first = await call('start', { file, args: ['--end-without-stop'] }); expect(first.success).toBe(true);
   const firstPid = first.pid!; expect(Number.isInteger(firstPid)).toBe(true);
   await waitForPaused();
+  const duplicate = await call('start', { file }); expect(duplicate.error).toMatch(/Stop the current/);
+  expect(await call('state')).toEqual(expect.objectContaining({ running: true, paused: true, pid: firstPid }));
   const installed = await call('breakpoint', { file, line: 2 }); expect(installed.success).toBe(true); expect(installed.breakpoints).toEqual([{ path: file, line: 2 }]);
   expect((await call('resume')).success).toBe(true); await waitForPaused(2);
   expect((await call('resume')).success).toBe(true);

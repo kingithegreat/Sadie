@@ -36,6 +36,7 @@ class DebugSession {
     if (this.child) throw new Error('Stop the current debug session first.');
     this.child = spawn(process.execPath, ['--inspect-brk=127.0.0.1:0', '--', file, ...args], { cwd: this.root, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', NODE_OPTIONS: '' } });
     const child = this.child;
+    try {
     rememberWorkspaceChild(child);
     const url = await new Promise<string>((resolve, reject) => {
       let stderr = '';
@@ -56,6 +57,7 @@ class DebugSession {
         }
       });
     });
+    if (this.child !== child) throw new Error('The debug program exited before its connection was ready.');
     this.socket = new WebSocket(url);
     const socket = this.socket;
     socket.addEventListener('message', event => {
@@ -68,7 +70,17 @@ class DebugSession {
     });
     socket.addEventListener('close', () => { if (this.socket === socket) this.rejectRequests('Debugger disconnected.'); });
     await new Promise<void>((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Debugger connection timed out.')), 5000); socket.addEventListener('open', () => { clearTimeout(timer); resolve(); }, { once: true }); socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('The debugger connection failed.')); }, { once: true }); });
-    await this.command('Runtime.enable'); await this.command('Debugger.enable'); await this.command('Runtime.runIfWaitingForDebugger');
+    const initialize = async (method: string) => {
+      const requireOwner = () => { if (this.child !== child || this.socket !== socket) throw new Error('The debug session changed during startup.'); };
+      requireOwner(); await this.command(method); requireOwner();
+    };
+    await initialize('Runtime.enable'); await initialize('Debugger.enable'); await initialize('Runtime.runIfWaitingForDebugger');
+    } catch (error) {
+      // An ended startup may finish after a subsequent Start. Its failure must
+      // never stop that replacement, or a program rejected by duplicate Start.
+      if (this.child === child) await this.stop();
+      throw error;
+    }
   }
   command(method: string, params: Record<string, unknown> = {}): Promise<any> {
     const socket = this.socket;
@@ -131,7 +143,7 @@ export async function performWorkspaceDebug(request: WorkspaceDebugRequest): Pro
       case 'start': {
         const file = projectFile(root, request.file);
         const args = request.args || []; if (!Array.isArray(args) || args.length > 50 || args.some(arg => typeof arg !== 'string' || arg.length > 5000)) throw new Error('Program arguments are invalid.');
-        try { await session.start(file, args); } catch (error) { await session.stop(); throw error; }
+        await session.start(file, args);
         break;
       }
       case 'state': break;
