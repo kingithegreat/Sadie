@@ -37,3 +37,29 @@ test('does not execute unavailable/skipped names, foreign files or declared miss
   fs.writeFileSync(file, 'test("actual test", () => {});');
   expect(() => prepareWorkspaceTestCommand({ root, action: 'run', file })).toThrow(/not installed/);
 });
+
+test.each([
+  { label: 'configured globals', source: 'test("configured globals", () => {});', configured: true, runner: 'jest' },
+  { label: 'explicit Vitest', source: 'import { test } from "vitest"; test("configured globals", () => {});', configured: true, runner: 'vitest' },
+  { label: 'explicit Jest', source: 'import { test } from "@jest/globals"; test("configured globals", () => {});', configured: false, runner: 'jest' },
+  { label: 'dependency fallback', source: 'test("configured globals", () => {});', configured: false, runner: 'vitest' },
+])('selects the correct discovered runner and command for $label when both packages are installed', ({ source, configured, runner }) => {
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    devDependencies: { jest: '29.7.0', vitest: '3.0.0' },
+    ...(configured ? { jest: { testEnvironment: 'node', transform: {} } } : {}),
+  }));
+  fs.writeFileSync(file, source);
+  const jestEntry = path.join(root, 'node_modules', 'jest', 'bin', 'jest.js');
+  const vitestEntry = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
+  for (const entry of [jestEntry, vitestEntry]) {
+    fs.mkdirSync(path.dirname(entry), { recursive: true });
+    fs.writeFileSync(entry, '// Discovery/command fixture only; never executed.\n');
+  }
+  expect(discoverWorkspaceTests(root)).toEqual([expect.objectContaining({ name: 'configured globals', runner })]);
+  const command = prepareWorkspaceTestCommand({ root, action: 'run', file, testName: 'configured globals' });
+  expect(command.cwd).toBe(root);
+  expect(command.args[0]).toBe(runner === 'jest' ? jestEntry : vitestEntry);
+  expect(command.args).toEqual(runner === 'jest'
+    ? [jestEntry, '--runInBand', '--watch=false', '--runTestsByPath', file, '--testNamePattern', '^configured globals$']
+    : [vitestEntry, 'run', file, '-t', '^configured globals$']);
+});

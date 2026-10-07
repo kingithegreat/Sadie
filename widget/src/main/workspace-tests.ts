@@ -42,7 +42,9 @@ function runnerFor(root: string, file: string, content: string): WorkspaceDiscov
   const findRequire = (node: ts.Node) => { if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'require' && node.arguments[0] && ts.isStringLiteral(node.arguments[0]) && node.arguments[0].text === 'node:test') explicit = 'node'; ts.forEachChild(node, findRequire); };
   findRequire(source); if (explicit) return explicit;
   const { manifest } = nearestPackage(root, file); const dependencies = { ...manifest.dependencies, ...manifest.devDependencies };
-  return dependencies.vitest ? 'vitest' : dependencies.jest || manifest.jest ? 'jest' : 'node';
+  // Explicit package configuration identifies global Jest tests even when
+  // Vitest is also installed. Explicit source imports above still win.
+  return manifest.jest ? 'jest' : dependencies.vitest ? 'vitest' : dependencies.jest ? 'jest' : 'node';
 }
 /** Parse declarations, without importing or executing project code. */
 export function discoverWorkspaceTests(rootInput: string): WorkspaceDiscoveredTest[] {
