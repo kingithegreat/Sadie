@@ -1,5 +1,28 @@
 # Work Claims
 
+## 2026-10-08 NZ — CHAT completion integration
+
+Codex root resumes the released chat source lanes under Aden's instruction to
+use remaining weekly capacity to complete HomeBot. Isolated worktree
+`.homebot/chat-complete-20261008` starts from main `69075fe5` and integrates the
+retained integration/native corrections without changing their original trees.
+Root owns serial full checks, production native fixtures, exact-head review,
+qualified landing through existing PR #478 and a separate current build.
+The active IDE #474, character/rig/art and existing delivered profiles remain
+with their owners. Source import is complete and released to root's serial
+qualification. Four semantic TypeScript checks and whole-widget lint pass.
+At published `14a31cc8`, all 25 hosted checks passed, including 5,361 widget
+tests, 232 root tests, 14 overlays, two native chat and four native setup cases.
+Short-HOME local recovery passed 87 media cases including all 41 original
+failures; separate root/docs checks passed 232 cases and drift validation.
+Configured review found empty SSE keepalives terminating healthy replies.
+Three provider regressions reproduced it; the correction passes 93 related
+tests, widget/chat TypeScript and scoped lint. The actual custom native socket
+now includes three empty data events without reducing any chat/title assertions.
+Fresh corrected-head hosted/native/review/landing and separate delivery remain
+pending; original failures and authenticated evidence are preserved.
+
+
 ## 2026-10-07 — SETUP-MODEL-RETENTION
 
 Codex root coordinates the carry-on setup follow-up from main `ce53a7db` in
@@ -75,6 +98,18 @@ waiting while an acknowledgement is pending. The final four focused suites
 pass all 120 assertions naturally, TypeScript and scoped lint with four existing
 warnings. Independent barrier review found no blocker. Original failures remain
 retained; another current-head qualification is required before release.
+
+## 2026-10-07 — CHAT-CUSTOM-TRANSPORT
+
+Custom-model source edits are released to root's serial chat integration. The
+agent prepared custom-llm-client, its transport regressions, and cloud
+chat/code tool-round-trip regions of message-router in isolated worktree
+`.homebot/chat-custom-20261007`, branch `claude/chat-custom-20261007`, based on
+`ce53a7db`. Local agent owns Ollama router region; root owns integration and
+native qualification. Provider catalogs, credentials, owner profiles, wizard
+retention and shared dependency targets are outside this claim. Bounded actual
+source A/B controls proved transport regressions and corrections; full Jest,
+typecheck, native app and real-provider proof await resource-qualified execution.
 
 ## 2026-10-07 — FIRST-USER-EASE
 
@@ -1056,3 +1091,32 @@ remained unchanged. That byte count describes logical temporary extraction
 writes avoided, not measured physical reclamation. Earlier failures remain
 retained. Media editing is released to root; full CI, typecheck, publication
 and fresh Desktop delivery remain root-owned and pending.
+
+## 2026-10-07 - LOCAL-CHAT-TRANSPORT
+
+Local-chat source edits are released to root's serial chat integration. The
+agent prepared Ollama NDJSON transport and cancellation in
+streamFromOllamaWithTools, neutral router/ollama-chat-stream.ts, and bounded
+ollama-chat-stream.test.ts. Private branch claude/chat-local-20261007 starts
+from main ce53a7db; custom and renderer agents own separate areas. Root owns
+Drive coordination, final integration, publication and native UI proof. No
+shared checkout/profile/dependency mutations. Test-first baseline: 8 failed
+and 1 passed; heavy checks paused under current resource floor.
+
+## Chat local/custom serial integration
+
+Root owns `claude/chat-integration-20261007`, including renderer Retry identity,
+local/custom transports and queued-tool Stop guards. Agent source claims are
+released into this integration; hosted compiler, full tests, production native
+chat, review and landing remain pending. The dedicated native fixtures do not
+contact owner providers or prove response quality. See
+`tasks/chat-local-custom-20261007.md` and the preserved private A/B receipts.
+Preserve active wizard-retention, IDE, character and existing delivery owners.
+
+## Chat hosted fixture corrections
+
+Local chat agent owns private `claude/chat-native-fix-20261007` from `7738834d`:
+chat-only hardware seed, scoped custom Connect, preserved nested failure and
+merge-source receipts, and ordinary IPC current-user duplicate correction with
+local/custom regression controls. No shared profile/dependency mutations or
+local native/heavy launch. Root retains integration, publication and qualification.

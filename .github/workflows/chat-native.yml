@@ -1,0 +1,44 @@
+name: Chat native acceptance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chat-native:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            widget/package-lock.json
+      - name: Build and exercise real local and custom chat controls
+        run: node widget/acceptance/first-user/first-user-remote-runner.cjs --chat
+      - name: Upload chat proof, including failed receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-native-proof
+          path: ${{ runner.temp }}/chat-native-proof/
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
+      - name: Upload exercised compiled runtime and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-native-compiled
+          path: ${{ runner.temp }}/chat-native-compiled/
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
