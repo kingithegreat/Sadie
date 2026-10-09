@@ -278,6 +278,25 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
     }
   }
 
+  // History: every custom model id the owner has used stays in the picker,
+  // even when the provider's live list drops it. Newest first, deduped.
+  const historyIds = (customLLM?.modelHistory || []).filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0
+  );
+  for (const histId of historyIds) {
+    if (!customModelInfos.some(m => m.id === histId)) {
+      customModelInfos.push({
+        id: histId,
+        name: histId === customLLM?.model ? (customLLM?.name || histId) : histId,
+        shortName: histId.split('/').pop()?.split(':')[0] || 'API',
+        description: `${customLLM?.provider?.toUpperCase() || 'Custom'} — previously added`,
+        type: 'custom',
+        provider: customLLM?.provider,
+        installed: true,
+      });
+    }
+  }
+
   // Also include models for any other provider with a key saved in providerApiKeys
   if (providerApiKeys) {
     const activeProvider = customLLM?.provider;

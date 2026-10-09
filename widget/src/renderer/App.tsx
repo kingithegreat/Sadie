@@ -56,6 +56,23 @@ import type { ResolvedTheme } from '../shared/theme';
 import type { ModelRecommendation } from '../shared/model-advisor';
 import { resetCliOnlyFields } from '../shared/provider-urls';
 
+/**
+ * Record a custom model id in the config's modelHistory so the picker keeps
+ * listing every model the owner has added. Newest first, deduped, capped.
+ */
+function withModelHistory(
+  customLLM: SharedSettings['customLLM'],
+  modelId: string
+): SharedSettings['customLLM'] {
+  if (!customLLM) return customLLM;
+  const id = (modelId || '').trim();
+  const prev = Array.isArray(customLLM.modelHistory)
+    ? customLLM.modelHistory.filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+    : [];
+  const next = [id, ...prev.filter(h => h !== id)].slice(0, 20);
+  return { ...customLLM, modelHistory: next };
+}
+
 // Types
 type Status = ConnectionStatus;
 // The mode list lives in shared/modes.ts so main can validate against the same
@@ -2048,12 +2065,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
                   // changed the label and nothing else — opus kept answering.
                   ...(settings.customLLM ? {
                     customLLM: useCustom
-                      ? resetCliOnlyFields({
+                      ? withModelHistory(resetCliOnlyFields({
                           ...settings.customLLM,
                           model,
                           provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
                           enabled: true,
-                        }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider)
+                        }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider), model)
                       : { ...settings.customLLM, enabled: false }
                   } : {}),
                 };
@@ -2235,12 +2252,12 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
             // changed the label and nothing else — opus kept answering.
             ...(settings.customLLM ? {
               customLLM: useCustom
-                ? resetCliOnlyFields({
+                ? withModelHistory(resetCliOnlyFields({
                     ...settings.customLLM,
                     model,
                     provider: (provider as typeof settings.customLLM.provider) || settings.customLLM.provider,
                     enabled: true,
-                  }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider)
+                  }, (provider as typeof settings.customLLM.provider) || settings.customLLM.provider), model)
                 : { ...settings.customLLM, enabled: false }
             } : {}),
           };

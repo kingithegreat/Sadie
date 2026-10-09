@@ -254,6 +254,13 @@ export interface CustomLLMConfig {
   model?: string;
   enabled: boolean;
   metadata?: ModelMetadata;
+  /**
+   * History of custom model ids the owner has used with this provider+endpoint.
+   * The picker renders these so a once-added model stays selectable even when
+   * the provider's live model list no longer includes it (retired/free-rotated
+   * ids, network fetch failures). Newest first, deduped, capped at 20.
+   */
+  modelHistory?: string[];
 }
 
 export interface Settings {
