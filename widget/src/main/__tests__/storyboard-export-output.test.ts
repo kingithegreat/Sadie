@@ -384,6 +384,38 @@ describe('storyboard export output contract', () => {
     expect(reopened.renderedMoviePath).toBe(first.moviePath);
   });
 
+  test('Milestone A: injected re-render failure keeps last-good bytes, pointer and reopen path', async () => {
+    // Isolated-profile analog of USER_TESTING_PLAN Milestone A / #390 last-good-output:
+    // succeed once, inject a re-render failure, prove path + sha256 unchanged after reopen.
+    const first = await render();
+    expect(first.ok).toBe(true);
+    const lastGood = first.moviePath!;
+    const before = fs.readFileSync(lastGood);
+    const beforeHash = createHash('sha256').update(before).digest('hex');
+    const previous = (execFile as unknown as jest.Mock).getMockImplementation()!;
+    (execFile as unknown as jest.Mock).mockImplementation((_bin, _args, _options, callback) => {
+      const err = Object.assign(new Error('Injected encoder failure for Milestone A last-good harness'), { code: 1 });
+      callback(err, '', 'Deliberate corrupt re-render');
+    });
+    try {
+      const failed = await render();
+      expect(failed.ok).toBe(false);
+      expect(failed.error).toMatch(/Injected encoder failure|Movie export failed/i);
+    } finally {
+      (execFile as unknown as jest.Mock).mockImplementation(previous);
+    }
+    expect(fs.existsSync(lastGood)).toBe(true);
+    expect(createHash('sha256').update(fs.readFileSync(lastGood)).digest('hex')).toBe(beforeHash);
+    expect(fs.readFileSync(lastGood)).toEqual(before);
+    const meta = JSON.parse(fs.readFileSync(path.join(root, 'export-check', 'project.json'), 'utf8'));
+    expect(meta.latestSuccessfulOutput.exportId).toBe(first.renderedOutput!.exportId);
+    expect(meta.latestSuccessfulOutput.sha256).toBe(beforeHash);
+    const reopened = (await mediaGetStoryboardHandler({ projectId: 'export-check' }, {} as any)).result;
+    expect(reopened.renderedMoviePath).toBe(lastGood);
+    expect(reopened.exportState.latestAttempt).toMatchObject({ status: 'failed', error: expect.stringMatching(/Injected encoder failure|Movie export failed/i) });
+    expect(reopened.exportState.outputs.map((item: any) => item.exportId)).toContain(first.renderedOutput!.exportId);
+  });
+
   test.each([
     { name: 'decoder', code: 1, signal: null, killed: false, oversized: true },
     { name: 'max buffer', code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', signal: 'SIGTERM', killed: true, oversized: true },
