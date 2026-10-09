@@ -7,6 +7,30 @@ import { validateTrustedWorkspaceRoot, checkedTrustedWorkspacePath } from './wor
 import { workspaceRepositoryRoot, runWorkspaceGit, workspaceGitPaths } from './workspace-git';
 import type { WorkspaceGitActionRequest, WorkspaceGitActionResult } from '../shared/workspace-git-action-types';
 const exec = promisify(execFile);
+const MAX_CONFLICT_TEXT_BYTES = 2 * 1024 * 1024;
+// fatal: invalid sequences throw instead of becoming U+FFFD; ignoreBOM keeps a
+// leading BOM in the string so re-encoding reproduces the original bytes.
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+/**
+ * Decode bytes only when they are lossless UTF-8 text. Anything else (NUL,
+ * invalid sequences, over the size cap) is refused as binary: writing a lossy
+ * decoded string back would silently change bytes the user never chose.
+ */
+export function losslessWorkspaceText(bytes: Buffer, label: string): string {
+  const refuse = (why: string) => new Error(`The ${label} version of this file ${why}, so HomeBot treats it as binary and will not resolve it as text. Resolve this file with Git directly.`);
+  if (bytes.length > MAX_CONFLICT_TEXT_BYTES) throw refuse('is larger than 2 MiB');
+  if (bytes.includes(0)) throw refuse('contains NUL bytes');
+  let text: string;
+  try { text = strictUtf8.decode(bytes); } catch { throw refuse('is not valid UTF-8 text'); }
+  if (!Buffer.from(text, 'utf8').equals(bytes)) throw refuse('does not round-trip as UTF-8 text');
+  return text;
+}
+/** Read a Git blob as raw bytes (never via a UTF-8 decoded stdout string). */
+async function gitBlobBytes(root: string, oid: string): Promise<Buffer> {
+  if (!/^[0-9a-f]{40,64}$/.test(oid)) throw new Error('Git returned an invalid conflict stage.');
+  const { stdout } = await exec('git', ['cat-file', 'blob', oid], { cwd: root, encoding: 'buffer', windowsHide: true, timeout: 20_000, maxBuffer: MAX_CONFLICT_TEXT_BYTES + 1024 * 1024 });
+  return stdout as Buffer;
+}
 const within = (root: string, file: string) => { const rel = path.relative(root, file); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
 function folderPath(input: string): string { return validateTrustedWorkspaceRoot(input); }
 function filePath(root: string, input: string | undefined): string {
@@ -104,12 +128,14 @@ export async function performWorkspaceGitAction(request: WorkspaceGitActionReque
         const blobs = new Map<number, string>();
         for (const stage of stages.split('\0')) { const match = stage.match(/^\d+ ([0-9a-f]+) ([123])\t/); if (match) blobs.set(Number(match[2]), match[1]); }
         if (!blobs.size) throw new Error('This file has no unresolved Git conflict.');
-        const side = (number: number) => blobs.has(number) ? run(['show', blobs.get(number)!]) : Promise.resolve('');
+        const labels = ['base', 'ours', 'theirs'] as const;
+        const side = async (number: number) => blobs.has(number)
+          ? losslessWorkspaceText(await gitBlobBytes(root, blobs.get(number)!), labels[number - 1]) : '';
         const [base, ours, theirs] = await Promise.all([side(1), side(2), side(3)]);
         const missingSides = (['base', 'ours', 'theirs'] as const).filter((_, index) => !blobs.has(index + 1));
         const currentExists = fs.existsSync(absolute);
         if (currentExists && (!fs.lstatSync(absolute).isFile() || fs.statSync(absolute).size > 2 * 1024 * 1024)) throw new Error('The conflict working copy must be a regular text file up to 2 MiB.');
-        const current = currentExists ? fs.readFileSync(absolute, 'utf8') : '';
+        const current = currentExists ? losslessWorkspaceText(fs.readFileSync(absolute), 'working') : '';
         if (request.action === 'conflict') return { success: true, conflict: { path: file, base, ours, theirs, current, currentExists, missingSides } };
         if (request.expectedContent !== current || (request.expectedExists ?? true) !== currentExists) throw new Error('The conflict file changed. Reload the merge comparison before resolving.');
         if ((request.resolution === 'ours' || request.resolution === 'theirs') && missingSides.includes(request.resolution)) throw new Error(`The ${request.resolution} side deleted this file. An empty file is not a deletion. To keep the deletion, delete the file in Explorer, then stage the deleted path in Source Control. To keep content, choose the existing side or a manual result.`);
@@ -119,7 +145,7 @@ export async function performWorkspaceGitAction(request: WorkspaceGitActionReque
         // Guarded replacement only. Staging remains a separate visible action.
         const temporary = `${absolute}.homebot-merge-${createHash('sha256').update(current).digest('hex').slice(0, 10)}`;
         fs.writeFileSync(temporary, content, { flag: 'wx', mode: fs.statSync(absolute).mode });
-        try { if (fs.readFileSync(absolute, 'utf8') !== current) throw new Error('The conflict file changed while resolving; no replacement was made.'); fs.renameSync(temporary, absolute); } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+        try { if (!fs.readFileSync(absolute).equals(Buffer.from(current, 'utf8'))) throw new Error('The conflict file changed while resolving; no replacement was made.'); fs.renameSync(temporary, absolute); } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
         return { success: true };
       }
       default: throw new Error('Unknown Git action.');

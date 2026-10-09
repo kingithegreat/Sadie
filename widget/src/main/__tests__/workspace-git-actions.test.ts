@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { performWorkspaceGitAction, gitWorkspaceConfirmation } from '../workspace-git-actions';
+import { performWorkspaceGitAction, gitWorkspaceConfirmation, losslessWorkspaceText } from '../workspace-git-actions';
 import { gitWorkspaceStage } from '../workspace-git';
 // These fixtures launch real Git subprocesses; allow bounded Windows startup
 // beyond Jest's five-second default and bound each individual Git command.
@@ -72,5 +72,47 @@ test('modify/delete conflicts identify missing sides, refuse empty-file substitu
   expect((await action('resolve-conflict', { file: 'removed.txt', resolution: 'manual', content: 'recreated', expectedContent: '', expectedExists: false })).error).toMatch(/working copy is deleted/i);
   expect(fs.existsSync(file)).toBe(false);
   await gitWorkspaceStage(root, ['removed.txt']); expect(git('ls-files', '--unmerged')).toBe(''); expect(fs.existsSync(file)).toBe(false);
+});
+test('non-UTF-8 conflict sides are refused as binary and their bytes are never rewritten', async () => {
+  // Latin-1 bytes without any NUL: a lossy UTF-8 decode would turn 0xE9 into
+  // U+FFFD and a text resolution would write different bytes than either stage.
+  const file = path.join(root, 'latin1.txt');
+  const baseBytes = Buffer.from('caf\xe9 base\n', 'latin1');
+  const theirsBytes = Buffer.from('caf\xe9 theirs\n', 'latin1');
+  const oursBytes = Buffer.from('caf\xe9 ours\n', 'latin1');
+  fs.writeFileSync(file, baseBytes); git('add', '.'); git('commit', '-qm', 'base'); git('switch', '-c', 'other');
+  fs.writeFileSync(file, theirsBytes); git('commit', '-qam', 'theirs'); git('switch', 'main');
+  fs.writeFileSync(file, oursBytes); git('commit', '-qam', 'ours');
+  try { git('merge', 'other'); } catch { /* expected conflict */ }
+  const working = fs.readFileSync(file);
+  const compared = await action('conflict', { file: 'latin1.txt' });
+  expect(compared.success).toBe(false);
+  expect(compared.error).toMatch(/not valid UTF-8.*binary/);
+  for (const resolution of ['ours', 'theirs'] as const) {
+    const lossy = Buffer.from(resolution === 'ours' ? oursBytes : theirsBytes).toString('utf8');
+    const result = await action('resolve-conflict', { file: 'latin1.txt', resolution, expectedContent: working.toString('utf8') });
+    expect(result.success).toBe(false); expect(result.error).toMatch(/binary/);
+    expect(lossy).toContain('\uFFFD');
+  }
+  expect(fs.readFileSync(file).equals(working)).toBe(true);
+  expect(git('ls-files', '--unmerged')).not.toBe('');
+});
+test('valid UTF-8 conflict sides, including a BOM and multibyte text, resolve byte-for-byte', async () => {
+  const file = path.join(root, 'utf8.txt');
+  const theirsBytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('théirs — 日本\n', 'utf8')]);
+  fs.writeFileSync(file, 'base\n'); git('add', '.'); git('commit', '-qm', 'base'); git('switch', '-c', 'other');
+  fs.writeFileSync(file, theirsBytes); git('commit', '-qam', 'theirs'); git('switch', 'main');
+  fs.writeFileSync(file, 'ours ✓\n'); git('commit', '-qam', 'ours');
+  try { git('merge', 'other'); } catch { /* expected conflict */ }
+  const compared = await action('conflict', { file: 'utf8.txt' });
+  expect(compared.success).toBe(true);
+  expect((await action('resolve-conflict', { file: 'utf8.txt', resolution: 'theirs', expectedContent: compared.conflict?.current })).success).toBe(true);
+  expect(fs.readFileSync(file).equals(theirsBytes)).toBe(true);
+});
+test('lossless text decoding rejects NUL, invalid UTF-8 and oversized input', () => {
+  expect(losslessWorkspaceText(Buffer.from('plain ✓\n', 'utf8'), 'ours')).toBe('plain ✓\n');
+  expect(() => losslessWorkspaceText(Buffer.from([0x61, 0x00, 0x62]), 'ours')).toThrow(/NUL.*binary/);
+  expect(() => losslessWorkspaceText(Buffer.from([0x61, 0xc3, 0x28]), 'theirs')).toThrow(/theirs.*not valid UTF-8/);
+  expect(() => losslessWorkspaceText(Buffer.alloc(2 * 1024 * 1024 + 1, 0x61), 'base')).toThrow(/larger than 2 MiB/);
 });
 jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));
