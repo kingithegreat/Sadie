@@ -1,0 +1,57 @@
+.settings-panel .perf-metrics {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-panel .perf-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-panel .perf-row-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-panel .perf-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  min-width: 0;
+}
+
+.settings-panel .perf-badge {
+  display: inline-flex;
+  padding: 3px 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: 999px;
+  background: var(--bg-medium);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.settings-panel .perf-badge-meta {
+  flex-basis: 100%;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-panel .perf-trend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-panel .perf-sparkline {
+  flex-shrink: 0;
+  color: var(--accent-primary);
+}

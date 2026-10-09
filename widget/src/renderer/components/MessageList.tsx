@@ -8,6 +8,8 @@ export function MessageList({
   messages,
   onCancel,
   onRetry,
+  onOpenSettings,
+  onReattach,
   onBookmark,
   onReact,
   onEdit,
@@ -16,6 +18,8 @@ export function MessageList({
   messages: ChatMessage[];
   onCancel: (assistantId: string) => void;
   onRetry: (assistantId: string) => void;
+  onOpenSettings?: () => void;
+  onReattach?: (kind: 'images' | 'documents') => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -128,6 +132,8 @@ export function MessageList({
               message={m}
               onCancel={onCancel}
               onRetry={onRetry}
+              onOpenSettings={onOpenSettings}
+              onReattach={onReattach}
               onBookmark={onBookmark}
               onReact={onReact}
               onEdit={onEdit}

@@ -104,7 +104,7 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     expect(reviewState.outputs).toEqual([expect.objectContaining({ moviePath: reviewJob.renderPath,
       sourceRevision: exportRecord.sourceRevision, sha256: exportRecord.sha256 })]);
     await page.getByRole('button', { name: /Review & Publish/ }).click();
-    await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: /Projects/ })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator(`[data-job-id="${reviewJob.id}"]`).getByText('Saved movie — current source cannot be verified')).toBeVisible();
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     await expect(page.getByLabel('Exported storyboard video')).toBeVisible();
@@ -158,7 +158,7 @@ test(`Studio exports a complete two-scene local movie with timed narration and c
     await trapSpeechNetwork(app);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
     if (!burnSubtitles) {
-      await page.getByRole('tab', { name: /Director Console/ }).click();
+      await page.getByRole('tab', { name: /Projects/ }).click();
       await expect(page.getByRole('checkbox', { name: 'Burn captions into Output preference proof' })).toBeChecked();
     }
     await page.getByRole('tab', { name: /Storyboard/ }).click();

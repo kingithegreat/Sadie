@@ -1,0 +1,97 @@
+# Media Studio workflow and UI
+
+Implemented from main `7951c205` in the isolated Studio workflow worktree.
+
+Project creation now retains a title after a refused or unavailable save,
+prevents repeated pending submissions, preserves a newer draft and focuses the
+saved project's next action. Failed/blocked projects can resume their recorded
+interrupted stage through the existing validated IPC; unknown history and saved
+movie review entries cannot invent a recovery stage. Recovery does not generate,
+approve or publish. Rejected and published projects have separate sections and
+are excluded from suggested work.
+
+The start screen prioritizes review/next actions and visible project creation.
+Secondary tools use native keyboard buttons inside a disclosure and load their
+workspace content. Navigation uses Projects, Timeline and Stage; unsupported
+vendor badges and unloaded counts are removed. Styles follow the current theme,
+wrap long actions and adapt at narrower widths.
+
+## Verification
+
+- Creation regression baseline reproduced title loss and duplicate submissions.
+- TypeScript, scoped lint, fresh Electron build and all 18 affected Studio
+  suites / 201 tests passed, none skipped.
+- Real Electron acceptance passed 1/1, zero retries: saved project creation,
+  actual failed-job state recovery on disk, next-action focus, keyboard tool
+  opening/content loading, visible initial title field, narrow Studio overflow,
+  exclusive media playback, explicit voice playback, missing-file errors,
+  fullscreen/Escape and narration-clock animatic transport.
+- Desktop and narrow-window screenshots inspected. The unchanged compiled
+  baseline placed creation below the initial viewport; the final build shows it.
+- First recovery acceptance used an incorrect expected button label; this was
+  corrected to the missing narration action before the passing complete run.
+- Initial hosted UI checks identified stale expectations for removed vendor
+  badges, old approval wording and the renamed Storyboard tool. The theme and
+  visual specs now check all four real workflow count labels, current approval
+  guidance and the reachable tool disclosure. Final hosted checks must qualify
+  this follow-up head; a rerun of the old assertions is not a resolution.
+- Final local theme/visual follow-up passed 2/2 with zero retries against the
+  accepted compiled copy, including dark/light theme checks and Storyboard entry.
+  Its initial run timed out and required cleanup of the identified owned runner;
+  both specs now use the existing bounded Electron-close helper. The final run
+  closed naturally within its budget. Evidence: `workflow-theme-bounded-results`
+  and `workflow-theme-bounded-junit.xml`; the earlier run remains retained.
+- Review identified a real expanded-menu grid regression: the inherited icon
+  column constrained tool descriptions to 32px. The compiled baseline reproduced
+  that exact width. A scoped three-class override now allocates the card width to
+  text and an auto-sized arrow; all five tool text widths exceed 100px. The new
+  complete workflow/playback acceptance passed 1/1 with zero retries, and the
+  expanded-menu screenshot was inspected. Final native evidence is
+  `workflow-tools-fixed-results`; its baseline is `workflow-tools-baseline-results`.
+  Repeated dark/light theme and visual checks after the CSS fix passed 2/2 with
+  zero retries: `workflow-tools-theme-results` and `workflow-tools-theme-junit.xml`.
+- The later review claim that a rejected list reload loses a successful save
+  result was checked against `refresh()`, which catches reload failures. A new
+  behavioral test passed without production changes: successful create plus
+  rejected list reload clears the submitted title, reports the reload error and
+  repeated Enter does not create a second job. All 13 workflow regressions pass;
+  evidence is `workflow-refresh-regression.json`. This finding is a verified
+  false positive, not an unimplemented fix.
+
+Evidence: `C:/Users/adenk/.homebot/workflow-ui-tests.json`,
+`workflow-ui-baseline-results`, `workflow-ui-compact-results` (intermediate),
+and `workflow-ui-final-results` (accepted compiled run).
+
+Fixtures use an isolated profile and local encoded media with providers/network
+denied. This proves workflow/playback behavior, not generated speech, artistic
+quality or a new installed release. Global HomeBot header layout and the
+concurrent IDE completion scope are outside this focused Studio change.
+
+Source editing is released to root integration. Hosted current-head CI, configured
+review, landing and separate launchable delivery remain pending at this commit;
+final receipts belong in the canonical Drive plan.
+
+## Windows streaming fixture cleanup follow-up
+
+Head `6233914` passed 21 hosted checks, including root 232 tests, widget 5,027
+tests (33 existing skips), and 14 native overlay tests. Windows E2E shard 3 and
+its required aggregate failed. Both whole-shard attempts reproduced a streaming
+test timeout and worker teardown failure; the screenshot shows all five chunks
+and a finished reply, while the retry passed its assertions. The first-attempt
+trace is unavailable, so the exact stalled await is not claimed as proven.
+
+The streaming spec had unbounded `app.close()` before server cleanup and no
+`finally`. Root's focused follow-up uses the existing bounded close helper and
+always closes the mock server, including launch/assertion failures. Mock cleanup
+also closes active HTTP connections after stopping new connections. All streaming
+assertions, request expectations, timeouts and retry settings are unchanged.
+This changes test fixtures only; production streaming and the concurrent IDE
+scope remain unchanged. TypeScript and scoped lint pass. Native streaming and
+document-summary checks pass 5/5 with zero retries and no bounded-close warnings;
+the worker exits successfully. An active HTTP-stream control proves the previous
+mock close remains pending after 100ms until the client is destroyed, while the
+fixed close releases the active connection within that budget. Both ports refuse
+requests after cleanup. Evidence: `workflow-stream-cleanup-junit.xml`,
+`workflow-stream-cleanup.log` and `workflow-mock-close-evidence.json`.
+New-head CI/review and landing remain pending. Prior CI failures are retained in
+`workflow-final-windows3-failed.log` and `workflow-windows3-failure-artifact`.

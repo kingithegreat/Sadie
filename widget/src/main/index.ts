@@ -650,7 +650,7 @@ app.on('before-quit', event => {
   try { if (supervisorHandle) supervisorHandle.stop(); } catch (e) { safeCatch(e); }
   // shutdown owns in-flight transports too and bounds each close. Allow the
   // native quit only once cleanup settles; repeated quit requests share it.
-  shutdownMcpServers().catch(safeCatch).finally(() => {
+  Promise.resolve().then(() => shutdownMcpServers()).catch(safeCatch).finally(() => {
     mcpQuitReady = true;
     app.quit();
   });

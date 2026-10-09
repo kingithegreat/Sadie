@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EditorView, basicSetup } from 'codemirror';
-import { Compartment, EditorState, Prec, type Extension } from '@codemirror/state';
+import { Compartment, EditorState, Prec, StateEffect, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { indentWithTab } from '@codemirror/commands';
 import { StreamLanguage } from '@codemirror/language';
@@ -157,6 +157,17 @@ export interface InlineEditState {
   error: string | null;
 }
 
+/** Owned by one open file, discarded when that file's tab closes. */
+export interface CodeEditorSession {
+  current: {
+    state: EditorState;
+    scroll: ReturnType<EditorView['scrollSnapshot']>;
+    scrollTop: number;
+    scrollLeft: number;
+    focusLineSeen?: number;
+  } | null;
+}
+
 interface CodeEditorProps {
   value: string;
   language: string;
@@ -165,9 +176,12 @@ interface CodeEditorProps {
   readOnly?: boolean;
   /** Land on this line (1-based) when it changes — a search result's target. */
   focusLine?: number;
+  onFocusLineConsumed?: () => void;
+  /** In-memory state across view mounts; never writes editor history to disk. */
+  session?: CodeEditorSession;
 }
 
-export default function CodeEditor({ value, language, onChange, onSave, readOnly, focusLine }: CodeEditorProps) {
+export default function CodeEditor({ value, language, onChange, onSave, readOnly, focusLine, onFocusLineConsumed, session }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const languageSlot = useRef(new Compartment());
@@ -179,6 +193,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
+  const focusLineSeen = useRef<number | undefined>(session?.current?.focusLineSeen);
 
   // Inline edit (Ctrl+K) state
   const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
@@ -301,44 +316,72 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     viewRef.current?.focus();
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!hostRef.current) return;
     const readOnlyExtensions = (on: boolean) => [EditorState.readOnly.of(on), EditorView.editable.of(!on)];
+    const extensions: Extension[] = [
+      basicSetup,
+      themeSlot.current.of(editorTheme(appIsLight())),
+      keymap.of([indentWithTab]),
+      // Ctrl+S saves; Ctrl+K opens inline edit bar.
+      Prec.high(keymap.of([
+        { key: 'Mod-s', preventDefault: true, run: () => { onSaveRef.current(); return true; } },
+        { key: 'Mod-k', preventDefault: true, run: () => { onInlineEditRef.current(); return true; } },
+      ])),
+      languageSlot.current.of(languageExtension(language)),
+      readOnlySlot.current.of(readOnlyExtensions(!!readOnly)),
+      EditorState.tabSize.of(2),
+      EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+        if (update.docChanged || update.selectionSet) {
+          const head = update.state.selection.main.head;
+          const line = update.state.doc.lineAt(head);
+          setCursor({ line: line.number, col: head - line.from + 1 });
+        }
+      }),
+    ];
+    const saved = session?.current;
+    // Reconfigure with this mount's compartments and callbacks. Reusing the
+    // old extensions would leave undo/save/edit listeners pointing at old refs.
+    // Fields still present in basicSetup (including history) keep their values.
+    const state = saved
+      ? saved.state.update({ effects: StateEffect.reconfigure.of(extensions) }).state
+      : EditorState.create({ doc: value, extensions });
     const view = new EditorView({
       parent: hostRef.current,
-      state: EditorState.create({
-        doc: value,
-        extensions: [
-          basicSetup,
-          themeSlot.current.of(editorTheme(appIsLight())),
-          keymap.of([indentWithTab]),
-          // Ctrl+S saves; Ctrl+K opens inline edit bar.
-          Prec.high(keymap.of([
-            { key: 'Mod-s', preventDefault: true, run: () => { onSaveRef.current(); return true; } },
-            { key: 'Mod-k', preventDefault: true, run: () => { onInlineEditRef.current(); return true; } },
-          ])),
-          languageSlot.current.of(languageExtension(language)),
-          readOnlySlot.current.of(readOnlyExtensions(!!readOnly)),
-          EditorState.tabSize.of(2),
-          EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
-          EditorView.updateListener.of(update => {
-            if (update.docChanged) onChangeRef.current(update.state.doc.toString());
-            if (update.docChanged || update.selectionSet) {
-              const head = update.state.selection.main.head;
-              const line = update.state.doc.lineAt(head);
-              setCursor({ line: line.number, col: head - line.from + 1 });
-            }
-          }),
-        ],
-      }),
+      state,
+      scrollTo: saved?.scroll,
     });
+    if (saved) {
+      view.scrollDOM.scrollTop = saved.scrollTop;
+      view.scrollDOM.scrollLeft = saved.scrollLeft;
+    }
     viewRef.current = view;
+    const head = state.selection.main.head;
+    const line = state.doc.lineAt(head);
+    setCursor({ line: line.number, col: head - line.from + 1 });
     // Follow the app when the owner switches light/dark while the editor is open.
     const themeWatch = new MutationObserver(() => {
       view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) });
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => { themeWatch.disconnect(); view.destroy(); viewRef.current = null; };
+    return () => {
+      // Layout cleanup runs before React removes the host. Detached elements
+      // can report zero scroll offsets even when their view was scrolled.
+      if (session) {
+        session.current = {
+          state: view.state,
+          scroll: view.scrollSnapshot(),
+          scrollTop: view.scrollDOM.scrollTop,
+          scrollLeft: view.scrollDOM.scrollLeft,
+          focusLineSeen: focusLineSeen.current,
+        };
+      }
+      themeWatch.disconnect();
+      view.destroy();
+      viewRef.current = null;
+    };
     // Created once per mount; later prop changes are applied by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -363,7 +406,6 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
   // A search result asked for this line. Only a CHANGE acts, so the user's own
   // scrolling is never yanked; the editor is keyed per file in WorkspaceShell,
   // so a jump into a newly opened tab fires on mount.
-  const focusLineSeen = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (focusLine === undefined) { focusLineSeen.current = undefined; return; }
     if (focusLineSeen.current === focusLine) return;
@@ -377,7 +419,8 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       effects: EditorView.scrollIntoView(docLine.from, { y: 'center' }),
     });
     view.focus();
-  }, [focusLine]);
+    onFocusLineConsumed?.();
+  }, [focusLine, onFocusLineConsumed]);
 
   const diffLines = inlineEdit && inlineEdit.replacement
     ? computeSimpleLineDiff(inlineEdit.range.text, inlineEdit.replacement)

@@ -4,6 +4,7 @@
  */
 import axios from 'axios';
 import { spawn } from 'child_process';
+import { StringDecoder } from 'string_decoder';
 import type { CustomLLMConfig, CustomModelInfo, ModelMetadata } from '../shared/types';
 // Subscription-CLI model lists live in shared/ so the renderer can offer them
 // without a network round-trip — see the note in that file for why that
@@ -12,7 +13,7 @@ import { CLAUDE_CODE_MODELS, CODEX_MODELS } from '../shared/subscription-models'
 import type { ToolDefinition } from './tools/types';
 import { toOpenAITool, toAnthropicTool } from './tools/types';
 
-interface ChatMessage {
+export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | Array<{ type: string; text?: string; image_url?: { url: string }; source?: { type: string; media_type: string; data: string } }>;
   name?: string;
@@ -215,7 +216,74 @@ export { PROVIDER_API_URLS } from '../shared/provider-urls';
 import { PROVIDER_API_URLS } from '../shared/provider-urls';
 
 function trimTrailingSlash(url: string): string {
-  return url.replace(/\/+$/, '');
+  return url.trim().replace(/\/+$/, '');
+}
+
+/** Accept either a service base or the complete OpenAI-compatible endpoint. */
+function openAIEndpoint(apiUrl: string, resource: 'models' | 'chat/completions'): string {
+  const base = trimTrailingSlash(apiUrl).replace(/\/(?:chat\/completions|models)$/i, '');
+  return `${base}/${resource}`;
+}
+
+/** Network chunks can split both SSE lines and individual UTF-8 characters. */
+function readSSELines(
+  stream: NodeJS.ReadableStream,
+  onData: (data: string, stop: () => void) => void,
+  onEnd: () => void,
+  onError: (error: Error) => void,
+): void {
+  const decoder = new StringDecoder('utf8');
+  let buffer = '';
+  let dataLines: string[] = [];
+  let stopped = false;
+  const stop = (destroy = true) => {
+    if (stopped) return;
+    stopped = true;
+    stream.removeListener('data', data);
+    stream.removeListener('end', end);
+    stream.removeListener('close', close);
+    // Explicit terminal frames finish the turn even if the provider leaves
+    // the HTTP connection open. Release the actual response socket as well.
+    const readable = stream as import('stream').Readable;
+    if (destroy && typeof readable.destroy === 'function') readable.destroy();
+  };
+  const dispatch = () => {
+    if (!dataLines.length) return;
+    const data = dataLines.join('\n');
+    dataLines = [];
+    // Compatible services may send an empty data event as a keepalive.
+    // It carries no JSON payload and must not terminate a healthy reply.
+    if (!data.trim()) return;
+    onData(data, stop);
+  };
+  const line = (value: string) => {
+    if (!value) { dispatch(); return; }
+    // SSE permits both `data: value` and `data:value`.
+    if (value.startsWith('data:')) dataLines.push(value.slice(5).replace(/^ /, ''));
+  };
+  const append = (text: string) => {
+    buffer += text;
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const value of lines) { if (stopped) break; line(value.replace(/\r$/, '')); }
+  };
+  const data = (chunk: Buffer | string) => { if (!stopped) append(typeof chunk === 'string' ? chunk : decoder.write(chunk)); };
+  const end = () => {
+    if (stopped) return;
+    append(decoder.end());
+    if (buffer) line(buffer.replace(/\r$/, ''));
+    dispatch();
+    stop(false);
+    onEnd();
+  };
+  const close = () => {
+    if (stopped) return;
+    stop(false);
+    onError(new Error('The model connection closed before the response was complete.'));
+  };
+  stream.on('data', data);
+  stream.on('end', end);
+  stream.on('close', close);
 }
 
 function normalizeModelsPayload(payload: any): any[] {
@@ -283,15 +351,18 @@ export function getModelMetadata(modelName: string): ModelMetadata {
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
-  baseDelay: number = 1000
+  baseDelay: number = 1000,
+  signal?: AbortSignal,
 ): Promise<T> {
   let lastError: any;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    signal?.throwIfAborted();
     try {
       return await fn();
     } catch (error: any) {
       lastError = error;
+      if (signal?.aborted || axios.isCancel(error)) throw error;
       
       // Don't retry on certain errors
       if (axios.isAxiosError(error)) {
@@ -310,7 +381,12 @@ async function retryWithBackoff<T>(
       // Exponential backoff with jitter
       const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
       console.log(`[Custom LLM] Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => { clearTimeout(timer); reject(signal?.reason || new Error('Cancelled')); };
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve(); }, delay);
+        signal?.addEventListener('abort', abort, { once: true });
+        if (signal?.aborted) abort();
+      });
     }
   }
   
@@ -403,7 +479,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
   
   try {
     const response = await retryWithBackoff(() => axios.post(
-      `${apiConfig.apiUrl}/chat/completions`,
+      openAIEndpoint(apiConfig.apiUrl, 'chat/completions'),
       {
         model: model || apiConfig.model,
         messages,
@@ -415,7 +491,7 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiConfig.apiKey}`,
+          ...(apiConfig.apiKey?.trim() ? { 'Authorization': `Bearer ${apiConfig.apiKey.trim()}` } : {}),
           ...(apiConfig.provider === 'openrouter' ? {
             'HTTP-Referer': 'https://homebot-app.local',
             'X-Title': 'HomeBot Desktop Assistant'
@@ -428,21 +504,32 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
         timeout: 0,
         signal
       }
-    ), 3, 1000); // 3 retries, 1 second base delay
+    ), 3, 1000, signal); // 3 retries, 1 second base delay
 
     const stream = response.data as NodeJS.ReadableStream;
-    let currentToolCall: { id: string; name: string; arguments: string } | null = null;
+    const toolCalls = new Map<number, { id: string; name: string; arguments: string }>();
     let ended = false;
 
     // Strip <think>/<thinking> reasoning blocks (DeepSeek R1, Qwen, etc.)
     const stripThinkTags = createThinkTagStripper();
 
-    // SSE line buffer: TCP chunks can split mid-line, so we accumulate
-    // partial lines and only process complete ones (terminated by \n).
-    let lineBuf = '';
+    const fail = (error: any) => {
+      if (ended) return;
+      ended = true;
+      onError(error);
+    };
 
     const safeEnd = () => {
       if (!ended) {
+        // Providers may end the body without a [DONE] frame. Emit tools only
+        // once the complete response has arrived, keeping parallel indices apart.
+        for (const [, call] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {
+          try {
+            const args = JSON.parse(call.arguments || '{}');
+            if (!call.name) throw new Error('The model returned a tool call without a name.');
+            onToolCall?.({ id: call.id, name: call.name, arguments: args });
+          } catch (error) { fail(error); return; }
+        }
         ended = true;
         // Flush any partial tag content buffered by the think-tag stripper
         const remainder = stripThinkTags.flush();
@@ -451,80 +538,43 @@ async function streamOpenAI(options: StreamOptions): Promise<void> {
       }
     };
 
-    stream.on('data', (chunk: Buffer) => {
-      try {
-        lineBuf += chunk.toString('utf8');
-        const parts = lineBuf.split('\n');
-        // Last element is either '' (line ended with \n) or an incomplete line
-        lineBuf = parts.pop() || '';
-
-        for (const line of parts) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          if (trimmed.startsWith('data: ')) {
-            const data = trimmed.substring(6);
-            if (data === '[DONE]') {
-              // If we have a pending tool call, emit it
-              if (currentToolCall && onToolCall) {
-                try {
-                  const args = JSON.parse(currentToolCall.arguments || '{}');
-                  onToolCall({ id: currentToolCall.id, name: currentToolCall.name, arguments: args });
-                } catch (e) {
-                  console.error('[Custom LLM] Error parsing tool arguments:', e);
-                }
-                currentToolCall = null;
-              }
-              safeEnd();
-              return;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const delta = parsed.choices?.[0]?.delta;
-
-              // Handle text content — strip <think>/<thinking> reasoning blocks
-              if (delta?.content) {
-                const cleaned = stripThinkTags(delta.content);
-                if (cleaned) onChunk(cleaned);
-              }
-              
-              // Handle tool calls (streaming)
-              if (delta?.tool_calls) {
-                for (const toolCall of delta.tool_calls) {
-                  if (toolCall.id) {
-                    // New tool call
-                    if (currentToolCall && onToolCall) {
-                      // Emit previous tool call
-                      try {
-                        const args = JSON.parse(currentToolCall.arguments || '{}');
-                        onToolCall({ id: currentToolCall.id, name: currentToolCall.name, arguments: args });
-                      } catch (e) {
-                        console.error('[Custom LLM] Error parsing tool arguments:', e);
-                      }
-                    }
-                    currentToolCall = {
-                      id: toolCall.id,
-                      name: toolCall.function?.name || '',
-                      arguments: toolCall.function?.arguments || ''
-                    };
-                  } else if (currentToolCall && toolCall.function?.arguments) {
-                    // Continue accumulating arguments
-                    currentToolCall.arguments += toolCall.function.arguments;
-                  }
-                }
-              }
-            } catch (e) {
-              // Ignore parsing errors for SSE chunks
-            }
-          }
-        }
-      } catch (e) {
-        console.error('[Custom LLM] Error processing chunk:', e);
+    const processResponse = (parsed: any) => {
+      if (ended || signal?.aborted) return;
+      if (parsed.error) { fail(new Error(parsed.error.message || 'The model could not complete this reply.')); return; }
+      const choice = parsed.choices?.[0];
+      const delta = choice?.delta || choice?.message;
+      if (typeof delta?.content === 'string') {
+        const cleaned = stripThinkTags(delta.content);
+        if (cleaned) onChunk(cleaned);
       }
-    });
-    
-    stream.on('end', () => safeEnd());
-    stream.on('error', (err) => onError(err));
+      for (const [position, call] of (delta?.tool_calls || []).entries()) {
+        const index = call.index ?? position;
+        const current = toolCalls.get(index) || { id: '', name: '', arguments: '' };
+        if (call.id) current.id = call.id;
+        if (call.function?.name) current.name += call.function.name;
+        if (call.function?.arguments) current.arguments += call.function.arguments;
+        toolCalls.set(index, current);
+      }
+      if (choice?.finish_reason === 'length') {
+        onChunk('\n\n_[Reply reached the model’s output limit. Ask to continue.]_');
+      }
+    };
+    if (/application\/json/i.test(String(response.headers?.['content-type'] || ''))) {
+      const decoder = new StringDecoder('utf8');
+      let body = '';
+      stream.on('data', (chunk: Buffer) => { body += decoder.write(chunk); });
+      stream.on('end', () => {
+        try { processResponse(JSON.parse(body + decoder.end())); safeEnd(); } catch (error) { fail(error); }
+      });
+      stream.on('close', () => { if (!ended) fail(new Error('The model connection closed before the response was complete.')); });
+    } else {
+      readSSELines(stream, (data, stop) => {
+        if (ended || signal?.aborted) return;
+        if (data === '[DONE]') { safeEnd(); stop(); return; }
+        try { processResponse(JSON.parse(data)); } catch (error) { fail(error); }
+      }, safeEnd, fail);
+    }
+    stream.on('error', fail);
   } catch (err: any) {
     onError(err);
   }
@@ -729,7 +779,7 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
 
   try {
     const response = await axios.post(
-      `${apiConfig.apiUrl}/messages`,
+      `${trimTrailingSlash(apiConfig.apiUrl).replace(/\/messages$/i, '')}/messages`,
       {
         model: resolvedModel,
         max_tokens: maxTokens,
@@ -754,20 +804,23 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
 
     const stream = response.data as NodeJS.ReadableStream;
     let ended = false;
-    const safeEnd = () => { if (!ended) { ended = true; onEnd(); } };
+    const fail = (err: any) => { if (!ended) { ended = true; onError(err); } };
 
     // Track in-progress tool_use blocks by index
     type ToolUseBlock = { id: string; name: string; jsonBuf: string };
     const toolBlocks = new Map<number, ToolUseBlock>();
+    const safeEnd = () => {
+      if (ended) return;
+      if (toolBlocks.size) { fail(new Error('The model connection ended before its tool request was complete.')); return; }
+      ended = true;
+      onEnd();
+    };
 
-    stream.on('data', (chunk: Buffer) => {
+    readSSELines(stream, (data, stop) => {
+      if (ended || signal?.aborted) return;
       try {
-        const lines = chunk.toString('utf8').split('\n').filter(l => l.trim());
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.substring(6);
           let parsed: any;
-          try { parsed = JSON.parse(data); } catch { continue; }
+          try { parsed = JSON.parse(data); } catch (error) { fail(error); return; }
 
           switch (parsed.type) {
             case 'message_start': {
@@ -824,8 +877,9 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
               const block = toolBlocks.get(parsed.index);
               if (block && onToolCall) {
                 let input: Record<string, any> = {};
-                try { input = JSON.parse(block.jsonBuf || '{}'); } catch {
-                  console.error('[Custom LLM] Anthropic: could not parse tool input JSON');
+                try { input = JSON.parse(block.jsonBuf || '{}'); } catch (error) {
+                  fail(error);
+                  return;
                 }
                 onToolCall({ id: block.id, name: block.name, arguments: input });
                 toolBlocks.delete(parsed.index);
@@ -843,22 +897,20 @@ async function streamAnthropic(options: StreamOptions): Promise<void> {
               const msg = e.message || e.type || 'Anthropic stream error';
               console.error('[Custom LLM] Anthropic mid-stream error:', msg);
               if (lastAnthropicUsage) lastAnthropicUsage.stopReason = `error:${e.type || 'unknown'}`;
-              ended = true;
-              onError(new Error(msg));
+              fail(new Error(msg));
               break;
             }
             case 'message_stop':
               safeEnd();
+              stop();
               break;
           }
-        }
       } catch (e) {
         console.error('[Custom LLM] Error processing Anthropic chunk:', e);
       }
-    });
+    }, safeEnd, fail);
 
-    stream.on('end', () => safeEnd());
-    stream.on('error', (err) => onError(err));
+    stream.on('error', fail);
   } catch (err: any) {
     onError(err);
   }
@@ -1107,7 +1159,7 @@ async function streamClaudeCode(options: StreamOptions): Promise<void> {
  *    granularity, not a bug here.
  */
 async function streamCodex(options: StreamOptions): Promise<void> {
-  const { apiConfig, messages, model, onChunk, onEnd, onError, signal } = options;
+  const { apiConfig, messages, onChunk, onEnd, onError, signal } = options;
 
   // Codex has no --system-prompt flag, so the system text is folded into the
   // prompt body. toClaudeCodeTranscript already does exactly that shaping.
@@ -1130,10 +1182,9 @@ async function streamCodex(options: StreamOptions): Promise<void> {
     '--skip-git-repo-check',
     // Don't leave session files behind for what is a chat turn.
     '--ephemeral',
+    // Codex with a ChatGPT account does not accept -m/--model; any explicit
+    // model id returns 400. Omit it entirely and let the CLI pick the entitled model.
   ];
-  // 'default' means "let the CLI choose what the plan allows" — pass nothing.
-  // Model ids come from CODEX_MODELS, never from user input.
-  if (model && model !== 'default') args.push('-m', model);
   // Sandbox is left at the CLI default (read-only). HomeBot's own permission
   // gate is the authority on side effects; a chat provider must not be able to
   // write files on its own.
@@ -1286,31 +1337,25 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
       }
     );
 
-    let buffer = '';
     const stream = response.data as NodeJS.ReadableStream;
-    stream.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString('utf-8');
-      let boundary = buffer.indexOf('\n');
-      while (boundary !== -1) {
-        const line = buffer.slice(0, boundary).trim();
-        buffer = buffer.slice(boundary + 1);
-        if (line.startsWith('data: ')) {
-          const json = line.slice(6);
+    let ended = false;
+    const fail = (err: any) => { if (!ended) { ended = true; onError(err); } };
+    const finish = () => { if (!ended) { ended = true; onEnd(); } };
+    readSSELines(stream, (json, stop) => {
+      if (ended || signal?.aborted) return;
+      if (json === '[DONE]') { finish(); stop(); return; }
           try {
             const parsed = JSON.parse(json);
+            if (parsed.error) { fail(new Error(parsed.error.message || 'The model could not complete this reply.')); return; }
             const parts = parsed?.candidates?.[0]?.content?.parts;
             if (Array.isArray(parts)) {
               for (const p of parts) {
                 if (typeof p?.text === 'string' && p.text) onChunk(p.text);
               }
             }
-          } catch { /* skip malformed SSE lines */ }
-        }
-        boundary = buffer.indexOf('\n');
-      }
-    });
-    stream.on('end', () => onEnd());
-    stream.on('error', (err: any) => onError(err));
+          } catch (error) { fail(error); }
+    }, finish, fail);
+    stream.on('error', fail);
   } catch (err: any) {
     onError(err);
   }
@@ -1321,6 +1366,9 @@ async function streamGoogleGeminiNative(options: StreamOptions): Promise<void> {
  */
 export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig {
   const validated = { ...config };
+  if (validated.apiUrl) validated.apiUrl = validated.apiUrl.trim();
+  if (validated.apiKey) validated.apiKey = validated.apiKey.trim();
+  if (validated.model) validated.model = validated.model.trim();
 
   // Auto-detect provider if not set
   if (config.model && !config.provider) {
@@ -1603,8 +1651,7 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
   if (provider === 'sambanova') return SAMBANOVA_MODELS;
   if (provider === 'together') return TOGETHER_MODELS;
 
-  const base = trimTrailingSlash(config.apiUrl);
-  const endpoint = /\/models$/i.test(base) ? base : `${base}/models`;
+  const endpoint = openAIEndpoint(config.apiUrl, 'models');
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -1689,13 +1736,38 @@ export async function streamFromCustomLLM(
   imageData?: Array<{ base64: string; mimeType?: string }>
 ): Promise<{ cancel: () => void }> {
 
+  if (apiConfig) apiConfig = autoConfigureCustomLLM(apiConfig);
   const validation = validateCustomLLMConfig(apiConfig);
   if (!validation.valid) {
     onError(new Error(validation.error || 'Invalid custom LLM config'));
     return { cancel: () => {} };
   }
 
-  apiConfig = autoConfigureCustomLLM(apiConfig);
+  const controller = new AbortController();
+  let settled = false;
+  const originalEnd = onEnd;
+  const originalError = onError;
+  const originalChunk = onChunk;
+  const originalToolCall = onToolCall;
+  const cleanup = () => {
+    abortSignal?.removeEventListener('abort', cancel);
+    controller.signal.removeEventListener('abort', finishCancelled);
+  };
+  onEnd = () => { if (!settled) { settled = true; cleanup(); originalEnd(); } };
+  onError = err => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    controller.abort();
+    originalError(err);
+  };
+  onChunk = text => { if (!settled) originalChunk(text); };
+  onToolCall = call => { if (!settled) originalToolCall?.(call); };
+  const finishCancelled = () => onEnd();
+  const cancel = () => controller.abort();
+  controller.signal.addEventListener('abort', finishCancelled, { once: true });
+  abortSignal?.addEventListener('abort', cancel, { once: true });
+  if (abortSignal?.aborted) cancel();
 
   // Build the user message — multimodal if images are present
   let userContent: ChatMessage['content'] = message;
@@ -1713,10 +1785,13 @@ export async function streamFromCustomLLM(
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     ...conversationHistory,
-    { role: 'user', content: userContent }
+    // Tool-result synthesis already has its user turn in the supplied history.
+    // A trailing empty user message is rejected by some compatible providers.
+    ...(message || imageData?.length || conversationHistory.length === 0 ? [{ role: 'user' as const, content: userContent }] : [])
   ];
 
   const temperature = await resolveChatTemperature();
+  if (controller.signal.aborted) return { cancel };
 
   const options: StreamOptions = {
     model: apiConfig.model || 'gpt-3.5-turbo',
@@ -1730,7 +1805,7 @@ export async function streamFromCustomLLM(
     onToolCall,
     onEnd,
     onError,
-    signal: abortSignal
+    signal: controller.signal
   };
   
   // Route to appropriate provider
@@ -1767,11 +1842,7 @@ export async function streamFromCustomLLM(
       break;
   }
   
-  return {
-    cancel: () => {
-      // AbortController will handle cancellation
-    }
-  };
+  return { cancel };
 }
 
 /**
@@ -1825,15 +1896,21 @@ export function validateCustomLLMConfig(config?: CustomLLMConfig): { valid: bool
     return { valid: true };
   }
 
-  if (!config.apiUrl) {
+  if (!config.apiUrl?.trim()) {
     return { valid: false, error: 'API URL is required' };
   }
+  try {
+    const url = new URL(config.apiUrl.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('Unsupported protocol');
+  } catch {
+    return { valid: false, error: 'Enter a complete HTTP or HTTPS API URL' };
+  }
 
-  if (!config.apiKey && config.provider !== 'custom') {
+  if (!config.apiKey?.trim() && config.provider !== 'custom') {
     return { valid: false, error: 'API key is required for this provider' };
   }
 
-  if (!config.model && config.provider !== 'custom') {
+  if (!config.model?.trim() && config.provider !== 'custom') {
     return { valid: false, error: 'Model name is required' };
   }
   

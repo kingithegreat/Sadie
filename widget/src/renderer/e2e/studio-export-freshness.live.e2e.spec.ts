@@ -122,7 +122,7 @@ test('Studio distinguishes edited A from failed B and preserves each good movie 
     await expect(page.getByRole('alert')).toContainText('No default video player is configured.');
     await page.getByLabel('Export history').selectOption(replacementB);
     await page.getByRole('button', { name: /Review & Publish/ }).click();
-    await expect(page.getByRole('tab', { name: /Director Console/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: /Projects/ })).toHaveAttribute('aria-selected', 'true');
     expect((await page.evaluate(() => window.electron.mediaList!())).find((job: any) => job.renderPath === replacementB)?.state).toBe('awaiting_approval');
     await page.getByRole('tab', { name: /Storyboard/ }).click();
     const sceneExport = await page.evaluate(() => window.electron.mediaStoryboardRender!({ projectId: 'freshness-b', sceneId: 'scene_01' }));

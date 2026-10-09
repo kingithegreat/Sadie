@@ -1,5 +1,310 @@
 # Work Claims
 
+## 2026-10-08 NZ — CHAT completion integration
+
+Codex root resumes the released chat source lanes under Aden's instruction to
+use remaining weekly capacity to complete HomeBot. Isolated worktree
+`.homebot/chat-complete-20261008` starts from main `69075fe5` and integrates the
+retained integration/native corrections without changing their original trees.
+Root owns serial full checks, production native fixtures, exact-head review,
+qualified landing through existing PR #478 and a separate current build.
+The active IDE #474, character/rig/art and existing delivered profiles remain
+with their owners. Source import is complete and released to root's serial
+qualification. Four semantic TypeScript checks and whole-widget lint pass.
+At published `14a31cc8`, all 25 hosted checks passed, including 5,361 widget
+tests, 232 root tests, 14 overlays, two native chat and four native setup cases.
+Short-HOME local recovery passed 87 media cases including all 41 original
+failures; separate root/docs checks passed 232 cases and drift validation.
+Configured review found empty SSE keepalives terminating healthy replies.
+Three provider regressions reproduced it; the correction passes 93 related
+tests, widget/chat TypeScript and scoped lint. The actual custom native socket
+now includes three empty data events without reducing any chat/title assertions.
+Fresh corrected-head hosted/native/review/landing and separate delivery remain
+pending; original failures and authenticated evidence are preserved.
+
+
+## 2026-10-07 — SETUP-MODEL-RETENTION
+
+Codex root coordinates the carry-on setup follow-up from main `ce53a7db` in
+`.homebot/setup-model-retention-20261007`, branch
+`claude/setup-model-retention-20261007`. The setup agent owns FirstRunModal and
+its focused setup tests; root owns first-attempt trace retention, serial guarded
+checks, hosted review, publication and delivery. A late mount settings read can
+replace the wizard's verified installed model without clearing its ready state.
+Two actual App/preload regressions are prepared; baseline execution is pending
+the resource guard. The original Windows Skip overlay timeout is still
+unexplained: its archive retains only a successful retry trace, no original
+failure screenshot. No production timeout or acknowledgement gate is relaxed.
+IDE #474 and the character-preview owner retain their separate scopes; accepted
+test copies, shared dependencies and owner profiles are preserved.
+
+Both real App baseline cases saved the wrong 7B model;
+the correction passes all 108 focused tests in three suites, widget TypeScript,
+scoped lint and supplemental native TypeScript. Native discovery lists the same
+four cases; the installed-model case now delays an original 7B settings reply
+after an explicit 3B choice, retaining actual save/mode/HTTP handlers and closure
+oracles. A deliberate no-browser failed-first/passed-retry control proves the
+old trace mode loses the original trace and the new mode retains it. Local
+build/GUI remain subject to fresh capacity checks. Current-head hosted tests, configured
+review, landing and a separate updated test copy are still required.
+
+The follow-up also guards App's earlier mount read after a setup/settings save
+starts or a newer model fallback arrives. Its actual context counter reproduced
+the post-Finish corruption (128K selected, stale read restored 32K); a positive
+unchanged-read control remains supported. Exact old App controls pass the normal
+read and fail the newer-fallback case, with current source bytes restored.
+Final source checks pass 114 tests in four suites, TypeScript and scoped lint
+(zero errors, four existing warnings). Native run37604035128 passed four cases
+without retries at the older9d81 head, including the real held7B/read/select3B/
+saved3B/HTTP3B chain. That evidence is preserved and does not qualify the new
+App source; fresh hosted/native/configured review are required for the follow-up.
+
+Final hosted qualification exposed an existing attachment-budget test timeout.
+The same five-second failure reproduces with both original-main and current App.
+Measured global sidebar Delete queries take 351–518ms each across the nine real
+navigations. Root scopes only that accessible-role query to the exact titled row;
+all actions, assertions and the five-second deadline remain unchanged. Two full
+ten-case runs pass naturally, with the budget case taking 1922ms and 1959ms.
+Independent read-only review finds no weakened oracle. Original failure logs and
+source-restoration receipts are retained outside Git. Source editing is frozen
+and released to root integration; current-head hosted/native/review gates and
+separate delivery remain pending. Disk is now above the build floor; RAM still
+requires a fresh qualifying check. This claim ends at integration/delivery;
+canonical Drive records final qualification and release without another source
+commit. Other owners retain their scopes.
+
+Configured review then found the primary boot Promise.all could restore its
+old model while conversation loading was pending. Root reproduced the actual
+App/preload counter reverting from 128K to 32K. The final guard preserves newer
+fallback/secondary-refresh model decisions while hydrating unrelated initial
+fields; only an acknowledged full save supersedes the whole boot snapshot.
+Four real App/preload/UI controls cover pending-boot fallback, newer refresh,
+successful Settings save and rejected save. Previous source yields three
+expected failures and one rejection positive; final source passes all 118
+focused assertions in four suites, widget TypeScript and scoped lint with four
+existing warnings. Exact source restoration and all original review/failure
+evidence are retained. Independent final read-only review found no blocker.
+Source is frozen again; final-head hosted/native/configured review and delivery
+must finish before this integration claim is released in canonical Drive.
+
+Final review also exposed a rejected save invalidating a newer secondary reply.
+The actual Settings panel reproduction retains the old 32K model despite a
+pending 128K startup reply. Root now tracks in-flight saves separately: both
+startup readers drain the pending-save set before checking authority/lifetime;
+only successful acknowledgements advance model and full-snapshot generations.
+The finally path releases readers after failure without generation rollback.
+Two additional actual App/preload/UI cases prove rejected-save recovery and
+waiting while an acknowledgement is pending. The final four focused suites
+pass all 120 assertions naturally, TypeScript and scoped lint with four existing
+warnings. Independent barrier review found no blocker. Original failures remain
+retained; another current-head qualification is required before release.
+
+## 2026-10-07 — CHAT-CUSTOM-TRANSPORT
+
+Custom-model source edits are released to root's serial chat integration. The
+agent prepared custom-llm-client, its transport regressions, and cloud
+chat/code tool-round-trip regions of message-router in isolated worktree
+`.homebot/chat-custom-20261007`, branch `claude/chat-custom-20261007`, based on
+`ce53a7db`. Local agent owns Ollama router region; root owns integration and
+native qualification. Provider catalogs, credentials, owner profiles, wizard
+retention and shared dependency targets are outside this claim. Bounded actual
+source A/B controls proved transport regressions and corrections; full Jest,
+typecheck, native app and real-provider proof await resource-qualified execution.
+
+## 2026-10-07 — FIRST-USER-EASE
+
+Aden requested agents find the best ways to give users what they want and make
+HomeBot easy for a first-time user. Codex root coordinates an isolated branch
+`claude/first-user-ease-20261007`, worktree `.homebot/first-user-20261007`, from
+fresh main `d6635590` after Studio #475. Three read-only audits cover first-run
+setup, task discovery/navigation and request/error recovery. Root owns evidence
+selection, App integration, serial guarded verification, publication and delivery.
+Implementation: first_run_audit owns FirstRunModal and its focused tests/styles;
+discovery_audit owns DashboardPanel/SuggestedPrompts and focused tests;
+intent_recovery_audit owns ChatInterface/InputBox/MessageList/MessageBubble and
+focused tests. Root owns App.tsx wiring, ConversationSidebar acknowledgement,
+renderer attachment-retry guidance and native acceptance. Current #474 diff has
+no overlaps with these renderer files. Audit reports are retained under
+`.homebot/first-user-*-audit.md`; reachable defects include Settings/Studio misrouting, automatic starter
+submission, false connection status and draft/attachment loss. Source corrections
+are underway; no tests/builds have been delegated or counted as run.
+The IDE #474 team retains main/router/preload/workspace and its active claim.
+No actual provider generation/model downloads, credentials or owner profile writes
+are part of this UI audit. Existing accepted test copies remain preserved.
+Checkpoint: local widget TypeScript and scoped lint passed (zero errors, four
+existing warnings). The affected run executed and passed 236 tests in 22 suites;
+the subsequent explicit New/Select failure guards and two new negative tests
+still need the final full check. App navigation/recovery guards include live
+conversation identity, serialized acknowledged activation and a bounded visible
+held-request recovery action. First-run local coding also keeps an installed
+code model or uses the chosen installed chat model. Three external native proof
+spec/helper drafts await root execution against a frozen private compiled runtime.
+Native acceptance, current-head hosted checks/review, merge and delivery remain
+pending. No actual model download, provider-quality or installed-release claim.
+Full-suite checkpoint: 5,088 widget tests passed, 14 failed and 33 existing tests
+were skipped. Seven renderer suites had incomplete conversation IPC fixtures or
+did not load their saved-message fixture before checking retention. After fixing
+the fixtures without relaxing production acknowledgement guards or assertions,
+the seven suites pass all 24 tests with TypeScript. Final full-suite checks remain
+pending; the first full run stopped before root tests and documentation checks.
+Final source checks: widget/root TypeScript, whole-widget lint (zero errors,
+seven existing warnings), all 5,102 widget assertions with 33 existing skips,
+all 232 root tests, and docs drift pass. The full widget run completed its JSON
+results but retained the documented main-process Jest handle; exact-owned cleanup
+was recorded rather than described as natural exit. Hosted CI already uses
+`--forceExit` for that existing limitation. Native acceptance is still pending
+the standing 5 GiB/2 GiB resource floor; current free disk is about 4.08 GiB.
+The local build guard refused launch at that floor. To continue verification,
+root added an opt-in production-path Windows CI lane with the four reviewed
+setup/discovery cases, isolated stores and fixture HTTP, zero retries, captured
+process identities and before/after compiled/dependency hashes. Its supplemental
+TypeScript and runner syntax checks pass. CI execution, visual inspection and
+configured review remain pending. This lane preserves real package identity and
+does not enable production E2E IPC shortcuts; no real provider/download claim.
+Windows run37551972937 built production, proved the real Electron SQLite load
+and executed all four cases without retries. Cloud setup passed; local chat
+cases exposed a too-short fixture reply triggering the existing quality retry,
+and compact discovery failed before capturing process identities. Those harness
+causes are being corrected with retained primary diagnostics and bounded startup
+identity capture. All three setup cases closed without forced cleanup; discovery
+and overall native acceptance remain unqualified. Production UI is unchanged.
+Follow-up run37552790012 captured identities and completed both local setup,
+single-request greeting and persistence assertions. Its final deny classification
+rejected the existing automatic title POST, which stayed blocked before HTTP;
+the next test recognises only that exact owned origin/path/method/chat phase and
+still requires zero actual generate requests. Compact discovery exposed a real
+31px Explore target; root raised its minimum to44px and the acceptance minimum
+to44px. This one CSS correction is the only production change after16149190.
+All four cases closed without forced cleanup, but overall acceptance still awaits
+the fresh run. Supplemental acceptance TypeScript passes; runtime guards unchanged.
+Run37553258955 passes all three setup cases without retries; compact discovery
+proved entry, Home and starter focus plus retained document/text navigation,
+then failed because the560px window squeezed its composer to151px. Root adds a
+narrow-screen full-width text row with controls below. Two stale model hints now
+describe the chosen uncensored model without falsely claiming tools are disabled.
+Widget TypeScript and scoped lint for those hints pass. Fresh compiled/native,
+current-head whole hosted checks, configured review and delivery remain pending.
+Run37553706922 again passes all three setup cases and the narrow composer now
+measures526px wide with Send/attachment controls inside the window. Discovery
+still rejects horizontal overflow. The existing guidelines control is positioned
+36px beyond its wrapper; root moves it into normal flow on narrow screens,
+labels it and explicitly checks its bounds, retaining descendant overflow data.
+The Linux shard3 install failed before tests in onnxruntime-node's external binary
+download (ETIMEDOUT/ENETUNREACH); its log is retained, not counted as a UI result.
+Supplemental acceptance TypeScript passes; fresh whole qualification remains pending.
+Run37554140166 verifies narrow chat scrollWidth560 equals width560 and all composer,
+Send, attachment and guidelines controls fit. Three setup cases pass again.
+The optional activity disclosure needs normal Home scrolling; root's proof now
+scrolls to each secondary disclosure before checking its viewport bounds. Captured
+descendant geometry also shows the joke card extending beyond its clipped message
+container, so narrow daily cards now stack and are bounded to their column.
+Native coverage retains a direct card-clipping regression assertion. All previous
+failed receipts remain preserved; source-agent editing is complete and released to
+root's serial integration, current-head CI/review, final native verification and
+separate delivery. No editing or verification is delegated to an idle agent.
+Run37554602836 passes all four production Windows cases with zero retries and
+strict nonforced closure. Dark/light screenshots nevertheless reveal the camera
+action overlapping Send as the composer grows. Root measures the real composer
+clearance using ResizeObserver and keeps both floating actions above it, with
+cleanup on Home navigation. Native checks now require each main control to be
+topmost at its center and both floating actions to remain outside the composer.
+Previous passing source/native evidence is retained; fresh qualification of this
+additional UI correction, review and separately launchable delivery remain pending.
+Run37555546597 passes all four cases and the new center-click/composer-clearance
+checks. Visual inspection confirms Send is clear but catches the camera touching
+the rightmost starter. Narrow chat/Home content now reserves a gutter for those
+actions; native acceptance checks all four starter bounds/click targets and each
+Home disclosure against floating-button overlap. Fresh qualification remains pending.
+Configured review at732488f6 found four P2 issues: committed turns restored as
+duplicate drafts after navigation, unused New records left in storage, unbounded
+inactive draft attachments, and an incomplete native workflow path filter.
+Root is integrating same-turn Retry recovery after persistence, adopted-ID and
+pending-selection-safe empty-record cleanup with ordered backend/UI adoption,
+eight inactive drafts/128MiB estimated-string retention with refusal rather than
+eviction, and native acceptance on every PR. The first integrated three-suite
+run caught backend reconciliation preceding UI adoption; the ordered adoption
+correction and capacity controls pass all32 affected tests, TypeScript and scoped
+lint. Supplemental cleanup/late Retry-visibility controls are being prepared in
+the released navigation test file by intent_recovery_audit. Root owns all App
+integration, serial broader checks, fresh CI/native/review and delivery. No
+source changes are qualified by the earlier732488f6 native/hosted receipts.
+Frozen review-fix source now passes all262 tests in23 affected suites, both
+TypeScript projects and scoped lint; the native workflow YAML parses and every
+PR is eligible. New controls cover pending selection during cleanup, refusal
+while an unused record is being deleted, and both late Retry-row persistence
+orderings without duplicates. All source/test editing is released to root.
+Fresh compiled native, current-head whole CI/configured review and separately
+launchable merged-main delivery remain pending; original failed receipts retained.
+
+## 2026-10-07 — STUDIO-WORKFLOW-UI
+
+Codex root owns a focused Media Studio workflow/UI pass requested by Aden after
+playback #473: clearer navigation and next actions, accessible workspace entry,
+and less clutter before project creation/review. Isolated from main `7951c205`
+in `.homebot/studio-workflow-ui-20261007`, branch of the same task name under
+`claude/`. Scope is Studio renderer components/styles and relevant tests. The
+IDE completion team retains its separate scope. No provider calls, generation,
+publication or owner profile changes. Root owns serial guarded verification and
+publication. Source editing is released to root integration. TypeScript, scoped
+lint, fresh build and 201 affected tests pass. Compiled Electron acceptance passes
+1/1 with zero retries, including actual saved creation/recovery and keyboard
+workspace loading; desktop/narrow screenshots inspected. Hosted CI/review,
+landing and separate delivery remain pending. Root additionally owns the focused
+streaming E2E cleanup follow-up after Windows shard 3 passed its streaming/UI
+assertions but leaked a mock server on timeout and failed worker teardown.
+Scope is streaming.e2e.spec.ts/mockUpstream.ts cleanup, no production streaming
+or IDE changes. Evidence: tasks/studio-workflow-ui.md.
+
+## 2026-10-07 — STUDIO-PLAYBACK
+
+User requested agents fix the reviewed playback audit. Root owns serial integration
+in `.homebot/studio-playback-20261007`, branch `claude/studio-playback-20261007`,
+from main `79ffc386`. Players owns MediaStudioPanel integration, shared native
+players/coordinator, lazy job previews and bounded volume/resume persistence.
+Animatic owns its decoder-clock hook and regressions. Monitor owns timeline hook
+coordination, fullscreen controls and real Electron acceptance coverage. Root
+alone runs tests/builds, publishes and lands; all agents released source editing
+to root integration after implementation and cross-review.
+Preserve existing clip speed/export semantics. No provider generation, model
+downloads, owner profile changes or Ancient Pathways edits. Fresh 5 GiB disk /
+2 GiB RAM preflight and one guarded heavy job apply to builds/GUI acceptance.
+Full-suite checkpoint: 4,998 widget and 232 root tests passed. Final affected
+media checkpoint: 225 tests passed, then 37 permission/fullscreen tests passed.
+Typecheck, lint and fresh compilation passed. Real Electron acceptance passed
+1/1, zero retries: exclusive playback, explicit voice, missing-file error,
+fullscreen transport/Escape and narrated animatic pause/seek/resume.
+Root owns remaining exact-head hosted CI/review, publication and delivery.
+Local fixtures do not prove real speech or artistic quality.
+Evidence: `tasks/studio-playback.md`.
+
+## 2026-10-03 NZ — final finishing documentation checkpoint (Codex media agent)
+
+Codex `/root/media_finish` completed only CLAIMS.md and docs/FINISHING_HANDOVER.md
+in private `finish-coordination-20261002`, branch
+`claude/finish-coordination-20261002`, from merged #456 main `516e1034`.
+Current actual lanes: root serial integration/package; `/root/plan_gap_audit`
+save-snapshot #458; `/root/release_finish` exact-head offline Whisper #457;
+`/root/media_finish` completed read-only media review and this documentation.
+#456 is landed. #458 merged as 8fe85569 after all 23 reviewed bde2d62a checks
+passed, including all six required contexts and nine OS shards; its save
+implementation claim is retired. #457 merged as 4c78098f after all 23 reviewed
+c7068f93 checks passed, including all six required contexts and nine executed
+OS shards; its source claim is retired. Preserve the newer separate
+session's packaged Whisper proof/task/claim evidence on #457. AP review verified 20 staged sprites and
+16 tracked sources against a3288d3, with 22 missing slots and explicit owner
+acceptance independently recorded only for Cell 1. No AP edit/render or new
+provider/model call. This private docs branch uses documentation baseline
+cb95f970 (docs-only #459 above production 4c78098f).
+The exact 4c78098f package is built and integrity scanned; actual native, Code,
+offline Whisper and offline Kokoro scopes passed. The validated 316-file
+launcher, eleven genuine cached model files and new distinct Desktop shortcut
+are delivered. HomeBot stores are isolated; CODEX_HOME intentionally shares
+the existing owner auth/config/history store. Earlier capacity/probe failures
+are retained; owner listening/human utterance, Leila rig/full episode, fresh
+Windows installation and actual entitled Pro gates remain open. Documentation
+claim is retired; root retains publication ownership. Preserve older dated notes
+as history and the original #459 retirement text below.
+
 ## 2026-09-29 Codex nightly scene render gate claim
 
 Codex owns `claude/nightly-scene-fixture-20260929` from current `origin/main` (`8169bc43`). Scope: repair the scheduled `media-render.live.test.ts` scene case after #430 with deterministic local scene art and separately prove a generated fallback plate is rejected. The September 27–29 scheduled runs each failed one scene test; the preceding three passed. Ready for integration review: real Windows FFmpeg positive and rejection cases passed 2/2, adjacent render/source-QA suites passed 67/67, widget TypeScript passed, lint had zero errors/seven existing warnings, root docs:check and diff check passed. Scene pictures, sine audio and captions were generated inside an isolated test directory; no network provider call, user profile, model download, or shared dependency mutation was made. `preflightScenePictures` and product code are unchanged. The full scheduled Windows job and next nightly run remain unverified until CI executes them; image-provider availability and visual quality remain outside this deterministic gate.
@@ -73,6 +378,8 @@ DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|---|
+| HOMEBOT-UNUSED-FILES-20261007 | claude/homebot-unused-files-20261007 | Source editing released; root owns integration and rebuilt-app verification | Removed four verified-unused SettingsModal/API stub/tool-envelope files (4199 tracked bytes); corrected one UpgradeModal comment. The previously RAM-blocked settings acknowledgement, privacy and permission suites executed and passed: 3 suites / 46 tests on c36b25cc, zero retries. Fresh main #470 is integrated, preserving its Codex/provider fix and claim. Combined product head 395b1be passed TypeScript, the same 3 suites / 46 tests, docs consistency, module boundaries and diff checks. Root owns remaining configured review, CI, merge and separate rebuilt-app verification; this final claim update changes no product inputs. Evidence: C:/Users/adenk/.homebot/cleanup-20261007/CLEANUP.md. Local deletion is complete (58052 files / 1.578 GiB logical bytes). Rebuild in a separate lane; preserve owner profiles, existing delivered runtime, model caches and shared dependencies. |
+| Codex model picker reachability — prune unaccepted model ids and clear leftover provider URLs on CLI switch | claude/fix-codex-model-picker | Local verification complete / push done | The Codex CLI rejects any explicit model id with a ChatGPT account (400 "not supported when using Codex with a ChatGPT account"), so `gpt-5.1-codex` and `gpt-5.1` picker entries were never accepted by the CLI. Fix: CODEX_MODELS offers only `default`; `streamCodex` no longer passes `-m`; `RETIRED_MODEL_RENAMES` maps the removed ids to `default` for saved settings. Also fixes a second reachability defect: switching from an HTTP provider to a CLI provider carried over the old `apiUrl`, where it was repurposed as the CLI binary path and spawned as a program. `resetCliOnlyFields` clears `apiUrl`/`apiKey` on every switch TO a CLI provider. Verified: 24 tests pass (2 new Codex picker + 7 new provider-urls + existing model-lifecycle), widget `tsc --noEmit` clean, ESLint 0 errors on changed files (2 pre-existing warnings in App.tsx). No live Codex CLI, no credentials, no provider calls. Worktree: `C:\Users\adenk\.homebot\ide11-problems-tasks`. |
 | IDE-11 — package scripts and clickable Problems | claude/ide11-problems-diagnose-fix | Diagnose/fix draft off main — Commit Cat 2026-09-24 | Supersedes dirty #408 claim for active work (branch `codex/ide11-problems-tasks` left open/untouched; no force-push). Replays IDE-11 Tasks/Problems surface onto current main: trusted package-script IPC, clickable Problems, raw-project diagnostic click paths (`9b5d86e` fix). Documented prior macOS failure: Actions job https://github.com/kingithegreat/Sadie/actions/runs/35544094688/job/106166830314 — diagnostic visible, editor tab not opened; `ENOTEMPTY` on temp HOME cleanup. E2E finally-block now best-effort `rmSync` so cleanup noise cannot mask the acceptance assertion. No IDE-12+ expansion. Worktree: `/workspace/worktrees/ide11-diagnose` on HomeBot box.
 | Optional n8n workflow status in System check | claude/n8n-optional-diagnostics-20260929 | Ready for integration (2026-09-29, Codex; held draft PR) | Advanced Settings now shows already-probed calendar/chat/media workflow status and optional setup guidance, without importing workflows or handling credentials. Focused renderer regression failed before and passed after (3/3), widget typecheck clean, lint 0 errors (7 existing warnings). Live n8n deployment and owner Google account setup remain unverified. Serial integration queue owns merge. |
 | n8n webhook auth warning truth | claude/n8n-warning-truth-20260929 | **MERGED as #441 (2026-09-29) — claim released** | Fresh-module negative test reproduced the false `SKIP validation` warning with no container env while the embedded guard still rejected missing auth. Removed only the stale warning and corrected module comment. 26/26 focused guard/header tests, widget typecheck/build, lint 0 errors, docs check pass. No live n8n, keys, or overlap with #439 configured health probes. |
@@ -150,6 +457,7 @@ DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|
+| ~~FINISH-KOKORO-CACHE-1~~ | claude/finish-kokoro-cache-20261001 | MERGED #454 on main c46d45eb; source claim retired, 2026-10-01 Codex root | All 23 PR-head checks passed, including every required context. Landed full tree equals tested 78877a63. Both model/tokenizer caches use userData/models/kokoro with per-load consent. 28 affected tests and six built plus six actual packaged cache/restart stages pass; 74 compiled files match ASAR bytes. Actual packaged native/export/failure/restart/playback/replacement acceptance passes. No model weights downloaded; successful offline narration and owner A/V remain open. Root owns package delivery; evidence tasks/finish-kokoro-cache-1.md. |
 | n8n Web Fetch existing-workflow guard repair | claude/n8n-webfetch-guard-20260929 | Ready for integration (2026-09-29, Codex; draft PR #436 pending serial queue) | Proven-unprotected HomeBot Web Fetch copies are removed before one guarded replacement; existing guarded, unreadable and no-key copies are not reimported. After activation, an authenticated no-fetch ping must return the expected response before deployment is logged. Negative stale-copy and false-activation regressions failed before their fixes; 72 affected n8n/IPC/guard/schema tests, widget typecheck, lint (0 errors) pass. Live n8n activation remains unverified. |
 | REL-1 / REL-3 — first-run subscription chat setup | claude/finish-first-run-subscriptions-20260928 | Draft PR #435 verified atop #428 (2026-09-28) | Keyless ChatGPT and Claude choices, CLI sign-in feedback, and active provider are verified by fresh-profile Electron fixture; the new subscription save retry preserves #428's single awaited save. #428 merged at `c4940454`. A first rebased E2E run produced the CLI fixture reply but timed out at teardown; after isolating HOME and seeding empty MCP config, one no-retry Electron run passed with owned PID exit. The original isolated worktree disappeared after push (cause unknown); work continues in `.codex-worktrees/rel1-subscription-resume-20260928`. Protected dependency targets were checked intact. Hold draft/auto-merge off until serial queue turn. |
 | ~~HB-M2 — reachable Studio module controls~~ | claude/studio-module-controls | Implementation verified; build claim released — Codex 2026-09-09 | PR #269 includes movie privacy #266 and image artifacts #267. Final Windows checkpoint: 3,867 widget tests (15 existing skipped), all 53 real Electron tests without retries, and preceding unchanged root 227 tests. Typechecks/build/lint/docs/import checks pass. Disable removes navigation/tools and blocks IPC; restart retains the choice/files; enable restores one copy. The measured startup-toast obstruction is fixed and covered by a failing-before/passing-after navigation regression; three fresh profiles open Studio in 386/211/463 ms, within M0 time/memory limits. Evidence and raw before/after samples: docs/STUDIO_MODULE_CONTROLS.md. Current required CI, merge status and integration ownership: https://app.notion.com/p/3d5829ebf7be814eaccceeaaa9b1e565. Full M2/media acceptance remains open. |
@@ -358,6 +666,458 @@ Codex owns bounded FINISH-MCP-SHELL-PROOF-1 follow-up on this branch: prepare no
 
 Follow-up complete; claim released. Controlled cmd/Node actual proof passed 2/2 on first attempt, zero retries, with own identity chain absent after cleanup and fixture exit before native will-quit. No concrete shell-fixture failure, so no product edit. Default npx/network descendants remain unproved. Lane released; evidence .kilo/finish-20260927/mcp-shell-attempt-1-results and tasks/finish-mcp-shutdown-1.md.
 
+## 2026-10-01 NZ - HomeBot finishing takeover (Codex root)
+
+Root owns serial integration, independent evidence review and final build. Three
+existing-agent assignments are complete in docs/FINISHING_AGENT_PROMPTS.md; agent
+identity/receipt remains unconfirmed. Scope and acceptance gaps are recorded in
+docs/FINISHING_HANDOVER.md and the live Drive plan. Main 82c19c4e matches the tested
+#416 tree exactly. Root owns draft #417 review/checksum-oracle correction and the
+separate final package lane until another agent confirms ownership. No competing
+AP editor/generator, shared dependency rebuild, owner-profile replacement or paid
+generation. No full episode or fresh Windows installation acceptance claimed.
+
 ## 2026-09-29 NZ - PR #435 serial integration checkpoint (Codex)
 
 The first-run subscription branch was integrated with main `57df0044` in its isolated worktree. The generated IPC reference was regenerated to retain both voice and subscription methods. Focused first-run/CLI suites passed 55/55, widget typecheck, lint, production build and root docs check passed. Built Windows Electron acceptance used a disposable profile, empty MCP list and local Codex CLI fixture: the Online/ChatGPT choice persisted, the first chat returned the fixture reply, the visible Uncensored control switched off, and the model lock hint disappeared. A first integrated run reached the reply but timed out during Playwright `app.close()`; a same-build local-path close control passed, then the subscription run passed 1/1 with owned PID exit. The cause of the one close timeout is unproved. This is not a real account, packaged-app or installer acceptance. PR #435 stays draft with auto-merge disabled until exact-head required CI and serial merge verification.
+
+## 2026-10-01 NZ - FINISH-SETTINGS-METRICS-1 (Codex root)
+
+Root owns claude/finish-settings-metrics-20261001 from main 82c19c4e for the
+reproduced Advanced Diagnostics metric collision. Existing perf classes have no
+CSS definitions. Scope: scoped responsive styles only, real built-UI baseline and
+narrow/wide visual verification; no telemetry logic, provider or AP changes.
+Agent 2 should choose a different existing everyday-flow defect while root holds
+this claim. Shared dependency targets and owner profiles remain untouched.
+
+FINISH-SETTINGS-METRICS-1 verified locally: old built renderer reproduced zero
+badge spacing; fixed narrow/wide viewports show 8px separation, a separate summary
+row and no overflow. Screenshots inspected, native close passed. Production build,
+TypeScript, scoped ESLint, docs sync and six existing tests passed. Root owns
+serial review/CI/landed-content check and package refresh. Evidence and retained
+initial resize-probe failure are in tasks/finish-settings-metrics.md.
+
+## 2026-10-01 NZ - FINISH-HISTORY-TITLE-1 (Codex root)
+
+Root owns claude/finish-history-title-20261001 from fresh main 17c5a541.
+Actual packaged ChatGPT reply survived restart, but selecting its saved sidebar
+row spawned another title request. Scope: suppress title regeneration when
+loading history, preserve saved titles/messages and fresh-reply title generation.
+Use a local CLI fixture for further verification; no further account calls are
+needed. Agent 2 should choose another defect. Root retains serial package lane.
+Metrics #452 is landed; all required checks passed and tested contents match main.
+
+FINISH-HISTORY-TITLE-1 verified locally; implementation claim released to root
+integration. Real local CLI baseline overwrote an edited title; fixed production
+UI preserves history without requests, retains fresh-reply generation and passes
+restart plus native closes. 108 affected tests/typecheck/lint/docs/build passed.
+See tasks/finish-history-title.md for evidence and retained probe failures.
+
+## 2026-10-01 - FINISH-WHISPER-OFFLINE-1 (Codex)
+
+Codex's source claim on claude/finish-whisper-offline-20261001 is retired:
+PR #457 MERGED as 4c78098fa9c4a03fa3cbb33cfed8166a9898bfcf after all 23 checks
+at reviewed c7068f93 passed, including all six required contexts and nine
+executed OS shards. The branch originally started from origin/main 12b243e5.
+Scope: remove the generic Transformers factory's unconditional discovery and
+metadata requests from Whisper startup. Actual c46d45eb package transcribed a
+known recording accurately and sent it to real subscription chat, but an
+offline restart attempted Hugging Face config.json despite cache-only consent.
+Own checkout/dependencies/profile/package only. Direct component loading,
+44 affected tests, typecheck, scoped lint and release build pass. The rebuilt
+package passed the packaged offline proof on 2026-10-02: the pre-fix package
+reproduced the regression with one controlled config.json request, and the fixed
+package returned the exact transcript with zero controlled fetches and every
+component loaded cache-only (evidence
+.kilo/whisper-offline-package-proof-1790915933557/evidence.json). Serial
+integration is complete: MERGED as #457 into main 4c78098f on 2026-10-02, so the
+claim is released. Human utterance remains a
+separate acceptance gate. No owner installation or signing.
+
+The final technical package verification and delivery above are complete;
+root retains release ownership and the remaining owner acceptance gates.
+
+## 2026-10-02 FINISH-SAVE-SNAPSHOT-1 — merged, source claim retired
+
+Codex plan-gap agent's bounded Code save-snapshot correction on
+`claude/finish-save-snapshot-20261002` merged through PR #458 as
+`8fe8556967f49be9615490208e4301ccf30d8286`. All 23 reviewed bde2d62a checks
+passed, including all six required contexts and nine OS shards; landed 8fe85569
+has a zero full-tree diff from that tested bde2d62a head. A save acknowledgement
+must mark only the text actually sent clean; edits typed while its reply is
+pending stay unsaved and retain the dirty-tab close prompt. No navigation or
+shortcut-dispatch changes. Based on current main with merged IDE Back #456.
+
+Regression fails before and passes after; three new cases plus affected tests,
+TypeScript, scoped lint, docs and release build passed. Actual built Windows
+Electron proof passed six stages using the unchanged real file-save handler
+with its first reply delayed; screenshot inspected. Evidence, executed counts
+and retained initial probe limitation: `tasks/finish-save-snapshot.md`.
+Source implementation is merged and the claim is retired. Root retains
+refreshed final-package verification; the six built stages are not a new
+package or fresh Windows installation acceptance claim.
+
+## 2026-10-03 FINISH-CODE-VIEW-STATE-1 — merged, source claim retired (Codex)
+
+Owner: `/root/remaining_code`, with `/root` owning independent review, runtime
+verification and serial integration. Branch: `claude/finish-code-view-state-20261003`.
+Isolated worktree: `C:/Users/adenk/.homebot/finish-code-view-state-20261003`,
+based on fresh main `d22443b1`. Current Drive master was read on 3 October;
+its later finishing direction permits bounded app defect fixes.
+
+Scope: preserve CodeMirror selection, scroll and undo/redo when visible Back
+closes Code and the user returns. Preserve terminal/browser unmount behavior,
+dirty tabs, save-snapshot semantics and explicit file/line navigation. Regression
+must exercise the actual editor; actual built Electron evidence is required.
+This corrected a limitation in the earlier `4c78098f` technical delivery; it
+does not reopen held Code features.
+
+The original actual editor regression failed; the repair passed 46 focused
+tests, widget TypeScript, scoped lint and release build. Independent review found
+no unresolved source issue. Six production-built Windows stages passed actual
+nonzero scroll/cursor/selection restoration, keyboard undo/redo, dirty Close/Cancel,
+real Save with exact bytes, controlled offline transports and native exit.
+The standard built Electron regression passed 1/1 with zero retries. Evidence
+and retained failed-probe limits: `tasks/finish-code-view-state.md`.
+PR [#463](https://github.com/kingithegreat/Sadie/pull/463) merged on 3 October
+as `9613c7c766c75396deefb2b9be07507c61bbf35d`. All 23 checks at reviewed head
+`5a4d3ef07f0fd374e5001e2f56c049a5980128e1` passed, including all six required
+contexts and nine OS shards. The tested and merged full trees compare equal
+(diff exit 0, zero lines). Current main retains the implementation. The source
+claim is retired; refreshed-package acceptance remains with the existing
+root/release_finish packaging lane, `APP-PACKAGE-REFRESH-2`.
+
+At that checkpoint, `/root/integration_queue` reviewed live GitHub status and
+`/root/release_artifact` checked immutable existing package hashes and receipts.
+The other session's documentation PR #461 remains with its owner.
+Existing AP ownership and held #417/#413/#296/#368/#261 lanes are preserved.
+No install, shared native rebuild, owner profile change or new package is claimed.
+
+## 2026-10-03 — APP-CAPABILITY-FFMPEG-1 (Codex reliability lane)
+
+Source claim retired: root merged PR #462 at `c2ea3121b10eded032062586ad4162f6229edef4`
+on 2026-10-03 after reviewing `9072151c09bb520c5c2fcdcdde30f0f7f500e751`.
+Their complete trees are identical (`85f9e56845aa3b7ce27b59c763247ed27636b8ac`);
+the original failed boundary gate and neutral-resolver correction remain recorded
+in `tasks/app-capability-ffmpeg-1.md`. The boundary checker was not weakened.
+
+All 23 final-head check contexts succeeded; all six strict required contexts
+were present and green, and all nine OS shards executed their E2E test step.
+Windows shard 1 needed retries: media-feed failed its initial run and retry 1,
+then passed retry 2; whole attempt 1 still exited 1. Whole attempt 2 completed
+24 passed and exited 0. This records retry-assisted success, not a clean first run.
+Integrated local verification passed 143 widget tests (97 FFmpeg + 46 Code),
+8 root boundary tests, widget TypeScript, scoped ESLint, docs and whitespace
+checks. The separately retained exact-907 source proof uses the real unchanged
+FFmpeg executable and proves baseline false / fixed true diagnosis.
+
+The earlier guarded invocation launched nothing at its 07:36 UTC checkpoint:
+disk was below 5 GiB; the later snapshot also put RAM below 2 GiB. That is
+historical capacity evidence, not the status of subsequent package attempts.
+The current documentation integration baseline is main
+`2a656bc7315be85acc4ba1e43d84095ae6bdc2d8`, including the other owner's #465.
+Root/release_finish retains APP-PACKAGE-REFRESH-2 and its new 2a656bc runtime
+proof; no replacement package acceptance is established by this retirement.
+
+Draft #464's earlier `05f71427` CI is a historical exact-head checkpoint:
+all 23 checks and the six strict required contexts passed; all nine OS shards
+executed build and E2E steps (196 passed, 95 skipped). Widget workflow attempt 3
+passed 371 suites / 4,932 unit tests and 14 E2E tests after the retained attempt-2
+installed-model delete-control assertion received null. The head and actual
+synthetic checkout had identical full trees; the precise CI race cause remains
+unproved. Refreshed retirement head `f7f55a9f` completed its own checks and
+root review, then merged as `102b4c56`; no failed gate was waived.
+
+The #462 P2 was not reproduced by the installed-toolchain retrospective:
+the configurable re-export spy restored correctly, its nonconfigurable control
+failed as intended, and the selected missing-FFmpeg case passed (1 passed,
+5 skipped). This supports no source correction for that bounded concern; root
+retains owner thread disposition. Retrospective excerpts are not full raw logs,
+and neither full nightly nor package acceptance is established.
+
+This update changes only this owned claim and its task; external claims,
+including the other owner's #461 and the complete #465 section below, remain
+preserved. Root owns publication, integration and final delivery.
+
+## 2026-10-03 — FINISH-STATUS-REFRESH-1 documentation (Codex)
+
+Owner: `/root/remaining_code`; root owns independent review and publication.
+Branch `claude/finish-status-refresh-20261003` starts from fetched main
+`c2ea3121b10eded032062586ad4162f6229edef4` in its own worktree. The claim was
+published and read back in the canonical Drive master before editing.
+
+Scope: retire this session's Code claim above, correct AGENTS.md's authority
+table, and add `docs/CURRENT_STATUS.md` as a dated technical snapshot. Drive
+remains the only live queue. The new snapshot supersedes earlier Handover
+current-source/package assumptions without rewriting the owner-held Handover.
+Other-owner PR #461 files remain untouched. The FFmpeg claim and task belong
+to the owner of #464 and are preserved unchanged here.
+
+Source main includes merged #463 and #462. The earlier verified `4c78098f`
+package and all historical receipts remain intact; no verified replacement is
+claimed. The existing root/release_finish packaging lane owns
+`APP-PACKAGE-REFRESH-2`; a source-only `c2ea3121` preparation checkpoint was
+observed, while final package verification remains pending. The targeted
+missing-FFmpeg live case passed (1 passed, 5 skipped), and the post-merge P2 was
+not reproduced with installed ts-jest 29.4.5/TypeScript 5.9.3. The FFmpeg owner
+retains thread disposition; this is not full-nightly or package acceptance and
+does not assert that its owner stopped a build or changed a source pin.
+Leila art/rig/episode, human voice/listening, entitled Pro and fresh Windows
+installation acceptance remain owner gates. This documentation lane changes
+no app source, dependencies, package or owner profile.
+
+## FINISH-PLAN-STATUS-20261004 — source edits complete, claim released 2026-10-04
+
+Codex / root/integration_queue owns this bounded documentation lane on
+`claude/finish-plan-status-20261004`, isolated from fresh main
+`102b4c562c3545552c08f33a70ffb360b4636e8b`. Root published and read back the
+canonical FINISH-PLAN-EXECUTION-20261004 delegation before this repository claim.
+Drive remains the sole live queue; root owns serial review and integration.
+
+The bounded source edits are complete and their editing claim is released to
+root's serial integration queue. Only exact-head CI/review and landing remain
+with root; this handoff does not assert that publication has landed. Canonical
+Drive records the verified landing and later thread disposition.
+
+Scope is only `docs/CURRENT_STATUS.md`, the obsolete pending-check sentences
+in retired APP-CAPABILITY-FFMPEG-1's CLAIMS/task, and this appended status note.
+All older evidence, failed attempts and retry histories remain preserved.
+The refreshed snapshot records the independently audited source-`2a656bc7`,
+compiled-`c2ea3121` private preview, whose app inputs match main `102b4c56`.
+The sealed-package receipt and its 18 bound evidence files were read/hash-checked
+with zero mismatches. Code/native scopes retain recorded native exits; voice
+scopes retain wrapper success and awaited closures without exact Electron exit
+codes. Human acceptance is not inferred. The dated snapshot preserves prior
+packages, the `05f71427` failed CI evidence and each recorded retry history.
+
+The two obsolete pending-check sentences now record the refreshed `f7f55a9f`
+retirement head's completed checks/root review and merge as `102b4c56`.
+Its post-merge documentation P2 is being corrected in this lane; root retains
+thread resolution after verified landing. No blanket cloud-review clearance
+is claimed. Root drives exact-head review, CI and serial landing; final
+completion and thread disposition are recorded in canonical Drive.
+
+APP-PACKAGE-REFRESH-2 and the delivered preview remain with root/release_finish.
+Other-owner #461's four files and held provider/Code/rig PRs remain untouched.
+There is no app-source edit, build, install, native rebuild, GUI run or owner
+profile change in this lane. Human art/rig/episode, microphone/listening,
+entitled Pro and fresh Windows installation acceptance remain open gates.
+
+## 2026-10-04 — FINISH-FIRST-RUN-CONNECTION-1 (Codex)
+
+Owner: `/root/release_finish`; `/root` owns review, publication, CI and delivery.
+Branch `claude/finish-first-run-connection-20261004` starts from fresh main
+`5af9d592e357fe773ae5dbd087af54fabba37c94` in the private source-only worktree
+`C:/Users/adenk/.homebot/finish-first-run-connection-20261004`. Root published
+and read back the canonical Drive claim before this repository claim/edit.
+
+Scope: only `widget/src/renderer/components/FirstRunModal.tsx`, its existing
+`first-run-modal.test.tsx` suite, this appended claim and the owned task.
+Invalidate pending Online checks when provider/key/path changes; only the
+current check may publish success, failure, model or busy state. Preserve
+privacy consent, subscription choices and local setup. Deferred IPC tests
+must reproduce stale responses before the fix and cover provider/key,
+subscription, A→B→A changes and out-of-order completions with current controls.
+
+Source-handler reproduction is retained in
+`.homebot/.kilo/first-run-stale-check-source-proof-1791107165839.json`; it is
+not React or GUI acceptance. Focused React checks use fixture-only IPC and
+the authorized light-job resource wrapper with read-only dependency junctions.
+No provider credentials/calls, dependencies install/copy/native rebuild, GUI,
+package/build, owner data changes or canonical document writes are authorized
+in this lane. The existing tested package remains preserved. Validation and
+handoff will be recorded in `tasks/finish-first-run-connection.md`.
+
+Source handoff: the unchanged component fails eight deferred race/duplicate
+checks while two current-result controls pass. With the bounded generation
+repair, all ten targeted checks and all four unfiltered related suites / 81
+tests pass; scoped ESLint exits 0 without warnings. Independent read-only review
+accepts lifecycle, A→B→A, stale catch/finally and final-save preservation.
+Baseline/fixed/related receipts remain separate and bind actual source hashes.
+Local full TypeScript/build/GUI remain held by the unchanged 5 GiB / 2 GiB guard;
+root owns the draft PR and hosted CI. This is source-only readiness, not an
+updated package, visible Online acceptance or full app completion.
+
+Approved follow-up scope adds one Windows-only regression to the existing
+`widget/src/renderer/e2e/first-run.e2e.spec.ts`. Existing hosted CI builds the
+current compiled Electron UI/preload; the test will defer only the model-list
+IPC response in an isolated dummy-key fixture and retain the production
+settings save/load handlers. Assert current provider/model and encrypted
+secret persistence where available, with the plaintext dummy key recovered
+through unchanged settings-load IPC. Postlaunch transport guards have positive
+controls and bounded coverage; they do not claim startup or blanket privacy.
+No component/unit/dependency/workflow edits or local GUI/build are added.
+Root owns updated draft publication and exact-head hosted execution; the
+earlier source receipts and tested package remain preserved.
+
+The added compiled-UI case is hosted Windows GitHub Actions only and skips
+normal local runs. Legacy dev RAG eagerly reads its source-derived CI-workspace
+`memory/rag-index.json` outside the fixture stores. The test records that exact
+import read exception and before-launch/after-native-termination absence or
+SHA-256 equality; no RAG/chat action or write is allowed. Claims cover named
+fixture stores, not universal store isolation. PASS requires unchanged RAG and
+actual owned native exit 0 / null signal.
+
+Hosted head `8ff66604` failed all six Windows case executions before fixture/UI
+at the launch identity assertion: Playwright injected `--inspect=0` into argv[1].
+Raw failures and artifact `11301430699` remain preserved; its three retained
+final-outer-attempt receipts show native exit 0/null and absent unchanged RAG.
+No model-race or transport-control success is claimed. An instrument-only
+correction captures full argv, independently binds actual appPath and checks
+the real loaded CommonJS module after renderer hydration. Independent review
+accepts the correction; component/unit/scenario/guards remain unchanged.
+Fresh exact-head hosted execution and built regression acceptance are pending.
+
+A further source audit found the Online path card's full accessible name also
+contains its description/icon/possible badge. Only that scoped locator changes
+from exact to the existing nonexact name query; other exact names match JSX.
+The executing `0ef4405e` run remains historical evidence, not acceptance for
+this locator correction. No production/component/unit/scenario change is added.
+
+## 2026-10-05 — FIX-STUDIO-SHUTDOWN-20261005
+
+Root owns serial integration and delivery from fresh main `c5e40ca` in
+`.homebot/fix-studio-shutdown-20261005`, branch
+`claude/fix-studio-shutdown-20261005`. The canonical Drive claim was published
+and read back before this edit; existing owners and held PRs are preserved.
+
+Release's bounded quit-barrier edit is complete and released to root integration.
+Root reproduced the synchronous cleanup contract failure: original handler
+1 failed regression/3 passing controls; fixed handler 4/4 passed. All 36 related
+MCP tests and scoped lint passed. QA independently reviewed the minimal defer;
+the historical Studio timeout's cause remains unproven. These are controlled
+main-handler fixtures, not actual Electron shutdown acceptance.
+QA's existing `media-panel-debug.e2e.spec.ts` diagnostic uses real stage error
+and persistence assertions, fresh fixture stores and passive close/native
+milestones. It preserves genuine production close and the 180-second budget.
+No mocked close, dependency change, new workflow or global process kill.
+Media's read-only delivery feasibility is complete. Root owns this claim and
+`tasks/fix-studio-shutdown.md`; completed source edits are released into named
+root serial integration for exact-head hosted CI, runtime evidence review,
+configured review and landing. Those gates remain pending at this checkpoint.
+
+Fresh resources (4.22042 GiB disk / 1.46753 GiB RAM) hold local heavy build/GUI
+jobs under the existing 5/2 floor. Serial fixture-only checks may use the light
+1/0.5 floor; hosted compiled CI can provide runtime proof. The existing Desktop
+2a package and owner stores are preserved. Prior Studio timeout points to the
+close boundary but does not establish a product cause or repaired symptom.
+
+Hosted/review correction checkpoint: head 26445c8 is not accepted. Ubuntu's
+new diagnostic failed after normal close resolved because app.process() was
+read from a disposed Playwright handle. QA owns retaining the pre-close child
+handle; product behavior and the historical timeout cause remain separate.
+Configured review found two existing opt-in MCP suites still require the old
+emitted shutdown string. Release owns aligning only those pre-launch assertions
+in `mcp-shutdown.live.e2e.spec.ts` and `mcp-shell-shutdown.live.e2e.spec.ts`.
+Their real fixtures and normal shutdown assertions stay intact. Root retains
+integration, failed-run evidence and draft/auto-merge-off hold; editing of this
+bounded follow-up will be released to root before new-head publication.
+Follow-up source editing is complete and released to named root integration.
+The retained-child instrument and unchanged opt-in behavioral checks received
+independent review; final diagnostic SHA is 33693E84. Old failed results remain
+historical and fresh exact-head hosted/runtime/configured review is required.
+
+Same finishing lane: actual viewed hosted Studio Working screenshot exposed
+generic job busy being announced as Export in progress during Write script.
+Root claims the bounded progress correction before edits. Media owns test-first
+parent-component reproduction and minimal explicit render-operation tracking
+in MediaStudioPanel; root executes baseline before product changes. Tag all
+real render callers and preserve persisted active export attempts, ordinary busy
+disabling, existing previews and other owners. QA/release independently review;
+all source editing is released to root before final-head publication. No real
+provider/media output, credentials, new workflow or local heavy launch.
+Media source editing is complete and released to root serial integration.
+Actual parent-component A/B: 3 failed/11 passed before, 14/14 passed after;
+related preview/status suites 25/25 passed and final scoped lint passed.
+Frozen panel 5DEC214A / unit 0D7D7D57 / shared status B9A46270 were retained.
+Independent review accepted all five render tags, busy-control preservation
+and persisted active-export fallback. These are React/API fixtures; fresh
+compiled UI and whole current-head CI/review remain pending at this checkpoint.
+Root follow-up integration: 387cf hosted typecheck rejected two unsupported
+ByRole `exact` test options. Removed only those options, preserving exact string
+names and all product/diagnostic source. Corrected E685C29E unit passes 25 related
+tests with native 0/null; fresh exact-head full CI/review/evidence pending.
+Configured f19c8 review reopened only the media pair for overlap P2.
+Actual test-first 7 failures/14 controls led to immutable per-job render counts;
+fixed 21/21 and related 32/32 pass with native 0/null, scoped lint passed.
+Final panel90655EC9/unit7D624372 source editing released to root integration.
+Other-job actions and either same-job render completion cannot clear a pending
+render; five operation tags, persisted status fallback and ordinary busy paths
+remain intact. Fresh hosted current-head typecheck/CI/review/evidence pending.
+
+Current c6714 full widget CI passed 4,957 tests (33 skipped), typecheck,
+build and floating-overlay acceptance; configured review completed without
+new findings and the two prior addressed threads are resolved. Matrix
+37231291017 is FAILED: Windows Studio functional stages and normal native
+exit passed, but six executions failed the main-PID equality assertion.
+Playwright's installed Windows launcher uses shell:true, so app.process()
+owns the shell while app.evaluate sees Electron main. All quit milestones
+exist under the distinct main PID. This is an instrument failure, not proof
+of a product hang or resolution of the historical 180-second timeout.
+Root reopens ONLY the Studio diagnostic for media to capture main PID/PPID
+and assert the actual shell-parent relation, preserving both native exits,
+compiled provenance, real close, transport controls and the time budget.
+QA/release audit read-only; root owns serial checks and new-head publication.
+PR468 is draft/auto-merge off. Failed evidence remains immutable; the next
+head requires fresh whole CI, configured review and three-OS artifact proof.
+
+## 2026-10-05 — APP-PACKAGE-SCAN-STREAM
+
+Root coordinates this bounded lane from landed main `794c41e` in
+`.homebot/fix-package-scanner-20261005`, branch
+`claude/fix-package-scanner-20261005`; the canonical Drive claim was read back
+before edits. Media owns only `scripts/scan-package-integrity.js`, its bounded
+native Node fixture test, the thin widget Jest wrapper
+`widget/src/main/__tests__/scan-package-integrity.test.ts`, this claim and
+`tasks/fix-package-scanner.md`.
+Test-first controls precede production changes. Root alone executes fixtures,
+integrates, publishes and runs final acceptance; QA/release review read-only.
+Pin the intended `resources/app.asar`, reject ambiguity, and preserve forbidden
+entry-name checks while verifying packed/unpacked/link readability without a
+full extracted tree. No dependencies, manifests, build, GUI, caches, profiles,
+installer, live Ancient Pathways assets or foreign source edits. Installed
+official ASAR/tool dependencies remain read-only. The initial resource snapshot
+met the 2 GiB RAM floor but disk 3.969 GiB held heavy work under 5 GiB; the prior full-delivery
+planning baseline remains about 7.063 GiB plus unmeasured overhead. Scanner
+fixtures and any storage benefit do not establish fresh Desktop acceptance.
+
+Root's original 31-control baseline ran 17 passed / 14 failed, exit 1/null.
+The added directory-alias A/B ran 32 passed / 2 failed (ancestor and sibling
+cycles), followed by final scanner `ADF0E90A` passing all 34 controls, exit
+0/null, zero skipped. The existing-CI widget wrapper passed its one Jest test,
+which runs and asserts those same 34 native controls; this is not 35 distinct
+controls. Root also scanned the unchanged retained 2a archive read-only:
+15,306 files / 17,903 entries / 936,777,992 payload bytes. The archive hash
+remained unchanged. That byte count describes logical temporary extraction
+writes avoided, not measured physical reclamation. Earlier failures remain
+retained. Media editing is released to root; full CI, typecheck, publication
+and fresh Desktop delivery remain root-owned and pending.
+
+## 2026-10-07 - LOCAL-CHAT-TRANSPORT
+
+Local-chat source edits are released to root's serial chat integration. The
+agent prepared Ollama NDJSON transport and cancellation in
+streamFromOllamaWithTools, neutral router/ollama-chat-stream.ts, and bounded
+ollama-chat-stream.test.ts. Private branch claude/chat-local-20261007 starts
+from main ce53a7db; custom and renderer agents own separate areas. Root owns
+Drive coordination, final integration, publication and native UI proof. No
+shared checkout/profile/dependency mutations. Test-first baseline: 8 failed
+and 1 passed; heavy checks paused under current resource floor.
+
+## Chat local/custom serial integration
+
+Root owns `claude/chat-integration-20261007`, including renderer Retry identity,
+local/custom transports and queued-tool Stop guards. Agent source claims are
+released into this integration; hosted compiler, full tests, production native
+chat, review and landing remain pending. The dedicated native fixtures do not
+contact owner providers or prove response quality. See
+`tasks/chat-local-custom-20261007.md` and the preserved private A/B receipts.
+Preserve active wizard-retention, IDE, character and existing delivery owners.
+
+## Chat hosted fixture corrections
+
+Local chat agent owns private `claude/chat-native-fix-20261007` from `7738834d`:
+chat-only hardware seed, scoped custom Connect, preserved nested failure and
+merge-source receipts, and ordinary IPC current-user duplicate correction with
+local/custom regression controls. No shared profile/dependency mutations or
+local native/heavy launch. Root retains integration, publication and qualification.

@@ -1,0 +1,47 @@
+/* Studio's start screen uses the current theme and puts the next task first. */
+.ms-workflow-overview, .ms-tools-disclosure, .ms-create-heading { flex-shrink: 0; }
+.media-studio .ms-dcc-bar {
+  background: var(--bg-secondary, #202123);
+  border: 1px solid var(--border-color, rgba(127, 127, 127, .25));
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.media-studio .ms-dcc-branding { display: block; }
+.media-studio .ms-dcc-branding h2 { color: var(--text-primary); font-size: 1.2rem; }
+.ms-studio-tagline { color: var(--text-secondary); font-size: .88rem; margin: .35rem 0 0; }
+.ms-workflow-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(240px, 1fr);
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, .25));
+  border-radius: 14px;
+  background: var(--bg-secondary, #202123);
+}
+.ms-workflow-eyebrow { color: var(--text-secondary); font-size: .7rem; letter-spacing: .12em; font-weight: 700; }
+.ms-workflow-intro h3 { font-size: 1.2rem; margin: .4rem 0; line-height: 1.3; }
+.ms-workflow-intro p { color: var(--text-secondary); line-height: 1.5; margin: .4rem 0 .75rem; }
+.ms-workflow-actions { display: flex; flex-wrap: wrap; gap: .65rem; }
+.ms-workflow-actions .ms-btn { white-space: normal; overflow-wrap: anywhere; text-align: start; }
+.ms-workflow-intro .ms-workflow-note { font-size: .75rem; margin: .65rem 0 0; }
+.ms-workflow-counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.ms-workflow-counts > div { border-inline-start: 2px solid var(--border-color, rgba(127,127,127,.25)); padding: .35rem .65rem; }
+.ms-workflow-counts dt { color: var(--text-secondary); font-size: .8rem; }
+.ms-workflow-counts dd { font-size: 1.25rem; font-weight: 650; margin: .2rem 0 0; }
+.ms-tools-disclosure > summary { cursor: pointer; color: var(--text-secondary); padding: .5rem 0; font-size: .9rem; }
+.ms-tools-disclosure .ms-director-hub { margin-top: .75rem; }
+.media-studio .ms-tools-disclosure .ms-hub-card { grid-template-columns: minmax(0, 1fr) auto; text-align: start; color: var(--text-primary); font: inherit; }
+.ms-tools-disclosure .ms-hub-info { min-width: 0; }
+.ms-tools-disclosure .ms-hub-title, .ms-tools-disclosure .ms-hub-desc { display: block; }
+.ms-tools-disclosure .ms-hub-title { color: var(--text-primary); }
+.ms-create-heading h3 { margin: 0; font-size: 1.05rem; }
+.media-studio .ms-job:focus { outline: 2px solid var(--accent-primary, #708b56); outline-offset: 3px; }
+.ms-tools-disclosure summary:focus-visible, .ms-tools-disclosure button:focus-visible { outline: 2px solid var(--accent-primary, #708b56); outline-offset: 3px; }
+@media (max-width: 760px) {
+  .ms-workflow-overview { grid-template-columns: 1fr; padding: 1rem; gap: 1rem; }
+  .ms-workflow-counts { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .35rem; }
+  .ms-workflow-counts > div { padding: .35rem .5rem; }
+}
+@media (max-width: 480px) {
+  .ms-workflow-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

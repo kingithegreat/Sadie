@@ -8109,13 +8109,9 @@ body {
    column never swallows clicks meant for the chat underneath. */
 .floating-feature-buttons {
   position: absolute;
-  /* Must clear .input-container, which measures 91px tall with a single-line
-     composer. At the original 90px the lower button overlapped it by 17px â€”
-     which is the collision the responsive pass "fixed" by hiding the whole
-     container. One value at every width, so the three media queries below can
-     no longer drift out of agreement with it; floating-features.e2e asserts
-     the buttons never intersect the composer. */
-  bottom: 120px;
+  /* Chat measures the composer as text, attachments and guidelines change its
+     height. Keep both actions above it; Home uses the compact fallback. */
+  bottom: var(--homebot-composer-clearance, 120px);
   right: 16px;
   display: flex;
   flex-direction: column;
@@ -9127,9 +9123,40 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
 .ws-main {
   grid-area: main;
   display: grid;
-  grid-template-rows: 35px 1fr auto;
+  grid-template-rows: auto 35px 1fr auto;
   min-width: 0;
   overflow: hidden;
+}
+/* Header: the labelled way back to the main HomeBot interface, top-left of
+   the editor column where people look for "back". */
+.ws-header {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 32px;
+  padding: 0 8px;
+  background: var(--ws-tabs-bg, #181818);
+  border-bottom: 1px solid var(--hairline);
+  min-width: 0;
+}
+[data-theme='light'] .ws-header { --ws-tabs-bg: #f3f3f3; }
+.ws-header-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  flex: 0 0 auto;
+  padding: 3px 12px;
+  background: var(--accent, #7c5cff);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter var(--dur-fast) var(--ease-apple);
+}
+.ws-header-back:hover { filter: brightness(1.12); }
+.ws-header-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ws-header-root {
+  min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  opacity: 0.7; font-size: 12px;
 }
 .ws-tabs {
   display: flex; align-items: stretch; overflow-x: auto;
@@ -10146,6 +10173,9 @@ h4, h5, .setting-label { letter-spacing: -0.012em; }
   width: 100%;
   max-width: 22rem;
   height: 2rem;
+  /* Keep native controls usable when Studio's column is taller than its viewport. */
+  min-height: 2rem;
+  flex-shrink: 0;
 }
 
 /* The one-off video-engine download. Informational, not an error â€” nothing has

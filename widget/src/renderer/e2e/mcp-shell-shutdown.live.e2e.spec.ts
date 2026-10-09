@@ -29,7 +29,8 @@ for (const phase of ['ready', 'handshake'] as const) {
     const built = fs.readFileSync(entry, 'utf8');
     expect(built).toContain('ownedServers.add(owned)');
     expect(built).toContain('mcpQuitPending = true');
-    expect(built).toContain('shutdownMcpServers().catch(safeCatch).finally');
+    // The native/connector exit ordering below proves the quit barrier;
+    // its Promise-chain spelling is not a compiled-entry identity contract.
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-mcp-shell-live-'));
     const profile = path.join(home, 'profile');
     const configDir = path.join(profile, 'config');
