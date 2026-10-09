@@ -62,7 +62,12 @@ const live = process.platform === 'win32' && process.env.HOMEBOT_LIVE_TASK_TREE 
       expect(phases).not.toContain('attach'); expect(phases).not.toContain('go');
       if (sdkGate) { expect(listening!.ok).toBe(true); expect(phases).toContain('listen'); }
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0][0]).toBe(verifiedWorkspaceWindowsJobRuntime().host);
+      // The launched image is the private per-run copy of the verified bytes,
+      // never a reopen of the installed asset pathname.
+      const launched = String(spy.mock.calls[0][0]);
+      expect(launched).not.toBe(verifiedWorkspaceWindowsJobRuntime().host);
+      expect(path.basename(launched)).toBe('OwnedWindowsJobHost.exe');
+      expect(path.basename(path.dirname(launched))).toMatch(/^homebot-job-host-/);
       expect(spy.mock.calls[0][1]).toEqual([]);
       await job.stop(); expect(spy).toHaveBeenCalledTimes(1);
     } catch (error) { originalFailure = error; throw error; }

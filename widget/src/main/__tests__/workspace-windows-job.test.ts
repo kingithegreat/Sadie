@@ -7,6 +7,12 @@ import { verifiedWorkspaceWindowsJobRuntime } from '../workspace-windows-job-ass
 
 jest.mock('child_process', () => ({ spawn: jest.fn() }));
 jest.mock('../workspace-windows-job-asset', () => ({ verifiedWorkspaceWindowsJobRuntime: jest.fn() }));
+// The private per-run copy is exercised against the real filesystem in
+// workspace-windows-job-host-copy.test.ts; here it returns the fixture path.
+const mockStaged = { confirmLaunched: jest.fn(), release: jest.fn() };
+jest.mock('../workspace-windows-job-host-copy', () => ({
+  stageVerifiedWorkspaceWindowsJobHost: jest.fn((host: string) => ({ path: host, confirmLaunched: () => mockStaged.confirmLaunched(), release: () => mockStaged.release() })),
+}));
 const spawnMock = spawn as unknown as jest.Mock;
 const runtime = { host: 'C:\\HomeBot\\assets\\OwnedWindowsJobHost.exe', hostSha256: 'c'.repeat(64) };
 const identity = { creation: '639269357577651780', parent: 44 };
@@ -27,6 +33,7 @@ describe('creation-gated Windows Job ownership', () => {
   const oldSystemRoot = process.env.SystemRoot;
   beforeEach(() => {
     process.env.SystemRoot = 'C:\\Windows'; jest.useFakeTimers(); spawnMock.mockReset();
+    mockStaged.confirmLaunched.mockReset(); mockStaged.release.mockReset();
     (verifiedWorkspaceWindowsJobRuntime as jest.Mock).mockReset().mockReturnValue({ ...runtime, assembly: 'C:\\HomeBot\\assets\\OwnedWindowsJob.dll', sha256: 'b'.repeat(64) });
   });
   afterEach(() => { if (oldSystemRoot === undefined) delete process.env.SystemRoot; else process.env.SystemRoot = oldSystemRoot; jest.clearAllTimers(); jest.useRealTimers(); });
@@ -43,6 +50,28 @@ describe('creation-gated Windows Job ownership', () => {
     expect(fake.child.stdin.write).toHaveBeenCalledTimes(1);
     fake.send({ type: 'listening' });
     const stopping = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopping;
+  });
+
+  it('launches only the staged verified copy and withholds setup when the launched copy is not confirmed', async () => {
+    const { stageVerifiedWorkspaceWindowsJobHost } = jest.requireMock('../workspace-windows-job-host-copy');
+    const fake = helper();
+    const job = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    expect(stageVerifiedWorkspaceWindowsJobHost).toHaveBeenLastCalledWith(runtime.host, runtime.hostSha256);
+    expect(mockStaged.confirmLaunched).toHaveBeenCalledTimes(1);
+    expect(fake.child.stdin.write).toHaveBeenCalledTimes(1);
+    fake.send({ type: 'listening' });
+    const stopping = job.stop(); await settle(); fake.reply({ ok: true, empty: true }); fake.child.emit('close', 0); await stopping;
+    expect(mockStaged.release).toHaveBeenCalled();
+
+    mockStaged.release.mockReset();
+    mockStaged.confirmLaunched.mockImplementationOnce(() => { throw new Error('swapped'); });
+    const refused = helper(); (refused.child as any).kill = jest.fn();
+    const blocked = createPendingWorkspaceWindowsJob({ gate: { pipeName: 'hbi-00000000-0000-0000-0000-000000000001', capability: 'a'.repeat(64) } });
+    await expect(blocked.listening).rejects.toThrow('not the verified host copy');
+    expect(refused.child.stdin.write).not.toHaveBeenCalled();
+    expect((refused.child as any).kill).toHaveBeenCalled();
+    refused.child.emit('close', 1);
+    expect(mockStaged.release).toHaveBeenCalled();
   });
 
   it('isolates inherited and target CLR loaders while preserving the approved target environment in GO', async () => {

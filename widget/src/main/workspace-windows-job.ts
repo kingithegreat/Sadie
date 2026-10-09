@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import { verifiedWorkspaceWindowsJobRuntime } from './workspace-windows-job-asset';
+import { stageVerifiedWorkspaceWindowsJobHost, type StagedWorkspaceWindowsJobHost } from './workspace-windows-job-host-copy';
 import type { WorkspacePtyIdentity } from './workspace-pty-identity';
 
 export interface WorkspaceWindowsJob {
@@ -62,6 +63,7 @@ function hostEnvironment(options: JobOptions): NodeJS.ProcessEnv {
 export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): PendingWorkspaceWindowsJob {
   let child: ChildProcessWithoutNullStreams | undefined;
   let asset: { host: string; hostSha256: string; assembly: string; sha256: string };
+  let staged: StagedWorkspaceWindowsJobHost | undefined;
   let setup: string;
   let readyResolve!: () => void, readyReject!: (error: Error) => void;
   let listenResolve!: () => void, listenReject!: (error: Error) => void;
@@ -198,9 +200,19 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     const encodedPath = Buffer.from(asset.assembly, 'utf8').toString('base64');
     if (!encodedPath || encodedPath.length > 8192 || !/^[a-f0-9]{64}$/.test(asset.sha256)) throw new Error('The fixed product setup is invalid.');
     setup = [encodedPath, asset.sha256, options.gate?.pipeName || '', options.gate?.capability || ''].join('\n') + '\n';
+    const environment = hostEnvironment(options);
+    // Launch the exact verified bytes, never a reopened installed pathname: a
+    // private per-run copy is written from the hashed bytes and re-verified via
+    // a held handle (see workspace-windows-job-host-copy.ts).
+    staged = stageVerifiedWorkspaceWindowsJobHost(asset.host, asset.hostSha256);
     spawnStarted = Date.now();
-    child = spawn(asset.host, [], { windowsHide: true, env: hostEnvironment(options), stdio: ['pipe', 'pipe', 'pipe'] });
-  } catch { observedClose = { observedMs: elapsed(), outcome: 'not-started' }; closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
+    child = spawn(staged.path, [], { windowsHide: true, env: environment, stdio: ['pipe', 'pipe', 'pipe'] });
+  } catch { staged?.release(); observedClose = { observedMs: elapsed(), outcome: 'not-started' }; closed = true; closeResolve(); fail('The owned Job helper could not start.'); return job; }
+  const launchedCopy = staged!;
+  let launchRefused = false;
+  // spawn() returns after CreateProcess mapped the image, so the copy can no
+  // longer be rewritten. Only a confirmed copy receives the setup capability.
+  try { launchedCopy.confirmLaunched(); } catch { launchRefused = true; }
   const startupTimer = setTimeout(() => {
     startupTimeoutObservedMs = elapsed();
     fail('The owned Job helper did not become ready in time. Cleanup ownership is retained.' + diagnostic());
@@ -243,8 +255,14 @@ export function createPendingWorkspaceWindowsJob(options: JobOptions = {}): Pend
     observedClose = { observedMs: elapsed(), outcome: signal ? 'signal' : boundedCode === 0 ? 'zero' : boundedCode === undefined ? 'unknown' : 'nonzero',
       ...(boundedCode === undefined ? {} : { exitCode: boundedCode }),
     };
-    clearTimeout(startupTimer); closed = true; closeCode = code; closeResolve(); if (!zeroConfirmed || code !== 0) fail('The owned Job helper closed without verified cleanup.');
+    clearTimeout(startupTimer); closed = true; closeCode = code; closeResolve(); launchedCopy.release(); if (!zeroConfirmed || code !== 0) fail('The owned Job helper closed without verified cleanup.');
   });
+  if (launchRefused) {
+    // No setup, pipe name or capability is ever written to an unverified image.
+    fail('The launched Job helper was not the verified host copy. No project execution was released.');
+    try { child.kill(); } catch { /* the close handler records the outcome */ }
+    return job;
+  }
   // Setup has four fixed bounded lines, not a PowerShell JSON cmdlet cold path.
   // Capabilities remain only in the held stdin pipe, never executable argv.
   child.stdin.write(setup!);
