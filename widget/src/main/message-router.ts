@@ -6,6 +6,8 @@ import axios from 'axios';
 import { debug as logDebug, error as logError } from '../shared/logger';
 import streamFromHomeBotProxy from './stream-proxy-client';
 import { HomeBotRequest, HomeBotRequestWithImages, ImageAttachment, DocumentAttachment } from '../shared/types';
+import { workspaceStreamHandler, currentWorkspace, releaseWorkspaceStream, validateWorkspaceRoot } from './workspace-context';
+import { readWorkspaceTranscript, workspaceTranscriptModelMessages } from './workspace-conversation-store';
 import { IPC_SEND_MESSAGE, HOMEBOT_WEBHOOK_PATH, DEFAULT_OLLAMA_URL } from '../shared/constants';
 import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/system-prompt';
 import { getSkillCatalogue, matchSkills } from './skills';
@@ -341,6 +343,13 @@ export function shouldInjectMorningBriefingForRequest(
 
 // Track active streams (Node Readable) by streamId so we can cancel them
 const activeStreams: Map<string, { destroy?: () => void; stream?: NodeJS.ReadableStream }> = new Map();
+function setActiveStream(id: string, entry: { destroy?: () => void; stream?: NodeJS.ReadableStream }): void {
+  if (currentWorkspace()?.cancelled) {
+    try { entry.destroy?.(); (entry.stream as any)?.destroy?.(); } catch (error) { safeCatch(error); }
+    return;
+  }
+  activeStreams.set(id, entry);
+}
 
 // ============================================
 // Conversation History Management
@@ -358,6 +367,7 @@ const PROJECT_MARKERS = ['package.json', 'Cargo.toml', 'pyproject.toml', 'go.mod
   'composer.json', 'Gemfile', 'pubspec.yaml', '*.sln', 'deno.json'];
 
 function getProjectPath(): string | undefined {
+  if (currentWorkspace()) return currentWorkspace()!.root;
   try {
     const settings = getSettings();
     if (settings.projectPath && typeof settings.projectPath === 'string') {
@@ -498,6 +508,9 @@ const SMALL_MODEL_HISTORY_MSG_CAP = 400;
 
 // Exported for test access
 export function addToHistory(conversationId: string, role: 'user' | 'assistant', content: string) {
+  // The first appended turn must not make ensureHydrated mistake a fresh
+  // process for an already loaded conversation and discard its saved context.
+  ensureHydrated(conversationId);
   if (!conversationHistory.has(conversationId)) {
     conversationHistory.set(conversationId, []);
   }
@@ -545,7 +558,12 @@ function getHistory(conversationId: string): ConversationMessage[] {
   return conversationHistory.get(conversationId) || [];
 }
 
+const INLINE_DRAFT_TOOL_ERROR = 'The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.';
+
 function getProviderHistory(conversationId: string, message: string, currentUserInHistory = false): ConversationMessage[] {
+  // Hydrate first so a fresh process does not send an empty context for a
+  // conversation that already has saved turns (including IDE transcripts).
+  ensureHydrated(conversationId);
   const history = getHistory(conversationId);
   const last = history[history.length - 1];
   // The IPC chat path records the current turn before routing. Providers append
@@ -582,8 +600,18 @@ export function ensureHydrated(conversationId: string): void {
   if (conversationHistory.has(conversationId) && conversationHistory.get(conversationId)!.length > 0) return;
   try {
     const stored = MemoryManager.getConversation(conversationId);
-    if (!stored || !stored.messages || stored.messages.length === 0) return;
-    const msgs: ConversationMessage[] = stored.messages
+    let savedMessages = stored?.messages;
+    if (!savedMessages?.length && conversationId.startsWith('workspace:')) {
+      const authority = currentWorkspace();
+      // A conversation ID is not filesystem authority. Only the active,
+      // validated request can restore its own IDE transcript into model history.
+      if (authority && !authority.cancelled && validateWorkspaceRoot(conversationId.slice('workspace:'.length)) === authority.root) {
+        const turns = readWorkspaceTranscript(authority.root).turns;
+        savedMessages = workspaceTranscriptModelMessages(turns).map(message => ({ ...message, timestamp: new Date().toISOString(), streamingState: 'finished' as const }));
+      }
+    }
+    if (!savedMessages?.length) return;
+    const msgs: ConversationMessage[] = savedMessages
       .filter(m => {
         if (m.role === 'user') return true;
         if (m.role !== 'assistant') return false;
@@ -762,6 +790,10 @@ export function getCannedResponse(message: string): string | null {
 // Exported deterministic intent router so it can be used by the message handler
 // and imported directly by unit tests.
 export async function preProcessIntent(userMessage: string, conversationId?: string): Promise<{ calls: any[] } | null> {
+  // Legacy automatic intents include direct Desktop writes and other pseudo
+  // handlers outside registered tool review. Every IDE scope, even an approved
+  // plan, must use the model's workspace-gated tools and Changes proposals.
+  if (currentWorkspace()) return null;
   if (!userMessage || typeof userMessage !== 'string') return null;
   const rawM = userMessage.toLowerCase();
   let m = rawM;
@@ -2035,7 +2067,7 @@ async function recoverWithoutStreaming(opts: {
   message: string;
   modelOverride?: string;
 }): Promise<string | null> {
-  const history = getHistory(opts.conversationId).slice(-10).map(h => ({ role: h.role, content: h.content }));
+  const history = getProviderHistory(opts.conversationId, opts.message, true).slice(-10).map(h => ({ role: h.role, content: h.content }));
   const model = (typeof opts.modelOverride === 'string' && opts.modelOverride.trim())
     || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
   const small = isSmallModel(model);
@@ -2077,6 +2109,9 @@ async function finishFailedStream(opts: {
 }): Promise<void> {
   const { sender, streamId, err, errorLabel } = opts;
   try {
+    // Generic chat recovery drops the draft authority prompt and may stringify
+    // unsolicited tool calls into replacement code. Keep draft failures explicit.
+    if (currentWorkspace()?.mode === 'inline-draft') throw err;
     // Only recover a stream that delivered NOTHING. The renderer appends
     // chunks, so sending a full answer after a partial one would concatenate
     // the two into a garbled message — the user would read the first half of
@@ -2138,7 +2173,7 @@ export async function streamFromLLM(
   const contextHasUrl = getHistory(conversationId)
     .slice(-6)
     .some(m => /\bhttps?:\/\/\S+/i.test(m.content || ''));
-  const shouldOfferTools = !skipToolsForGreeting
+  const shouldOfferTools = currentWorkspace()?.mode !== 'inline-draft' && !skipToolsForGreeting
     // The phrase gate alone missed whole categories — "make me a short video"
     // is filesystem/terminal/web phrasing to no one. When the intent
     // classifier recognises ANY tool category, that alone opens the gate.
@@ -2221,18 +2256,21 @@ export async function streamFromLLM(
       // Fire-and-forget memorization of any self-disclosures in this message.
       // Cap recall for small models to avoid blowing the context window.
       const cloudModelSmall = isSmallModel(cloudModelName);
+      const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
+      // cloudGuidelines already carries options.conversationPrompt (IDE authority
+      // and per-chat guidelines), so it is not appended a second time here.
       let cloudSystemPrompt = systemPromptWithGuidelines;
-      const recalled = await recallMemory(message).catch(() => null);
+      const recalled = inlineDraft ? null : await recallMemory(message).catch(() => null);
       if (recalled) {
         const cappedRecall = cloudModelSmall ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
         cloudSystemPrompt += `\n\n[Remembered facts about the user from prior sessions]\n${cappedRecall}`;
       }
-      memorizeIfUseful(message).catch(() => {});
+      if (!inlineDraft) memorizeIfUseful(message).catch(() => {});
 
       // RAG: inject relevant indexed document context
       try {
-        await ragSearchWarmup(message).catch(() => {});
-        const ragHit = ragSearch(message);
+        if (!inlineDraft) await ragSearchWarmup(message).catch(() => {});
+        const ragHit = inlineDraft ? null : ragSearch(message);
         if (ragHit) {
           const ragText = cloudModelSmall ? ragHit.text.slice(0, 600) : ragHit.text;
           cloudSystemPrompt += `\n\n[Relevant document context from "${ragHit.filename}" (score: ${ragHit.score.toFixed(2)})]\n${ragText}`;
@@ -2308,7 +2346,11 @@ export async function streamFromLLM(
         toolRoundTrip.onError,
         controller.signal,
         toolDefs,
-        toolDefs?.length ? toolRoundTrip.onToolCall : undefined,
+        inlineDraft && providerSupportsTools
+          // Inline drafts never run tools. Surface the refusal directly (no
+          // local fallback) and stop the stream so no further output lands.
+          ? () => { cloudError(new Error(INLINE_DRAFT_TOOL_ERROR)); controller.abort(); }
+          : toolDefs?.length ? toolRoundTrip.onToolCall : undefined,
         cloudImageData,
       )).catch(toolRoundTrip.onError);
 
@@ -2355,6 +2397,7 @@ export async function streamFromLLM(
       const controller = new AbortController();
       const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
       // Build system prompt for the actual code model (may differ in size from chatModel)
+      const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
       const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, cloudGuidelines);
 
       // Code API supports tools for all non-custom providers
@@ -2362,6 +2405,7 @@ export async function streamFromLLM(
         || codeApiProvider === 'anthropic'
         || codeApiProvider === 'openrouter';
       const codeToolDefs = codeProviderSupportsTools
+        && !inlineDraft
         && shouldOfferToolsForMessage(message, { hasDocuments })
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
@@ -2376,7 +2420,10 @@ export async function streamFromLLM(
         message, history.map(m => ({ role: m.role as any, content: m.content })),
         codeApiConfig, codeSystemPrompt,
         toolRoundTrip.onChunk, toolRoundTrip.onEnd, toolRoundTrip.onError, controller.signal,
-        codeToolDefs, codeToolDefs?.length ? toolRoundTrip.onToolCall : undefined,
+        codeToolDefs,
+        inlineDraft && codeProviderSupportsTools
+          ? () => { toolRoundTrip.onError(new Error(INLINE_DRAFT_TOOL_ERROR)); controller.abort(); }
+          : codeToolDefs?.length ? toolRoundTrip.onToolCall : undefined,
       )).catch(toolRoundTrip.onError);
       return { cancel: () => controller.abort() };
     } else {
@@ -2388,6 +2435,7 @@ export async function streamFromLLM(
   // When MoA is enabled and the query is complex enough, fan out to multiple
   // proposer models and aggregate the results.
   if (
+    currentWorkspace()?.mode !== 'inline-draft' &&
     settings.moaEnabled &&
     Array.isArray(settings.moaProposers) && settings.moaProposers.length >= 2 &&
     settings.moaAggregator &&
@@ -2395,7 +2443,7 @@ export async function streamFromLLM(
     shouldUseMoA(message)
   ) {
     console.log(`[HomeBot] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
-    const history = getHistory(conversationId);
+    const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
     const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, settings.chatGuidelines);
 
     // Memory recall for proposers
@@ -2525,7 +2573,7 @@ export async function streamFromOllamaWithTools(
    * is for — so a matched category opens the gate too.
    */
   const intentCategories = detectToolCategories(message);
-  const willUseTools = !hasImages
+  const willUseTools = currentWorkspace()?.mode !== 'inline-draft' && !hasImages
     && !isSimpleGreeting(message)
     && !isSynthesisCall
     && (shouldOfferToolsForMessage(message, { hasImages, hasDocuments: options?.hasDocuments ?? false })
@@ -2607,13 +2655,13 @@ export async function streamFromOllamaWithTools(
     : rawDigest;
 
   let recalled: string | null = null;
-  if (!uncensoredThisTurn && !isSynthesisCall) {
+  if (currentWorkspace()?.mode !== 'inline-draft' && !uncensoredThisTurn && !isSynthesisCall) {
     recalled = await recallMemory(message).catch(() => null);
     memorizeIfUseful(message).catch(() => {});
   }
 
   let ragSnippet: string | null = null;
-  if (!isSynthesisCall && !uncensoredThisTurn) {
+  if (currentWorkspace()?.mode !== 'inline-draft' && !isSynthesisCall && !uncensoredThisTurn) {
     try {
       // Pre-warm embedding cache so the synchronous ragSearch can use it
       await ragSearchWarmup(message).catch(() => {});
@@ -2850,6 +2898,8 @@ export async function streamFromOllamaWithTools(
       
       let assistantContent = '';
       let pendingToolCalls: any[] = [];
+      const inlineDraftMode = currentWorkspace()?.mode === 'inline-draft';
+      let inlineDraftToolRequested = false;
       // Buffer chunks so we can detect tool JSON before sending to the UI.
       // Flush progressively after a short delay; if tool JSON is detected
       // on stream end we replace the content.
@@ -2882,11 +2932,18 @@ export async function streamFromOllamaWithTools(
           if (willUseTools && !disableTools && Array.isArray(parsed.message?.tool_calls)) {
             pendingToolCalls.push(...parsed.message.tool_calls);
           }
+          if (inlineDraftMode && Array.isArray(parsed.message?.tool_calls) && parsed.message.tool_calls.length) {
+            inlineDraftToolRequested = true;
+          }
         });
       } finally {
         if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
       }
       if (controller.signal.aborted || ended) return;
+
+      if (inlineDraftToolRequested) {
+        throw new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed. Try generating replacement code again.');
+      }
       
       // If no explicit tool_calls were emitted but the assistant content
       // looks like raw tool JSON, parse and route it through the tool
@@ -3238,7 +3295,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
 
     
     // Streaming responses via HTTP chunked response (POST -> stream)
-    ipcMain.on('homebot:stream-message', async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
+    ipcMain.on('homebot:stream-message', workspaceStreamHandler(async (event: IpcMainEvent, request: HomeBotRequestWithImages & { streamId?: string }) => {
       const streamStartMs = Date.now();
       if (process.env.NODE_ENV !== 'production') console.log('[DIAG] Received homebot:stream-message', { request });
       try { pushRouter(`Received homebot:stream-message conv=${request?.conversation_id} user=${request?.user_id}`); } catch (e) { safeCatch(e); }
@@ -3276,7 +3333,9 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       // Should we use direct Ollama mode? Honor the direct-ollama env only in E2E/test runs.
       // This lets Playwright packaged runs enable test-only behavior while keeping
       // release builds protected via `isReleaseBuild` in the env helper.
-      const useDirectOllama = isE2E;
+      // IDE calls must use the in-process tool dispatcher: a remote webhook
+      // cannot inherit request-local filesystem authority/review guards.
+      const useDirectOllama = isE2E || !!currentWorkspace();
       if (process.env.NODE_ENV !== 'production') {
         console.log('[DIAG] useDirectOllama calculation:', { isE2E, HOMEBOT_DIRECT_OLLAMA: process.env.HOMEBOT_DIRECT_OLLAMA, useDirectOllama });
         try { pushRouter(`useDirectOllama=${useDirectOllama} isE2E=${isE2E} env=${process.env.HOMEBOT_DIRECT_OLLAMA}`); } catch (e) { safeCatch(e); }
@@ -3395,7 +3454,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           };
           
           // Start emitting chunks
-          activeStreams.set(streamId, { 
+          setActiveStream(streamId, {
             destroy: () => {
               if (process.env.NODE_ENV !== 'production') console.log('[E2E-MOCK] Stream cancelled via destroy, streamId:', streamId);
               try { pushRouter(`E2E-MOCK stream cancelled via destroy streamId=${streamId}`); } catch (e) { safeCatch(e); }
@@ -3441,7 +3500,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // On the first interaction each calendar day, generate a proactive
         // weather + calendar + reminders summary and stream it before the
         // normal response.  Runs in the background so it doesn't block.
-        if (shouldInjectMorningBriefingForRequest(request)) {
+        if (currentWorkspace()?.mode !== 'inline-draft' && shouldInjectMorningBriefingForRequest(request)) {
           markBriefingDelivered(); // mark immediately to prevent double-trigger
           generateBriefing(requestConfirmation).then((briefing) => {
             if (briefing && activeStreams.has(streamId)) {
@@ -3488,7 +3547,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
-                activeStreams.set(streamId, { destroy: () => {} });
+                setActiveStream(streamId, { destroy: () => {} });
               }
 
               // Stream a brief tool-activity indicator so the user sees what's happening
@@ -3709,7 +3768,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
-                activeStreams.set(streamId, { destroy: handler.cancel });
+                setActiveStream(streamId, { destroy: handler.cancel });
                 return;
               }
 
@@ -3831,7 +3890,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                 undefined, requestConfirmation,
                 (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
               );
-              activeStreams.set(streamId, { destroy: handler.cancel });
+              setActiveStream(streamId, { destroy: handler.cancel });
               return;
             }
             // ── END WEB SEARCH SYNTHESIS ──
@@ -4017,7 +4076,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         undefined, requestConfirmation,
                         (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                       );
-                      activeStreams.set(streamId, { destroy: handler.cancel });
+                      setActiveStream(streamId, { destroy: handler.cancel });
                       return;
                     }
                   }
@@ -4099,7 +4158,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                       undefined, requestConfirmation,
                       (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                     );
-                    activeStreams.set(streamId, { destroy: handler.cancel });
+                    setActiveStream(streamId, { destroy: handler.cancel });
                     return;
                   }
                   responseText += `📰 No articles found for that topic. Try rephrasing or asking me to search the web.\n`;
@@ -4376,7 +4435,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                   undefined, requestConfirmation,
                   (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                 );
-                activeStreams.set(streamId, { destroy: handler.cancel });
+                setActiveStream(streamId, { destroy: handler.cancel });
                 return;
               }
 
@@ -4394,7 +4453,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
         // ── AGENTIC MODE DETECTION ──
         // If no deterministic intent matched but the message looks multi-step,
         // inject an agentic system prompt so the LLM chains tools autonomously.
-        const isAgenticRequest = looksMultiStep(enhancedMessage);
+        const isAgenticRequest = currentWorkspace()?.mode !== 'inline-draft' && looksMultiStep(enhancedMessage);
         if (isAgenticRequest) {
           console.log('[HomeBot] Agentic mode activated — multi-step request detected');
           try { pushRouter('Agentic mode: multi-step request detected'); } catch (e) { safeCatch(e); }
@@ -4481,7 +4540,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             (meta) => { directModel = meta.model; }
           );
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
           return;
         }
 
@@ -4550,7 +4609,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }, proxyOpts);
 
           // store cancellation function
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
         } else {
           // Diagnostic: record that we are about to POST to n8n
           if (process.env.NODE_ENV !== 'production') {
@@ -4908,7 +4967,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             if (shouldUseDirectTools && toolResults) {
               // Ensure stream is tracked
               if (!activeStreams.has(streamId)) {
-                activeStreams.set(streamId, { destroy: () => {} });
+                setActiveStream(streamId, { destroy: () => {} });
               }
 
               // Format tool results into a nice response
@@ -4980,7 +5039,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                         undefined, requestConfirmation,
                         (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                       );
-                      activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                      setActiveStream(streamId, { destroy: synthHandler.cancel });
                       return;
                     }
                   }
@@ -5056,7 +5115,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
                     undefined, requestConfirmation,
                     (perms: string[], reason: string) => permissionRequester.request(event.sender, streamId, perms, reason)
                   );
-                  activeStreams.set(streamId, { destroy: synthHandler.cancel });
+                  setActiveStream(streamId, { destroy: synthHandler.cancel });
                   return;
                 }
 
@@ -5122,7 +5181,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               (meta) => { resolvedModel = meta.model; }
             );
 
-            activeStreams.set(streamId, { destroy: handler.cancel });
+            setActiveStream(streamId, { destroy: handler.cancel });
           } catch (err: any) {
             logError('[Router] direct stream error', err?.message || err);
             try { pushRouter(`direct stream error: ${err?.message || String(err)}`); } catch (e) { safeCatch(e); }
@@ -5246,7 +5305,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             { modelOverride: reqAny.modelOverride, currentUserInHistory: true },
             (meta) => { fallbackModel = meta.model; }
           );
-          activeStreams.set(streamId, { destroy: handler.cancel });
+          setActiveStream(streamId, { destroy: handler.cancel });
           } catch (ollamaError: any) {
             const hint = classifyError('Both n8n and Ollama unavailable', ollamaError?.message || String(ollamaError));
             event.sender.send('homebot:stream-error', { error: true, message: 'Both n8n and Ollama unavailable', details: ollamaError?.message || ollamaError, streamId, recoveryHint: hint });
@@ -5268,7 +5327,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           }
         }
       }
-    });
+    }));
 
     // Cancel a running stream by id (or all if no id provided)
     ipcMain.on('homebot:stream-cancel', (_event: IpcMainEvent, payload: { streamId?: string }) => {
@@ -5276,6 +5335,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
       if (!streamId) {
           // cancel all
           for (const [id, entry] of activeStreams.entries()) {
+            if (!releaseWorkspaceStream(id, _event.sender.id)) continue;
             try { entry.destroy?.(); } catch (e) { safeCatch(e); }
             try { (entry.stream as any)?.destroy?.(); } catch (e) { safeCatch(e); }
             activeStreams.delete(id);
@@ -5283,6 +5343,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           return;
         }
 
+      if (!releaseWorkspaceStream(streamId, _event.sender.id)) return;
       const entry = activeStreams.get(streamId);
       if (entry) {
         // If we're running in an E2E environment, send a best-effort cancel

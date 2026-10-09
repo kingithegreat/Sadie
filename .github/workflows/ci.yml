@@ -106,6 +106,23 @@ jobs:
         working-directory: widget
         run: npx tsc --noEmit
 
+      - name: Managed helper build contracts
+        # Keep independent cold PowerShell/compiler fixtures from competing.
+        # Process isolation, each fixture deadline and every assertion remain.
+        run: node --test --test-concurrency=1 widget/scripts/__tests__/prepare-windows-job.test.cjs widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs widget/scripts/__tests__/windows-job-host.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
+
+      - name: Preserve managed framing proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: managed-framing-${{ github.event_name }}-${{ github.sha }}
+          path: |
+            artifacts/ide-native-zero-retry/managed-framing-*/
+            artifacts/ide-native-zero-retry/host-protocol-*/
+            artifacts/ide-native-zero-retry/task-attachment-controls-*/
+          if-no-files-found: warn
+          retention-days: 7
+
       # --forceExit is deliberate and NOT hiding a failure: every test passes.
       # The suite finishes in ~45s and then does not release the process. Two
       # causes were found and fixed (a setInterval cleared only on Electron's
@@ -137,6 +154,11 @@ jobs:
 
       - name: Unit tests
         working-directory: widget
+        env:
+          HOMEBOT_LIVE_TASK_TREE: '1'
+          HOMEBOT_LIVE_MCP_TREE: '1'
+          HOMEBOT_LIVE_TEST_TREE: '1'
+          HOMEBOT_LIVE_DIFF_HANDLES: '1'
         run: npx jest --config=jest.config.ts --runInBand --no-coverage --forceExit
 
       - name: Build

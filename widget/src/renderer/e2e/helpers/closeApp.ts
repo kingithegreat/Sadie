@@ -1,37 +1,247 @@
 import type { ElectronApplication } from '@playwright/test';
+import fs from 'fs';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import { monitorNativeApp, type NativeAppMonitor, type NativeAppExit } from './nativeAppProcess';
+import { captureOwnedElectronInspector, type OwnedElectronInspector } from './ownedElectronInspector';
+import { collectWindowsNativeWaitChain } from './windowsNativeWaitChain';
+import { startLocalNativeCrashReporter } from './localCrashReporter';
+import type { WorkspacePtyStopReceipt } from '../../../main/workspace-pty-force-stop';
 
-/**
- * Close the app under test without letting a slow shutdown fail the test.
- *
- * `overlay.e2e`'s right-click test failed the required `widget` check on four
- * unrelated PRs (#263, #303, #343, #362). The trace from #362 shows every
- * assertion in it PASSING at 5.7s, then `app.close()` never returning: the
- * 60s timeout was spent in teardown, after the test had already proved its
- * point. The test name blamed the context menu; the menu was fine.
- *
- * So teardown gets a budget of its own. A close that overruns is killed and
- * reported on stdout rather than failing a test that passed — and shutdown is
- * covered directly by "the app shuts down when it is asked to" in
- * overlay.e2e.spec.ts, so a genuine regression has one honest place to fail
- * instead of landing on whichever test happened to run.
- */
 export const CLOSE_BUDGET_MS = 20_000;
+interface State { monitor: NativeAppMonitor; stderr: string; stdout: string; entry: string; nativeExit?: NativeAppExit; transportClosed?: boolean; exitNonce: string; committedQuit: Promise<void>; quitEventObserved?: boolean; inspector?: OwnedElectronInspector; localCrashReporter?: Record<string, unknown> }
+const states = new WeakMap<ElectronApplication, Promise<State>>();
+const pendingApps = new Set<ElectronApplication>();
+const closings = new WeakMap<ElectronApplication, Promise<number>>();
+const EXIT_DIAGNOSTIC_MARKER = '[E2E-SHUTDOWN-DIAGNOSTIC] ';
+function exitDiagnostics(stdout: string): unknown {
+  const line = stdout.split(/\r?\n/).reverse().find(value => value.includes(EXIT_DIAGNOSTIC_MARKER));
+  if (!line) return undefined;
+  try { return JSON.parse(line.slice(line.indexOf(EXIT_DIAGNOSTIC_MARKER) + EXIT_DIAGNOSTIC_MARKER.length)); }
+  catch { return { parseError: 'Final native diagnostic marker was incomplete.' }; }
+}
+function bounded<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  return Promise.race([promise, new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(message)), Math.max(1, milliseconds)); })]).finally(() => clearTimeout(timer));
+}
 
-export async function closeElectronApp(app: ElectronApplication, label = 'app'): Promise<number> {
-  const started = Date.now();
-  // Take the handle first: after close(), app.process() throws on the freed object.
-  const child = app.process();
-  let timer: NodeJS.Timeout | undefined;
-  const overran = new Promise<'timeout'>(resolve => { timer = setTimeout(() => resolve('timeout'), CLOSE_BUDGET_MS); });
-  try {
-    const outcome = await Promise.race([app.close().then(() => 'closed' as const), overran]);
-    const elapsed = Date.now() - started;
-    if (outcome === 'timeout') {
-      console.warn(`[E2E-CLOSE] ${label} did not exit within ${CLOSE_BUDGET_MS}ms — killing it. See helpers/closeApp.ts.`);
-      try { child.kill(); } catch { /* already gone */ }
+/** Install passive diagnostics before UI actions can create a PTY. */
+export async function prepareElectronShutdown(app: ElectronApplication, entry: string): Promise<void> {
+  if (states.has(app)) { await states.get(app); return; }
+  pendingApps.add(app);
+  const pending = (async () => {
+    const child = app.process(); const state = { stderr: '', stdout: '', entry, exitNonce: randomUUID() } as State;
+    let finished!: () => void;
+    state.committedQuit = new Promise(resolve => { finished = resolve; });
+    const observe = () => {
+      const marker = exitDiagnostics(state.stdout) as any;
+      // This exact main's committed Electron quit permits releasing only our
+      // inspector. Electron also emits process 'exit' from app 'quit', before
+      // native teardown: neither event proves held OS exit or child cleanup.
+      // https://github.com/electron/electron/blob/v42.8.1/lib/browser/init.ts#L35-L40
+      if (state.monitor && marker?.pid === state.monitor.info.pid && marker?.nonce === state.exitNonce) { state.quitEventObserved = true; finished(); }
+    };
+    const releaseCompleted = () => { if (state.transportClosed && state.nativeExit?.code === 0 && !state.nativeExit.signal) pendingApps.delete(app); };
+    app.once?.('close', () => { state.transportClosed = true; releaseCompleted(); });
+    child.stderr?.on('data', chunk => { state.stderr = (state.stderr + chunk).slice(-96 * 1024); observe(); });
+    child.stdout?.on('data', chunk => { state.stdout = (state.stdout + chunk).slice(-96 * 1024); observe(); });
+    const info = await app.evaluate(({ app, dialog }, exitNonce) => {
+      const cp = (process as any).getBuiltinModule('child_process');
+      const log = (global as any).__homebotE2eShutdown = { helpers: [] as unknown[], refusals: [] as unknown[] };
+      app.once('quit', () => {
+        const final = {
+          pid: process.pid, nonce: exitNonce,
+          helpers: log.helpers.slice(-12).map((value: any) => ({ ...value, stdout: value.stdout?.slice(0, 2048), stderr: value.stderr?.slice(0, 512), error: value.error ? { ...value.error, message: value.error.message?.slice(0, 512) } : null })),
+          refusals: log.refusals.slice(-4),
+        };
+        while (JSON.stringify(final).length > 48 * 1024 && final.helpers.length) final.helpers.shift();
+        console.log('[E2E-SHUTDOWN-DIAGNOSTIC] ' + JSON.stringify(final));
+      });
+      const original = cp.execFile;
+      const observer = function (this: unknown, ...args: any[]) {
+        const argv = args[1]; let purpose = '', pid: number | undefined;
+        if (Array.isArray(argv)) {
+          const plain = argv.indexOf('-Command'), encoded = argv.indexOf('-EncodedCommand');
+          const source = plain >= 0 ? argv[plain + 1] : encoded >= 0 ? Buffer.from(argv[encoded + 1], 'base64').toString('utf16le') : '';
+          if (source.includes('$taskProcess = Get-CimInstance Win32_Process')) { purpose = 'identity'; pid = Number(/ProcessId=(\d+)/.exec(source)?.[1]); }
+          else if (source.includes('class OwnedPtyStop')) purpose = 'stop';
+        }
+        const callback = args[args.length - 1];
+        if (purpose && typeof callback === 'function') {
+          const started = Date.now();
+          args[args.length - 1] = function (this: unknown, error: any, stdout: unknown, stderr: unknown) {
+            log.helpers.push({ purpose, pid, duration: Date.now() - started, error: error ? { message: error.message, code: error.code, signal: error.signal, killed: error.killed } : null, stdout: String(stdout).slice(0, 65536), stderr: String(stderr).slice(0, 4096) });
+            if (log.helpers.length > 64) log.helpers.shift();
+            console.log('[E2E-PROCESS-DIAGNOSTIC]', JSON.stringify(log.helpers[log.helpers.length - 1]));
+            return callback.apply(this, arguments);
+          };
+        }
+        return original.apply(this, args);
+      };
+      Object.defineProperties(observer, Object.getOwnPropertyDescriptors(original)); cp.execFile = observer;
+      const show = dialog.showMessageBox;
+      dialog.showMessageBox = function (this: unknown, ...args: any[]) {
+        const options = args.find(value => value && typeof value.message === 'string');
+        if (['A running IDE program could not be stopped.', 'A running HomeBot program could not be stopped.'].includes(options?.message)) log.refusals.push({ at: Date.now(), message: options.message, detail: options.detail });
+        return (show as any).apply(this, args);
+      };
+      return { pid: process.pid, ppid: process.ppid, execPath: process.execPath };
+    }, state.exitNonce);
+    state.monitor = await monitorNativeApp(info, child, entry);
+    state.inspector = captureOwnedElectronInspector(app, child, state.monitor);
+    observe();
+    void state.monitor.exit.then(exit => { state.nativeExit = exit; releaseCompleted(); }).catch(() => {});
+    if (process.env.HOMEBOT_NATIVE_LOCAL_CRASH_REPORTS === '1') {
+      try { state.localCrashReporter = await bounded(app.evaluate(startLocalNativeCrashReporter,
+        { pid: state.monitor.info.pid, nonce: state.exitNonce }), 4000, 'Local crash reporter initialization exceeded its diagnostic bound'); }
+      catch (error) { state.localCrashReporter = { status: 'failed', error: String(error) }; }
     }
-    return elapsed;
-  } finally {
-    clearTimeout(timer);
-  }
+    return state;
+  })();
+  states.set(app, pending); await pending;
+}
+
+/** Failed graceful shutdown stays a failure even if owned cleanup succeeds. */
+export function closeElectronApp(app: ElectronApplication, label = 'app'): Promise<number> {
+  const prior = closings.get(app); if (prior) return prior;
+  const closing = closePreparedApp(app, label); closings.set(app, closing); return closing;
+}
+/** Assertion failures and skips still release each launched native process. */
+export async function closeRemainingElectronApps(): Promise<void> {
+  const results = await Promise.allSettled([...pendingApps].map(app => closeElectronApp(app, 'afterEach')));
+  const failed = results.find(result => result.status === 'rejected');
+  if (failed?.status === 'rejected') throw failed.reason;
+}
+async function closePreparedApp(app: ElectronApplication, label: string): Promise<number> {
+  const started = Date.now(), deadline = started + CLOSE_BUDGET_MS;
+  const receipt: Record<string, unknown> = { label, started: new Date(started).toISOString() };
+  const artifact = path.resolve('test-results', `electron-shutdown-${process.pid}-${started}.json`);
+  let state: State | undefined, tree: WorkspacePtyStopReceipt | undefined;
+  const persist = () => { fs.mkdirSync(path.dirname(artifact), { recursive: true }); fs.writeFileSync(artifact, JSON.stringify(receipt, null, 2)); };
+  try {
+    if (!states.has(app)) throw new Error('Electron shutdown identity was not prepared at launch.');
+    state = await bounded(states.get(app)!, deadline - Date.now(), 'Native Electron launch identity unavailable');
+    receipt.native = { ...state.monitor.info, creation: state.monitor.creation }; receipt.launcherPid = app.process().pid;
+    if (state.localCrashReporter) receipt.localCrashReporter = state.localCrashReporter;
+    if (!state.nativeExit) {
+      try { tree = await bounded(state.monitor.snapshot(), Math.min(4000, deadline - Date.now()), 'Native owned-tree snapshot exceeded its bound'); receipt.ownedTree = tree; }
+      catch (snapshotError) {
+        // Native may have exited just before the snapshot while its observer's
+        // stdout receipt is still queued. Require that same held OS exit proof.
+        try { state.nativeExit = await bounded(state.monitor.exit, Math.min(1000, deadline - Date.now()), 'Native exit receipt not available after snapshot failure'); receipt.snapshotFailure = String(snapshotError); }
+        catch { throw snapshotError; }
+      }
+      // app.close disposes transport before a production refusal can be diagnosed.
+      if (!state.nativeExit) {
+        const owned = state;
+        // A marker can arrive before close starts or during either evaluation.
+        // Never re-enter quit through a main that has committed to quitting.
+        const whileRunnable = async <T>(evaluate: () => Promise<T>): Promise<{ value: T } | { finished: true }> => {
+          if (owned.quitEventObserved || owned.nativeExit) return { finished: true };
+          const finished = Promise.race([
+            owned.committedQuit.then(() => ({ finished: true as const })),
+            owned.monitor.exit.then(() => ({ finished: true as const })),
+          ]);
+          return bounded(Promise.race([
+            finished,
+            evaluate().then(value => ({ value })).catch(error => {
+              // A driver context can disappear before stdout/held OS-exit
+              // observers deliver their receipts. That error proves no exit:
+              // wait for the original qualified oracle within the same budget.
+              const message = error instanceof Error ? error.message : String(error);
+              if (!/Execution context was destroyed|Target (?:page, context or browser|closed)|Session closed|Connection closed/.test(message)) throw error;
+              const failures = (receipt.driverTeardownErrors ||= []) as string[];
+              failures.push(message); persist();
+              return finished;
+            }),
+          ]), deadline - Date.now(), 'Native evaluation exceeded close budget');
+        };
+        // Request normal quit before optional diagnostics are returned. A driver
+        // serialization error must not prevent the one owned quit request.
+        const diagnostics = await whileRunnable(() => app.evaluate(({ app }) => {
+          setImmediate(() => app.quit());
+          return (global as any).__homebotE2eShutdown;
+        }));
+        if ('value' in diagnostics) {
+          receipt.productionBeforeQuit = diagnostics.value; persist();
+        }
+      }
+    }
+    const exited = await bounded(Promise.race([state.monitor.exit.then(value => ({ native: value })), state.committedQuit.then(() => ({ mainQuitEvent: true as const }))]), deadline - Date.now(), 'Actual Electron main did not exit within close budget');
+    if ('mainQuitEvent' in exited) {
+      if (!state.inspector) throw new Error('Main committed to quit, but its owned transport could not be verified.');
+      receipt.inspectorQualification = { mainPid: state.monitor.info.pid, matchingExitNonce: true, stderrWaitObserved: state.stderr.includes('Waiting for the debugger to disconnect...') };
+      receipt.inspectorBeforeClose = state.inspector.status();
+      // Playwright 1.57's public close first evaluates app.quit() again. Once
+      // this exact main has emitted its committed quit marker, no second
+      // evaluation belongs in its shutdown. Release only our captured socket;
+      // public driver cleanup follows actual held OS exit and tree verification.
+      if (Date.now() >= deadline) throw new Error('Original close budget exhausted before inspector release.');
+      receipt.ownedInspectorConnectionCloseRequested = state.inspector.close();
+      const handshakeBudget = Math.min(1000, Math.max(0, Math.floor((deadline - Date.now()) / 4)));
+      receipt.inspectorHandshakeBudgetMs = handshakeBudget;
+      let handshakeTimer: NodeJS.Timeout | undefined;
+      let handshakeExit: NativeAppExit | undefined;
+      try {
+        handshakeExit = await Promise.race([state.monitor.exit, new Promise<undefined>(resolve => {
+          if (handshakeBudget === 0) resolve(undefined);
+          else handshakeTimer = setTimeout(() => resolve(undefined), handshakeBudget);
+        })]);
+      } finally { clearTimeout(handshakeTimer); }
+      if (!handshakeExit && !state.nativeExit) {
+        if (Date.now() >= deadline) throw new Error('Original close budget exhausted during inspector handshake.');
+        receipt.ownedInspectorSocketTerminated = state.inspector.terminate();
+      }
+      receipt.inspectorAfterRelease = state.inspector.status();
+      receipt.nativeExit = await bounded(state.monitor.exit, deadline - Date.now(), 'Actual Electron main did not exit after its owned inspector disconnected');
+    } else receipt.nativeExit = exited.native;
+    receipt.productionAtExit = exitDiagnostics(state.stdout);
+    const nativeExit = receipt.nativeExit as NativeAppExit;
+    if (nativeExit.code !== 0 || nativeExit.signal) throw new Error('Actual Electron main exited with a nonzero OS code or termination signal.');
+    receipt.verificationScope = tree ? 'captured-owned-tree' : 'native-main';
+    // Child console/process cleanup can complete asynchronously after main exit.
+    // Poll only inside the same original close budget; persistent orphans fail.
+    for (;;) {
+      receipt.capturedIdentitiesGone = await bounded(state.monitor.verify(tree), deadline - Date.now(), 'Native owned identity disappearance query exceeded close budget');
+      receipt.identityObservations = state.monitor.observations;
+      receipt.productionAtExit = exitDiagnostics(state.stdout);
+      persist();
+      if (receipt.capturedIdentitiesGone) break;
+      if (deadline - Date.now() <= 200) throw new Error('Captured owned processes remain alive after native main exit within the close budget.');
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+    if (!state.transportClosed) await bounded(app.close(), deadline - Date.now(), 'Playwright transport did not close after actual native exit');
+    receipt.elapsed = Date.now() - started; receipt.graceful = true; persist();
+    console.log(`[E2E-CLOSE] ${JSON.stringify({ label, artifact, native: receipt.native, nativeExit: receipt.nativeExit, elapsed: receipt.elapsed, graceful: true })}`);
+    return Date.now() - started;
+  } catch (error) {
+    receipt.failure = error instanceof Error ? error.message : String(error);
+    if (state) {
+      receipt.stderr = state.stderr; receipt.stdout = state.stdout;
+      receipt.productionAtExit = exitDiagnostics(state.stdout);
+      if (!state.quitEventObserved && !state.nativeExit) {
+        try { receipt.production = await bounded(app.evaluate(() => (global as any).__homebotE2eShutdown), 1000, 'Production shutdown diagnostics unavailable'); } catch (diagnosticError) { receipt.diagnosticError = String(diagnosticError); }
+      }
+      persist();
+      if (process.platform === 'win32' && !state.nativeExit && state.monitor.creation && Date.now() >= deadline) {
+        // Failure-only read-only metadata for the original captured main. The
+        // original timeout stays failed; this never substitutes for OS exit.
+        try {
+          receipt.nativeWaitChain = await bounded(collectWindowsNativeWaitChain(
+            { pid: state.monitor.info.pid, creation: state.monitor.creation }, path.dirname(artifact),
+          ), 4500, 'Failure-only native wait metadata exceeded its separate bound');
+        } catch (diagnosticError) { receipt.nativeWaitChainError = String(diagnosticError); }
+        persist();
+      }
+      try { receipt.forcedOwnedCleanup = await bounded(state.monitor.cleanup(tree), 6500, 'Owned native cleanup unconfirmed'); receipt.cleanupExit = await bounded(state.monitor.exit, 3000, 'Owned native OS exit unconfirmed'); } catch (cleanupError) { receipt.cleanupError = String(cleanupError); }
+      try { await bounded(app.close(), 3000, 'Failure cleanup transport did not close'); } catch (transportError) { receipt.transportError = String(transportError); }
+    } else {
+      // Missing OS authority forbids force termination; normal quit is still
+      // requested through this exact owned application's connected transport.
+      try { await bounded(app.evaluate(({ app }) => { setImmediate(() => app.quit()); }), 1000, 'Unverified launch normal quit unavailable'); await bounded(app.close(), 3000, 'Unverified launch transport close unavailable'); } catch (cleanupError) { receipt.cleanupError = String(cleanupError); }
+    }
+    receipt.elapsed = Date.now() - started; receipt.graceful = false; persist();
+    console.error(`[E2E-CLOSE] ${JSON.stringify({ label, artifact, ...receipt })}`);
+    throw new Error(`Electron graceful shutdown failed (${label}): ${receipt.failure}. Diagnostics: ${artifact}`);
+  } finally { state?.monitor.dispose(); states.delete(app); pendingApps.delete(app); }
 }

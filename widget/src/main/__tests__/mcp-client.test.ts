@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 /**
  * mcp-client.test.ts
  * Tests for src/main/mcp-client.ts (config I/O and query functions)
@@ -35,6 +38,9 @@ jest.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
 }));
 jest.mock('@modelcontextprotocol/sdk/client/sse.js', () => ({
   SSEClientTransport: jest.fn(),
+}));
+jest.mock('../mcp-stdio-owned', () => ({
+  createOwnedMcpStdioTransport: jest.fn(() => ({ transport: {}, close: jest.fn(async () => {}), cleanupScope: 'sdk-direct-child' })),
 }));
 
 // Shutdown is a final process boundary. Each fixture gets a fresh module

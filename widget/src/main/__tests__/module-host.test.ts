@@ -133,11 +133,12 @@ test('cannot overwrite a Core command or another module, including later Core re
   const coreName = `core_fixture_${++serial}`;
   const coreHandler = jest.fn(async () => ({ success: true }));
   registerTool(coreName, definition(coreName), coreHandler);
+  const registeredCoreHandler = getTool(coreName)!.handler;
   const manifest = fixture({ permissions: [coreName] });
   const instance = host();
   instance.install([module(manifest)]);
   expect(() => instance.enable(manifest.id)).toThrow(expect.objectContaining({ code: 'DUPLICATE_CONTRIBUTION' }));
-  expect(getTool(coreName)?.handler).toBe(coreHandler);
+  expect(getTool(coreName)?.handler).toBe(registeredCoreHandler);
   const owned = fixture();
   instance.install([module(owned)]);
   instance.enable(owned.id);

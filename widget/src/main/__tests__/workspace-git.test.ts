@@ -11,6 +11,9 @@ jest.setTimeout(60_000);
 
 // A real repository inside the home folder (the panel refuses anything outside it).
 let repo: string;
+const priorCeiling = process.env.GIT_CEILING_DIRECTORIES;
+beforeAll(() => { process.env.GIT_CEILING_DIRECTORIES = os.homedir(); });
+afterAll(() => { if (priorCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES; else process.env.GIT_CEILING_DIRECTORIES = priorCeiling; });
 const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' });
 const write = (rel: string, text: string) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), text); };
 
@@ -90,3 +93,4 @@ test('branches are listed and switched; an unknown branch is refused', async () 
   expect((await gitWorkspaceStatus(repo)).branch).toBe('feature/x');
   await expect(gitWorkspaceCheckout(repo, 'main; rm -rf /')).rejects.toThrow(/existing branches/);
 });
+jest.mock('electron', () => ({ app: { getPath: () => '/mock' } }));

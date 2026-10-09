@@ -1,0 +1,37 @@
+import { useEffect, useRef, useState } from 'react';
+import type { WorkspaceDiscoveredTest, WorkspaceTestRequest, WorkspaceTestResult } from '../../../shared/workspace-test-types';
+export default function WorkspaceTestsPanel({ root, onOpenFile, onDebugFile }: { root: string; onOpenFile: (path: string, line?: number) => void; onDebugFile?: (path: string) => void | Promise<void> }) {
+  const api = window.electron as any; const [tests, setTests] = useState<WorkspaceDiscoveredTest[]>([]); const [state, setState] = useState<WorkspaceTestResult | null>(null); const [error, setError] = useState(''); const [coverage, setCoverage] = useState(false);
+  const currentRoot = useRef(root); currentRoot.current = root;
+  const [busy, setBusy] = useState(false);
+  const request = async (action: WorkspaceTestRequest['action'], extra: Partial<WorkspaceTestRequest> = {}) => {
+    setBusy(true);
+    try { const result = await api?.workspaceTests?.({ root, action, ...extra }); if (currentRoot.current !== root) return; if (!result?.success) { setError(result?.error || 'Tests are unavailable in this build.'); if (result?.cleanupPending !== undefined) setState(result); } else { setError(''); if (result.tests) setTests(result.tests); else setState(result); } } catch (error) { if (currentRoot.current === root) setError(String(error)); } finally { if (currentRoot.current === root) setBusy(false); }
+  };
+  const debugFile = async (file: string) => {
+    setBusy(true); setError('');
+    try {
+      const result = await api?.workspaceDebug?.({ root, action: 'start', file });
+      if (currentRoot.current !== root) return;
+      if (!result?.success) setError(result?.error || 'Debugging is unavailable in this build.');
+      else await onDebugFile?.(file);
+    } catch (error) { if (currentRoot.current === root) setError(String(error)); } finally { if (currentRoot.current === root) setBusy(false); }
+  };
+  useEffect(() => {
+    let current = true; setTests([]); setState(null); setError(''); setBusy(false); void request('list');
+    const timer = setInterval(() => { void api?.workspaceTests?.({ root, action: 'state' }).then((result: WorkspaceTestResult) => { if (current && currentRoot.current === root && (result.success || result.cleanupPending !== undefined)) { setState(result); if (result.error) setError(result.error); } }).catch(() => {}); }, 700);
+    return () => { current = false; clearInterval(timer); };
+  // The project determines discovery and active runs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root]);
+  return <section aria-label="Tests" style={{ padding: 8, overflow: 'auto' }}>
+    <p>Discovered Node, Jest and Vitest tests. Test code runs after confirmation; no dependencies are downloaded. Dynamic declarations can run as a complete file.</p>
+    <button disabled={busy} onClick={() => void request('list')}>Refresh tests</button><button disabled={busy || !(state?.running || state?.cleanupPending)} onClick={() => void request('stop')}>Stop tests</button><label><input type="checkbox" checked={coverage} onChange={event => setCoverage(event.target.checked)} />Collect coverage (requires this runner's coverage support)</label>
+    {error && <p role="alert">{error}</p>}
+    {tests.map((test, index) => <div key={`${test.path}:${test.name}:${index}`}><button onClick={() => onOpenFile(test.path, test.line)}>{test.name}{test.skipped ? ' (skipped)' : ''}</button><small> {test.runner} — {test.path}</small><button disabled={busy || state?.running || state?.cleanupPending || test.skipped} onClick={() => void request('run', { file: test.path, testName: test.name, coverage })}>Run test</button><button disabled={busy || state?.running || state?.cleanupPending} onClick={() => void request('run', { file: test.path, coverage })}>Run file</button><button disabled={busy || state?.running || state?.cleanupPending || test.runner !== 'node' || !/\.[cm]?js$/i.test(test.path) || !onDebugFile} title="Debugs the complete saved JavaScript Node test file. Other test runners need their own debug adapter." onClick={() => void debugFile(test.path)}>Debug JS test file</button></div>)}
+    <small>Discovery is bounded to 1,000 files, 16 MiB of source and 2,000 tests. Project tasks can run larger suites.</small>
+    {!tests.length && <p>No supported test files found. Use .test.js/.ts or .spec.js/.ts files.</p>}
+    <p role="status">{state?.running ? 'Tests running…' : state?.cleanupPending ? 'Cleanup required. Select Stop tests.' : state?.exitCode !== null && state?.exitCode !== undefined ? `Process exited ${state.exitCode}` : 'Ready'}</p>{state?.summary && <p>{state.summary.passed} passed, {state.summary.failed} failed, {state.summary.skipped} skipped</p>}{state?.note && <p>{state.note}</p>}{state?.coveragePath && <p>Coverage files: {state.coveragePath}</p>}
+    <pre style={{ whiteSpace: 'pre-wrap' }}>{state?.output || ''}</pre>
+  </section>;
+}

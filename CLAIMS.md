@@ -1,5 +1,91 @@
 # Work Claims
 
+## 2026-10-07 NZ — IDE completion team (Codex root)
+
+Current follow-up: root integrated unchanged FD observer into fixed source-pinned core DLL, preserving5000ms/exact-helper-close/authority;155actual related cases/freshDLL/26managed wrappers/17substituted native APIs/fullTypeScript/scopedlint pass. Explicit17I/O suite defaults retain assertions/larger caps;206widget+3Docs cases pass. Matrix installs only usedChromium and explicitly prepares pinnedElectron before UI cases with bounded installer/validation, preserving whole-job/test/shutdown/retry limits. Original79cb push FDfailure/Linux2 pretest install failure/Windows1 lazy Electron download timeout+automatic retry/five review findings remain retained. Source editing released to root. Fresh hosted wholeCI/native/exactreview, qualified merge and fresh-main normal-profile delivery are unfinished; no final shortcut.
+
+User explicitly requested agents finish the IDE audit gaps. Root integrates on
+`claude/ide-finish-20261007`, private `ide-finish-20261007`, fresh main79ffc386.
+Agents: `ide_files_safety` owns WorkspaceShell/FileTree/workspace-ipc and new
+filesystem/recovery modules; `ide_editor_language` owns CodeEditor and language
+modules; `ide_ai_workflows` owns assistant/Changes/proposals/context and scoped
+router/registry/filesystem-tool guards. Root owns existing preload/sharedtypes,
+main registrations, generated docs, publication and resource-gated verification.
+Current debugger follow-ups: Editor owns active-session capacity, retained child
+cleanup authority, pre-detach capture and reachable cleanupPending Stop UI.
+Fresh b2b configured review found a late-child race beyond single snapshots.
+Files owns new creation-gated Windows Job/helper and fixed bootstrap/gate modules,
+plus their task/PTY integrations and focused tests; Editor owns debug Job admission,
+retention and cleanup integration/tests. They agree the retained Job API directly;
+root owns serial integration, existing contracts/index/packaging and verification.
+Assignment must precede project/shell execution; cleanup requires retained Job
+ActiveProcesses zero, never a Job wait signal or reconstructed PID ancestry.
+Failed/unknown setup or helper loss retains ownership/refusal. No completion claim.
+Editor additionally owns an independent failure-only Windows wait-chain diagnostic
+module and its controlled tests; root owns its qualified shutdown-helper callsite.
+That wait-chain module does not attach a debugger, suspend processes or terminate guessed PIDs.
+Editor owns retained MCP stdio transport containment using public SDK APIs
+and the shared fixed pre-execution gate; root owns existing MCP client/quit wiring.
+Editor also owns Tests runner Job reservation, admission, retained cleanup and
+focused/native fixtures. Root owns Tests shared result/UI and final sender-frame
+IPC fences, including visible retryable cleanup after natural runner exit.
+Files now owns a task-only retained-helper attachChild follow-up in isolated
+`ide-task-attach-child-20261008`: same-held native birth/direct-main-parent,
+authenticated live-peer fresh challenge before assignment and unchanged final
+GO fences. Original 74ce query-timeout failure remains preserved; no native
+fix qualification is claimed. Files also owns the generated mocked-API test's
+15s subprocess/20s outer budget and fixed diagnostic phases; production query
+1800ms and Job4500ms deadlines stay unchanged. Editor adversarially reviews.
+Files remains sole owner of shared Job/gate modules while completing task/PTY
+integration, including task-only short-command completion evidence. Root's MCP
+stderr drain fixes a separately reproduced backpressure defect; native hang cause
+is unproved. Qualified app quit is separate from actual held OS exit.
+Files' read-only Windows captured-tree API is integrated in root; only successful
+same-live-root capture grants a receipt. Root owns native shutdown helper ordering
+and eight mocked actual-source controls; native qualification remains pending.
+Current native follow-ups: the beta15 async PTY/IPC/held-worker fixes and passive
+CI diagnostics are published at49b2. Its native run still failed3/4: task stop
+returned uncertain and quit stayed open; no native crash/OS0 is claimed for that
+fourth main. Files now owns bounded captured-handle task/tree stop confirmation
+and per-identity diagnostics; Editor independently reviews that fix. Root owns
+private runtime provenance, workflow integration and combined-head verification.
+Assistant rule-loading/incomplete-turn and native observer regressions passed at
+d260; its older history-clock fixture and actual native crash remain failed proof.
+The original AI lane is unavailable; no overlapping source work is assigned.
+Current follow-ups: Editor owns bounded diff computation and actual opened-file
+containment, including registry availability and four opt-in real Windows cases.
+Files owns the compiled Job host TS control-process integration and its existing
+mock/real startup and pure framing controls in an isolated exact5d checkout;
+Editor owns the fixed host/build assets. Product admission/operation deadlines
+remain 4500ms; cold ready-run failure evidence remains unchanged.
+Files owns immutable managed Job preparation shared by product dev/build/Jest,
+fixed hash-bound runtime loading and Windows packaging validation. Root owns
+CI flags, complete built/native/delivery inventories, exact-head publication and
+independent evidence verification. Terminal resize correction is integrated;
+fresh task/terminal/file-handle qualification, merge and delivery are unfinished.
+Current root checkpoint: managed framing, supported small-pane resizing, captured
+inspector handshake and CI-only local Crashpad receipts are integrated. The local
+reporter starts only after native ownership capture and requires private paths,
+upload disabled and exact PID/nonce readback. Editor and Files independently
+reviewed their assigned changes. Root's combined limited checks passed 135 syntax
+files, discovered 60 prepared suite paths and executed 11 controlled groups;
+these do not substitute for semantic/Jest/build or actual native qualification.
+Published e7 required checks and both full widget suites passed; its original
+watch AV, terminal resize failure and flaky overlay AV remain failed evidence.
+Fresh same-head hosted qualification is required before merge and delivery.
+See docs/IDE_COMPLETION_PLAN.md for every track, queued waves and acceptance.
+No shared dependency rebuild/install; no existing delivered build modifications.
+One guarded test/build at a time. Other sessions' processes and held PRs preserved.
+This is an active implementation claim, not a completion or verification claim.
+This ownership lasts through PR #474 verification, merge and a separately verified
+merged-main test delivery with a release update in the canonical plan. After those
+conditions are met, this entry is a historical work journal and releases the files.
+Root continues exact-head qualification after49d push green/PR pure timeout/native contract35of37 failure. Test-only5cb corrects canonical mock ownership and adds finite pure phases without deadline/assertion relaxation. Both agents reviewed; root preserved baseline26of28 and current28PASS plus actual33 pure receipt. All failures remain historical evidence; no current native qualification/merge/delivery claim.
+
+Root integrated selected-to-selected crash metadata refusal e40 and fixture-only task admission categories ae3d after independent review. Root29 Node +9 limited actual-source controls pass; original1372 PR npm marker failure preserved with first error unknown. Exact1372 native2/4/1 and push widget passed; fresh combined qualification/merge/normal-profile delivery remain unfinished.
+
+Root source pins Electron42.11.11/Node24.19.0 with upstream inspector null-socket guards after exact d76 symbols and source provenance. Root owns runtime/lock/native-CI pins; shared42.8.1 remains protected. Editor independently reviews runtime pin; Files retains exact fault/source evidence. Current30 diagnostic +9 native-gate Node controls and33 actual pure framing controls pass, but fresh full CI/native/review/merge and private normal-profile delivery remain unfinished.
+
 ## 2026-10-08 NZ — CHAT completion integration
 
 Codex root resumes the released chat source lanes under Aden's instruction to
@@ -21,7 +107,6 @@ tests, widget/chat TypeScript and scoped lint. The actual custom native socket
 now includes three empty data events without reducing any chat/title assertions.
 Fresh corrected-head hosted/native/review/landing and separate delivery remain
 pending; original failures and authenticated evidence are preserved.
-
 
 ## 2026-10-07 — SETUP-MODEL-RETENTION
 

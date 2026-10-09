@@ -3,6 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vm from 'vm';
 import * as ts from 'typescript';
+import { assertWorkspaceRuntimeOpen, setWorkspaceRuntimeClosing } from '../workspace-runtime-admission';
+
+afterEach(() => setWorkspaceRuntimeClosing(false));
 
 const source = fs.readFileSync(path.join(__dirname, '../index.ts'), 'utf8');
 const handlerStart = source.indexOf("app.on('before-quit'");
@@ -11,7 +14,7 @@ const quitSource = source.slice(stateStart >= 0 ? stateStart : handlerStart);
 if (handlerStart < 0 || !quitSource.includes("app.on('window-all-closed'")) throw new Error('Actual main quit wiring was not found');
 const compiled = ts.transpileModule(quitSource, { compilerOptions: { target: ts.ScriptTarget.ES2020 } }).outputText;
 
-function harness() {
+function harness(keepExistingWindow = false) {
   let resolve!: () => void;
   let reject!: (reason: Error) => void;
   const cleanup = new Promise<void>((done, fail) => { resolve = done; reject = fail; });
@@ -26,15 +29,96 @@ function harness() {
     }),
   };
   const otherCleanup = {
-    closeAllWorkspaceTasks: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
+    closeAllWorkspaceTasks: jest.fn(), stopCalendarHelpers: jest.fn(async () => {}), resumeCalendarHelpers: jest.fn(), stopAssistantBridge: jest.fn(), destroyBrowserPanel: jest.fn(), closeAllServiceWindows: jest.fn(),
+    disposeWorkspaceLanguageServices: jest.fn(), stopWorkspaceDebuggers: jest.fn(async () => {}), stopWorkspaceTestRuns: jest.fn(async () => {}),
+    workspacePtySessions: { closeAll: jest.fn(async () => {}) },
     globalShortcut: { unregisterAll: jest.fn() }, supervisorHandle: { stop: jest.fn() },
   };
   const shutdownMcpServers = jest.fn(() => cleanup);
+  const resumeMcpServersAfterRefusedQuit = jest.fn();
+  const restoreMcpServersAfterRefusedQuit = jest.fn(async () => {});
   const safeCatch = jest.fn();
-  vm.runInNewContext(compiled, { app, ...otherCleanup, shutdownMcpServers, safeCatch, process: { platform: 'win32' } });
-  return { app, handlers, otherCleanup, shutdownMcpServers, safeCatch, resolve, reject, nativeQuits: () => nativeQuits };
+  const dialog = { showMessageBox: jest.fn(async () => ({ response: 1 })) };
+  const windowHandlers = new Map<string, (...args: any[]) => void>();
+  const ownedWindow = { isDestroyed: () => false, on: jest.fn((name: string, handler: any) => windowHandlers.set(name, handler)), removeListener: jest.fn() };
+  const createMainWindow = jest.fn(() => ownedWindow);
+  const context = { app, ...otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit, safeCatch, dialog, setWorkspaceRuntimeClosing, mainWindow: keepExistingWindow ? ownedWindow : null, createOwnedMainWindow: createMainWindow, process: { platform: 'win32' } };
+  vm.runInNewContext(compiled, context);
+  vm.runInNewContext('createMainWindow()', context);
+  createMainWindow.mockClear();
+  return { app, handlers, windowHandlers, ownedWindow, otherCleanup, shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit, safeCatch, dialog, createMainWindow, resolve, reject, nativeQuits: () => nativeQuits };
 }
-async function settle() { for (let n = 0; n < 10; n++) await Promise.resolve(); }
+// Flush the native and VM promise queues through a real event-loop turn.
+// Cleanup phases may add microtasks without changing the quit contract.
+async function settle() { await new Promise<void>(resolve => setImmediate(resolve)); }
+
+test('healthy MCP restoration waits for explicit Keep open and never runs for Try closing again', async () => {
+  const keep = harness(true);
+  let choose!: (result: { response: number }) => void;
+  keep.dialog.showMessageBox.mockImplementationOnce(() => new Promise(resolve => { choose = resolve; }));
+  keep.app.quit(); await settle(); keep.reject(new Error('MCP cleanup refused')); await settle();
+  expect(keep.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+  expect(keep.restoreMcpServersAfterRefusedQuit).not.toHaveBeenCalled();
+  choose({ response: 1 }); await settle();
+  expect(keep.restoreMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+
+  const retry = harness(true);
+  retry.dialog.showMessageBox.mockImplementation(() => new Promise(() => {}));
+  retry.dialog.showMessageBox.mockResolvedValueOnce({ response: 0 });
+  retry.app.quit(); await settle(); retry.reject(new Error('MCP cleanup refused')); await settle();
+  expect(retry.restoreMcpServersAfterRefusedQuit).not.toHaveBeenCalled();
+});
+
+test('failed MCP restoration keeps HomeBot open and reports the failure', async () => {
+  const h = harness(true), error = new Error('MCP reconnect failed');
+  h.restoreMcpServersAfterRefusedQuit.mockRejectedValueOnce(error);
+  h.app.quit(); await settle(); h.reject(new Error('MCP cleanup refused')); await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+});
+
+test('new runtime admission stays closed through pending MCP after owned cleanup, and a refused quit reopens it', async () => {
+  const accepted = harness();
+  accepted.app.quit();
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  await settle();
+  expect(accepted.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  accepted.resolve(); await settle();
+  expect(accepted.nativeQuits()).toBe(1);
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+
+  setWorkspaceRuntimeClosing(false);
+  const refused = harness();
+  refused.otherCleanup.workspacePtySessions.closeAll.mockRejectedValueOnce(new Error('Owned terminal is still running'));
+  refused.app.quit();
+  expect(assertWorkspaceRuntimeOpen).toThrow(/HomeBot is closing/);
+  await settle();
+  expect(refused.nativeQuits()).toBe(0);
+  expect(refused.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(assertWorkspaceRuntimeOpen).not.toThrow();
+});
+
+test('native window close retains its owning renderer through a refusal, then permits close after retry cleanup', async () => {
+  const h = harness(true);
+  h.otherCleanup.workspacePtySessions.closeAll.mockRejectedValueOnce(new Error('owned terminal identity unavailable'));
+  const firstClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(firstClose);
+  expect(firstClose.preventDefault).toHaveBeenCalledTimes(1);
+  h.resolve(); await settle();
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  const retryClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(retryClose);
+  expect(retryClose.preventDefault).toHaveBeenCalledTimes(1);
+  await settle(); expect(h.nativeQuits()).toBe(1);
+  const finalClose = { preventDefault: jest.fn() };
+  h.windowHandlers.get('close')!(finalClose);
+  expect(finalClose.preventDefault).not.toHaveBeenCalled();
+});
 
 test('native quit waits for owned MCP cleanup, repeats share the barrier, and other services still stop once', async () => {
   const h = harness();
@@ -43,9 +127,10 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   await settle();
   expect(h.nativeQuits()).toBe(0);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
-  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  for (const cleanup of [h.otherCleanup.stopAssistantBridge, h.otherCleanup.destroyBrowserPanel,
     h.otherCleanup.closeAllServiceWindows, h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
   }
   h.resolve();
   await settle();
@@ -53,18 +138,110 @@ test('native quit waits for owned MCP cleanup, repeats share the barrier, and ot
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
 });
 
-test('a cleanup rejection is reported and still resumes native quit', async () => {
+test('native quit waits for package task ownership and keeps the renderer available after an unconfirmed Stop', async () => {
+  const h = harness(true);
+  let failStop!: (error: Error) => void;
+  const stopping = new Promise<void>((_resolve, reject) => { failStop = reject; });
+  h.otherCleanup.closeAllWorkspaceTasks.mockReturnValueOnce(stopping);
+  h.app.quit();
+  h.resolve(); await settle();
+  h.app.quit(); await settle();
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(h.otherCleanup.stopAssistantBridge).not.toHaveBeenCalled();
+  const error = new Error('owned package tree stop unconfirmed');
+  failStop(error); await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  expect(h.shutdownMcpServers).not.toHaveBeenCalled();
+  expect(h.otherCleanup.globalShortcut.unregisterAll).not.toHaveBeenCalled();
+  h.app.quit(); await settle();
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(2);
+  expect(h.nativeQuits()).toBe(1);
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
+  expect(h.resumeMcpServersAfterRefusedQuit).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
+});
+
+test.each(['debugger', 'test', 'terminal', 'task', 'calendar'])('refused %s cleanup preserves every unrelated service until successful retry', async kind => {
+  const h = harness(true);
+  const owned = {
+    debugger: h.otherCleanup.stopWorkspaceDebuggers, test: h.otherCleanup.stopWorkspaceTestRuns,
+    terminal: h.otherCleanup.workspacePtySessions.closeAll, task: h.otherCleanup.closeAllWorkspaceTasks,
+    calendar: h.otherCleanup.stopCalendarHelpers,
+  };
+  owned[kind as keyof typeof owned].mockRejectedValueOnce(new Error('owned close remains unconfirmed'));
+  h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(0); expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  const ordinary = [h.shutdownMcpServers, h.otherCleanup.disposeWorkspaceLanguageServices, h.otherCleanup.stopAssistantBridge,
+    h.otherCleanup.destroyBrowserPanel, h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.closeAllServiceWindows, h.otherCleanup.supervisorHandle.stop];
+  for (const cleanup of ordinary) expect(cleanup).not.toHaveBeenCalled();
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
+  h.resolve(); h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(1);
+  for (const cleanup of ordinary) expect(cleanup).toHaveBeenCalledTimes(1);
+});
+
+test('unconfirmed calendar helper close blocks native quit and resumes admission only after refusal', async () => {
+  const h = harness(true);
+  const error = new Error('calendar child close unconfirmed');
+  h.otherCleanup.stopCalendarHelpers.mockRejectedValueOnce(error);
+  h.app.quit(); h.resolve(); await settle();
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  h.app.quit(); await settle();
+  expect(h.nativeQuits()).toBe(1);
+  expect(h.otherCleanup.stopCalendarHelpers).toHaveBeenCalledTimes(2);
+  expect(h.otherCleanup.resumeCalendarHelpers).toHaveBeenCalledTimes(1);
+});
+
+test('unconfirmed owned runtime cleanup runs every other cleanup and keeps the app available for retry', async () => {
   const h = harness();
+  const error = new Error('controlled debugger cleanup failure');
+  h.otherCleanup.stopWorkspaceDebuggers.mockImplementationOnce(() => { throw error; });
+  h.app.quit();
+  await settle();
+  expect(h.otherCleanup.stopWorkspaceTestRuns).toHaveBeenCalledTimes(1);
+  expect(h.otherCleanup.workspacePtySessions.closeAll).toHaveBeenCalledTimes(1);
+  expect(h.nativeQuits()).toBe(0);
+  h.resolve();
+  await settle();
+  expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).toHaveBeenCalledTimes(1);
+  h.app.quit();
+  await settle();
+  expect(h.nativeQuits()).toBe(1);
+});
+
+test('an MCP cleanup rejection preserves the renderer and ordinary services until a successful retry', async () => {
+  const h = harness(true);
   h.app.quit();
   expect(h.nativeQuits()).toBe(0);
   const error = new Error('controlled cleanup failure');
   h.reject(error);
   await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
+  expect(h.nativeQuits()).toBe(0);
+  expect(h.dialog.showMessageBox).toHaveBeenCalledTimes(1);
+  expect(h.createMainWindow).not.toHaveBeenCalled();
+  expect(h.otherCleanup.stopAssistantBridge).not.toHaveBeenCalled();
+  expect(h.otherCleanup.globalShortcut.unregisterAll).not.toHaveBeenCalled();
+  h.shutdownMcpServers.mockResolvedValueOnce(undefined);
+  h.app.quit(); await settle();
   expect(h.nativeQuits()).toBe(1);
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(2);
+  expect(h.otherCleanup.stopAssistantBridge).toHaveBeenCalledTimes(1);
 });
 
-test('a synchronous MCP shutdown exception is reported and repeated quit still resumes native quit once', async () => {
+test('a synchronous MCP shutdown exception refuses quit and preserves unrelated services', async () => {
   const h = harness();
   const error = new Error('controlled synchronous MCP shutdown failure');
   h.shutdownMcpServers.mockImplementationOnce(() => { throw error; });
@@ -75,14 +252,15 @@ test('a synchronous MCP shutdown exception is reported and repeated quit still r
   expect(h.nativeQuits()).toBe(0);
   await settle();
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
-  expect(h.nativeQuits()).toBe(1);
+  expect(h.nativeQuits()).toBe(0);
   expect(escaped).toBeUndefined();
   expect(h.safeCatch).toHaveBeenCalledTimes(1);
   expect(h.safeCatch).toHaveBeenCalledWith(error);
-  for (const cleanup of [h.otherCleanup.closeAllWorkspaceTasks, h.otherCleanup.stopAssistantBridge,
+  expect(h.otherCleanup.closeAllWorkspaceTasks).toHaveBeenCalledTimes(1);
+  for (const cleanup of [h.otherCleanup.stopAssistantBridge,
     h.otherCleanup.destroyBrowserPanel, h.otherCleanup.closeAllServiceWindows,
     h.otherCleanup.globalShortcut.unregisterAll, h.otherCleanup.supervisorHandle.stop]) {
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).not.toHaveBeenCalled();
   }
 });
 
@@ -92,11 +270,12 @@ test('an unrelated service cleanup error cannot bypass or strand connector clean
   h.otherCleanup.globalShortcut.unregisterAll.mockImplementationOnce(() => { throw error; });
   h.app.quit();
   await settle();
+  expect(h.safeCatch).not.toHaveBeenCalled();
+  expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
+  h.resolve(); await settle();
   expect(h.safeCatch).toHaveBeenCalledWith(error);
   expect(h.shutdownMcpServers).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.closeAllServiceWindows).toHaveBeenCalledTimes(1);
   expect(h.otherCleanup.supervisorHandle.stop).toHaveBeenCalledTimes(1);
-  h.resolve();
-  await settle();
   expect(h.nativeQuits()).toBe(1);
 });

@@ -317,7 +317,8 @@ test('a full settings save before boot hydration supersedes the entire older sna
   const root = screen.getByTestId('homebot-app-root');
   expect(root).not.toHaveAttribute('data-hydrated', 'true');
   fireEvent.keyDown(window, { ctrlKey: true, key: ',' });
-  const panel = await screen.findByRole('dialog', { name: 'Settings' });
+  // Settings is lazy-loaded; keep boot hydration held while its first render settles.
+  const panel = await screen.findByRole('dialog', { name: 'Settings' }, { timeout: 5_000 });
   fireEvent.click(within(panel).getByRole('button', { name: 'light theme' }));
   await act(async () => { fireEvent.click(within(panel).getByRole('button', { name: 'Save changes' })); });
   expect(persisted.theme).toBe('light');

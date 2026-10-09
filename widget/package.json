@@ -54,6 +54,8 @@
     "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@vitejs/plugin-react": "^5.1.2",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "axios": "^1.6.2",
     "better-sqlite3": "^12.11.1",
     "codemirror": "^6.0.2",
@@ -65,6 +67,7 @@
     "kokoro-js": "^1.2.1",
     "mammoth": "^1.11.0",
     "msedge-tts": "^2.0.7",
+    "node-pty": "1.2.0-beta.15",
     "node-record-lpcm16": "^1.0.1",
     "pdf-parse": "^1.1.1",
     "pdfkit": "^0.17.2",
@@ -72,6 +75,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.12.0",
     "sharp": "^0.34.5",
+    "typescript": "^5.9.3",
     "whisper-node": "^1.1.1"
   },
   "devDependencies": {
@@ -92,7 +96,7 @@
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "css-loader": "^6.8.1",
-    "electron": "42.8.1",
+    "electron": "42.11.11",
     "electron-builder": "^26.15.7",
     "electron-reload": "^2.0.0-alpha.1",
     "electron-vite": "^5.0.0",
@@ -109,13 +113,13 @@
     "ts-jest": "^29.1.0",
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "wait-on": "^7.2.0",
     "webpack": "^5.89.0",
     "webpack-cli": "^5.1.4"
   },
   "build": {
+    "beforePack": "./scripts/verify-windows-job-package.cjs",
     "appId": "com.homebot.app",
     "productName": "HomeBot",
     "directories": {
@@ -161,7 +165,12 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "runAfterFinish": true
-    }
+    },
+    "asarUnpack": [
+      "node_modules/node-pty/**/*",
+      "out/main/assets/OwnedWindowsJob.dll",
+      "out/main/assets/OwnedWindowsJobHost.exe"
+    ]
   },
   "browserslist": [
     "chrome >= 130"

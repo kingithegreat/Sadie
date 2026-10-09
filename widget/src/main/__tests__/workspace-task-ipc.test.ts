@@ -3,13 +3,14 @@ const removeHandler = jest.fn((name: string) => handlers.delete(name));
 const handle = jest.fn((name: string, fn: Function) => handlers.set(name, fn));
 let senderDestroyed = false;
 let windowDestroyed = false;
-const sender = { once: jest.fn(), removeListener: jest.fn(), isDestroyed: () => senderDestroyed };
+const sender = { id: 7, send: jest.fn(), once: jest.fn(), removeListener: jest.fn(), isDestroyed: () => senderDestroyed };
 const mainFrame = {};
 const webContents = { ...sender, mainFrame };
 const requestConfirmationFrom = jest.fn();
 const prepareWorkspacePackageTask = jest.fn();
 const executeWorkspacePackageTask = jest.fn();
 const listWorkspacePackageTasks = jest.fn();
+const stopWorkspaceTask = jest.fn();
 
 jest.mock('electron', () => ({ ipcMain: { handle, removeHandler } }));
 jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => windowDestroyed, webContents }) }));
@@ -18,6 +19,7 @@ jest.mock('../workspace-tasks', () => ({
   prepareWorkspacePackageTask,
   executeWorkspacePackageTask,
   listWorkspacePackageTasks,
+  stopWorkspaceTask,
   workspaceTaskConfirmationMessage: () => 'exact commands',
 }));
 
@@ -31,6 +33,7 @@ beforeEach(() => {
   windowDestroyed = false;
   handlers.clear();
   registerWorkspaceTaskIpc();
+  stopWorkspaceTask.mockResolvedValue(true);
 });
 
 test('refuses foreign senders and extra renderer-controlled fields', async () => {
@@ -67,4 +70,75 @@ test('approval resolving after the sender is destroyed cannot spawn', async () =
   });
   await expect(handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'check' })).resolves.toMatchObject({ success: false, cancelled: true });
   expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
+});
+
+test('owned Stop aborts a watch task and streamed state survives reopening', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  requestConfirmationFrom.mockResolvedValue(true);
+  executeWorkspacePackageTask.mockImplementation((_snapshot, options) => new Promise(resolve => {
+    options.onProgress({ outputExcerpt: 'server ready', problems: [] });
+    options.signal.addEventListener('abort', () => resolve({ success: false, cancelled: true }));
+  }));
+  const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'watch-1', longRunning: true });
+  await Promise.resolve(); await Promise.resolve();
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ success: true, task: { taskId: 'watch-1', running: true, outputExcerpt: 'server ready' } });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!({ sender: {}, senderFrame: {} }, { taskId: 'watch-1' })).toMatchObject({ success: false });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'watch-1' })).toEqual({ success: true });
+  await expect(run).resolves.toMatchObject({ cancelled: true });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ task: { running: false } });
+});
+
+test('Stop during approval prevents a later approval from spawning', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  let approve!: (value: boolean) => void;
+  requestConfirmationFrom.mockImplementation(() => new Promise(resolve => { approve = resolve; }));
+  const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'pending-1' });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'pending-1' })).toEqual({ success: true });
+  approve(true); await expect(run).resolves.toMatchObject({ cancelled: true });
+  expect(executeWorkspacePackageTask).not.toHaveBeenCalled();
+});
+
+test('a quiet watch publishes its last rapid output chunk without needing exit or another chunk', async () => {
+  jest.useFakeTimers();
+  try {
+    prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'watch', lifecycle: [] });
+    requestConfirmationFrom.mockResolvedValue(true);
+    executeWorkspacePackageTask.mockImplementation((_snapshot, options) => new Promise(resolve => {
+      options.onProgress({ outputExcerpt: '> node watch.cjs', problems: [] });
+      options.onProgress({ outputExcerpt: '> node watch.cjs\nWATCH_READY', problems: [] });
+      options.signal.addEventListener('abort', () => resolve({ success: false, cancelled: true }));
+    }));
+    const run = handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'watch', taskId: 'quiet-watch', longRunning: true });
+    await Promise.resolve(); await Promise.resolve();
+    expect(sender.send.mock.calls.some(([, state]) => state.outputExcerpt?.includes('WATCH_READY'))).toBe(false);
+    jest.advanceTimersByTime(100);
+    expect(sender.send).toHaveBeenLastCalledWith(WORKSPACE_TASK_CHANNELS.EVENT, expect.objectContaining({ running: true, outputExcerpt: '> node watch.cjs\nWATCH_READY' }));
+    await handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'quiet-watch' });
+    await expect(run).resolves.toMatchObject({ cancelled: true });
+    expect(jest.getTimerCount()).toBe(0);
+  } finally { jest.useRealTimers(); }
+});
+
+test('retained completed cleanup remains reachable and Stop retries only the original owner/task key', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  requestConfirmationFrom.mockResolvedValue(true);
+  executeWorkspacePackageTask.mockResolvedValue({ success: true, cleanupPending: true, exitCode: 0 });
+  await handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'retained-job' });
+  stopWorkspaceTask.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  await expect(handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'retained-job' })).resolves.toMatchObject({ success: false });
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ task: { running: false, cleanupPending: true } });
+  await expect(handlers.get(WORKSPACE_TASK_CHANNELS.STOP)!(event(), { taskId: 'retained-job' })).resolves.toMatchObject({ success: true });
+  expect(stopWorkspaceTask.mock.calls).toEqual([['7:retained-job'], ['7:retained-job']]);
+  expect(await handlers.get(WORKSPACE_TASK_CHANNELS.STATUS)!(event(), { projectDir: 'x' })).toMatchObject({ task: { cleanupPending: false } });
+});
+
+test('the main-only GO fence rejects a replaced renderer frame after approval/startup', async () => {
+  prepareWorkspacePackageTask.mockReturnValue({ projectDir: 'x', scriptName: 'dev', lifecycle: [] });
+  requestConfirmationFrom.mockResolvedValue(true);
+  executeWorkspacePackageTask.mockImplementation(async (_snapshot, options) => {
+    windowDestroyed = true;
+    expect(() => options.validateAuthority()).toThrow(/frame changed/);
+    return { success: false, cancelled: true };
+  });
+  await handlers.get(WORKSPACE_TASK_CHANNELS.RUN)!(event(), { projectDir: 'x', scriptName: 'dev', taskId: 'old-frame' });
 });

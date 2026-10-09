@@ -24,11 +24,19 @@ import * as path from 'path';
 import { applyHunks, diffText, toHunks, type Hunk } from '../../../src/diff/line-diff';
 import { getSettings } from './config-manager';
 import { recordChange } from './file-change-log';
+import { currentWorkspace, validateWorkspaceRoot, withinRoot } from './workspace-context';
+import { checkpointFailureRollback, recordWorkspaceCheckpoint } from './workspace-checkpoints';
+import { atomicProjectWrite } from './workspace-atomic';
+import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath } from './workspace-trust';
+import { TextDecoder } from 'util';
 
 /** The context width the panel renders with; hunk numbering depends on it. */
 export const PROPOSAL_CONTEXT = 3;
 
 export interface EditProposal {
+  root?: string;
+  streamId?: string;
+  reviewRoot?: string;
   id: string;
   path: string;
   tool: string;
@@ -40,6 +48,8 @@ export interface EditProposal {
 }
 
 export interface ProposalSummary {
+  root?: string;
+  streamId?: string;
   id: string;
   path: string;
   tool: string;
@@ -52,13 +62,15 @@ export interface ProposalSummary {
 const proposals = new Map<string, EditProposal>();
 
 /** Newest first, so the panel shows the edit that just arrived at the top. */
-export function listProposals(): ProposalSummary[] {
+export function listProposals(root?: string): ProposalSummary[] {
+  const canonicalRoot = root ? validateWorkspaceRoot(root) : undefined;
   return [...proposals.values()]
+    .filter(proposal => !canonicalRoot || withinRoot(canonicalRoot, proposal.path))
     .sort((a, b) => b.at - a.at)
     .map(proposal => {
       const diff = diffText(proposal.before, proposal.after);
       return {
-        id: proposal.id, path: proposal.path, tool: proposal.tool, at: proposal.at,
+        id: proposal.id, root: proposal.root, streamId: proposal.streamId, path: proposal.path, tool: proposal.tool, at: proposal.at,
         created: proposal.created, stats: diff.stats, hunks: toHunks(diff, PROPOSAL_CONTEXT),
       };
     });
@@ -85,11 +97,11 @@ function workspaceRoot(): string | null {
 
 /** True when a write to this path is a code edit the reviewer should see first. */
 export function shouldReviewEdit(resolvedPath: string): boolean {
-  const root = workspaceRoot();
+  const root = currentWorkspace()?.root || workspaceRoot();
   if (!root) return false;
   const target = path.resolve(resolvedPath);
   const relative = path.relative(root, target);
-  return relative !== '' && !relative.startsWith('..') && !path.isAbsolute(relative);
+  return relative !== '' && withinRoot(root, target);
 }
 
 export interface ProposeResult {
@@ -108,22 +120,27 @@ export function proposeEdit(args: { path: string; nextContent: string; tool: str
   let before = '';
   let created = true;
   try {
-    before = fs.readFileSync(target, 'utf-8');
+    const bytes = fs.readFileSync(target);
+    if (bytes.includes(0)) throw new Error('This file is binary text and cannot be edited through an AI text proposal. Its bytes were preserved.');
+    try { before = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+    catch { throw new Error('This file is not valid UTF-8 text. Use its original editor/encoding to edit it; its bytes were preserved.'); }
     created = false;
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     created = true;
   }
+  if (Buffer.from(args.nextContent, 'utf8').toString('utf8') !== args.nextContent) throw new Error('The proposed text contains invalid Unicode and was not queued.');
   const diff = diffText(before, args.nextContent);
   const hunks = toHunks(diff, PROPOSAL_CONTEXT);
   if (!hunks.length) {
     return { id: '', path: target, created, hunkCount: 0, stats: diff.stats, identical: true };
   }
-  // One pending proposal per file: a second edit to the same file replaces the
-  // first, so the reviewer never sees two stale answers for one question.
-  for (const [id, existing] of proposals) if (path.resolve(existing.path) === target) proposals.delete(id);
+  // Replace a stream's earlier proposal, but retain another stream's proposal
+  // for the same file. Applying either invalidates the other's original bytes.
+  for (const [id, existing] of proposals) if (path.resolve(existing.path) === target && existing.streamId === currentWorkspace()?.streamId) proposals.delete(id);
 
   const id = randomUUID();
-  proposals.set(id, { id, path: target, tool: args.tool, at: Date.now(), created, before, after: args.nextContent });
+  proposals.set(id, { id, root: currentWorkspace()?.root, reviewRoot: currentWorkspace()?.root || workspaceRoot() || undefined, streamId: currentWorkspace()?.streamId, path: target, tool: args.tool, at: Date.now(), created, before, after: args.nextContent });
   return { id, path: target, created, hunkCount: hunks.length, stats: diff.stats, identical: false };
 }
 
@@ -150,6 +167,13 @@ export interface ApplyResult {
 export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   const proposal = proposals.get(String(id));
   if (!proposal) return { success: false, error: 'That proposed change is no longer waiting.' };
+  let target = '';
+  const validate = () => {
+    const checked = proposal.reviewRoot ? checkedTrustedWorkspacePath(proposal.reviewRoot, proposal.path) : checkedAnyTrustedWorkspacePath(proposal.path);
+    if (target && checked !== target) throw new Error('This file moved since the edit was proposed. Its current version was preserved.');
+    return checked;
+  };
+  try { target = validate(); } catch (error) { return { success: false, error: (error as Error).message }; }
   const accepted = [...new Set((Array.isArray(hunkIndexes) ? hunkIndexes : [])
     .map(Number).filter(index => Number.isInteger(index) && index >= 0))];
   if (!accepted.length) return { success: false, error: 'Choose at least one change to accept.' };
@@ -157,7 +181,7 @@ export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   let onDisk = '';
   let exists = true;
   try {
-    onDisk = fs.readFileSync(proposal.path, 'utf-8');
+    onDisk = fs.readFileSync(target, 'utf-8');
   } catch {
     exists = false;
   }
@@ -167,13 +191,26 @@ export function applyProposal(id: string, hunkIndexes: number[]): ApplyResult {
   }
 
   const diff = diffText(proposal.before, proposal.after);
-  const next = applyHunks(diff, accepted, PROPOSAL_CONTEXT);
+  const totalHunks = toHunks(diff, PROPOSAL_CONTEXT).length;
+  if (accepted.some(index => index >= totalHunks)) return { success: false, error: 'One of those changes no longer exists. Refresh the review.' };
+  // Full acceptance is the exact proposed bytes, not the diff engine's
+  // newline-normalized reconstruction. Partial acceptance preserves disk EOL.
+  let next = accepted.length === totalHunks ? proposal.after : applyHunks(diff, accepted, PROPOSAL_CONTEXT);
+  if (accepted.length !== totalHunks && proposal.before.includes('\r\n')) next = next.replace(/\r?\n/g, '\r\n');
   if (next === proposal.before) return { success: false, error: 'Those hunks leave the file unchanged.' };
 
+  let rollbackCheckpoint: (() => void) | undefined;
   try {
-    fs.mkdirSync(path.dirname(proposal.path), { recursive: true });
-    fs.writeFileSync(proposal.path, next, 'utf-8');
+    const originalBytes = exists ? fs.readFileSync(target) : null;
+    if (originalBytes && createHash('sha256').update(originalBytes).digest('hex') !== digest(proposal.before)) throw new Error('This file changed before acceptance. Its newer version was preserved.');
+    if (proposal.root) {
+      rollbackCheckpoint = checkpointFailureRollback(proposal.root);
+      recordWorkspaceCheckpoint(proposal.root, target, originalBytes, Buffer.from(next, 'utf-8'), proposal.tool, proposal.streamId);
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    atomicProjectWrite(target, Buffer.from(next, 'utf-8'), { expectedExists: exists, expectedHash: exists ? digest(proposal.before) : undefined, validate });
   } catch (err) {
+    try { rollbackCheckpoint?.(); } catch { /* the original document is still preserved; keep the recovery receipt */ }
     return { success: false, error: `Could not write the file: ${(err as Error).message}` };
   }
   // The applied edit belongs in the change log like any other write, so the

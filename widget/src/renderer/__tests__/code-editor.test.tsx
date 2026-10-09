@@ -23,7 +23,7 @@ const viewOf = (container: HTMLElement) => EditorView.findFromDOM(container.quer
 
 test('every language the Explorer reports gets a highlighter', () => {
   for (const lang of ['javascript', 'typescript', 'python', 'json', 'css', 'xml', 'html', 'markdown', 'sql', 'yaml',
-    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp']) {
+    'rust', 'java', 'go', 'bash', 'powershell', 'ini', 'csharp', 'lua', 'luau', 'scss', 'less', 'c', 'cpp', 'kotlin', 'ruby', 'dockerfile', 'toml', 'php', 'makefile']) {
     expect(languageExtension(lang)).not.toEqual([]);
   }
   expect(languageExtension('plaintext')).toEqual([]);
@@ -88,6 +88,56 @@ test('restored editor state uses current handlers, compartments, read-only mode 
 });
 
 describe('IDE-5: Inline Edit (Ctrl+K)', () => {
+  test('inline generation without a project reports guidance before sending a request', async () => {
+    const sendStreamMessage = jest.fn();
+    (window as any).electron = { sendStreamMessage, subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    act(() => { viewOf(container).contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename value' } });
+    await act(async () => fireEvent.click(screen.getByTestId('inline-edit-submit-btn')));
+    expect(sendStreamMessage).not.toHaveBeenCalled();
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('Open a project folder');
+    expect(viewOf(container).state.doc.toString()).toBe('const value = 1;');
+  });
+  test('inline generation sends a transient nonreserved conversation and explicit no-tools draft scope', async () => {
+    const sendStreamMessage = jest.fn().mockResolvedValue(undefined);
+    (window as any).electron = { sendStreamMessage, subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor root="/project" filePath="/project/main.ts" value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    act(() => { viewOf(container).contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename value' } });
+    await act(async () => fireEvent.click(screen.getByTestId('inline-edit-submit-btn')));
+    const request = sendStreamMessage.mock.calls[0][0];
+    expect(request.conversation_id).toBe(`inline-edit:${request.streamId}`);
+    expect(request.conversation_id.startsWith('workspace:')).toBe(false);
+    expect(request.workspace).toEqual({ root: '/project', mode: 'inline-draft' });
+    expect(request.message).toContain('const value = 1;');
+  });
+  test('typing before or inside the target while generating refuses stale acceptance and preserves all bytes', async () => {
+    let callbacks: any;
+    (window as any).electron = { sendStreamMessage: jest.fn().mockResolvedValue({ success: true }), subscribeToStream: jest.fn((_id, handlers) => { callbacks = handlers; return jest.fn(); }), cancelStream: jest.fn() };
+    const { container } = render(<CodeEditor root="/project" value={'const first = 1;\nconst second = 2;\n'} language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const view = viewOf(container);
+    act(() => { view.dispatch({ selection: { anchor: 17, head: 34 } }); view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'rename second' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    act(() => { view.dispatch({ changes: { from: 0, insert: '// user edit\n' } }); callbacks.onStreamChunk({ chunk: 'const renamed = 2;' }); callbacks.onStreamEnd(); });
+    const expected = view.state.doc.toString();
+    fireEvent.click(screen.getByTestId('inline-edit-accept-btn'));
+    expect(view.state.doc.toString()).toBe(expected);
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('replacement was not applied');
+  });
+
+  test('rejected request displays recovery error and does not leave an active generation', async () => {
+    (window as any).electron = { sendStreamMessage: jest.fn().mockRejectedValue(new Error('Connection failed')), subscribeToStream: jest.fn(() => jest.fn()) };
+    const { container } = render(<CodeEditor root="/project" value="const value = 1;" language="typescript" onChange={jest.fn()} onSave={jest.fn()} />);
+    const view = viewOf(container);
+    act(() => { view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'change value' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    expect(screen.getByTestId('inline-edit-error')).toHaveTextContent('Connection failed');
+    expect(screen.queryByTestId('inline-edit-loading')).not.toBeInTheDocument();
+    expect(view.state.doc.toString()).toBe('const value = 1;');
+  });
   test('buildInlineEditPrompt packages instruction, language, and selected code snippet', () => {
     const prompt = buildInlineEditPrompt('convert to arrow function', 'function add(a, b) { return a + b; }', 'typescript');
     expect(prompt).toContain('INSTRUCTION:\nconvert to arrow function');
@@ -97,10 +147,55 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
   test('cleanCodeReplacement strips opening/closing markdown code fences', () => {
     const wrapped = '```typescript\nconst result = add(1, 2);\n```';
-    expect(cleanCodeReplacement(wrapped)).toBe('const result = add(1, 2);');
+    expect(cleanCodeReplacement(wrapped)).toBe('const result = add(1, 2);\n');
 
     const clean = 'const result = add(1, 2);';
     expect(cleanCodeReplacement(clean)).toBe('const result = add(1, 2);');
+  });
+
+  test.each([
+    ['indented Python', '    return value\n'],
+    ['indented JavaScript with trailing spaces', '\tconsole.log(value);  \n'],
+    ['leading and final blank lines', '\n  const value = 1;\n\n'],
+    ['whitespace-only source', ' \t\n'],
+    ['an incomplete fence', '```python\n    return value\n'],
+    ['a fence embedded in source', 'const markdown = "```";\n'],
+    ['a fence preceded by explanation', 'Replacement:\n```python\n    return value\n```\n'],
+    ['a fence followed by explanation', '```python\n    return value\n```\nExplanation.'],
+  ])('unfenced %s is preserved exactly', (_name, raw) => {
+    expect(cleanCodeReplacement(raw)).toBe(raw);
+  });
+
+  test.each([
+    ['Python indentation and final newline', '```python\n    return value\n```\n', '    return value\n'],
+    ['JavaScript trailing spaces and blank lines', '```javascript\n\tconsole.log(value);  \n\n```', '\tconsole.log(value);  \n\n'],
+    ['CRLF and whitespace outside the envelope', ' \n```python\r\n    return value  \r\n\r\n```\r\n \t', '    return value  \r\n\r\n'],
+    ['a longer outer fence containing shorter fences', '````markdown\n```\ninner\n```\n````\n', '```\ninner\n```\n'],
+    ['empty fenced content', '```typescript\n```\n', ''],
+  ])('complete fence removes only its envelope: %s', (_name, raw, source) => {
+    expect(cleanCodeReplacement(raw)).toBe(source);
+  });
+
+  test.each([
+    { name: 'plain Python block', language: 'python', original: 'def greet():\n    return "old"\nprint("done")\n', target: '    return "old"\n', source: '    return "new"\n', response: '    return "new"\n' },
+    { name: 'plain JavaScript statement', language: 'javascript', original: 'function greet() {\n  console.log("old");\n}\n', target: '  console.log("old");\n', source: '  console.log("new");\n', response: '  console.log("new");\n' },
+    { name: 'fenced Python block', language: 'python', original: 'def greet():\n    return "old"\nprint("done")\n', target: '    return "old"\n', source: '    return "new"\n', response: '```python\n    return "new"\n```\n' },
+  ])('streamed $name keeps indentation/newline through preview, Accept and Undo', async ({ language, original, target, source, response }) => {
+    let callbacks: any;
+    (window as any).electron = { sendStreamMessage: jest.fn().mockResolvedValue(undefined), subscribeToStream: jest.fn((_id, handlers) => { callbacks = handlers; return jest.fn(); }), cancelStream: jest.fn() };
+    const onChange = jest.fn();
+    const { container } = render(<CodeEditor root="/project" value={original} language={language} onChange={onChange} onSave={jest.fn()} />);
+    const view = viewOf(container); const from = original.indexOf(target); expect(from).toBeGreaterThan(0);
+    act(() => { view.dispatch({ selection: { anchor: from, head: from + target.length } }); view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })); });
+    fireEvent.change(screen.getByTestId('inline-edit-input'), { target: { value: 'replace this statement' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('inline-edit-submit-btn')); });
+    const split = Math.floor(response.length / 2);
+    act(() => { callbacks.onStreamChunk({ chunk: response.slice(0, split) }); callbacks.onStreamChunk({ chunk: response.slice(split) }); callbacks.onStreamEnd(); });
+    expect(screen.getByTestId('code-inline-diff-preview')).toBeInTheDocument(); expect(view.state.doc.toString()).toBe(original);
+    fireEvent.click(screen.getByTestId('inline-edit-accept-btn'));
+    const expected = original.slice(0, from) + source + original.slice(from + target.length);
+    expect(view.state.doc.toString()).toBe(expected); expect(onChange).toHaveBeenLastCalledWith(expected);
+    act(() => { expect(undo(view)).toBe(true); }); expect(view.state.doc.toString()).toBe(original);
   });
 
   test('computeSimpleLineDiff calculates adds, removes, and equal lines', () => {
@@ -132,7 +227,7 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
     const onChange = jest.fn();
     const { container } = render(
-      <CodeEditor value={'const greeting = "hello";\nconsole.log(greeting);\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
+      <CodeEditor root="/project" value={'const greeting = "hello";\nconsole.log(greeting);\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
     );
     const view = viewOf(container);
 
@@ -205,7 +300,7 @@ describe('IDE-5: Inline Edit (Ctrl+K)', () => {
 
     const onChange = jest.fn();
     const { container } = render(
-      <CodeEditor value={'const count = 0;\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
+      <CodeEditor root="/project" value={'const count = 0;\n'} language="typescript" onChange={onChange} onSave={jest.fn()} />
     );
     const view = viewOf(container);
 

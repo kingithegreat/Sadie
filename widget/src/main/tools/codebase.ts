@@ -217,13 +217,14 @@ export interface CodeSearchResult {
  * Returns ABSOLUTE paths; each caller shapes them (the tool relativises against
  * the search root, the panel keeps them absolute so a click can open the file).
  */
-export async function runCodeSearch(opts: CodeSearchOptions): Promise<CodeSearchResult> {
+export async function runCodeSearch(opts: CodeSearchOptions, validateRoot?: (input: string) => string): Promise<CodeSearchResult> {
   try {
     const pattern = String(opts.pattern || '').trim();
     if (!pattern) return { success: false, error: 'pattern is required' };
     if (pattern.length > 500) return { success: false, error: 'pattern too long (max 500 chars)' };
 
-    const v = validatePath(String(opts.directory || process.cwd()));
+    const requested = String(opts.directory || process.cwd());
+    const v: { valid: boolean; resolved: string; error?: string } = validateRoot ? { valid: true, resolved: validateRoot(requested) } : validatePath(requested);
     if (!v.valid) return { success: false, error: v.error };
 
     const caseSensitive = opts.caseSensitive === true;
@@ -319,7 +320,7 @@ function parseRgOutput(stdout: string, _rootDir: string, maxResults: number) {
   for (const line of lines) {
     if (results.length >= maxResults) break;
     // rg format: file:line:text
-    const match = line.match(/^(.+?):(\d+):(.*)$/);
+    const match = line.replace(/\r$/, '').match(/^(.+?):(\d+):(.*)$/);
     if (match) {
       results.push({
         file: match[1],

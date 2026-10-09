@@ -11,6 +11,8 @@
 import { ChildProcess, spawn as nodeSpawn, type SpawnOptions } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
+import { assertWorkspaceRuntimeOpen } from './workspace-runtime-admission';
 import { stripAnsi, excerptForModel } from '../shared/ansi';
 import type {
   WorkspacePackageTask,
@@ -18,8 +20,11 @@ import type {
   WorkspaceTaskListResult,
   WorkspaceTaskRunResult,
 } from '../shared/types';
-import { isWithinHomeDir } from './utils/home-boundary';
-import { homeDir } from './user-paths';
+import { validateTrustedWorkspaceRoot } from './workspace-trust';
+import { workspacePtyLifecycle, type WorkspacePtyIdentityDiagnostic } from './workspace-pty-identity';
+import { stopWorkspacePtyTree, type WorkspacePtyStopReceipt } from './workspace-pty-force-stop';
+import { createPendingWorkspaceWindowsJob } from './workspace-windows-job';
+import { createWorkspaceProcessGate, snapshotWorkspaceLaunch } from './workspace-process-gate';
 
 const MAX_PACKAGE_BYTES = 1024 * 1024;
 const MAX_SCRIPT_COUNT = 500;
@@ -50,6 +55,13 @@ export interface WorkspaceNpmRunner {
 }
 
 export interface WorkspaceTaskExecutionOptions {
+  /** Main-owned originating-window/task key, never an executable authority. */
+  taskId?: string;
+  createWindowsJob?: typeof createPendingWorkspaceWindowsJob;
+  /** Main-only passive fixed diagnostic; no renderer authority or raw query text. */
+  onLauncherIdentity?: (diagnostic: WorkspacePtyIdentityDiagnostic) => void;
+  /** Revalidate the originating main renderer/frame immediately before GO. */
+  validateAuthority?: () => void;
   timeoutMs?: number;
   runner?: WorkspaceNpmRunner;
   spawnProcess?: (
@@ -63,9 +75,14 @@ export interface WorkspaceTaskExecutionOptions {
   terminateProcessTree?: (child: ChildProcess, platform: NodeJS.Platform) => boolean | void | Promise<boolean | void>;
   /** Renderer-supplied projectDir before canonicalisation; diagnostic click paths are returned in this raw form. */
   rawProjectDir?: string;
+  /** User-selected dev server/watch mode; still aborts on Stop/window close. */
+  longRunning?: boolean;
+  onProgress?: (progress: { outputExcerpt: string; problems: WorkspaceProblem[] }) => void;
 }
 
-const activeTasks = new Map<string, ChildProcess>();
+interface ActiveTask { id?: string; stop(): Promise<boolean> }
+const activeTasks = new Map<string, ActiveTask>();
+let closingTasks: Promise<void> | undefined;
 
 function failMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -83,29 +100,22 @@ function isWithin(parent: string, candidate: string): boolean {
 /** Canonical project root; lexical in-home junctions cannot escape the sandbox. */
 export function resolveWorkspaceTaskProject(projectDir: unknown): { projectDir: string; packageJsonPath: string } {
   if (typeof projectDir !== 'string' || !projectDir.trim()) throw new Error('Choose a project folder first.');
-  const requested = path.resolve(projectDir.trim());
-  let project: string;
-  let home: string;
-  try {
-    project = canonicalExistingPath(requested);
-    home = canonicalExistingPath(homeDir());
-  } catch {
-    throw new Error('The selected project folder no longer exists.');
-  }
-  if (!isWithinHomeDir(project, home)) {
-    throw new Error(`Project folder must be within your home directory (${home}).`);
-  }
+  const project = validateTrustedWorkspaceRoot(projectDir.trim());
   const stat = fs.statSync(project);
   if (!stat.isDirectory()) throw new Error('The selected project path is not a folder.');
 
   const packageJsonPath = path.join(project, 'package.json');
+  // The trust resolver can preserve a Windows 8.3 spelling. Compare both
+  // existing filesystem identities with the native resolver, while keeping
+  // the trusted/display root unchanged for later authority validation.
+  const comparisonRoot = canonicalExistingPath(project);
   let packageReal: string;
   try {
     packageReal = canonicalExistingPath(packageJsonPath);
   } catch {
     throw new Error('No package.json was found in this project folder.');
   }
-  if (!isWithin(project, packageReal) || !fs.statSync(packageReal).isFile()) {
+  if (!isWithin(comparisonRoot, packageReal) || !fs.statSync(packageReal).isFile()) {
     throw new Error('The project package.json must be a file inside the project folder.');
   }
   return { projectDir: project, packageJsonPath: packageReal };
@@ -225,12 +235,13 @@ function resolveProblemPath(projectDir: string, rawPath: string, rawBase = proje
   // cwd-relative paths. Resolve them against the raw project root the request
   // came from too, so the click returns a path the renderer's own lexical
   // HOME sandbox can open (junction/8.3/symlink homes make raw != realpath).
-  const lexical = path.resolve(projectDir, cleaned);
-  if (!isWithin(projectDir, lexical)) return null;
   try {
+    const comparisonRoot = canonicalExistingPath(projectDir);
     const real = canonicalExistingPath(path.resolve(rawBase, cleaned));
-    if (!isWithin(projectDir, real) || !fs.statSync(real).isFile()) return null;
-    const file = path.relative(projectDir, real) || path.basename(real);
+    // Absolute diagnostics may use a long path while cwd uses its short alias.
+    // Canonical containment still rejects every missing/outside/junction target.
+    if (!isWithin(comparisonRoot, real) || !fs.statSync(real).isFile()) return null;
+    const file = path.relative(comparisonRoot, real) || path.basename(real);
     // Raw form of the SAME verified real file; rawBase defaults to projectDir,
     // where raw == canonical and this returns exactly the old value.
     return { path: path.join(rawBase, file), file };
@@ -258,6 +269,7 @@ export class WorkspaceTaskDiagnosticParser {
   private readonly seen = new Set<string>();
 
   constructor(private readonly projectDir: string, private readonly rawProjectDir = projectDir) {}
+  snapshot(): WorkspaceProblem[] { return [...this.found]; }
 
   push(stream: DiagnosticStream, chunk: string): void {
     let combined = this.buffers[stream] + chunk;
@@ -329,50 +341,199 @@ function appendTail(current: string, chunk: string): string {
   return next.length > MAX_RETAINED_OUTPUT ? next.slice(-MAX_RETAINED_OUTPUT) : next;
 }
 
-async function terminateTaskTree(child: ChildProcess, platform: NodeJS.Platform): Promise<boolean> {
-  if (!child.pid) return true;
-  try {
-    if (platform === 'win32') {
-      return await new Promise<boolean>(resolve => {
-        const killer = nodeSpawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
-        let settled = false;
-        const done = (ok: boolean) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(limit);
-          resolve(ok);
-        };
-        killer.stderr?.on('data', (value: Buffer | string) => {
-          console.warn(`[workspace-task] taskkill: ${value.toString().trim().slice(0, 1000)}`);
-        });
-        killer.once('error', () => done(false));
-        killer.once('close', code => done(code === 0));
-        const limit = setTimeout(() => {
-          try { killer.kill('SIGKILL'); } catch { /* already exited */ }
-          done(false);
-        }, 2000);
-        limit.unref?.();
-      });
-    } else {
-      process.kill(-child.pid, 'SIGTERM');
-      return true;
-    }
-  } catch {
-    try { child.kill('SIGKILL'); } catch { /* already exited */ }
-    return false;
+/** Capture once at spawn; retries retain the exact birth-checked owned receipt. */
+function taskTreeStopper(child: ChildProcess, platform: NodeJS.Platform): () => Promise<boolean> {
+  if (platform === 'win32') {
+    const identity = child.pid ? workspacePtyLifecycle.capture(child.pid) : Promise.resolve(null);
+    let receipt: WorkspacePtyStopReceipt | undefined;
+    let attempted = false;
+    return async () => {
+      if (!child.pid) return true;
+      const original = await identity;
+      const result = await stopWorkspacePtyTree(child.pid, original, receipt);
+      if (result.receipt) receipt = result.receipt;
+      attempted ||= result.attempted;
+      if (!result.stopped && result.diagnostics?.length) console.error('[HomeBot-TaskStop]', JSON.stringify(result.diagnostics));
+      // Natural exit is sufficient only when no tree mutation was attempted.
+      // A partial Stop must verify every retained descendant, even root-gone.
+      return result.stopped || (!attempted && !receipt && (child.exitCode !== null || child.signalCode !== null));
+    };
   }
+  return async () => {
+    if (!child.pid) return true;
+    const gone = () => { try { process.kill(-child.pid!, 0); return false; } catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH'; } };
+    if (gone()) return true;
+    // detached:true established this group while the exact native child lives.
+    // Never signal a possibly reused group after its root has already exited.
+    if (child.exitCode !== null || child.signalCode !== null) return false;
+    try { process.kill(-child.pid, 'SIGTERM'); } catch { return gone(); }
+    const deadline = Date.now() + 4500;
+    while (!gone() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (gone()) return true;
+    if (child.exitCode === null && child.signalCode === null) {
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { /* disappearance verified below */ }
+    }
+    const finalDeadline = Date.now() + 1000;
+    while (!gone() && Date.now() < finalDeadline) await new Promise(resolve => setTimeout(resolve, 50));
+    return gone();
+  };
 }
 
-export function closeAllWorkspaceTasks(): void {
-  for (const child of activeTasks.values()) void terminateTaskTree(child, process.platform);
+export function closeAllWorkspaceTasks(): Promise<void> {
+  if (closingTasks) return closingTasks;
+  closingTasks = (async () => {
+    const results = await Promise.allSettled([...activeTasks.values()].map(task => task.stop()));
+    if (results.some(result => result.status === 'rejected' || !result.value)) {
+      throw new Error('A running package task did not confirm its process tree stopped. Its owned identities are retained; retry closing HomeBot to check them again.');
+    }
+  })().finally(() => { closingTasks = undefined; });
+  return closingTasks;
+}
+
+/** Exact retained invocation; an old UI record can never stop its replacement. */
+export async function stopWorkspaceTask(taskId: string): Promise<boolean> {
+  const task = [...activeTasks.values()].find(value => value.id === taskId);
+  return task ? task.stop() : true;
+}
+
+async function executeContainedWindowsTask(current: WorkspaceTaskSnapshot, runner: WorkspaceNpmRunner, options: WorkspaceTaskExecutionOptions): Promise<WorkspaceTaskRunResult> {
+  const targetEnv = { ...process.env, ...options.env, FORCE_COLOR: '0', NO_COLOR: '1' };
+  const launch = snapshotWorkspaceLaunch(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], targetEnv);
+  launch.kind = 'task';
+  const gate = createWorkspaceProcessGate(targetEnv);
+  const job = (options.createWindowsJob || createPendingWorkspaceWindowsJob)({ gate: { pipeName: gate.pipeName, capability: gate.capability } });
+  const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
+  const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
+  const startedAt = Date.now();
+  let output = '', child: ChildProcess | undefined, cancelled = false, timedOut = false, released = false;
+  let executionAuthorized = false;
+  let childEnded = false, exitCode: number | null = null, stopPending: Promise<boolean> | undefined;
+  let startupError: string | undefined, timer: NodeJS.Timeout | undefined;
+  let resolveExit!: () => void;
+  const exited = new Promise<void>(resolve => { resolveExit = resolve; });
+  let resolveResult!: (value: WorkspaceTaskRunResult) => void;
+  const result = new Promise<WorkspaceTaskRunResult>(resolve => { resolveResult = resolve; });
+  let resultPublished = false;
+  const publish = (cleanupPending: boolean, error?: string) => {
+    if (resultPublished) return;
+    resultPublished = true;
+    if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+    if (!cleanupPending && activeTasks.get(current.projectDir) === active) activeTasks.delete(current.projectDir);
+    resolveResult({ success: released && !cancelled && !timedOut && !startupError,
+      cancelled, timedOut, exitCode, cleanupPending,
+      durationMs: Date.now() - startedAt, problems: parser.finish(),
+      outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }),
+      ...(error || startupError ? { error: error || startupError } : {}),
+    });
+  };
+  const waitExit = async () => {
+    if (!child || childEnded) return;
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('The fixed task launcher has not confirmed exit.')), 10000);
+      void exited.then(() => { clearTimeout(timeout); resolve(); });
+    });
+  };
+  let startup!: Promise<void>;
+  const stop = () => {
+    if (stopPending) return stopPending;
+    // Queue after startup is assigned, including an immediately fired AbortSignal.
+    const operation = Promise.resolve().then(async () => {
+      await startup.catch(() => undefined);
+      const exactLauncherCleanup = (async () => {
+        // This native ChildProcess handle belongs to our fixed bootstrap. Before
+        // GO it cannot contain package code, so cleanup may join it independently
+        // of a failed assignment. Once GO may have been sent, retain the Job's
+        // descendant authority and never substitute a leader-only kill.
+        if (!executionAuthorized && child && !childEnded) child.kill();
+        await waitExit();
+      })();
+      const results = await Promise.allSettled([job.stop(), exactLauncherCleanup]);
+      const proven = results.every(value => value.status === 'fulfilled');
+      if (proven && activeTasks.get(current.projectDir) === active) activeTasks.delete(current.projectDir);
+      return proven;
+    });
+    stopPending = operation;
+    void operation.then(() => { if (stopPending === operation) stopPending = undefined; }, () => { if (stopPending === operation) stopPending = undefined; });
+    return operation;
+  };
+  const active: ActiveTask = { id: options.taskId || randomUUID(), stop: async () => {
+    cancelled = true;
+    const proven = await stop();
+    publish(!proven, proven ? (timedOut ? 'Task stopped after its time limit.' : 'Task stopped.') : 'Task cleanup could not be confirmed. Its owned Job is retained; select Stop to retry.');
+    return proven;
+  } };
+  activeTasks.set(current.projectDir, active);
+  const abort = () => { cancelled = true; void active.stop(); };
+  options.signal?.addEventListener('abort', abort, { once: true });
+  startup = (async () => {
+    await job.listening;
+    if (cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
+    assertWorkspaceRuntimeOpen();
+    if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed during startup. Review the task again.');
+    child = spawnProcess(gate.executable, gate.args, { cwd: current.projectDir, windowsHide: true, detached: false, shell: false, env: gate.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    for (const stream of ['stdout', 'stderr'] as const) child[stream]?.on('data', (chunk: Buffer | string) => {
+      const text = chunk.toString(); parser.push(stream, text); output = appendTail(output, text);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
+    });
+    child.once('error', error => {
+      startupError = `Could not start the contained task: ${failMessage(error)}`;
+      if (!child?.pid) { childEnded = true; resolveExit(); }
+    });
+    child.once('close', code => {
+      childEnded = true; exitCode = code; resolveExit();
+      void (async () => {
+        await startup.catch(() => undefined);
+        if (stopPending) { await stopPending; return; }
+        if (startupError || !released) { const proven = await stop(); publish(!proven, startupError || 'The task ended before confirmed startup.'); return; }
+        try {
+          if (await job.queryEmpty()) { await job.stop(); publish(false); }
+          else publish(true, 'The package task ended, but owned background programs remain. Select Stop to stop them.');
+        } catch { publish(true, 'The package task ended with unverified Job cleanup. Select Stop to retry.'); }
+      })().catch(() => publish(true, 'Task cleanup could not be confirmed. Select Stop to retry.'));
+    });
+    const exactChild = child;
+    const childStillOwned = () => exactChild === child && !!exactChild.pid && !childEnded && exactChild.exitCode === null && exactChild.signalCode === null;
+    if (!childStillOwned() || cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
+    if (job.attachChild) {
+      const original = await job.attachChild(exactChild.pid!);
+      if (!original || original.parent !== process.pid || !/^\d{1,19}$/.test(original.creation) || BigInt(original.creation) <= 0n) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
+    } else {
+      // Compatibility for explicitly injected legacy test collaborators only.
+      // The real product helper always provides authenticated attachChild.
+      if (!options.createWindowsJob) throw new Error('The task identity handoff is unavailable. No package code was released.');
+      const original = await workspacePtyLifecycle.capture(exactChild.pid!, options.onLauncherIdentity);
+      if (!original) throw new Error('The task launcher creation identity could not be verified. No package code was released.');
+      await job.attach(exactChild.pid!, original);
+    }
+    if (!childStillOwned() || cancelled || options.signal?.aborted) throw new Error('Task startup was cancelled before execution.');
+    assertWorkspaceRuntimeOpen();
+    if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed during startup. Review the task again.');
+    await job.authorize(launch, () => {
+      options.validateAuthority?.();
+      if (cancelled || options.signal?.aborted || !childStillOwned()) throw new Error('Task startup was cancelled before execution.');
+      assertWorkspaceRuntimeOpen();
+      if (!snapshotsEqual(current, prepareWorkspacePackageTask(current.projectDir, current.scriptName))) throw new Error('package.json or project trust changed before execution. Review the task again.');
+      executionAuthorized = true;
+    }); released = true;
+  })();
+  void startup.catch(async error => {
+    startupError = failMessage(error);
+    const proven = await stop(); publish(!proven, startupError);
+  });
+  const timeoutMs = options.longRunning ? 0 : Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
+  if (timeoutMs) timer = setTimeout(() => { timedOut = true; void active.stop(); }, timeoutMs);
+  return result;
 }
 
 export async function executeWorkspacePackageTask(
   approved: WorkspaceTaskSnapshot,
   options: WorkspaceTaskExecutionOptions = {},
 ): Promise<WorkspaceTaskRunResult> {
+  if (closingTasks) return { success: false, error: 'Package tasks are stopping before HomeBot closes. Try again after shutdown finishes.' };
   let current: WorkspaceTaskSnapshot;
   try {
+    assertWorkspaceRuntimeOpen();
     current = prepareWorkspacePackageTask(approved.projectDir, approved.scriptName);
   } catch (error) {
     return { success: false, error: failMessage(error) };
@@ -386,18 +547,22 @@ export async function executeWorkspacePackageTask(
 
   let runner: WorkspaceNpmRunner;
   try {
-    runner = options.runner || resolveWorkspaceNpmRunner(options.env, options.platform);
+    // Environment options are an overlay for execution. Resolve npm against
+    // that same environment so a canary/setting alone cannot erase PATH.
+    runner = options.runner || resolveWorkspaceNpmRunner({ ...process.env, ...options.env }, options.platform);
   } catch (error) {
     return { success: false, error: failMessage(error) };
   }
 
   const spawnProcess = options.spawnProcess || ((command, args, spawnOptions) => nodeSpawn(command, args, spawnOptions));
   const platform = options.platform || process.platform;
-  const timeoutMs = Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
+  if (platform === 'win32') return executeContainedWindowsTask(current, runner, options);
+  const timeoutMs = options.longRunning ? 0 : Math.min(Math.max(1000, options.timeoutMs || WORKSPACE_TASK_TIMEOUT_MS), WORKSPACE_TASK_TIMEOUT_MS);
   const parser = new WorkspaceTaskDiagnosticParser(current.projectDir, options.rawProjectDir ? path.resolve(options.rawProjectDir) : current.projectDir);
   let output = '';
   let timedOut = false;
   let aborted = false;
+  const cancellationMessage = () => options.signal?.reason === 'user' ? 'Task stopped by user.' : 'Task stopped because the HomeBot window closed.';
   const startedAt = Date.now();
 
   return await new Promise<WorkspaceTaskRunResult>((resolve) => {
@@ -406,6 +571,7 @@ export async function executeWorkspacePackageTask(
     let forcedFinish: NodeJS.Timeout | undefined;
     let termination: Promise<boolean> | undefined;
     let terminationProven = true;
+    let terminateOwnedTree: () => Promise<boolean>;
     let settled = false;
     const finish = (result: WorkspaceTaskRunResult) => {
       if (settled) return;
@@ -413,21 +579,22 @@ export async function executeWorkspacePackageTask(
       if (timer) clearTimeout(timer);
       if (forcedFinish) clearTimeout(forcedFinish);
       options.signal?.removeEventListener('abort', onAbort);
-      if (terminationProven) activeTasks.delete(current.projectDir);
+      if (terminationProven && activeTasks.get(current.projectDir) === activeTask) activeTasks.delete(current.projectDir);
       resolve(result);
     };
-    const stopTree = async () => {
+    const stopTree = () => {
       if (termination) return termination;
-      try {
-        const result = (options.terminateProcessTree || terminateTaskTree)(child!, platform);
-        termination = Promise.resolve(result).then(value => value !== false, () => false);
-      } catch {
-        termination = Promise.resolve(false);
-      }
-      terminationProven = await termination;
-      return terminationProven;
+      terminationProven = false;
+      // Assign before invoking a stopper that may emit close synchronously.
+      termination = Promise.resolve().then(() => terminateOwnedTree()).then(value => {
+        terminationProven = value;
+        if (value && activeTasks.get(current.projectDir) === activeTask) activeTasks.delete(current.projectDir);
+        return value;
+      }, () => false).finally(() => { termination = undefined; });
+      return termination;
     };
     const scheduleForcedFinish = (result: WorkspaceTaskRunResult) => {
+      if (settled) return;
       if (forcedFinish) clearTimeout(forcedFinish);
       forcedFinish = setTimeout(() => finish(result), 500);
       forcedFinish.unref?.();
@@ -436,15 +603,23 @@ export async function executeWorkspacePackageTask(
       aborted = true;
       if (timer) clearTimeout(timer);
       void stopTree().then(proven => {
-        scheduleForcedFinish({ success: false, cancelled: true, error: proven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' });
+        scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
       });
     };
+    const activeTask: ActiveTask = { id: options.taskId, stop: async () => {
+      aborted = true;
+      if (timer) clearTimeout(timer);
+      const proven = await stopTree();
+      scheduleForcedFinish({ success: false, cancelled: true, error: proven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' });
+      return proven;
+    } };
 
     try {
+      options.validateAuthority?.();
       child = spawnProcess(runner.command, [...runner.argsPrefix, 'run-script', current.scriptName], {
         cwd: current.projectDir,
         windowsHide: true,
-        detached: platform !== 'win32',
+        detached: true,
         shell: false,
         env: { ...process.env, ...options.env, FORCE_COLOR: '0', NO_COLOR: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -453,26 +628,31 @@ export async function executeWorkspacePackageTask(
       resolve({ success: false, error: `Could not start npm: ${failMessage(error)}` });
       return;
     }
-    activeTasks.set(current.projectDir, child);
+    terminateOwnedTree = options.terminateProcessTree
+      ? async () => (await options.terminateProcessTree!(child!, platform)) !== false
+      : taskTreeStopper(child, platform);
+    activeTasks.set(current.projectDir, activeTask);
 
-    timer = setTimeout(() => {
+    if (timeoutMs) timer = setTimeout(() => {
       timedOut = true;
       void stopTree().then(proven => {
         scheduleForcedFinish({ success: false, timedOut: true, error: proven ? `Task stopped after ${Math.round(timeoutMs / 1000)} seconds.` : 'Task timed out, but HomeBot could not prove its process tree stopped.' });
       });
     }, timeoutMs);
-    timer.unref?.();
+    timer?.unref?.();
     options.signal?.addEventListener('abort', onAbort, { once: true });
 
     child.stdout?.on('data', (value: Buffer | string) => {
       const chunk = value.toString();
       parser.push('stdout', chunk);
       output = appendTail(output, chunk);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
     });
     child.stderr?.on('data', (value: Buffer | string) => {
       const chunk = value.toString();
       parser.push('stderr', chunk);
       output = appendTail(output, chunk);
+      options.onProgress?.({ outputExcerpt: excerptForModel(output, { maxLines: 100, maxChars: 8000 }), problems: parser.snapshot() });
     });
     child.once('error', async error => {
       if (termination) await termination;
@@ -488,7 +668,7 @@ export async function executeWorkspacePackageTask(
       const problems = parser.finish();
       finish({
         success: !aborted && !timedOut,
-        ...(aborted ? { cancelled: true, error: terminationProven ? 'Task stopped because the HomeBot window closed.' : 'Task cancellation could not prove the process tree stopped.' } : {}),
+        ...(aborted ? { cancelled: true, error: terminationProven ? cancellationMessage() : 'Task cancellation could not prove the process tree stopped.' } : {}),
         timedOut,
         exitCode: code,
         durationMs: Date.now() - startedAt,

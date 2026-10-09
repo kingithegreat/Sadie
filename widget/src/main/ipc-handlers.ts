@@ -56,6 +56,7 @@ import {
   saveMcpConfig,
   getMcpStatus,
   connectSingleServer,
+  disconnectMcpServer,
   type McpServerConfig
 } from './mcp-client';
 import {
@@ -1576,6 +1577,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       } catch (err: any) {
         live = { connected: false, toolCount: 0, error: err?.message || String(err) };
       }
+    } else {
+      try { await disconnectMcpServer(config.name); }
+      catch (err: any) { live.error = err?.message || String(err); }
     }
 
     return {
@@ -1587,6 +1591,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   ipcMain.handle('homebot:mcp-remove-server', async (_event, name: string) => {
+    // Stop pending and failed generations too. Refusal must leave the saved
+    // entry available for another Disconnect rather than claim it is gone.
+    await disconnectMcpServer(name);
     const current = loadMcpConfig();
     current.servers = current.servers.filter(s => s.name !== name);
     saveMcpConfig(current);
@@ -1594,6 +1601,14 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   });
 
   ipcMain.handle('homebot:mcp-toggle-server', async (_event, name: string, enabled: boolean) => {
+    if (enabled) {
+      const configured = loadMcpConfig().servers.find(server => server.name === name);
+      if (!configured) throw new Error('MCP server is no longer configured');
+      const result = await connectSingleServer({ ...configured, enabled: true }, registerTool);
+      if (!result.connected) throw new Error(result.error || 'MCP server could not connect');
+    } else {
+      await disconnectMcpServer(name);
+    }
     const current = loadMcpConfig();
     const server = current.servers.find(s => s.name === name);
     if (server) server.enabled = enabled;

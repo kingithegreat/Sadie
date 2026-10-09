@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
-import { closeElectronApp, CLOSE_BUDGET_MS } from './helpers/closeApp';
+import { closeElectronApp, closeRemainingElectronApps, CLOSE_BUDGET_MS } from './helpers/closeApp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+test.afterEach(async () => { await closeRemainingElectronApps(); });
 
 /**
  * Floating overlays must actually float.
@@ -407,6 +408,7 @@ test('the app shuts down when it is asked to', async () => {
   const { app } = await open('homebot-e2e-quit-');
   const child = app.process();
   const elapsed = await closeElectronApp(app, 'shutdown check');
-  expect(child.killed || child.exitCode !== null).toBe(true);
+  expect(child.killed).toBe(false);
+  expect(child.exitCode).toBe(0);
   expect(elapsed).toBeLessThan(CLOSE_BUDGET_MS);
 });

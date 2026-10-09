@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 /**
  * Docs drift gate.
  *
@@ -14,6 +17,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 const script = path.resolve(__dirname, '..', '..', 'scripts', 'check-docs-drift.mjs');
 const doc = path.resolve(__dirname, '..', '..', 'docs', 'api-reference.md');
@@ -22,6 +26,21 @@ const runCheck = () =>
   execFileSync(process.execPath, [script], { encoding: 'utf-8', stdio: 'pipe' });
 
 describe('docs/api-reference.md', () => {
+  it('resolves imported constants and channel maps without executing the modules', () => {
+    const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-docs-channels-'));
+    try {
+      const marker = path.join(fixture, 'must-not-execute.txt');
+      fs.writeFileSync(path.join(fixture, 'constants.ts'), "export const SINGLE = 'homebot:constant'; export const CHANNELS = { READ: 'homebot:read', EVENT: 'homebot:event' } as const;");
+      const file = path.join(fixture, 'main.ts');
+      fs.writeFileSync(file, `import { SINGLE as ALIAS, CHANNELS } from './constants';\nrequire('fs').writeFileSync(${JSON.stringify(marker)}, 'executed');\nipcMain.handle(ALIAS, () => {}); ipcMain.handle(CHANNELS.READ, () => {}); sender.send(CHANNELS['EVENT'], {});\n// ipcMain.handle('homebot:comment-only', () => {});\nconst unrelated = 'homebot:unused';`);
+      const moduleUrl = require('url').pathToFileURL(script).href;
+      const code = `import { extractChannels } from ${JSON.stringify(moduleUrl)}; console.log(JSON.stringify(extractChannels([${JSON.stringify(file)}])));`;
+      const actual = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { encoding: 'utf8' }));
+      expect(actual).toEqual({ handled: ['homebot:constant', 'homebot:read'], pushed: ['homebot:event'] });
+      expect(fs.existsSync(marker)).toBe(false);
+    } finally { fs.rmSync(fixture, { recursive: true, force: true }); }
+  });
+
   it('lists the complete preload + IPC surface', () => {
     try {
       runCheck();
