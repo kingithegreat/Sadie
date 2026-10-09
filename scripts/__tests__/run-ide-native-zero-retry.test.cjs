@@ -59,6 +59,24 @@ test('all actual private stores must match the four held PIDs; zero/path escape/
   const held = gate.validateShutdownReceipts(receipts()); assert.equal(gate.validatePathReceipts(paths(), held, privateRoot, main).length, 4);
   for (const mutate of [p => { p.length = 0; }, p => { p[0].pid = 1; }, p => { p[0].paths.desktop = path.resolve('outside'); }, p => { p[0].paths.downloads = p[0].paths.documents; }, p => { p[0].env.HOME = path.resolve('outside'); }, p => { p[0].ragRoot = path.resolve('outside'); }, p => { p[0].paths.sessionData = p[0].paths.userData; }]) { const value = paths(); mutate(value); assert.throws(() => gate.validatePathReceipts(value, held, privateRoot, main)); }
 });
+test('Windows PID reuse across sequential launches keeps one path receipt per held main (pid+creation)', () => {
+  // Observed on CI run 37684677869: two different Electron mains both had PID
+  // 5352 (distinct creation times); a PID-only file name lost one receipt.
+  const reused = receipts(); reused[2].receipt.native.pid = reused[1].receipt.native.pid;
+  reused[2].receipt.ownedTree[0].pid = reused[1].receipt.native.pid; reused[2].receipt.ownedTree[1].parent = reused[1].receipt.native.pid;
+  const held = gate.validateShutdownReceipts(reused);
+  const stores = paths(); stores[2].pid = reused[1].receipt.native.pid;
+  assert.equal(gate.validatePathReceipts(stores, held, privateRoot, main).length, 4);
+  // A reused PID still cannot carry more path receipts than held mains.
+  const extra = paths(); extra[2].pid = extra[1].pid; extra[3].pid = extra[1].pid;
+  assert.throws(() => gate.validatePathReceipts(extra, held, privateRoot, main));
+  // Losing the second receipt (the original overwrite) is still a failure.
+  assert.throws(() => gate.validatePathReceipts(stores.slice(0, 3), held, privateRoot, main));
+  assert.ok(gate.PATH_RECEIPT_FILE.test('ide-native-paths-5352-0f8b2c1e-1a2b-4c3d-8e9f-0123456789ab.json'));
+  assert.ok(!gate.PATH_RECEIPT_FILE.test('ide-native-paths-5352-../x.json'));
+  const entry = gate.isolationEntry(privateRoot, path.join(privateRoot, 'app/widget'), main);
+  assert.match(entry, /'ide-native-paths-'\+process\.pid\+'-'\+crypto\.randomUUID\(\)\+'\.json'/);
+});
 test('process null status, timeout/error and non-null signal fail even beside passing reports', () => {
   gate.validateSpawn({ status: 0, signal: null });
   for (const value of [{ status: null, signal: null }, { status: 0, signal: 'SIGTERM' }, { status: 1, signal: null }, { status: 0, signal: null, error: new Error('timeout') }]) assert.throws(() => gate.validateSpawn(value));

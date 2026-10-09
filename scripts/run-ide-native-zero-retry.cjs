@@ -129,13 +129,20 @@ function validateLocalCrashReporterReceipts(receipts) {
     assert.equal(reporter.nonce, receipt.productionAtExit?.nonce, 'Reporter must belong to the same captured quit identity.');
   }
 }
+// A PID can be reused by Windows within one run; the random suffix keeps every
+// launched main's receipt instead of letting a later launch overwrite it.
+const PATH_RECEIPT_FILE = /^ide-native-paths-\d+(?:-[0-9a-f-]{36})?\.json$/;
 const PATH_KEYS = ['home', 'appData', 'userData', 'sessionData', 'temp', 'desktop', 'documents', 'downloads', 'music', 'pictures', 'videos', 'logs', 'crashDumps'];
 function validatePathReceipts(rows, shutdown, privateRoot, frozenMain, expectedCount = 4) {
   assert.equal(rows.length, expectedCount, 'Exact number of actual app path receipts required.');
-  const seen = new Set();
+  // Windows reuses PIDs across sequential launches, so a PID alone is not a
+  // unique main identity. Each held native main (pid+creation) must have exactly
+  // one path receipt: per-PID receipt counts must equal per-PID shutdown counts.
+  const heldPerPid = new Map(), pathsPerPid = new Map();
+  for (const item of shutdown) heldPerPid.set(item.native.pid, (heldPerPid.get(item.native.pid) || 0) + 1);
   for (const row of rows) {
-    assert.ok(!seen.has(row.pid)); seen.add(row.pid);
-    assert.ok(shutdown.some(item => item.native.pid === row.pid), 'Path receipt is not one of the held native mains.');
+    pathsPerPid.set(row.pid, (pathsPerPid.get(row.pid) || 0) + 1);
+    assert.ok(pathsPerPid.get(row.pid) <= (heldPerPid.get(row.pid) || 0), 'Path receipt is not one of the held native mains.');
     assert.equal(row.main, frozenMain); assert.equal(row.ragRoot, path.resolve(path.dirname(frozenMain), '../../../../')); assert.equal(row.mode, 'existing-E2E-fixtures; isolation-only-bootstrap');
     assert.equal(row.env.HOMEBOT_E2E, '1'); assert.equal(row.env.NODE_ENV, 'test'); assert.equal(row.env.HOMEBOT_ENABLE_AUTO_UPDATE, '0'); assert.equal(row.env.ELECTRON_RUN_AS_NODE, undefined);
     for (const key of PATH_KEYS) assert.ok(typeof row.paths[key] === 'string' && within(privateRoot, row.paths[key]), 'Electron store is not private: ' + key);
@@ -158,7 +165,7 @@ function privateEnvironment(original, home) {
 }
 function isolationEntry(privateRoot, widget, main) {
   return `'use strict';
-const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
+const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),crypto=require('node:crypto');
 const {app}=require('electron');
 const privateRoot=${JSON.stringify(privateRoot)},widget=${JSON.stringify(widget)},main=${JSON.stringify(main)};
 const within=(root,target)=>{const r=path.relative(root,path.resolve(target));return !path.isAbsolute(r)&&r!=='..'&&!r.startsWith('..'+path.sep)};
@@ -172,7 +179,7 @@ app.setAppPath(widget);app.setName('HomeBot');app.setVersion(require(path.join(w
 const actual=Object.fromEntries(Object.keys(paths).map(key=>[key,app.getPath(key)]));
 if(JSON.stringify(actual)!==JSON.stringify(paths))throw Error('Actual Electron stores differ');
 const output=path.join(widget,'test-results');fs.mkdirSync(output,{recursive:true});
-fs.writeFileSync(path.join(output,'ide-native-paths-'+process.pid+'.json'),JSON.stringify({pid:process.pid,main,ragRoot:path.resolve(path.dirname(main),'../../../../'),paths:actual,expectedPaths:paths,env,osHome:os.homedir(),osTemp:os.tmpdir(),mode:'existing-E2E-fixtures; isolation-only-bootstrap'},null,2));
+fs.writeFileSync(path.join(output,'ide-native-paths-'+process.pid+'-'+crypto.randomUUID()+'.json'),JSON.stringify({pid:process.pid,main,ragRoot:path.resolve(path.dirname(main),'../../../../'),paths:actual,expectedPaths:paths,env,osHome:os.homedir(),osTemp:os.tmpdir(),mode:'existing-E2E-fixtures; isolation-only-bootstrap'},null,2));
 require(main);
 `;
 }
@@ -256,7 +263,7 @@ async function run() {
     const receipts = fs.readdirSync(resultDirectory).filter(file => /^electron-shutdown-.*\.json$/.test(file)).map(file => ({ file, receipt: JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')) }));
     proof.shutdown = validateShutdownReceipts(receipts, expectedCases.length);
     validateLocalCrashReporterReceipts(receipts);
-    const paths = fs.readdirSync(resultDirectory).filter(file => /^ide-native-paths-\d+\.json$/.test(file)).map(file => JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')));
+    const paths = fs.readdirSync(resultDirectory).filter(file => PATH_RECEIPT_FILE.test(file)).map(file => JSON.parse(fs.readFileSync(path.join(resultDirectory, file), 'utf8')));
     proof.actualPaths = validatePathReceipts(paths, proof.shutdown, privateRoot, main, expectedCases.length);
     validateSpawn(result, 'Actual Playwright process did not exit successfully without a signal.');
     check('Exact selected first-attempt cases with no skip/flaky/retry and matching private-path/held-OS0 native receipts', { cases: proof.cases.length, shutdown: proof.shutdown.length });
@@ -275,5 +282,5 @@ async function run() {
     persist(); console.log(JSON.stringify({ proof: path.join(output, 'proof.json'), passed: proof.passed === true }));
   }
 }
-module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, hashTree, validateCompiledInventory, validateResults, validateShutdownReceipts, validateLocalCrashReporterReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
+module.exports = { EXPECTED_CASES, TERMINAL_TREE_CASES, PATH_KEYS, PATH_RECEIPT_FILE, hashTree, validateCompiledInventory, validateResults, validateShutdownReceipts, validateLocalCrashReporterReceipts, validatePathReceipts, privateEnvironment, isolationEntry, validateSpawn };
 if (require.main === module) void run();

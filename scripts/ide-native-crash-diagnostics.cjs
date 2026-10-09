@@ -191,7 +191,7 @@ async function collectWindowsCrashDiagnostics(options) {
   if (!privateRoot || !shutdownDirectory || !Number.isFinite(Date.parse(started)) || !Number.isFinite(Date.parse(finished)) || Date.parse(finished) < Date.parse(started)) throw Error('Diagnostic collection window/root invalid');
   const target = fs.mkdtempSync(path.join(checkedPath(output, output), 'crash-diagnostics-'));
   report.directory = target;
-  const shutdown = readReceipts(privateRoot, shutdownDirectory, /^electron-shutdown-.*\.json$/), paths = readReceipts(privateRoot, shutdownDirectory, /^ide-native-paths-\d+\.json$/);
+  const shutdown = readReceipts(privateRoot, shutdownDirectory, /^electron-shutdown-.*\.json$/), paths = readReceipts(privateRoot, shutdownDirectory, /^ide-native-paths-\d+(?:-[0-9a-f-]{36})?\.json$/);
   report.errors.push(...shutdown.errors, ...paths.errors);
   const identities = shutdown.result.map(item => item.native).filter(item => item && Number.isSafeInteger(item.pid) && item.pid > 0 && Number.isSafeInteger(item.ppid) && item.ppid > 0 && validBirth(item.creation) && typeof item.execPath === 'string' && path.win32.isAbsolute(item.execPath));
   if (!identities.length) { report.status = 'unavailable'; report.errors.push({ error: 'No captured native identity; no OS query authorized' }); return report; }
