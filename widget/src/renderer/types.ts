@@ -9,6 +9,7 @@ export type StreamingState =
 
 export type ChatMessage = {
   id: string;
+  replyToId?: string;
   role: Role;
   content: string;
   createdAt: number;

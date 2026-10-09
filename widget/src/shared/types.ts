@@ -107,6 +107,8 @@ export interface HomeBotResponse {
 
 export interface Message {
   id?: string;
+  /** Assistant request owner; preserves Retry when sends overlap or status rows intervene. */
+  replyToId?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;

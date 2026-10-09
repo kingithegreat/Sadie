@@ -19,6 +19,7 @@ import { isE2E, isPackagedBuild } from './env';
 import { getSettings, saveSettings } from './config-manager';
 import { logTelemetryEvent } from './utils/logger';
 import { streamFromCustomLLM, validateCustomLLMConfig, PROVIDER_API_URLS } from './custom-llm-client';
+import { createCustomToolRoundTrip } from './custom-tool-round-trip';
 import { markRequestStart, markFirstToken } from './utils/perf-logger';
 import { setSearxngUrl, setTavilyApiKey, setSerperApiKey, setOpenaiApiKey } from './tools/web';
 import { MemoryManager } from './memory-manager';
@@ -31,6 +32,7 @@ import {
   describeCloudTarget,
 } from './router/error-recovery';
 import { isSmallModel, OLLAMA_CHAT_MODEL } from './router/model-size';
+import { readOllamaChatStream } from './router/ollama-chat-stream';
 import {
   formatWebSearchResult,
   buildSourceCardsToken,
@@ -556,14 +558,19 @@ function getHistory(conversationId: string): ConversationMessage[] {
   return conversationHistory.get(conversationId) || [];
 }
 
-function historyBeforeCurrentTurn(conversationId: string, message: string): ConversationMessage[] {
+const INLINE_DRAFT_TOOL_ERROR = 'The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.';
+
+function getProviderHistory(conversationId: string, message: string, currentUserInHistory = false): ConversationMessage[] {
+  // Hydrate first so a fresh process does not send an empty context for a
+  // conversation that already has saved turns (including IDE transcripts).
   ensureHydrated(conversationId);
   const history = getHistory(conversationId);
   const last = history[history.length - 1];
-  // The router records the user turn before streaming. Providers append the
-  // current message themselves, so omit only that matching trailing entry.
-  // An earlier identical prompt followed by a reply remains valid history.
-  return last?.role === 'user' && last.content === message ? history.slice(0, -1) : history;
+  // The IPC chat path records the current turn before routing. Providers append
+  // that turn themselves, so omit only this explicitly recorded final entry.
+  // Direct callers may intentionally repeat a previous prompt and keep it.
+  return currentUserInHistory && last?.role === 'user' && last.content === message
+    ? history.slice(0, -1) : history;
 }
 
 // Exported for potential future use and testing
@@ -2060,7 +2067,7 @@ async function recoverWithoutStreaming(opts: {
   message: string;
   modelOverride?: string;
 }): Promise<string | null> {
-  const history = historyBeforeCurrentTurn(opts.conversationId, opts.message).slice(-10).map(h => ({ role: h.role, content: h.content }));
+  const history = getProviderHistory(opts.conversationId, opts.message, true).slice(-10).map(h => ({ role: h.role, content: h.content }));
   const model = (typeof opts.modelOverride === 'string' && opts.modelOverride.trim())
     || (uncensoredModeEnabled ? OLLAMA_UNCENSORED_MODEL : OLLAMA_CHAT_MODEL);
   const small = isSmallModel(model);
@@ -2151,7 +2158,7 @@ export async function streamFromLLM(
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean },
+  options?: { hasDocuments?: boolean; modelOverride?: string; conversationPrompt?: string; agenticMode?: boolean; currentUserInHistory?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   const settings = await getSettings();
@@ -2184,6 +2191,9 @@ export async function streamFromLLM(
   const storedConvForModel = MemoryManager.getConversation(conversationId);
   const perConvModel = storedConvForModel?.model?.trim() || undefined;
   const perRequestModel = options?.modelOverride?.trim() || undefined;
+  // Inline conversation state wins while its save is still pending.
+  const conversationGuidelines = options?.conversationPrompt?.trim() || storedConvForModel?.systemPrompt?.trim();
+  const cloudGuidelines = [settings.chatGuidelines?.trim(), conversationGuidelines].filter(Boolean).join('\n\n');
 
   // Build system prompt — compact variant for small models (<=3B)
   const activeModel = perRequestModel || perConvModel || settings.chatModel || OLLAMA_CHAT_MODEL;
@@ -2231,7 +2241,7 @@ export async function streamFromLLM(
       }
 
       const controller = new AbortController();
-      const history = historyBeforeCurrentTurn(conversationId, message);
+      const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
       const customConfig = perConvModel
         ? { ...hydratedCloud, model: perConvModel }
         : hydratedCloud;
@@ -2240,14 +2250,16 @@ export async function streamFromLLM(
       // Ollama model. Previously this used activeModel (phi4-mini) which triggered the
       // compact/small-model prompt even for large cloud models like llama-3.3-70b.
       const cloudModelName = customConfig.model || activeModel;
-      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, settings.chatGuidelines);
+      const systemPromptWithGuidelines = getSystemPromptForModel(cloudModelName, cloudGuidelines);
 
       // Inject MCP memory recall and RAG context into the system prompt (same as Ollama path).
       // Fire-and-forget memorization of any self-disclosures in this message.
       // Cap recall for small models to avoid blowing the context window.
       const cloudModelSmall = isSmallModel(cloudModelName);
       const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
-      let cloudSystemPrompt = [systemPromptWithGuidelines, options?.conversationPrompt].filter(Boolean).join('\n\n');
+      // cloudGuidelines already carries options.conversationPrompt (IDE authority
+      // and per-chat guidelines), so it is not appended a second time here.
+      let cloudSystemPrompt = systemPromptWithGuidelines;
       const recalled = inlineDraft ? null : await recallMemory(message).catch(() => null);
       if (recalled) {
         const cappedRecall = cloudModelSmall ? recalled.slice(0, SMALL_MODEL_MEMORY_CHARS) : recalled;
@@ -2281,110 +2293,69 @@ export async function streamFromLLM(
       const toolDefs = providerSupportsTools && shouldOfferTools
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
-      
-      // Track whether a tool call was received (to know if onEnd should be deferred)
-      let toolCallReceived = false;
-      
-      // Handle tool call round-trip: execute tool, then feed result back to LLM
-      const handleToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
-        toolCallReceived = true;
-        if (inlineDraft) {
-          onError(new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.'));
-          return;
-        }
-        console.log(`[HomeBot] Custom LLM tool call: ${tc.name}`, tc.arguments);
-        onToolCall(tc.name, tc.arguments);
-        
-        try {
-          const results = await executeToolBatch(
-            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
-            {
-              executionId: `custom-llm-tool-${Date.now()}`,
-              requestConfirmation,
-              requestPermission: requestPermission as any
-            } as ToolContext
-          );
-          
-          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
-          onToolResult(toolResult);
-          console.log('[HomeBot] Custom LLM tool result, sending follow-up...');
-          
-          // Send the tool result back to the LLM for a follow-up response
-          const updatedHistory = [
-            ...history.map(m => ({ role: m.role as any, content: m.content })),
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: '', tool_calls: [{
-              id: tc.id || `call_${Date.now()}`,
-              type: 'function' as const,
-              function: { name: tc.name, arguments: JSON.stringify(tc.arguments) }
-            }] },
-            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
-          ];
-          
-          // Stream the follow-up (no tools this time to avoid infinite loops)
-          const summaryPrompt = cloudSystemPrompt + '\n\nIMPORTANT: You just called a tool and received its result. Summarize the tool result in a clear, conversational response for the user. Do NOT dump raw JSON or data — present the key information naturally.';
-          await streamFromCustomLLM(
-            '', // empty — context is in the history
-            updatedHistory,
-            customConfig,
-            summaryPrompt,
-            onChunk,
-            onEnd,
-            onError,
-            controller.signal
-          );
-        } catch (err: any) {
-          console.error('[HomeBot] Custom LLM tool execution failed:', err.message);
-          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
-          onEnd();
-        }
+      let cloudSettled = false;
+      let cloudHadOutput = false;
+      let fallbackCancel: (() => void) | undefined;
+      const cloudEnd = () => { if (!cloudSettled) { cloudSettled = true; onEnd(); } };
+      const cloudError = (err: any) => { if (!cloudSettled) { cloudSettled = true; onError(err); } };
+      const cloudChunk = (text: string) => {
+        if (!cloudSettled && !controller.signal.aborted) { cloudHadOutput ||= !!text; onChunk(text); }
       };
-      
-      // Wrap onEnd: if a tool call was received, the tool handler manages onEnd after the follow-up.
-      // If no tool call happened (plain text response), fire onEnd normally.
-      const wrappedOnEnd = () => {
-        if (!toolCallReceived) {
-          onEnd();
-        }
-        // else: handleToolCall will call onEnd after the follow-up stream completes
+      const cloudToolCall = (name: string, args: any) => {
+        if (!cloudSettled && !controller.signal.aborted) { cloudHadOutput = true; onToolCall(name, args); }
       };
+      const cloudToolResult = (result: any) => { if (!cloudSettled && !controller.signal.aborted) onToolResult(result); };
       
       // Wrap onError: surface hard cloud-side failures instead of masking them
       // behind a local Ollama reply. Only unreachable/transient failures fall back.
       const cloudOnError = (err: any) => {
+        if (controller.signal.aborted || cloudSettled) return;
         const errMsg = typeof err === 'string' ? err : err?.message || String(err);
         const cloudTarget = describeCloudTarget(customConfig);
-        if (shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
+        if (cloudHadOutput || shouldSurfaceCloudErrorWithoutFallback(errMsg)) {
           const surfacedError = new Error(`Cloud API error (${cloudTarget}): ${errMsg}`);
           console.warn(`[HomeBot] ${surfacedError.message} — not falling back to local Ollama`);
-          onError(surfacedError);
+          cloudError(surfacedError);
           return;
         }
 
         console.warn(`[HomeBot] Cloud LLM unavailable (${cloudTarget}): ${errMsg} — falling back to local Ollama`);
-        onChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
+        cloudChunk(`\n⚠️ Cloud API unavailable (${cloudTarget}): ${errMsg}\nFalling back to local model...\n\n`);
         // Fall through to Ollama — forward onMeta so the model badge reports
         // the local model that actually answered, not the cloud model that failed.
-        streamFromOllamaWithTools(message, images, conversationId, onChunk, onToolCall, onToolResult, onEnd, onError, requestConfirmation, requestPermission, options, onMeta)
-          .catch((ollamaErr: any) => onError(ollamaErr));
+        streamFromOllamaWithTools(message, images, conversationId, cloudChunk, cloudToolCall, cloudToolResult, cloudEnd, cloudError, requestConfirmation, requestPermission, options, onMeta)
+          .then(handle => { if (controller.signal.aborted) handle.cancel(); else fallbackCancel = handle.cancel; })
+          .catch((ollamaErr: any) => { if (!controller.signal.aborted) cloudError(ollamaErr); });
       };
 
-      streamFromCustomLLM(
+      const toolRoundTrip = createCustomToolRoundTrip({
+        message, history: history.map(m => ({ role: m.role as any, content: m.content })),
+        apiConfig: customConfig,
+        systemPrompt: cloudSystemPrompt + '\n\nSummarize any tool results clearly for the user. Present key information naturally.',
+        context: { executionId: `custom-llm-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
+        signal: controller.signal, onChunk: cloudChunk, onToolCall: cloudToolCall,
+        onToolResult: cloudToolResult, onEnd: cloudEnd, onError: cloudError, onInitialError: cloudOnError, requestPermission,
+      });
+      void Promise.resolve(streamFromCustomLLM(
         message,
         history.map(m => ({ role: m.role as any, content: m.content })),
         customConfig,
         cloudSystemPrompt,
-        onChunk,
-        wrappedOnEnd,
-        cloudOnError,
+        toolRoundTrip.onChunk,
+        toolRoundTrip.onEnd,
+        toolRoundTrip.onError,
         controller.signal,
         toolDefs,
-        providerSupportsTools ? handleToolCall : undefined,
-        cloudImageData
-      );
+        inlineDraft && providerSupportsTools
+          // Inline drafts never run tools. Surface the refusal directly (no
+          // local fallback) and stop the stream so no further output lands.
+          ? () => { cloudError(new Error(INLINE_DRAFT_TOOL_ERROR)); controller.abort(); }
+          : toolDefs?.length ? toolRoundTrip.onToolCall : undefined,
+        cloudImageData,
+      )).catch(toolRoundTrip.onError);
 
       return {
-        cancel: () => controller.abort()
+        cancel: () => { controller.abort(); fallbackCancel?.(); cloudEnd(); }
       };
     } else {
       // The user turned cloud chat ON. Falling back silently is how a missing
@@ -2424,10 +2395,10 @@ export async function streamFromLLM(
     if (codeValidation.valid) {
       console.log(`[HomeBot] Routing coding query to cloud API: ${codeApiProvider} / ${preferredCodeModelForApi}`);
       const controller = new AbortController();
-      const history = historyBeforeCurrentTurn(conversationId, message);
+      const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
       // Build system prompt for the actual code model (may differ in size from chatModel)
       const inlineDraft = currentWorkspace()?.mode === 'inline-draft';
-      const codeSystemPrompt = [getSystemPromptForModel(preferredCodeModelForApi, settings.chatGuidelines), options?.conversationPrompt].filter(Boolean).join('\n\n');
+      const codeSystemPrompt = getSystemPromptForModel(preferredCodeModelForApi, cloudGuidelines);
 
       // Code API supports tools for all non-custom providers
       const codeProviderSupportsTools = codeApiProvider === 'openai'
@@ -2439,50 +2410,21 @@ export async function streamFromLLM(
         ? getFocusedToolDefinitions({ excludeDocumentTools: !hasDocuments, categories: intentCategories })
         : undefined;
 
-      let codeToolCallReceived = false;
-      const handleCodeToolCall = async (tc: { name: string; arguments: any; id?: string }) => {
-        codeToolCallReceived = true;
-        if (inlineDraft) {
-          onError(new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed.'));
-          return;
-        }
-        console.log(`[HomeBot] Code API tool call: ${tc.name}`, tc.arguments);
-        onToolCall(tc.name, tc.arguments);
-        try {
-          const results = await executeToolBatch(
-            [{ name: tc.name, arguments: tc.arguments }] as ToolCall[],
-            { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext
-          );
-          const toolResult = results?.[0]?.result ?? results?.[0]?.error ?? 'No result';
-          onToolResult(toolResult);
-          const updatedHistory = [
-            ...history.map(m => ({ role: m.role as any, content: m.content })),
-            { role: 'user' as const, content: message },
-            { role: 'assistant' as const, content: '', tool_calls: [{ id: tc.id || `call_${Date.now()}`, type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.arguments) } }] },
-            { role: 'tool' as const, content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult), tool_call_id: tc.id || `call_${Date.now()}` }
-          ];
-          await streamFromCustomLLM('', updatedHistory, codeApiConfig, codeSystemPrompt, onChunk, onEnd, onError, controller.signal);
-        } catch (err: any) {
-          console.error('[HomeBot] Code API tool execution failed:', err.message);
-          onChunk(`\n⚠️ Tool execution failed: ${err.message}`);
-          onEnd();
-        }
-      };
-
-      const codeWrappedOnEnd = () => { if (!codeToolCallReceived) onEnd(); };
-
-      streamFromCustomLLM(
-        message,
-        history.map(m => ({ role: m.role as any, content: m.content })),
-        codeApiConfig,
-        codeSystemPrompt,
-        onChunk,
-        codeWrappedOnEnd,
-        onError,
-        controller.signal,
+      const toolRoundTrip = createCustomToolRoundTrip({
+        message, history: history.map(m => ({ role: m.role as any, content: m.content })),
+        apiConfig: codeApiConfig, systemPrompt: codeSystemPrompt,
+        context: { executionId: `code-api-tool-${Date.now()}`, requestConfirmation, requestPermission: requestPermission as any } as ToolContext,
+        signal: controller.signal, onChunk, onToolCall, onToolResult, onEnd, onError, requestPermission,
+      });
+      void Promise.resolve(streamFromCustomLLM(
+        message, history.map(m => ({ role: m.role as any, content: m.content })),
+        codeApiConfig, codeSystemPrompt,
+        toolRoundTrip.onChunk, toolRoundTrip.onEnd, toolRoundTrip.onError, controller.signal,
         codeToolDefs,
-        codeProviderSupportsTools ? handleCodeToolCall : undefined
-      );
+        inlineDraft && codeProviderSupportsTools
+          ? () => { toolRoundTrip.onError(new Error(INLINE_DRAFT_TOOL_ERROR)); controller.abort(); }
+          : codeToolDefs?.length ? toolRoundTrip.onToolCall : undefined,
+      )).catch(toolRoundTrip.onError);
       return { cancel: () => controller.abort() };
     } else {
       console.log(`[HomeBot] Code API not ready: ${codeValidation.error}. Falling back to Ollama.`);
@@ -2501,7 +2443,7 @@ export async function streamFromLLM(
     shouldUseMoA(message)
   ) {
     console.log(`[HomeBot] MoA activated — ${settings.moaProposers.length} proposers → ${settings.moaAggregator}`);
-    const history = historyBeforeCurrentTurn(conversationId, message);
+    const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
     const moaSystemPrompt = getSystemPromptForModel(settings.moaAggregator, settings.chatGuidelines);
 
     // Memory recall for proposers
@@ -2541,13 +2483,13 @@ export async function streamFromOllamaWithTools(
   images: ImageAttachment[] | undefined,
   conversationId: string,
   onChunk: (text: string) => void, 
-  _onToolCall: (toolName: string, args: any) => void,
+  onToolCall: (toolName: string, args: any) => void,
   onToolResult: (result: any) => void,
   onEnd: () => void,
   onError: (err: any) => void,
   requestConfirmation?: (msg: string) => Promise<boolean>,
   requestPermission?: (missingPermissions: string[], reason: string) => Promise<{ decision: 'allow_once'|'always_allow'|'cancel'; missingPermissions?: string[] }>,
-  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string },
+  options?: { hasDocuments?: boolean; noTools?: boolean; conversationPrompt?: string; agenticMode?: boolean; modelOverride?: string; currentUserInHistory?: boolean },
   onMeta?: (meta: { model: string }) => void
 ): Promise<{ cancel: () => void }> {
   // Synthesis calls pass pre-fetched search results — we must NOT offer tools or
@@ -2641,7 +2583,7 @@ export async function streamFromOllamaWithTools(
   const baseChatModel = (uncensoredModeEnabled && !willUseTools) ? preferredUncensoredModel
     : (isCodingQuery ? preferredCodeModel : preferredChatModel);
   const chatModel = baseChatModel || preferredChatModel;
-  const model = hasImages ? preferredVisionModel : chatModel;
+  let model = hasImages ? preferredVisionModel : chatModel;
   if (isCodingQuery) console.log(`[HomeBot] Coding query detected — using code model: ${model}`);
   if (uncensoredModeEnabled && willUseTools) {
     console.log(`[HomeBot] Uncensored mode is on, but this turn needs tools — using ${model}, which supports them`);
@@ -2666,7 +2608,7 @@ export async function streamFromOllamaWithTools(
   // Build messages array for chat API - include conversation history
   // Hydrate from persistent store on first access this session (restores context after restart/switch)
   ensureHydrated(conversationId);
-  const history = historyBeforeCurrentTurn(conversationId, message);
+  const history = getProviderHistory(conversationId, message, options?.currentUserInHistory);
 
   // If this conversation has a custom system prompt, prepend it to the default.
   // Prefer the prompt passed inline via options (from renderer state) to avoid
@@ -2676,7 +2618,7 @@ export async function streamFromOllamaWithTools(
   const convPrompt = inlinePrompt || storedConv?.systemPrompt?.toString().trim();
 
   // ── Context budget: scale history window and digest to model size ──
-  const smallModel = isSmallModel(model);
+  let smallModel = isSmallModel(model);
   const maxHistoryForModel = smallModel ? SMALL_MODEL_HISTORY_MESSAGES : MAX_HISTORY_MESSAGES;
 
   const messages: ChatMessage[] = [];
@@ -2847,7 +2789,7 @@ export async function streamFromOllamaWithTools(
   // it twice is how the model came to be picked as if no tools were coming
   // while tools were in fact offered.
   const shouldOfferTools = willUseTools;
-  const tools = (modelSupportsTools && shouldOfferTools)
+  let tools = (modelSupportsTools && shouldOfferTools)
     ? (smallModel && !isAgentic
       // The message itself decides WHICH category tools get the few slots
       // available — without it they were taken in registration order, so a
@@ -2866,7 +2808,14 @@ export async function streamFromOllamaWithTools(
   };
 
   // Recursive function to handle tool calls
-  async function processResponse(round: number = 0): Promise<void> {
+  function generationOptions() {
+    const lowVram = getSettings().hardwareProfile === '4gb';
+    if (smallModel) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 };
+    if (lowVram) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.15, num_predict: 1024, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+    return { num_ctx: 8192, num_gpu: 99, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
+  }
+  async function processResponse(round: number = 0, disableTools = false): Promise<void> {
+    if (controller.signal.aborted || ended) return;
     if (round >= MAX_TOOL_ROUNDS) {
       console.error(`[HomeBot] Tool-call recursion limit reached (${MAX_TOOL_ROUNDS} rounds)`);
       onChunk(`\n⚠️ I've reached the maximum number of tool-call rounds (${MAX_TOOL_ROUNDS}). Please try rephrasing your request.`);
@@ -2880,15 +2829,10 @@ export async function streamFromOllamaWithTools(
         stream: true,
         keep_alive: '30m',
         // mirostat 2 controls perplexity dynamically — temperature/top_p are ignored when mirostat is active
-        options: (() => {
-          const lowVram = getSettings().hardwareProfile === '4gb';
-          if (smallModel) return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.3, num_predict: 1024, mirostat: 2, mirostat_tau: 3.0, mirostat_eta: 0.1 };
-          if (lowVram)    return { num_ctx: 4096, num_gpu: 99, repeat_penalty: 1.15, num_predict: 1024, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
-          return { num_ctx: 8192, num_gpu: 99, repeat_penalty: 1.15, num_predict: 2048, mirostat: 2, mirostat_tau: 4.0, mirostat_eta: 0.1 };
-        })()
+        options: generationOptions()
       };
       
-      if (tools && tools.length > 0) {
+      if (!disableTools && tools && tools.length > 0) {
         requestBody.tools = tools;
       }
       
@@ -2906,7 +2850,7 @@ export async function streamFromOllamaWithTools(
         const errMsg = (primaryErr?.response?.data?.error || primaryErr?.message || '').toLowerCase();
         const isModelError = status === 404 || errMsg.includes('not found') || errMsg.includes('model');
         
-        if (isModelError && !requestBody._failedOver) {
+        if (isModelError && round === 0) {
           // Build a fallback chain if the model is missing (do not failover on network/connection errors)
           const fallbacks = [OLLAMA_CHAT_MODEL, 'gemma4:e4b', 'qwen2.5-coder:7b'].filter(m => m !== requestBody.model);
           const fallbackModel = fallbacks[0];
@@ -2914,19 +2858,32 @@ export async function streamFromOllamaWithTools(
             console.warn(`[HomeBot] Primary model "${requestBody.model}" failed (${code || status}), failing over to "${fallbackModel}"`);
             onChunk(`⚠️ Model "${requestBody.model}" unavailable — switching to ${fallbackModel}\n\n`);
             requestBody.model = fallbackModel;
-            requestBody._failedOver = true;
             // Adjust system prompt for the fallback model's size
             const fbSmall = isSmallModel(fallbackModel);
             if (fbSmall !== smallModel) {
               const newPrompt = getSystemPromptForModel(fallbackModel, settings.chatGuidelines?.trim());
-              const sysIdx = messages.findIndex(m => m.role === 'system');
-              if (sysIdx >= 0) messages[sysIdx].content = newPrompt;
+              // Replace only HomeBot's framing, preserving user conversation
+              // instructions, recalled context and document snippets.
+              for (const entry of messages) {
+                if (entry.role === 'system') entry.content = String(entry.content).replace(systemPromptWithGuidelines, newPrompt);
+              }
+              smallModel = fbSmall;
+              if (!disableTools && willUseTools) {
+                tools = fbSmall && !isAgentic
+                  ? getSmallModelTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories, query: message })
+                  : getFocusedOllamaTools({ excludeDocumentTools: !hasDocuments, categories: intentCategories });
+                if (tools?.length) requestBody.tools = tools;
+                else delete requestBody.tools;
+              }
+              requestBody.options = generationOptions();
             }
             response = await axios.post(`${ollamaBase}/api/chat`, requestBody, {
               responseType: 'stream',
               timeout: 0,
               signal: controller.signal
             });
+            model = fallbackModel;
+            onMeta?.({ model });
           } else {
             throw primaryErr;
           }
@@ -2936,14 +2893,16 @@ export async function streamFromOllamaWithTools(
       }
 
       console.log('[HomeBot] Ollama chat stream connected...');
-      const stream = response.data as NodeJS.ReadableStream;
+      const stream = response.data as import('stream').Readable;
+      if (controller.signal.aborted || ended) { stream.destroy(); return; }
       
       let assistantContent = '';
       let pendingToolCalls: any[] = [];
+      const inlineDraftMode = currentWorkspace()?.mode === 'inline-draft';
+      let inlineDraftToolRequested = false;
       // Buffer chunks so we can detect tool JSON before sending to the UI.
       // Flush progressively after a short delay; if tool JSON is detected
       // on stream end we replace the content.
-      const chunkBuffer: string[] = [];
       let flushTimer: ReturnType<typeof setTimeout> | null = null;
       let flushedLength = 0; // how many chars of assistantContent we already sent
 
@@ -2951,6 +2910,7 @@ export async function streamFromOllamaWithTools(
         if (flushTimer) return;
         flushTimer = setTimeout(() => {
           flushTimer = null;
+          if (controller.signal.aborted || ended) return;
           // Only flush if we have unflushed content and no tool_calls detected yet
           if (flushedLength < assistantContent.length && pendingToolCalls.length === 0) {
             const unflushed = assistantContent.slice(flushedLength);
@@ -2962,50 +2922,33 @@ export async function streamFromOllamaWithTools(
         }, 120); // Small delay to batch-check content
       }
       
-      await new Promise<void>((resolve, reject) => {
-        stream.on('data', (chunk: Buffer) => {
-          try {
-            const lines = chunk.toString('utf8').split('\n').filter(line => line.trim());
-            for (const line of lines) {
-              if (!line) continue;
-              const parsed = JSON.parse(line);
-              
-              // Handle content chunks
-              if (parsed.message?.content) {
-                chunkCount++;
-                assistantContent += parsed.message.content;
-                chunkBuffer.push(parsed.message.content);
-                scheduleFlush();
-              }
-              
-              // Handle tool calls
-              if (parsed.message?.tool_calls) {
-                pendingToolCalls = parsed.message.tool_calls;
-              }
-              
-              if (parsed.done) {
-                if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-                console.log(`[HomeBot] Response done, chunks=${chunkCount}, toolCalls=${pendingToolCalls.length}`);
-                resolve();
-              }
-            }
-          } catch (e) {
-            // Partial JSON, ignore
+      try {
+        await readOllamaChatStream(stream, controller.signal, parsed => {
+          if (parsed.message?.content) {
+            chunkCount++;
+            assistantContent += parsed.message.content;
+            scheduleFlush();
+          }
+          if (willUseTools && !disableTools && Array.isArray(parsed.message?.tool_calls)) {
+            pendingToolCalls.push(...parsed.message.tool_calls);
+          }
+          if (inlineDraftMode && Array.isArray(parsed.message?.tool_calls) && parsed.message.tool_calls.length) {
+            inlineDraftToolRequested = true;
           }
         });
-        
-        stream.on('end', resolve);
-        stream.on('error', reject);
-      });
+      } finally {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      }
+      if (controller.signal.aborted || ended) return;
 
-      if (currentWorkspace()?.mode === 'inline-draft' && pendingToolCalls.length) {
+      if (inlineDraftToolRequested) {
         throw new Error('The inline draft model requested a tool. Inline drafts cannot run tools; no file was changed. Try generating replacement code again.');
       }
       
       // If no explicit tool_calls were emitted but the assistant content
       // looks like raw tool JSON, parse and route it through the tool
       // execution pipeline rather than rendering it as plain text.
-      if (currentWorkspace()?.mode !== 'inline-draft' && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
+      if (willUseTools && !disableTools && pendingToolCalls.length === 0 && looksLikeToolJson(assistantContent)) {
         // Try extracting tool calls from mixed text (models like mistral
         // often embed tool JSON inside descriptive prose)
         const extracted = extractToolCallsFromText(assistantContent);
@@ -3029,7 +2972,7 @@ export async function streamFromOllamaWithTools(
       // Final fallback: detect prose-style tool descriptions like
       // "write_file path='...' content='...'" that models sometimes output
       // instead of using the proper tool_call mechanism.
-      if (currentWorkspace()?.mode !== 'inline-draft' && pendingToolCalls.length === 0) {
+      if (willUseTools && !disableTools && pendingToolCalls.length === 0) {
         const proseCalls = extractProseToolCalls(assistantContent);
         if (proseCalls && proseCalls.length > 0) {
           pendingToolCalls = proseCalls;
@@ -3064,8 +3007,7 @@ export async function streamFromOllamaWithTools(
           messages.length = 0;
           messages.push(...retryMessages);
           // Drop tools for the retry to reduce confusion
-          if (requestBody.tools) delete requestBody.tools;
-          await processResponse(round + 1);
+          await processResponse(round + 1, true);
           return;
         }
       }
@@ -3121,7 +3063,13 @@ export async function streamFromOllamaWithTools(
           try { onChunk(formatBatchPreviewForChat(previewBatch(calls))); } catch (e) { safeCatch(e); }
         }
 
-        const batchResults = await executeToolBatch(calls, toolContext);
+        for (const call of calls) {
+          if (controller.signal.aborted || ended) return;
+          onToolCall(call.name, call.arguments);
+        }
+        if (controller.signal.aborted || ended) return;
+        const batchResults = await executeToolBatch(calls, toolContext, { signal: controller.signal });
+        if (controller.signal.aborted || ended) return;
 
         // Agentic mode: stream per-tool completion status
         if (options?.agenticMode) {
@@ -3144,6 +3092,7 @@ export async function streamFromOllamaWithTools(
 
             if (typeof requestPermission === 'function') {
               const resp = await requestPermission(missing, reason);
+              if (controller.signal.aborted || ended) return;
 
               if (!resp || resp.decision === 'cancel') {
                 const result = { success: false, error: 'User declined permission request' } as any;
@@ -3159,7 +3108,8 @@ export async function streamFromOllamaWithTools(
               }
 
               if (resp.decision === 'allow_once') {
-                const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing });
+                const rerun = await executeToolBatch(calls, toolContext, { overrideAllowed: missing, signal: controller.signal });
+                if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
                 return;
@@ -3173,7 +3123,8 @@ export async function streamFromOllamaWithTools(
                   saveSettings(s);
                 } catch (e) { console.error('[HomeBot] Failed to persist permission changes:', e); }
 
-                const rerun = await executeToolBatch(calls, toolContext);
+                const rerun = await executeToolBatch(calls, toolContext, { signal: controller.signal });
+                if (controller.signal.aborted || ended) return;
                 for (const r of rerun) { onToolResult(r); messages.push({ role: 'tool', content: JSON.stringify(r) }); }
                 await processResponse(round + 1);
                 return;
@@ -3225,6 +3176,7 @@ export async function streamFromOllamaWithTools(
               toolSummary,
               depth: round
             });
+            if (controller.signal.aborted || ended) return;
             if (!reflection.fallback) {
               if (reflection.accepted) {
                 onChunk(reflection.message);
@@ -3275,6 +3227,7 @@ export async function streamFromOllamaWithTools(
     cancel: () => {
       console.log('[HomeBot] Stream cancel requested');
       controller.abort();
+      safeEnd('cancelled');
     }
   };
 }
@@ -4578,6 +4531,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
             {
               hasDocuments: !!(request.documents && request.documents.length > 0),
+              currentUserInHistory: true,
               modelOverride: reqAny.modelOverride,
               conversationPrompt: isAgenticRequest
                 ? [reqAny.conversationPrompt, buildAgenticSystemPrompt()].filter(Boolean).join('\n\n')
@@ -5223,7 +5177,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
               },
               requestConfirmation,
               (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride },
+              { hasDocuments: hasCurrentDocuments, modelOverride: reqAny.modelOverride, currentUserInHistory: true },
               (meta) => { resolvedModel = meta.model; }
             );
 
@@ -5348,7 +5302,7 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
             },
             undefined,
             (missingPermissions: string[], reason: string) => permissionRequester.request(event.sender, streamId, missingPermissions, reason),
-            { modelOverride: reqAny.modelOverride },
+            { modelOverride: reqAny.modelOverride, currentUserInHistory: true },
             (meta) => { fallbackModel = meta.model; }
           );
           setActiveStream(streamId, { destroy: handler.cancel });

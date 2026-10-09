@@ -92,6 +92,7 @@ interface SubmissionScope {
   retained?: boolean;
   committed?: boolean;
   assistantId?: string;
+  userMessageId?: string;
   creationFlow?: ConversationPromptFlow;
   creationPending?: boolean;
 }
@@ -141,6 +142,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     // convert shared messages into renderer ChatMessage shape
     return initialMessages.map((m) => ({
       id: m.id ?? newId(),
+      replyToId: m.replyToId,
       role: m.role as any,
       content: m.content,
       createdAt: Date.parse(m.timestamp) || Date.now(),
@@ -800,6 +802,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       const mappedStreamingState = msg.streamingState === 'cancelling' ? 'cancelled' : msg.streamingState;
       const sharedMsg: SharedMessage = {
         id: msg.id,
+        ...(msg.replyToId ? { replyToId: msg.replyToId } : {}),
         role: msg.role,
         content: msg.content,
         timestamp: new Date(msg.createdAt).toISOString(),
@@ -1175,6 +1178,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           }
           const loadedMsgs: ChatMessage[] = selectedConversation.messages.map((m: SharedMessage) => ({
             id: m.id ?? newId(),
+            replyToId: m.replyToId,
             role: m.role as any,
             content: m.content,
             createdAt: Date.parse(m.timestamp) || Date.now(),
@@ -1502,6 +1506,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       if (scope.conversationId && scope.assistantId && !deletedConversationIdsRef.current.has(scope.conversationId)) {
         const recovery: ChatMessage = {
           id: scope.assistantId, role: 'assistant', createdAt: Date.now(), streamingState: 'error',
+          replyToId: scope.userMessageId,
           content: 'Your request is saved here. It was not sent because you changed conversations. Choose Retry to continue.',
           error: 'Request saved but not sent.',
         };
@@ -1644,6 +1649,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     };
     const assistantId = newId();
     scope.assistantId = assistantId;
+    scope.userMessageId = userId;
     const streamRequest: HomeBotRequestWithImages & { streamId?: string } = {
       user_id: 'desktop_user', conversation_id: activeConvId || conversationId || 'default',
       message: messageText, timestamp: new Date().toISOString(),
@@ -1683,6 +1689,7 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     if (!guardSubmission(scope)) return;
     const assistantPlaceholder: ChatMessage = {
       id: assistantId,
+      replyToId: userId,
       role: 'assistant',
       content: '',
       createdAt: Date.now(),
@@ -1829,7 +1836,14 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
   const retryMessage = useCallback(async (assistantId: string) => {
     const idx = messages.findIndex(m => m.id === assistantId);
     if (idx <= 0) return;
-    const prevUser = messages[idx - 1];
+    const ownerId = messages[idx].replyToId;
+    // Status rows and overlapping sends can separate a response from its
+    // request. New responses retain that identity through persistence/reopen.
+    // Older conversations still support the preceding non-system user turn.
+    let previousIndex = idx - 1;
+    while (previousIndex >= 0 && messages[previousIndex].role === 'system') previousIndex--;
+    const prevUser = ownerId ? messages.find(message => message.id === ownerId && message.role === 'user')
+      : messages[previousIndex];
     if (!prevUser || prevUser.role !== "user") return;
     const previousReply = streamRepliesRef.current.get(assistantId);
     if (previousReply?.saving || stoppedStreamConfirmationsRef.current.get(assistantId)?.reconciling) {
@@ -1852,16 +1866,6 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     const hasImageAttachment = !!prevUser.images?.length || /\[image attached:/i.test(prevUser.content);
     const originalRequest = retryRequestsRef.current.get(assistantId);
 
-    // reset assistant bubble
-    updateMessage(assistantId, m => ({
-      ...m,
-      content: "",
-      error: null,
-      streamingState: "streaming",
-      createdAt: Date.now(),
-      durationMs: undefined,
-    }));
-
     if ((hasDocumentAttachmentMarker && !originalRequest?.documents?.length) ||
         (hasImageAttachment && !originalRequest?.images?.length)) {
       const needsImages = hasImageAttachment && !originalRequest?.images?.length;
@@ -1882,7 +1886,17 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
     }
 
     const retryConversationId = originalRequest?.conversation_id || conversationId || 'default';
-    const retrySeed: ChatMessage = { ...messages[idx], content: '', error: null, streamingState: 'streaming',
+    // Only replace the partial answer once this Retry has its required bytes.
+    updateMessage(assistantId, m => ({
+      ...m,
+      content: "",
+      error: null,
+      recoveryHint: null,
+      streamingState: "streaming",
+      createdAt: Date.now(),
+      durationMs: undefined,
+    }));
+    const retrySeed: ChatMessage = { ...messages[idx], content: '', error: null, recoveryHint: null, streamingState: 'streaming',
       createdAt: Date.now(), durationMs: undefined };
     subscribeToStream(assistantId, retrySeed, retryConversationId);
 

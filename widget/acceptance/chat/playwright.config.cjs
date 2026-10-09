@@ -1,0 +1,12 @@
+const { defineConfig } = require('@playwright/test');
+const path = require('node:path');
+const output = process.env.HOMEBOT_FIRST_USER_PROOF_OUTPUT;
+if (!output || !path.isAbsolute(output)) throw Error('Owned chat proof output must be absolute');
+module.exports = defineConfig({
+  testDir: __dirname, testMatch: 'chat-native.spec.ts', workers: 1, fullyParallel: false, retries: 0,
+  timeout: 150000, expect: { timeout: 15000 }, outputDir: path.join(output, 'results'),
+  reporter: [['list'], ['json', { outputFile: path.join(output, 'result.json') }],
+    ['junit', { outputFile: path.join(output, 'junit.xml') }],
+    ['html', { outputFolder: path.join(output, 'report'), open: 'never' }]],
+  use: { screenshot: 'only-on-failure' },
+});

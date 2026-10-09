@@ -44,6 +44,7 @@ function mockElectron(settingsOverride: Record<string, unknown> = {}) {
     listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'qwen2.5:3b' }, { name: 'qwen2.5:7b' }, { name: 'llava' }] }),
     subscribeToStream: jest.fn((id: string, callbacks: StreamHandlers) => { handlers.set(id, callbacks); return jest.fn(); }),
     sendStreamMessage,
+    writeClipboard: jest.fn().mockResolvedValue({ success: true }),
     cancelStream: jest.fn(),
     onMessage: jest.fn(() => jest.fn()),
     sendMessage: jest.fn(),
@@ -104,6 +105,21 @@ beforeEach(() => {
 afterEach(() => {
   delete (window as any).electron;
   jest.clearAllMocks();
+});
+
+test.each(['Image', 'Document'])('a reopened %s Retry without bytes keeps the partial response available to copy', async kind => {
+  const partial = 'Keep this useful partial answer while I find the attachment.';
+  await mountReady([
+    { id: 'saved-user', role: 'user', content: `[${kind} attached: notes]\n\nExplain this attachment.`, timestamp: '2026-10-07T00:00:00.000Z' },
+    { id: 'saved-assistant', role: 'assistant', content: partial, timestamp: '2026-10-07T00:00:01.000Z', streamingState: 'error', error: true },
+  ]);
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText(`Reattach the original ${kind.toLowerCase()} and send your request again.`)).toBeInTheDocument();
+  expect(screen.getByText(partial)).toBeInTheDocument();
+  fireEvent.contextMenu(document.querySelector('[data-message-id="saved-assistant"]')!);
+  await act(async () => { fireEvent.click(screen.getByText('Copy')); });
+  expect(window.electron.writeClipboard).toHaveBeenCalledWith(partial);
+  expect(sendStreamMessage).not.toHaveBeenCalled();
 });
 
 test('photo Retry resends the exact image payload and original request instead of text alone', async () => {
