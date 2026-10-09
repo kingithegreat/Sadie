@@ -118,7 +118,12 @@ export function workspaceStreamHandler(handler: (event: any, request: any) => Pr
     }
   };
 }
-const READ_TOOLS = new Set(['list_directory', 'read_file', 'get_file_info', 'search_files', 'diff_text', 'diff_files', 'find_files', 'grep_code', 'project_tree', 'analyze_file', 'search_code', 'codebase_search', 'git_status', 'git_diff', 'git_log', 'git_branches', 'web_search', 'fetch_url', 'rag_query', 'memory_search', 'memory_recall', 'recall_memory']);
+const READ_TOOLS = new Set(['list_directory', 'read_file', 'get_file_info', 'search_files', 'diff_text', 'diff_files', 'find_files', 'grep_code', 'project_tree', 'analyze_file', 'search_code', 'codebase_search', 'git_status', 'git_diff', 'git_log', 'git_branches', 'rag_query', 'memory_search', 'memory_recall', 'recall_memory']);
+// Outbound tools send model-chosen queries/URLs to public endpoints. They are
+// not read-only: an unapproved turn steered by project text (e.g. AGENTS.md)
+// could read a project file and encode it into a query or URL. Like MCP tools,
+// they require a separately approved plan.
+const OUTBOUND_TOOLS = new Set(['web_search', 'fetch_url']);
 /** The registry calls this for single, batch, and bridge tool dispatch. */
 export function workspaceToolError(name: string): string | undefined {
   const context = currentWorkspace();
@@ -127,6 +132,7 @@ export function workspaceToolError(name: string): string | undefined {
   if (context.mode === 'inline-draft') return 'Inline drafts cannot call tools. Review the generated code in the editor; no tool was run.';
   try { validateWorkspaceRoot(context.root); } catch { return 'This IDE project is no longer trusted or available. No further tools can run.'; }
   if (READ_TOOLS.has(name)) return;
+  if (OUTBOUND_TOOLS.has(name)) return context.approved ? undefined : 'Approve a plan in the IDE assistant before it can search the web or fetch a URL. Nothing was sent.';
   if (name === 'write_file' || name === 'edit_file') return context.approved ? undefined : 'Approve a plan in the IDE assistant before proposing edits. No file was changed.';
   if (name.startsWith('mcp_')) return context.approved ? undefined : 'Approve a plan before calling an external tool from the IDE.';
   return 'This tool cannot run from the IDE assistant because its writes cannot be reviewed here. Use the human terminal or HomeBot chat with its own confirmation.';

