@@ -1,4 +1,12 @@
-# HomeBot technical status — 2026-10-04 NZ
+# HomeBot technical status — code complete (2026-10-10 NZ); snapshot 2026-10-04 NZ
+
+> **2026-10-10 NZ — code complete, pending owner checks.** As of main after
+> #474 (`bf75c7a0`) and #479 (`8b5e535d`), all planned code work is merged and
+> CI is green. HomeBot is complete pending only the owner-only checks in
+> [USER_TESTING_CHECKLIST.md](USER_TESTING_CHECKLIST.md): fresh install, voice,
+> Pro paid path, PROV-3 live image, IDE-6 speed, Leila art plus the six-second
+> rig proof, Flappy anchor, and one full narrated episode. The snapshot below
+> is retained as historical evidence.
 
 This is a dated evidence snapshot, not a work queue. The
 [current Drive master](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit)
