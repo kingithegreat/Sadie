@@ -1,0 +1,41 @@
+name: Installer first-run (Windows)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['widget/**', '.github/workflows/installer-first-run.yml']
+permissions:
+  contents: read
+jobs:
+  installer-first-run:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --prefix widget
+      - name: Build installer (no publish)
+        run: npm run dist --prefix widget -- --publish never
+      - name: Silent install, launch once, check, uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem widget/dist-electron/*.exe | Where-Object Name -notmatch 'uninstaller' | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\HomeBot'
+          if (-not (Test-Path "$dir\HomeBot.exe")) { throw "HomeBot.exe not installed in $dir" }
+          $p = Start-Process "$dir\HomeBot.exe" -PassThru
+          $deadline = (Get-Date).AddSeconds(90); $ready = $false
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep 3
+            if ($p.HasExited) { throw "HomeBot exited early with code $($p.ExitCode)" }
+            $w = Get-Process HomeBot -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
+            if ($w) { $ready = $true; break }
+          }
+          if (-not $ready) { throw 'No HomeBot window within 90s' }
+          Start-Sleep 10
+          if ($p.HasExited) { throw "HomeBot crashed after showing its window (code $($p.ExitCode))" }
+          Get-Process HomeBot -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Process "$dir\Uninstall HomeBot.exe" -ArgumentList '/S' -Wait
+          Start-Sleep 5
+          if (Test-Path "$dir\HomeBot.exe") { throw 'Uninstall left HomeBot.exe behind' }
+          'First-run check passed.'
