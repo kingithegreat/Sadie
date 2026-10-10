@@ -191,7 +191,7 @@ export function classifyOpenAIMediaModels(
       watermark: 'metadata',
       watermarkLabel: 'OpenAI image provenance can include C2PA metadata.',
       // OpenAI images are generated through the image_generate tool, whose paid
-      // route is gpt-image-2.5 (see tools/web.ts). That is not a storyboard frame
+      // route is gpt-image-2.5-flare (see tools/web.ts). That is not a storyboard
       // provider: storyboard-frame-providers.ts serves frames through Google only,
       // so offering these in the frame picker would be the broken option this
       // entry exists to avoid. Stays empty until an OpenAI frame provider exists.
