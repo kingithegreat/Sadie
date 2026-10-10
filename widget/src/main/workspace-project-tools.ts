@@ -144,9 +144,9 @@ async function confirmGrant(root: string): Promise<boolean> {
   if (!window || window.isDestroyed()) return false;
   const choice = await dialog.showMessageBox(window, {
     type: 'warning', buttons: ['Allow project tools', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true,
-    title: 'Run project Prettier and ESLint?',
-    message: `Allow HomeBot to run this project's own Prettier and ESLint?\n\n${root}`,
-    detail: 'Their config files and plugins are JavaScript from the project and run on this PC (in a background worker, not the editor). Only allow projects you trust. You can turn this off again in Editor settings.',
+    title: 'Run project tools?',
+    message: `Allow HomeBot to run project tools (Prettier, ESLint, language servers such as Pyright) for this folder?\n\n${root}`,
+    detail: 'They read the project and its config files, and project-installed tools and plugins are code from the project; they run on this PC in the background, not in the editor. Only allow projects you trust. You can turn this off again in Editor settings.',
   });
   return choice.response === 0;
 }

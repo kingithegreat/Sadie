@@ -7,6 +7,8 @@ import type { Extension } from '@codemirror/state';
 import type { WorkspaceLanguageAction, WorkspaceLanguageBuffer, WorkspaceLanguageEdit, WorkspaceLanguageResult } from '../../../shared/workspace-language-types';
 import { setGhostSuggestion } from './GhostCompletion';
 import { projectToolsStatus, setProjectToolsAllowed } from './projectTools';
+import { lspCompletion, lspDefinition, lspExtensions, lspHandles, ipcTransport } from './lsp/lspExtension';
+import type { LspServerStatus } from '../../../shared/workspace-lsp-types';
 import type { ProjectToolsStatus } from '../../../shared/workspace-project-tools-types';
 
 export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean; aiSuggestions?: boolean }
@@ -25,7 +27,9 @@ export async function languageQuery(context: SemanticContext, view: EditorView, 
 /** TypeScript's semantic engine reads current unsaved buffers; no renderer compiler. */
 export function semanticExtensions(context: () => SemanticContext): Extension {
   return [autocompletion({ override: [async (completion: CompletionContext) => {
-    const current = context(); if (!supported(current)) return completeAnyWord(completion);
+    const current = context();
+    if (lspHandles(current)) return (await lspCompletion(current, completion)) || completeAnyWord(completion);
+    if (!supported(current)) return completeAnyWord(completion);
     const word = completion.matchBefore(/[\w$]*/);
     if (!word || (!completion.explicit && word.from === word.to && completion.state.doc.sliceString(Math.max(0, completion.pos - 1), completion.pos) !== '.')) return null;
     const api = window.electron as any;
@@ -51,7 +55,7 @@ export function semanticExtensions(context: () => SemanticContext): Extension {
       if (!result.success || view.state.doc.toString() !== before) return [];
       return (result.diagnostics || []).map(item => ({ from: Math.min(item.start, before.length), to: Math.min(item.start + item.length, before.length), severity: item.severity, message: item.message }));
     } catch { return []; }
-  }, { delay: 900 })];
+  }, { delay: 900 }), lspExtensions(context)];
 }
 
 interface Props {
@@ -68,8 +72,12 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
   const [tools, setTools] = useState<ProjectToolsStatus | null>(null);
+  const [server, setServer] = useState<LspServerStatus | null>(null);
+  const isLsp = lspHandles({ root, filePath });
+  useEffect(() => { let alive = true; setServer(null); if (isLsp) void ipcTransport({ action: 'status', root, path: filePath }).then(result => { if (alive) setServer(result.status || null); }).catch(() => undefined); return () => { alive = false; }; }, [root, filePath, isLsp, tools?.allowed]);
+  const installServer = async () => { setNotice(`Installing ${server?.label} with npm…`); const result = await ipcTransport({ action: 'install', root, path: filePath }); if (result.status) setServer(result.status); setNotice(result.skipped || result.error || (result.status?.source ? `${result.status.label} is ready.` : 'Install did not finish.')); };
   useEffect(() => { let alive = true; if (settings && root) void projectToolsStatus(root, true).then(value => { if (alive) setTools(value); }); return () => { alive = false; }; }, [settings, root]);
-  const changeTools = async (allow: boolean) => { const value = await setProjectToolsAllowed(root, allow); setTools(value); setNotice(value?.allowed ? 'Project Prettier/ESLint allowed for this folder.' : allow ? 'Project tools were not allowed.' : 'Project Prettier/ESLint turned off for this folder.'); };
+  const changeTools = async (allow: boolean) => { const value = await setProjectToolsAllowed(root, allow); setTools(value); setNotice(value?.allowed ? 'Project tools (Prettier, ESLint, language servers) allowed for this folder.' : allow ? 'Project tools were not allowed.' : 'Project tools turned off for this folder.'); };
   const suggestionRequest = useRef(0);
   const languageRequest = useRef(0);
   const scope = `${root}\0${filePath}`;
@@ -109,7 +117,7 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
     const request = ++languageRequest.current; const source = view.state.doc;
     setBusy(true); setNotice('');
     try {
-      const response = await languageQuery({ root, filePath, buffers }, view, action, extra);
+      const response = lspHandles({ root, filePath }) && action === 'definition' && (window.electron as any)?.workspaceLsp ? await lspDefinition({ root, filePath }, view).then(result => ({ success: result.success, error: result.error || result.skipped, locations: result.locations })) : await languageQuery({ root, filePath, buffers }, view, action, extra);
       if (request !== languageRequest.current || currentScope.current !== scope || viewRef.current !== view) return;
       if (!view.state.doc.eq(source)) { setNotice('The source changed while reading language information. Run the action again.'); return; }
       setResult(response);
@@ -168,6 +176,10 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       </div>
       <label><input type="checkbox" checked={preferences.aiSuggestions === true} onChange={event => { updatePreference({ ...preferences, aiSuggestions: event.target.checked }); if (!event.target.checked) { suggestionRequest.current++; viewRef.current?.dispatch({ effects: setGhostSuggestion.of(null) }); } }} />Local AI suggestions (requires a supported installed completion model; no download)</label>
       <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
+    </div>}
+    {isLsp && server && (!server.source || !server.allowed) && <div role="status" data-testid="lsp-status" style={{ padding: '4px 8px', borderLeft: '3px solid #69c' }}>
+      {!server.allowed ? <>{server.label} gives completion, hover, problems and go-to-definition for this file. It runs only in projects you allow. <button onClick={() => void changeTools(true)}>Allow project tools…</button></>
+        : <>{server.label} is not installed (not in the project or on PATH). {server.installable && <button onClick={() => void installServer()}>Install {server.label} via npm</button>}</>}
     </div>}
     {notice && <div role="status" style={{ padding: 8 }}>{notice}</div>}
     {rename && createPortal(<div className="confirmation-overlay" role="dialog" aria-modal="true" aria-label="Rename symbol" style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'grid', placeItems: 'center', background: '#0008' }}><div style={{ background: 'var(--bg-primary, #202124)', padding: 20 }}><label>New symbol name <input autoFocus value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setRename(false); }} /></label><button disabled={!name.trim()} onClick={() => { setRename(false); void query('rename', { newName: name }); }}>Preview rename</button><button onClick={() => setRename(false)}>Cancel</button></div></div>, document.body)}
