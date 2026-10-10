@@ -33,7 +33,7 @@ function makeMockWindowInstance() {
   return inst;
 }
 
-function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rendererUrl?: string } = {}) {
+function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rendererUrl?: string; configAlwaysOnTop?: boolean } = {}) {
   jest.resetModules();
   mockWindowInstance = makeMockWindowInstance();
   MockBrowserWindow = jest.fn().mockImplementation(() => mockWindowInstance);
@@ -41,6 +41,9 @@ function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rende
   jest.doMock('electron', () => ({ BrowserWindow: MockBrowserWindow }));
   jest.doMock('@electron-toolkit/utils', () => ({ is: { dev: overrides.isDev ?? false } }));
   jest.doMock('../env', () => ({ isDevelopment: overrides.isDevelopment ?? false }));
+  jest.doMock('../config-manager', () => ({
+    getSettings: () => ({ alwaysOnTop: overrides.configAlwaysOnTop ?? true }),
+  }));
 
   if (overrides.rendererUrl !== undefined) {
     process.env.ELECTRON_RENDERER_URL = overrides.rendererUrl;
@@ -56,6 +59,7 @@ function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rende
 afterEach(() => {
   jest.clearAllMocks();
   delete process.env.ELECTRON_RENDERER_URL;
+  delete process.env.HOMEBOT_E2E;
 });
 
 // --------------------------------
@@ -108,6 +112,32 @@ describe('createMainWindow — window creation', () => {
     createMainWindow(); // first call
     createMainWindow(); // second call — window already exists and not destroyed
     expect(MockBrowserWindow).toHaveBeenCalledTimes(1);
+  });
+
+  // The General-settings "Always on top" checkbox wrote a setting main never
+  // read, so it did nothing. Creation now honours it in expanded mode.
+  test('honours the alwaysOnTop setting when not in widget mode', () => {
+    process.env.HOMEBOT_E2E = '1'; // expanded mode, not widget mode
+    loadModule({ configAlwaysOnTop: false });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(false);
+  });
+
+  test('a checked alwaysOnTop setting floats the expanded window too', () => {
+    process.env.HOMEBOT_E2E = '1';
+    loadModule({ configAlwaysOnTop: true });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(true);
+  });
+
+  test('widget mode always floats regardless of the setting', () => {
+    delete process.env.HOMEBOT_E2E; // widget mode
+    loadModule({ configAlwaysOnTop: false });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(true);
   });
 
   test('focuses existing window on second call', () => {

@@ -26,6 +26,8 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
+  /** Where the app looks for Ollama — settable in Advanced settings. */
+  ollamaUrl?: string;
   widgetHotkey: string;
   globalHotkey?: string;
   modelRoutingMode?: 'off' | 'prompt' | 'auto';

@@ -438,6 +438,23 @@ export default function AdvancedSettingsTab() {
             <code>search.formats</code> in its <code>settings.yml</code> or it will refuse with 403.
           </small>
 
+          <label className="setting-sub-label sp-sub-label-mt8">Ollama URL</label>
+          <input
+            type="text"
+            className="setting-input"
+            data-testid="ollama-url"
+            value={localSettings.ollamaUrl || ''}
+            placeholder="http://127.0.0.1:11434"
+            onChange={(e) =>
+              setLocalSettings({ ...localSettings, ollamaUrl: e.target.value })
+            }
+          />
+          <small className="setting-hint">
+            Where the app looks for your local models — every local chat, vision and embedding
+            request goes here. Change it if Ollama runs on a different port or another machine,
+            otherwise it reports <em>Ollama offline</em> and no local model can be used.
+          </small>
+
           <label className="setting-sub-label sp-sub-label-mt8">Tavily API Key</label>
           <input
             type="password"

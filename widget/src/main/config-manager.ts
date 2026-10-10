@@ -664,9 +664,12 @@ export function getSettings(): Settings {
     if (merged.customLLM && typeof (merged.customLLM as any).apiKey === 'string' && (merged.customLLM as any).apiKey.length > 0) {
       (merged.customLLM as any).apiKey = decryptSecret((merged.customLLM as any).apiKey);
     }
-    // Ensure uncensored model is always dolphin-mistral:7b (the real Ollama tag;
-    // the bare "dolphin:7b" tag does not exist and always fell back).
-    if (merged.uncensoredModel && merged.uncensoredModel !== 'dolphin-mistral:7b') {
+    // Migrate the bare "dolphin:7b" tag saved by older builds: that tag does not
+    // exist and always fell back. Only this legacy value is rewritten — an
+    // explicit choice made in the Models tab must survive a reload, which the
+    // old "anything other than dolphin-mistral:7b" guard silently reverted on
+    // every getSettings() call.
+    if (merged.uncensoredModel === 'dolphin:7b') {
       merged.uncensoredModel = 'dolphin-mistral:7b';
     }
     _settingsCache = merged;
