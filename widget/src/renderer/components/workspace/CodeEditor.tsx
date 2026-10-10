@@ -482,7 +482,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     if (!view || readOnly) return;
     setSaveError('');
     const currentPreferences = readEditorPreferences();
-    if (currentPreferences.formatOnSave && root && filePath) {
+    if (currentPreferences.formatOnSave && root && filePath && (window.electron as any)?.workspaceProjectTools) {
       // Project Prettier first (allowed projects with prettier installed only).
       const before = view.state.doc.toString();
       try {
