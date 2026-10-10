@@ -17,7 +17,7 @@ import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
 import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
-import { registerWorkspaceProjectToolsIpc, disposeProjectToolWorkers } from './workspace-project-tools-ipc';
+import { registerWorkspaceProjectToolsIpc } from './workspace-project-tools-ipc';
 import { disposeWorkspaceLanguageServices } from './workspace-language';
 import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
 import { registerWorkspaceGitActionIpc } from './workspace-git-action-ipc';
@@ -674,7 +674,6 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 app.on('before-quit', event => {
-  disposeProjectToolWorkers();
   if (mcpQuitReady) return;
   event.preventDefault();
   if (mcpQuitPending) return;
