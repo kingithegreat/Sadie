@@ -279,6 +279,12 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
+  /**
+   * Where the app looks for Ollama. Every local chat, vision and embedding
+   * request goes here, so a user running Ollama on another port or machine needs
+   * to change it — and before this field existed there was no UI to do that.
+   */
+  ollamaUrl?: string;
   // Voice input (speech-to-text)
   voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
   whisperModel?: 'tiny' | 'base' | 'small';
