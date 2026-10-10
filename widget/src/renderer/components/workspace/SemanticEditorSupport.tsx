@@ -65,6 +65,14 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [rename, setRename] = useState(false);
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
+  const [completionSetup, setCompletionSetup] = useState<{ model: string; sizeGB: number; command: string } | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const installModel = async () => {
+    const api = window.electron as any; if (!api?.workspaceCodeCompleteSetup) return;
+    setInstalling(true); setNotice(`Downloading ${completionSetup?.model}… this can take a few minutes.`);
+    try { const result = await api.workspaceCodeCompleteSetup(); if (result?.installed) { setCompletionSetup(null); setNotice(`${result.model} installed. Suggestions will appear as you type.`); } else setNotice(result?.reason || result?.error || 'The model was not installed.'); }
+    finally { setInstalling(false); }
+  };
   const suggestionRequest = useRef(0);
   const languageRequest = useRef(0);
   const scope = `${root}\0${filePath}`;
@@ -82,9 +90,11 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
     try {
       const result = await api.workspaceCodeComplete(root, source.sliceString(Math.max(0, position - 8000), position), source.sliceString(position, Math.min(source.length, position + 4000)));
       if (request !== suggestionRequest.current || viewRef.current !== view || !view.state.doc.eq(source) || !view.state.selection.main.empty || view.state.selection.main.head !== position) return;
+      setCompletionSetup(result.setup || null);
       if (!result.success || !result.text) { setNotice(result.reason || result.error || 'No local completion is available. Choose a supported installed code-completion model in AI settings.'); return; }
       view.dispatch({ effects: setGhostSuggestion.of({ position, text: result.text, source }) });
-      setNotice('Local suggestion ready. Tab accepts; Escape dismisses.');
+      const timing = typeof result.latencyMs === 'number' ? ` (${result.latencyMs} ms${result.stats?.p50Ms != null ? `; p50 ${result.stats.p50Ms} ms over ${result.stats.count}` : ''})` : '';
+      setNotice(`Local suggestion ready${timing}. Tab accepts; Escape dismisses.`);
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
   };
   useEffect(() => {
@@ -162,6 +172,12 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
     </div>}
     {notice && <div role="status" style={{ padding: 8 }}>{notice}</div>}
+    {completionSetup && preferences.aiSuggestions && <div role="alert" data-testid="completion-setup" style={{ padding: 8, borderLeft: '3px solid #c90' }}>
+      Tab completion needs the small local model <code>{completionSetup.model}</code> (~{completionSetup.sizeGB} GB). Install it here (requires Online) or run <code>{completionSetup.command}</code>.{' '}
+      <button disabled={installing} onClick={() => void installModel()}>{installing ? 'Downloading…' : `Install ${completionSetup.model}`}</button>{' '}
+      <button onClick={() => { void navigator.clipboard?.writeText(completionSetup.command); setNotice('Command copied.'); }}>Copy command</button>{' '}
+      <button onClick={() => setCompletionSetup(null)}>Not now</button>
+    </div>}
     {rename && createPortal(<div className="confirmation-overlay" role="dialog" aria-modal="true" aria-label="Rename symbol" style={{ position: 'fixed', inset: 0, zIndex: 10000, display: 'grid', placeItems: 'center', background: '#0008' }}><div style={{ background: 'var(--bg-primary, #202124)', padding: 20 }}><label>New symbol name <input autoFocus value={name} onChange={event => setName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') setRename(false); }} /></label><button disabled={!name.trim()} onClick={() => { setRename(false); void query('rename', { newName: name }); }}>Preview rename</button><button onClick={() => setRename(false)}>Cancel</button></div></div>, document.body)}
     {result && <section aria-label="Language result" style={{ padding: 8, maxHeight: 240, overflow: 'auto' }}>
       <button aria-label="Close language result" onClick={() => setResult(null)}>Close</button>

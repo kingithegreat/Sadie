@@ -1110,6 +1110,7 @@ export interface ElectronAPI {
   workspaceAiRules?: (root: string) => Promise<WorkspaceAiRulesResult>;
   workspaceCodeSearch?: (root: string, query: string, semantic?: boolean) => Promise<WorkspaceCodeSearchResult>;
   workspaceCodeComplete?: (root: string, prefix: string, suffix: string) => Promise<WorkspaceCodeCompletionResult>;
+  workspaceCodeCompleteSetup?: () => Promise<{ success: boolean; installed?: boolean; model?: string; reason?: string; error?: string }>;
   workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; runs?: WorkspaceCheckpointRun[]; error?: string }>;
   workspaceCheckpointCompare?: (root: string, id: string) => Promise<WorkspaceCheckpointCompareResult>;
   workspaceCheckpointRestore?: (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => Promise<WorkspaceCheckpointRestoreResult>;
