@@ -1,12 +1,14 @@
 # HomeBot technical status — code complete (2026-10-10 NZ); snapshot 2026-10-04 NZ
 
-> **2026-10-10 NZ — code complete, pending owner checks.** As of main after
-> #474 (`bf75c7a0`) and #479 (`8b5e535d`), all planned code work is merged and
-> CI is green. HomeBot is complete pending only the owner-only checks in
-> [USER_TESTING_CHECKLIST.md](USER_TESTING_CHECKLIST.md): fresh install, voice,
-> Pro paid path, PROV-3 live image, IDE-6 speed, Leila art plus the six-second
-> rig proof, Flappy anchor, and one full narrated episode. The snapshot below
-> is retained as historical evidence.
+> **Status (2026-10-11 NZ): code complete, waiting on Aden's checks.** All
+> planned code work is merged on main and CI is green. What remains is only the
+> owner-only checks in [USER_TESTING_CHECKLIST.md](USER_TESTING_CHECKLIST.md):
+> fresh install, voice, Pro paid path, PROV-3 live image, IDE-6 speed, Leila art
+> plus the six-second rig proof, Flappy anchor, and one full narrated episode.
+> Known follow-ups that don't block testing: the release workflow's installer
+> publish fix (needs a token with `workflow` scope), and the Job host launch
+> hardening in [WINDOWS_JOB_HOST_LAUNCH_PLAN.md](WINDOWS_JOB_HOST_LAUNCH_PLAN.md).
+> The snapshot below is retained as historical evidence.
 
 This is a dated evidence snapshot, not a work queue. The
 [current Drive master](https://docs.google.com/document/d/1gaMqUoQ1jfJcLREqKyMAhVBLiEy1oYZEOnOydZxaQWE/edit)
