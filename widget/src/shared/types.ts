@@ -1092,6 +1092,7 @@ export interface ElectronAPI {
   workspaceRecoveryLoad?: (root: string) => Promise<WorkspaceRecoveryResult>;
   workspaceRecoverySave?: (root: string, state: WorkspaceRecoveryState) => Promise<{ success: boolean; error?: string }>;
   workspaceLanguage?: (request: WorkspaceLanguageRequest) => Promise<WorkspaceLanguageResult>;
+  workspaceIdeSettings?: (request: { action: 'get' | 'read' | 'save'; which?: 'settings' | 'keybindings'; text?: string }) => Promise<any>;
   workspaceGitAction?: (request: WorkspaceGitActionRequest) => Promise<WorkspaceGitActionResult>;
   workspaceDebug?: (request: WorkspaceDebugRequest) => Promise<WorkspaceDebugResult>;
   workspaceTests?: (request: WorkspaceTestRequest) => Promise<WorkspaceTestResult>;

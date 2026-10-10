@@ -17,6 +17,7 @@ import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
 import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
+import { registerIdeSettingsIpc } from './ide-settings-ipc';
 import { disposeWorkspaceLanguageServices } from './workspace-language';
 import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
 import { registerWorkspaceGitActionIpc } from './workspace-git-action-ipc';
@@ -364,6 +365,8 @@ app.whenReady().then(async () => {
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
   registerWorkspaceLanguageIpc();
+  // User-level IDE settings.json / keybindings.json.
+  registerIdeSettingsIpc();
   registerWorkspaceAiHandlers();
   registerWorkspaceGitActionIpc();
   registerWorkspaceDebugIpc();

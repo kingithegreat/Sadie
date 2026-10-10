@@ -6,15 +6,21 @@ import { linter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
 import type { WorkspaceLanguageAction, WorkspaceLanguageBuffer, WorkspaceLanguageEdit, WorkspaceLanguageResult } from '../../../shared/workspace-language-types';
 import { setGhostSuggestion } from './GhostCompletion';
+import { getIdeSettingsSnapshot } from './ideSettingsStore';
 
 export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean; aiSuggestions?: boolean }
 const STORAGE_KEY = 'homebot.code.editor.preferences.v1';
 /** Latest cap notices from the language service, shown above the editor. */
 let capNotices: string[] = []; const capListeners = new Set<(value: string[]) => void>();
 export function publishCapNotices(value: string[] = []): void { if (value.join('\n') === capNotices.join('\n')) return; capNotices = value; for (const listener of [...capListeners]) listener(value); }
-export function readEditorPreferences(): EditorPreferences {
+function readStoredPreferences(): EditorPreferences {
   try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return { tabSize: value.tabSize === 4 ? 4 : 2, fontSize: Number.isFinite(value.fontSize) ? Math.max(10, Math.min(30, value.fontSize)) : 14, formatOnSave: value.formatOnSave === true, aiSuggestions: value.aiSuggestions === true }; }
   catch { return { tabSize: 2, fontSize: 14, formatOnSave: false }; }
+}
+/** Panel preferences, overridden by validated values from the user's settings.json. */
+export function readEditorPreferences(): EditorPreferences {
+  const stored = readStoredPreferences(); const file = getIdeSettingsSnapshot()?.settings || {};
+  return { tabSize: file['editor.tabSize'] ?? stored.tabSize, fontSize: file['editor.fontSize'] ?? stored.fontSize, formatOnSave: file['editor.formatOnSave'] ?? stored.formatOnSave, aiSuggestions: file['editor.aiSuggestions'] ?? stored.aiSuggestions };
 }
 interface SemanticContext { root?: string; filePath?: string; buffers?: WorkspaceLanguageBuffer[] }
 const supported = (context: SemanticContext) => !!context.root && !!context.filePath && /\.[cm]?[jt]sx?$/i.test(context.filePath);
@@ -166,7 +172,7 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       <label> Font size <input aria-label="Editor font size" type="number" min={10} max={30} value={preferences.fontSize} onChange={event => updatePreference({ ...preferences, fontSize: Math.max(10, Math.min(30, Number(event.target.value) || 14)) })} /></label>
       <label><input type="checkbox" checked={preferences.formatOnSave} onChange={event => updatePreference({ ...preferences, formatOnSave: event.target.checked })} />Format JS/TS on save</label>
       <label><input type="checkbox" checked={preferences.aiSuggestions === true} onChange={event => { updatePreference({ ...preferences, aiSuggestions: event.target.checked }); if (!event.target.checked) { suggestionRequest.current++; viewRef.current?.dispatch({ effects: setGhostSuggestion.of(null) }); } }} />Local AI suggestions (requires a supported installed completion model; no download)</label>
-      <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
+      <p>Values set in settings.json (Command palette → Open Settings (JSON)) override these controls. JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
     </div>}
     {caps.map(item => <div key={item} role="status" data-testid="cap-notice" style={{ padding: '4px 8px', borderLeft: '3px solid #c90' }}>⚠ {item}</div>)}
     {notice && <div role="status" style={{ padding: 8 }}>{notice}</div>}
