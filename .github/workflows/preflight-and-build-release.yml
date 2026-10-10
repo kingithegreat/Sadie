@@ -33,7 +33,13 @@ jobs:
         run: npm ci --prefix widget
 
       - name: Build and package widget
-        run: npm run dist --prefix widget
+        # electron-builder publishes implicitly when it detects CI. Manual
+        # (test) runs must never publish: they only keep the installer as a
+        # workflow artifact. Release events publish with the job token.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist --prefix widget -- --publish ${{ github.event_name == 'release' && 'onTagOrDraft' || 'never' }}
 
       - name: Upload installer to release
         if: github.event_name == 'release'

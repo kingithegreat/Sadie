@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 import { isDevelopment, isPackagedBuild } from './env';
+import { getSettings } from './config-manager';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -47,7 +48,10 @@ export function createMainWindow(): BrowserWindow {
     minimizable: true,
     closable: true,
     movable: true,
-    alwaysOnTop: isWidgetMode,
+    // Widget mode always floats — that is intrinsic to being a desktop widget.
+    // In expanded mode the user's "Always on top" choice applies; before this it
+    // was hard-coded false, so the checkbox in General settings did nothing.
+    alwaysOnTop: isWidgetMode || getSettings().alwaysOnTop,
     frame: false,
     transparent: false,
     // Pre-paint colour so the first frame isn't a white flash; matches --bg-dark.
@@ -273,7 +277,7 @@ export function toggleWidgetMode(): boolean {
     console.log('[WINDOW] Switched to widget mode');
   } else {
     // Switch to expanded/full mode
-    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setAlwaysOnTop(getSettings().alwaysOnTop);
     mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height, true);
     clampToWorkArea(mainWindow);
     mainWindow.center();
