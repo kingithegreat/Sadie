@@ -63,6 +63,6 @@ export async function findWorkspaceFiles(args: Record<string, any>): Promise<Too
     }
     check();
     return { success: true, result: { query, root, count: results.length, results, engine: 'workspace', scanned, skippedLinks, truncated,
-      ...(truncated ? { warning: `Search was capped: ${[...skipped].join('; ')}. Refine the directory or query for more results.` } : {}) } };
+      ...(truncated ? { warning: `Search reached a budget: ${[...skipped].join('; ')}. Refine the directory or query for more results.` } : {}) } };
   } catch (error) { return { success: false, error: error instanceof Error ? error.message : 'Project filename search failed.' }; }
 }
