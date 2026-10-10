@@ -21,8 +21,15 @@ jobs:
         run: |
           $setup = Get-ChildItem widget/dist-electron/*.exe | Where-Object Name -notmatch 'uninstaller' | Select-Object -First 1
           Start-Process $setup.FullName -ArgumentList '/S' -Wait
-          $dir = Join-Path $env:LOCALAPPDATA 'Programs\HomeBot'
-          if (-not (Test-Path "$dir\HomeBot.exe")) { throw "HomeBot.exe not installed in $dir" }
+          # Find the install folder from the per-user uninstall entry, not a guessed path.
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            Get-ItemProperty | Where-Object { $_.DisplayName -like 'HomeBot*' } | Select-Object -First 1
+          if (-not $entry) { throw 'No HomeBot uninstall entry after silent install' }
+          $dir = if ($entry.InstallLocation) { $entry.InstallLocation.Trim('"') } else { Split-Path ($entry.UninstallString -replace '^"([^"]+)".*$','$1') }
+          "Installed to $dir"
+          if (-not (Test-Path "$dir\HomeBot.exe")) { Get-ChildItem $dir | Format-Table Name; throw "HomeBot.exe not found in $dir" }
+          $uninstaller = ($entry.UninstallString -replace '^"([^"]+)".*$','$1')
+          Get-Process HomeBot -ErrorAction SilentlyContinue | Stop-Process -Force
           $p = Start-Process "$dir\HomeBot.exe" -PassThru
           $deadline = (Get-Date).AddSeconds(90); $ready = $false
           while ((Get-Date) -lt $deadline) {
@@ -35,7 +42,8 @@ jobs:
           Start-Sleep 10
           if ($p.HasExited) { throw "HomeBot crashed after showing its window (code $($p.ExitCode))" }
           Get-Process HomeBot -ErrorAction SilentlyContinue | Stop-Process -Force
-          Start-Process "$dir\Uninstall HomeBot.exe" -ArgumentList '/S' -Wait
+          Start-Sleep 3
+          Start-Process $uninstaller -ArgumentList '/S' -Wait
           Start-Sleep 5
           if (Test-Path "$dir\HomeBot.exe") { throw 'Uninstall left HomeBot.exe behind' }
           'First-run check passed.'
