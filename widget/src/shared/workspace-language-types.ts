@@ -23,4 +23,6 @@ export interface WorkspaceLanguageResult {
   fixes?: Array<{ description: string; edits: WorkspaceLanguageEdit[] }>;
   files?: string[];
   diagnostics?: Array<{ start: number; length: number; severity: 'error' | 'warning' | 'info'; message: string }>;
+  /** Plain-language notes about what a safety cap skipped (files, size, depth). */
+  notices?: string[];
 }
