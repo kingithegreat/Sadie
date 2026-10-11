@@ -46,7 +46,8 @@ beforeEach(() => {
   fs.writeFileSync(path.join(root, 'lib.py'), 'GREETING = "hi"\ndef greet(name: str) -> str:\n    return GREETING + name\n');
   fs.writeFileSync(path.join(root, 'main.py'), 'from lib import greet\n');
 });
-afterEach(() => { disposeLanguageServers(); fs.rmSync(root, { recursive: true, force: true }); for (const name of ['ide-project-tools-trust.json']) try { fs.rmSync(path.join(userData, name)); } catch { /* none */ } });
+// Windows keeps the folder locked until the killed server process has exited, so give it a moment and retry.
+afterEach(async () => { disposeLanguageServers(); await new Promise(resolve => setTimeout(resolve, 200)); fs.rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); for (const name of ['ide-project-tools-trust.json']) try { fs.rmSync(path.join(userData, name)); } catch { /* none */ } });
 
 test('positions convert between editor offsets and LSP line/character', () => {
   const text = 'ab\ncdé\nf';
