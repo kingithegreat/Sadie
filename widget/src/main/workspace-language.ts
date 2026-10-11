@@ -3,10 +3,9 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { homeDir } from './user-paths';
 import { validateTrustedWorkspaceRoot, checkedAnyTrustedWorkspacePath } from './workspace-trust';
+import { getIdeCaps, formatBytes, type IdeCaps } from './ide-caps';
 import type { WorkspaceLanguageRequest, WorkspaceLanguageResult, WorkspaceLanguageEdit, WorkspaceLanguageLocation } from '../shared/workspace-language-types';
 
-const MAX_FILES = 2000;
-const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_BUFFERS = 100;
 const SKIP = new Set(['node_modules', '.git', 'out', 'dist', 'dist-electron', 'build', '.next', '.cache', '.venv', 'venv', 'target']);
 const supported = /\.[cm]?[jt]sx?$/i;
@@ -41,6 +40,16 @@ class LanguageProject {
   private readBytes = 0;
   private counted = new Set<string>();
   private dependencyRoots: string[] = [];
+  private caps: IdeCaps = getIdeCaps();
+  /** What a cap skipped during the latest walk/read, shown to the user. */
+  private skippedLarge = new Set<string>();
+  private capNotes = new Set<string>();
+  resetCapNotes(): void { this.caps = getIdeCaps(); this.capNotes.clear(); this.skippedLarge.clear(); }
+  notices(): string[] {
+    const notes = [...this.capNotes];
+    if (this.skippedLarge.size) notes.push(`${this.skippedLarge.size} file${this.skippedLarge.size === 1 ? '' : 's'} larger than ${formatBytes(this.caps.maxFileBytes)} ${this.skippedLarge.size === 1 ? 'was' : 'were'} skipped by language analysis (e.g. ${path.basename([...this.skippedLarge][0])}). Raise "ide.caps.maxFileBytes" in settings.json (max 10 MB).`);
+    return notes;
+  }
   constructor(root: string) {
     this.root = root;
     const host: ts.LanguageServiceHost = {
@@ -114,19 +123,22 @@ class LanguageProject {
     if (buffer !== undefined) return buffer;
     try {
       const size = fs.statSync(file).size;
-      if (!this.readable(file) || size > MAX_BYTES) return undefined;
-      if (!this.counted.has(key(file))) { if (this.readBytes + size > 32 * 1024 * 1024) return undefined; this.readBytes += size; this.counted.add(key(file)); }
+      if (!this.readable(file)) return undefined;
+      if (size > this.caps.maxFileBytes) { if (within(this.root, file)) this.skippedLarge.add(file); return undefined; }
+      if (!this.counted.has(key(file))) { if (this.readBytes + size > 32 * 1024 * 1024) { this.capNotes.add('Language analysis stopped reading more files after 32 MB in total; some project files were skipped.'); return undefined; } this.readBytes += size; this.counted.add(key(file)); }
       const text = fs.readFileSync(file, 'utf8');
       return within(this.root, fs.realpathSync(file)) ? text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n') : text;
     } catch { return undefined; }
   }
   walk(directory = this.root): string[] {
     const files: string[] = [];
+    const { maxDepth, maxFiles } = this.caps;
     const visit = (dir: string, depth: number) => {
-      if (depth > 30 || files.length >= MAX_FILES || !this.readable(dir)) return;
+      if (depth > maxDepth) { this.capNotes.add(`Folders deeper than ${maxDepth} levels were skipped (e.g. ${path.relative(this.root, dir) || dir}). Raise "ide.caps.maxDepth" in settings.json (max 64).`); return; }
+      if (files.length >= maxFiles || !this.readable(dir)) return;
       let entries: fs.Dirent[]; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
       for (const entry of entries) {
-        if (files.length >= MAX_FILES) break;
+        if (files.length >= maxFiles) { this.capNotes.add(`Only the first ${maxFiles.toLocaleString('en-US')} files were indexed; the rest of the project was skipped by Quick Open and language analysis. Raise "ide.caps.maxFiles" in settings.json (max 20,000).`); break; }
         if (entry.isSymbolicLink()) continue;
         const file = path.join(dir, entry.name);
         if (entry.isDirectory()) { if (!SKIP.has(entry.name)) visit(file, depth + 1); }
@@ -138,6 +150,7 @@ class LanguageProject {
   update(request: WorkspaceLanguageRequest) {
     this.buffers.clear();
     this.readBytes = 0; this.counted.clear();
+    this.caps = getIdeCaps(); this.capNotes.clear(); this.skippedLarge.clear();
     let config: string | undefined;
     let currentDirectory = path.dirname(request.path);
     while (within(this.root, currentDirectory)) {
@@ -148,7 +161,7 @@ class LanguageProject {
     this.declaredDependencies(config ? path.dirname(config) : this.root);
     let bufferBytes = 0;
     for (const buffer of [...(request.buffers || []), { path: request.path, content: request.content }]) {
-      if (typeof buffer.path !== 'string' || typeof buffer.content !== 'string' || Buffer.byteLength(buffer.content) > MAX_BYTES) throw new Error('An editor buffer exceeds the language-service limit.');
+      if (typeof buffer.path !== 'string' || typeof buffer.content !== 'string' || Buffer.byteLength(buffer.content) > this.caps.maxFileBytes) throw new Error(`An open editor buffer is larger than the ${formatBytes(this.caps.maxFileBytes)} language-analysis cap, so analysis was skipped. Raise "ide.caps.maxFileBytes" in settings.json (max 10 MB).`);
       bufferBytes += Buffer.byteLength(buffer.content);
       if (bufferBytes > 16 * 1024 * 1024) throw new Error('Open buffers exceed the 16 MiB language-context limit. Close large tabs and retry.');
       const file = resolveAllowed(buffer.path);
@@ -211,7 +224,7 @@ export function queryWorkspaceLanguage(request: WorkspaceLanguageRequest): Works
       if (projects.size >= 2) { const oldest = projects.keys().next().value as string; projects.get(oldest)?.service.dispose(); projects.delete(oldest); }
       project = new LanguageProject(root); projects.set(root, project);
     }
-    if (request.action === 'files') return { success: true, files: project.walk() };
+    if (request.action === 'files') { project.resetCapNotes(); const files = project.walk(); const notices = project.notices(); return { success: true, files, ...(notices.length ? { notices } : {}) }; }
     project.update({ ...request, path: file });
     if (!supported.test(file)) return { success: false, error: 'Semantic navigation and formatting currently support JavaScript and TypeScript projects. Other languages keep syntax highlighting and text editing.' };
     const position = request.position ?? 0;
@@ -226,7 +239,7 @@ export function queryWorkspaceLanguage(request: WorkspaceLanguageRequest): Works
       case 'definition': return { success: true, locations: locations(service.getDefinitionAtPosition(file, position)) };
       case 'references': return { success: true, locations: locations(service.getReferencesAtPosition(file, position)) };
       case 'symbols': return { success: true, locations: project.symbols() };
-      case 'diagnostics': return { success: true, diagnostics: [...service.getSyntacticDiagnostics(file), ...service.getSemanticDiagnostics(file)].slice(0, 200).map(item => ({ start: item.start || 0, length: item.length || 0, severity: item.category === ts.DiagnosticCategory.Error ? 'error' : item.category === ts.DiagnosticCategory.Warning ? 'warning' : 'info', message: ts.flattenDiagnosticMessageText(item.messageText, '\n') })) };
+      case 'diagnostics': { const diagnostics: NonNullable<WorkspaceLanguageResult['diagnostics']> = [...service.getSyntacticDiagnostics(file), ...service.getSemanticDiagnostics(file)].slice(0, 200).map(item => ({ start: item.start || 0, length: item.length || 0, severity: item.category === ts.DiagnosticCategory.Error ? 'error' : item.category === ts.DiagnosticCategory.Warning ? 'warning' : 'info', message: ts.flattenDiagnosticMessageText(item.messageText, '\n') })); const notices = project.notices(); return { success: true, diagnostics, ...(notices.length ? { notices } : {}) }; }
       case 'rename': {
         if (typeof request.newName !== 'string' || !/^[A-Za-z_$][\w$]*$/.test(request.newName)) throw new Error('Enter a valid JavaScript or TypeScript identifier.');
         const info = service.getRenameInfo(file, position);
