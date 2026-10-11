@@ -1028,7 +1028,7 @@ artwork retain their existing behavior.
 > IPC lists resolve literal channels and constant bindings without executing code.
 > Dynamically computed registration names require runtime inspection.
 
-**Preload methods (289)** — `window.electron`
+**Preload methods (290)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1094,19 +1094,19 @@ workspaceCheckpointRestoreRun       workspaceChooseProject              workspac
 workspaceCodeSearch                 workspaceDebug                      workspaceFileAction                 workspaceGitAction
 workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage
 workspaceGitStatus                  workspaceGitUnstage                 workspaceIdeSettings                workspaceLanguage
-workspaceList                       workspaceProjectTools               workspaceProposalAccept             workspaceProposalReject
-workspaceProposals                  workspaceRead                       workspaceRecentProjects             workspaceRecoveryLoad
-workspaceRecoverySave               workspaceReplace                    workspaceRevokeFolder               workspaceRoot
-workspaceSave                       workspaceSearch                     workspaceTaskList                   workspaceTaskRun
-workspaceTaskStatus                 workspaceTaskStop                   workspaceTerminalClose              workspaceTerminalCreate
-workspaceTerminalInterrupt          workspaceTerminalList               workspaceTerminalProfiles           workspaceTerminalResize
-workspaceTerminalWrite              workspaceTests                      workspaceTrustedFolders             writeClipboard
-writeDocument                       youtubeCancel                       youtubeConnect                      youtubeConnectUpload
-youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh                      youtubeRemove
-youtubeUpload
+workspaceList                       workspaceLsp                        workspaceProjectTools               workspaceProposalAccept
+workspaceProposalReject             workspaceProposals                  workspaceRead                       workspaceRecentProjects
+workspaceRecoveryLoad               workspaceRecoverySave               workspaceReplace                    workspaceRevokeFolder
+workspaceRoot                       workspaceSave                       workspaceSearch                     workspaceTaskList
+workspaceTaskRun                    workspaceTaskStatus                 workspaceTaskStop                   workspaceTerminalClose
+workspaceTerminalCreate             workspaceTerminalInterrupt          workspaceTerminalList               workspaceTerminalProfiles
+workspaceTerminalResize             workspaceTerminalWrite              workspaceTests                      workspaceTrustedFolders
+writeClipboard                      writeDocument                       youtubeCancel                       youtubeConnect
+youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh
+youtubeRemove                       youtubeUpload
 ```
 
-**IPC channels, renderer → main (257)**
+**IPC channels, renderer → main (258)**
 
 ```
 homebot:__e2e_get_router_logs                   homebot:__e2e_invoke_tool_batch
@@ -1225,19 +1225,19 @@ homebot:workspace:git-checkout                  homebot:workspace:git-commit
 homebot:workspace:git-stage                     homebot:workspace:git-status
 homebot:workspace:git-unstage                   homebot:workspace:ide-settings
 homebot:workspace:language                      homebot:workspace:list
-homebot:workspace:project-tools                 homebot:workspace:proposal-accept
-homebot:workspace:proposal-reject               homebot:workspace:proposals
-homebot:workspace:read                          homebot:workspace:recent-projects
-homebot:workspace:recovery-load                 homebot:workspace:recovery-save
-homebot:workspace:replace                       homebot:workspace:root
-homebot:workspace:save                          homebot:workspace:search
-homebot:workspace:tasks:list                    homebot:workspace:tasks:run
-homebot:workspace:tasks:status                  homebot:workspace:tasks:stop
-homebot:workspace:terminal:close                homebot:workspace:terminal:create
-homebot:workspace:terminal:interrupt            homebot:workspace:terminal:list
-homebot:workspace:terminal:profiles             homebot:workspace:terminal:resize
-homebot:workspace:terminal:write                homebot:workspace:tests
-homebot:write-document
+homebot:workspace:lsp                           homebot:workspace:project-tools
+homebot:workspace:proposal-accept               homebot:workspace:proposal-reject
+homebot:workspace:proposals                     homebot:workspace:read
+homebot:workspace:recent-projects               homebot:workspace:recovery-load
+homebot:workspace:recovery-save                 homebot:workspace:replace
+homebot:workspace:root                          homebot:workspace:save
+homebot:workspace:search                        homebot:workspace:tasks:list
+homebot:workspace:tasks:run                     homebot:workspace:tasks:status
+homebot:workspace:tasks:stop                    homebot:workspace:terminal:close
+homebot:workspace:terminal:create               homebot:workspace:terminal:interrupt
+homebot:workspace:terminal:list                 homebot:workspace:terminal:profiles
+homebot:workspace:terminal:resize               homebot:workspace:terminal:write
+homebot:workspace:tests                         homebot:write-document
 ```
 
 **IPC channels, main → renderer (38)**
