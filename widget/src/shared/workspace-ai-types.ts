@@ -11,7 +11,8 @@ export interface WorkspaceCheckpointRestoreResult { success: boolean; path?: str
 export interface WorkspaceCheckpointCompareResult { success: boolean; path?: string; before?: string | null; current?: string | null; currentHash?: string; error?: string }
 export interface WorkspaceAiRulesResult { success: boolean; rules?: Array<{ path: string; text: string }>; error?: string }
 export interface WorkspaceAiMcpStatusResult { success: boolean; servers?: Array<{ name: string; type: string; connected: boolean; toolCount: number }>; error?: string }
-export interface WorkspaceCodeCompletionResult { success: boolean; text?: string; model?: string; latencyMs?: number; reason?: string; error?: string }
+export interface WorkspaceCodeCompletionSetup { model: string; sizeGB: number; command: string }
+export interface WorkspaceCodeCompletionResult { success: boolean; text?: string; model?: string; latencyMs?: number; cold?: boolean; stats?: { count: number; p50Ms: number | null; p95Ms: number | null; lastMs: number | null }; reason?: string; error?: string; setup?: WorkspaceCodeCompletionSetup }
 export interface WorkspaceCheckpointRun { id: string; at: number; paths: string[] }
 export interface WorkspaceCheckpointRunComparison { success: boolean; runId?: string; files?: Array<{ path: string; before: string | null; current: string | null; currentHash: string; conflict: boolean }>; error?: string }
 export interface WorkspaceCheckpointRunRestoreOptions { confirmedHashes?: Record<string, string> }
