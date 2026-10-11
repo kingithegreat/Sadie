@@ -11,6 +11,7 @@
  * across the IPC boundary.
  */
 
+import { getIdeCaps, formatBytes } from './ide-caps';
 import { app, ipcMain, shell } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -50,7 +51,6 @@ export const WORKSPACE_CHANNELS = {
 } as const;
 
 /** Refuse to open anything an editor pane cannot usefully show. */
-const MAX_EDITABLE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 /** Directories that make a tree unusable and are never interesting to browse. */
 const IGNORED_DIRS = new Set([
@@ -188,7 +188,8 @@ export function registerWorkspaceIpc(getProjectPath: () => string | undefined): 
       if (path.relative(root, target) === '' || (fs.existsSync(target) && fs.realpathSync(root) === fs.realpathSync(target))) throw new Error('The project folder itself cannot be moved or deleted here.');
       if (a.action === 'create-file') {
         if (typeof a.content !== 'string') throw new Error('No content to create.');
-        if (Buffer.byteLength(a.content) > MAX_EDITABLE_BYTES) throw new Error('File is too large (maximum 2 MB).');
+        const editLimit = getIdeCaps().maxEditableBytes;
+        if (Buffer.byteLength(a.content) > editLimit) throw new Error(`File is too large: over the ${formatBytes(editLimit)} editor cap. Raise "ide.caps.maxEditableBytes" in settings.json (max 10 MB).`);
         atomicProjectWrite(target, Buffer.from(a.content, 'utf8'), { expectedExists: false, validate: () => { checkedWorkspacePath(a.path as string, root); } });
       } else if (a.action === 'create-folder') {
         fs.mkdirSync(target);
