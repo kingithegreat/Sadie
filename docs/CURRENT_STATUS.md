@@ -8,6 +8,10 @@
 > Known follow-ups that don't block testing: the release workflow's installer
 > publish fix (needs a token with `workflow` scope), and the Job host launch
 > hardening in [WINDOWS_JOB_HOST_LAUNCH_PLAN.md](WINDOWS_JOB_HOST_LAUNCH_PLAN.md).
+> **IDE quick wins (2026-10-11 NZ, approved by Aden):** live project
+> Prettier/ESLint (#485) and reliable IDE-6 tab completion (#490) are merged.
+> Cap warnings (#488), settings/keybindings JSON (#489) and the LSP bridge with
+> Python/pyright (#492) are also merged (`1bbe006c`, `c16c558f`, `31e5eec7`), so all five are on main. What remains for Aden is trying them by hand, plus recording IDE-6 p50 on his PC. See the IDE-QW rows in USER_TESTING_PLAN.md.
 > The snapshot below is retained as historical evidence.
 
 This is a dated evidence snapshot, not a work queue. The
