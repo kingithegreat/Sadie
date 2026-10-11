@@ -279,6 +279,12 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
+  /**
+   * Where the app looks for Ollama. Every local chat, vision and embedding
+   * request goes here, so a user running Ollama on another port or machine needs
+   * to change it — and before this field existed there was no UI to do that.
+   */
+  ollamaUrl?: string;
   // Voice input (speech-to-text)
   voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
   whisperModel?: 'tiny' | 'base' | 'small';
@@ -1093,6 +1099,7 @@ export interface ElectronAPI {
   workspaceRecoverySave?: (root: string, state: WorkspaceRecoveryState) => Promise<{ success: boolean; error?: string }>;
   workspaceLanguage?: (request: WorkspaceLanguageRequest) => Promise<WorkspaceLanguageResult>;
   workspaceIdeSettings?: (request: { action: 'get' | 'read' | 'save'; which?: 'settings' | 'keybindings'; text?: string }) => Promise<any>;
+  workspaceProjectTools?: (request: import('./workspace-project-tools-types').ProjectToolsRequest) => Promise<import('./workspace-project-tools-types').ProjectToolsResult>;
   workspaceGitAction?: (request: WorkspaceGitActionRequest) => Promise<WorkspaceGitActionResult>;
   workspaceDebug?: (request: WorkspaceDebugRequest) => Promise<WorkspaceDebugResult>;
   workspaceTests?: (request: WorkspaceTestRequest) => Promise<WorkspaceTestResult>;
@@ -1111,6 +1118,7 @@ export interface ElectronAPI {
   workspaceAiRules?: (root: string) => Promise<WorkspaceAiRulesResult>;
   workspaceCodeSearch?: (root: string, query: string, semantic?: boolean) => Promise<WorkspaceCodeSearchResult>;
   workspaceCodeComplete?: (root: string, prefix: string, suffix: string) => Promise<WorkspaceCodeCompletionResult>;
+  workspaceCodeCompleteSetup?: () => Promise<{ success: boolean; installed?: boolean; model?: string; reason?: string; error?: string }>;
   workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; runs?: WorkspaceCheckpointRun[]; error?: string }>;
   workspaceCheckpointCompare?: (root: string, id: string) => Promise<WorkspaceCheckpointCompareResult>;
   workspaceCheckpointRestore?: (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => Promise<WorkspaceCheckpointRestoreResult>;

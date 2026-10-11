@@ -4,7 +4,7 @@ import { readWorkspaceTranscript, writeWorkspaceTranscript } from './workspace-c
 import { compareWorkspaceCheckpoint, compareWorkspaceCheckpointRun, listWorkspaceCheckpointRuns, listWorkspaceCheckpoints, restoreWorkspaceCheckpoint, restoreWorkspaceCheckpointRun } from './workspace-checkpoints';
 import { readWorkspaceRules, searchWorkspaceCode } from './workspace-code-context';
 import { getMcpStatus, loadMcpConfig } from './mcp-client';
-import { completeWorkspaceCode } from './workspace-completion';
+import { completeWorkspaceCode, installCompletionModel } from './workspace-completion';
 import { getMainWindow } from './window-manager';
 import { listTrustedWorkspaceFolders, revokeTrustedWorkspaceFolder } from './workspace-trust';
 
@@ -14,6 +14,7 @@ export const WORKSPACE_AI_CHANNELS = {
   RULES: 'homebot:workspace-ai:rules', SEARCH: 'homebot:workspace-ai:search',
   CHECKPOINTS: 'homebot:workspace-ai:checkpoints', CHECKPOINT_DIFF: 'homebot:workspace-ai:checkpoint-diff', RESTORE: 'homebot:workspace-ai:restore', MCP: 'homebot:workspace-ai:mcp',
   COMPLETE: 'homebot:workspace-ai:complete',
+  COMPLETE_SETUP: 'homebot:workspace-ai:complete-setup',
   COMPARE_RUN: 'homebot:workspace-ai:compare-run', RESTORE_RUN: 'homebot:workspace-ai:restore-run',
   TRUSTED_FOLDERS: 'homebot:workspace-ai:trusted-folders', REVOKE_FOLDER: 'homebot:workspace-ai:revoke-folder',
 } as const;
@@ -34,6 +35,7 @@ export function registerWorkspaceAiHandlers() {
   ipcMain.handle(WORKSPACE_AI_CHANNELS.RULES, safe((_event, root) => ({ rules: readWorkspaceRules(root) })));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.SEARCH, safe((_event, root, query, semantic) => searchWorkspaceCode(root, query, semantic === true)));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.COMPLETE, safe((_event, root, prefix, suffix) => completeWorkspaceCode(root, prefix, suffix)));
+  ipcMain.handle(WORKSPACE_AI_CHANNELS.COMPLETE_SETUP, safe(() => installCompletionModel()));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.CHECKPOINTS, safe((_event, root) => ({ checkpoints: listWorkspaceCheckpoints(root), runs: listWorkspaceCheckpointRuns(root) })));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.CHECKPOINT_DIFF, safe((_event, root, id) => compareWorkspaceCheckpoint(root, id)));
   ipcMain.handle(WORKSPACE_AI_CHANNELS.RESTORE, safe((_event, root, id, options) => restoreWorkspaceCheckpoint(root, id, options)));

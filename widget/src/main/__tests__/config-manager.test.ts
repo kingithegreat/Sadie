@@ -276,6 +276,30 @@ describe('settings cache', () => {
     expect(loaded.defaultLocation).toBe('Wellington');
   });
 
+  describe('uncensored model migration', () => {
+    test('an explicit user choice survives a reload', () => {
+      // The old guard rewrote ANY value that was not dolphin-mistral:7b on every
+      // load, so the Models-tab input always reverted. A chosen model must persist.
+      invalidateSettingsCache();
+      const s = getSettings();
+      s.uncensoredModel = 'llama3.2:latest';
+      saveSettings(s);
+      const loaded = getSettings();
+      expect(loaded.uncensoredModel).toBe('llama3.2:latest');
+    });
+
+    test('the legacy bare dolphin:7b tag is still migrated', () => {
+      // That tag never existed and always fell back, so older installs that saved
+      // it are still corrected to the real tag.
+      invalidateSettingsCache();
+      const s = getSettings();
+      s.uncensoredModel = 'dolphin:7b';
+      saveSettings(s);
+      const loaded = getSettings();
+      expect(loaded.uncensoredModel).toBe('dolphin-mistral:7b');
+    });
+  });
+
   describe('corrupt settings file recovery', () => {
     const { invalidateSettingsCache } = require('../../main/config-manager');
 

@@ -5,6 +5,7 @@ import type { CaptionStyle } from '../shared/caption-style';
 import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-providers';
 import type { WorkspaceFileActionRequest, WorkspaceRecoveryState, WorkspaceSaveOptions } from '../shared/workspace-file-types';
 import type { WorkspaceLanguageRequest } from '../shared/workspace-language-types';
+import type { ProjectToolsRequest } from '../shared/workspace-project-tools-types';
 import type { WorkspaceGitActionRequest } from '../shared/workspace-git-action-types';
 import type { WorkspaceDebugRequest } from '../shared/workspace-debug-types';
 import type { WorkspaceTestRequest } from '../shared/workspace-test-types';
@@ -97,6 +98,7 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_RECOVERY_SAVE: 'homebot:workspace:recovery-save',
   WORKSPACE_LANGUAGE: 'homebot:workspace:language',
   WORKSPACE_IDE_SETTINGS: 'homebot:workspace:ide-settings',
+  WORKSPACE_PROJECT_TOOLS: 'homebot:workspace:project-tools',
   WORKSPACE_GIT_ACTION: 'homebot:workspace:git-action',
   WORKSPACE_DEBUG: 'homebot:workspace:debug',
   WORKSPACE_TESTS: 'homebot:workspace:tests',
@@ -107,6 +109,7 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_AI_RULES: 'homebot:workspace-ai:rules',
   WORKSPACE_CODE_SEARCH: 'homebot:workspace-ai:search',
   WORKSPACE_CODE_COMPLETE: 'homebot:workspace-ai:complete',
+  WORKSPACE_CODE_COMPLETE_SETUP: 'homebot:workspace-ai:complete-setup',
   WORKSPACE_CHECKPOINTS: 'homebot:workspace-ai:checkpoints',
   WORKSPACE_CHECKPOINT_COMPARE: 'homebot:workspace-ai:checkpoint-diff',
   WORKSPACE_CHECKPOINT_RESTORE: 'homebot:workspace-ai:restore',
@@ -638,6 +641,7 @@ const electronAPI: ElectronAPI = {
   workspaceRecoverySave: async (root: string, state: WorkspaceRecoveryState) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_RECOVERY_SAVE, root, state),
   workspaceLanguage: async (request: WorkspaceLanguageRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LANGUAGE, request),
   workspaceIdeSettings: async (request: { action: 'get' | 'read' | 'save'; which?: 'settings' | 'keybindings'; text?: string }) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_IDE_SETTINGS, request),
+  workspaceProjectTools: async (request: ProjectToolsRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROJECT_TOOLS, request),
   workspaceGitAction: async (request: WorkspaceGitActionRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_ACTION, request),
   workspaceDebug: async (request: WorkspaceDebugRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_DEBUG, request),
   workspaceTests: async (request: WorkspaceTestRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TESTS, request),
@@ -648,6 +652,7 @@ const electronAPI: ElectronAPI = {
   workspaceAiRules: async (root: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_AI_RULES, root),
   workspaceCodeSearch: async (root: string, query: string, semantic?: boolean) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CODE_SEARCH, root, query, semantic),
   workspaceCodeComplete: async (root: string, prefix: string, suffix: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CODE_COMPLETE, root, prefix, suffix),
+  workspaceCodeCompleteSetup: async () => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CODE_COMPLETE_SETUP),
   workspaceCheckpointList: async (root: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINTS, root),
   workspaceCheckpointCompare: async (root: string, id: string) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_COMPARE, root, id),
   workspaceCheckpointRestore: async (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_CHECKPOINT_RESTORE, root, id, options),
