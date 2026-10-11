@@ -6,6 +6,8 @@ import { linter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
 import type { WorkspaceLanguageAction, WorkspaceLanguageBuffer, WorkspaceLanguageEdit, WorkspaceLanguageResult } from '../../../shared/workspace-language-types';
 import { setGhostSuggestion } from './GhostCompletion';
+import { projectToolsStatus, setProjectToolsAllowed } from './projectTools';
+import type { ProjectToolsStatus } from '../../../shared/workspace-project-tools-types';
 
 export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean; aiSuggestions?: boolean }
 const STORAGE_KEY = 'homebot.code.editor.preferences.v1';
@@ -65,6 +67,9 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [rename, setRename] = useState(false);
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
+  const [tools, setTools] = useState<ProjectToolsStatus | null>(null);
+  useEffect(() => { let alive = true; if (settings && root) void projectToolsStatus(root, true).then(value => { if (alive) setTools(value); }); return () => { alive = false; }; }, [settings, root]);
+  const changeTools = async (allow: boolean) => { const value = await setProjectToolsAllowed(root, allow); setTools(value); setNotice(value?.allowed ? 'Project Prettier/ESLint allowed for this folder.' : allow ? 'Project tools were not allowed.' : 'Project Prettier/ESLint turned off for this folder.'); };
   const suggestionRequest = useRef(0);
   const languageRequest = useRef(0);
   const scope = `${root}\0${filePath}`;
@@ -157,7 +162,10 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
     {settings && <div style={{ padding: 8 }}>
       <label>Indentation <select aria-label="Editor indentation" value={preferences.tabSize} onChange={event => updatePreference({ ...preferences, tabSize: event.target.value === '4' ? 4 : 2 })}><option value="2">2 spaces</option><option value="4">4 spaces</option></select></label>
       <label> Font size <input aria-label="Editor font size" type="number" min={10} max={30} value={preferences.fontSize} onChange={event => updatePreference({ ...preferences, fontSize: Math.max(10, Math.min(30, Number(event.target.value) || 14)) })} /></label>
-      <label><input type="checkbox" checked={preferences.formatOnSave} onChange={event => updatePreference({ ...preferences, formatOnSave: event.target.checked })} />Format JS/TS on save</label>
+      <label><input type="checkbox" checked={preferences.formatOnSave} onChange={event => updatePreference({ ...preferences, formatOnSave: event.target.checked })} />Format on save (project Prettier when allowed; otherwise built-in JS/TS formatting)</label>
+      <div data-testid="project-tools-status">Project tools: {!tools ? 'checking…' : <>Prettier {tools.prettier ? tools.prettier.version : 'not installed'}, ESLint {tools.eslint ? tools.eslint.version : 'not installed'} — {tools.allowed ? 'allowed' : 'not allowed'}{' '}
+        {(tools.prettier || tools.eslint) && (tools.allowed ? <button onClick={() => void changeTools(false)}>Turn off project tools</button> : <button onClick={() => void changeTools(true)}>Allow project Prettier/ESLint…</button>)}</>}
+      </div>
       <label><input type="checkbox" checked={preferences.aiSuggestions === true} onChange={event => { updatePreference({ ...preferences, aiSuggestions: event.target.checked }); if (!event.target.checked) { suggestionRequest.current++; viewRef.current?.dispatch({ effects: setGhostSuggestion.of(null) }); } }} />Local AI suggestions (requires a supported installed completion model; no download)</label>
       <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
     </div>}

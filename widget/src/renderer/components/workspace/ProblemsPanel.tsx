@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorkspacePackageTask, WorkspaceProblem } from '../../../shared/types';
+import { getLiveProblems, subscribeLiveProblems, type LiveProblem } from './projectTools';
 
 export default function ProblemsPanel({
   root,
@@ -22,6 +23,8 @@ export default function ProblemsPanel({
   const taskId = useRef<string | null>(null);
   const lifecycle = useRef(0);
   const api = window.electron as any;
+  const [live, setLive] = useState<LiveProblem[]>(() => getLiveProblems(root));
+  useEffect(() => { setLive(getLiveProblems(root)); return subscribeLiveProblems(() => setLive(getLiveProblems(root))); }, [root]);
   useEffect(() => { lifecycle.current++; return () => { lifecycle.current++; taskId.current = null; }; }, [root]);
 
   const refresh = useCallback(async () => {
@@ -126,6 +129,17 @@ export default function ProblemsPanel({
           </button>
         ))}
       </div>
+      {live.length > 0 && <>
+        <div className="ws-problems-count" data-testid="live-eslint-count">Live ESLint (open files): {live.length} problem{live.length === 1 ? '' : 's'}</div>
+        <div className="ws-problems-list" aria-label="Live ESLint problems">
+          {live.map((problem, index) => (
+            <button type="button" className={`ws-problem ${problem.severity}`} key={`live:${problem.path}:${problem.line}:${problem.column}:${index}`} onClick={() => onOpenFile(problem.path, problem.line)} title={`${problem.path}:${problem.line}:${problem.column}`}>
+              <span className="ws-problem-message">{problem.message}</span>
+              <span className="ws-problem-location">{problem.path.split(/[\\/]/).pop()}:{problem.line}:{problem.column} · eslint{problem.ruleId ? ` ${problem.ruleId}` : ''}</span>
+            </button>
+          ))}
+        </div>
+      </>}
       {output && <details className="ws-problems-output" open={running}><summary>Task output{running ? ' (live)' : ''}</summary><pre aria-label="Task output">{output}</pre></details>}
     </div>
   );
