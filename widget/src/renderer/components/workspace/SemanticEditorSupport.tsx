@@ -78,8 +78,6 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const installServer = async () => { setNotice(`Installing ${server?.label} with npm…`); const result = await ipcTransport({ action: 'install', root, path: filePath }); if (result.status) setServer(result.status); setNotice(result.skipped || result.error || (result.status?.source ? `${result.status.label} is ready.` : 'Install did not finish.')); };
   useEffect(() => { let alive = true; if (settings && root) void projectToolsStatus(root, true).then(value => { if (alive) setTools(value); }); return () => { alive = false; }; }, [settings, root]);
   const changeTools = async (allow: boolean) => { const value = await setProjectToolsAllowed(root, allow); setTools(value); setNotice(value?.allowed ? 'Project tools (Prettier, ESLint, language servers) allowed for this folder.' : allow ? 'Project tools were not allowed.' : 'Project tools turned off for this folder.'); };
-  useEffect(() => { let alive = true; if (settings && root) void projectToolsStatus(root, true).then(value => { if (alive) setTools(value); }); return () => { alive = false; }; }, [settings, root]);
-  const changeTools = async (allow: boolean) => { const value = await setProjectToolsAllowed(root, allow); setTools(value); setNotice(value?.allowed ? 'Project Prettier/ESLint allowed for this folder.' : allow ? 'Project tools were not allowed.' : 'Project Prettier/ESLint turned off for this folder.'); };
   const suggestionRequest = useRef(0);
   const languageRequest = useRef(0);
   const scope = `${root}\0${filePath}`;
