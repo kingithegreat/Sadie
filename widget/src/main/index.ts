@@ -18,6 +18,7 @@ import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
 import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
 import { registerWorkspaceProjectToolsIpc } from './workspace-project-tools-ipc';
+import { registerWorkspaceLspIpc } from './lsp/lsp-ipc';
 import { disposeWorkspaceLanguageServices } from './workspace-language';
 import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
 import { registerWorkspaceGitActionIpc } from './workspace-git-action-ipc';
@@ -367,6 +368,8 @@ app.whenReady().then(async () => {
   registerWorkspaceLanguageIpc();
   // Project-owned Prettier/ESLint in a main-process worker, allowed projects only.
   registerWorkspaceProjectToolsIpc();
+  // Generic language-server bridge (pyright first) for allowed projects.
+  registerWorkspaceLspIpc();
   registerWorkspaceAiHandlers();
   registerWorkspaceGitActionIpc();
   registerWorkspaceDebugIpc();

@@ -6,6 +6,7 @@ import type { StoryboardFrameProviderId } from '../shared/storyboard-frame-provi
 import type { WorkspaceFileActionRequest, WorkspaceRecoveryState, WorkspaceSaveOptions } from '../shared/workspace-file-types';
 import type { WorkspaceLanguageRequest } from '../shared/workspace-language-types';
 import type { ProjectToolsRequest } from '../shared/workspace-project-tools-types';
+import type { LspRequest } from '../shared/workspace-lsp-types';
 import type { WorkspaceGitActionRequest } from '../shared/workspace-git-action-types';
 import type { WorkspaceDebugRequest } from '../shared/workspace-debug-types';
 import type { WorkspaceTestRequest } from '../shared/workspace-test-types';
@@ -98,6 +99,7 @@ const ALLOWED_CHANNELS = {
   WORKSPACE_RECOVERY_SAVE: 'homebot:workspace:recovery-save',
   WORKSPACE_LANGUAGE: 'homebot:workspace:language',
   WORKSPACE_PROJECT_TOOLS: 'homebot:workspace:project-tools',
+  WORKSPACE_LSP: 'homebot:workspace:lsp',
   WORKSPACE_GIT_ACTION: 'homebot:workspace:git-action',
   WORKSPACE_DEBUG: 'homebot:workspace:debug',
   WORKSPACE_TESTS: 'homebot:workspace:tests',
@@ -640,6 +642,7 @@ const electronAPI: ElectronAPI = {
   workspaceRecoverySave: async (root: string, state: WorkspaceRecoveryState) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_RECOVERY_SAVE, root, state),
   workspaceLanguage: async (request: WorkspaceLanguageRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LANGUAGE, request),
   workspaceProjectTools: async (request: ProjectToolsRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_PROJECT_TOOLS, request),
+  workspaceLsp: async (request: LspRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_LSP, request),
   workspaceGitAction: async (request: WorkspaceGitActionRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_GIT_ACTION, request),
   workspaceDebug: async (request: WorkspaceDebugRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_DEBUG, request),
   workspaceTests: async (request: WorkspaceTestRequest) => ipcRenderer.invoke(ALLOWED_CHANNELS.WORKSPACE_TESTS, request),
