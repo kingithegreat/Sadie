@@ -11,6 +11,9 @@ import type { ProjectToolsStatus } from '../../../shared/workspace-project-tools
 
 export interface EditorPreferences { tabSize: 2 | 4; fontSize: number; formatOnSave: boolean; aiSuggestions?: boolean }
 const STORAGE_KEY = 'homebot.code.editor.preferences.v1';
+/** Latest cap notices from the language service, shown above the editor. */
+let capNotices: string[] = []; const capListeners = new Set<(value: string[]) => void>();
+export function publishCapNotices(value: string[] = []): void { if (value.join('\n') === capNotices.join('\n')) return; capNotices = value; for (const listener of [...capListeners]) listener(value); }
 export function readEditorPreferences(): EditorPreferences {
   try { const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); return { tabSize: value.tabSize === 4 ? 4 : 2, fontSize: Number.isFinite(value.fontSize) ? Math.max(10, Math.min(30, value.fontSize)) : 14, formatOnSave: value.formatOnSave === true, aiSuggestions: value.aiSuggestions === true }; }
   catch { return { tabSize: 2, fontSize: 14, formatOnSave: false }; }
@@ -48,7 +51,9 @@ export function semanticExtensions(context: () => SemanticContext): Extension {
     const before = view.state.doc.toString();
     try {
       const result = await languageQuery(current, view, 'diagnostics');
-      if (!result.success || view.state.doc.toString() !== before) return [];
+      if (!result.success) { publishCapNotices(/cap/.test(result.error || '') ? [result.error!] : []); return []; }
+      publishCapNotices(result.notices);
+      if (view.state.doc.toString() !== before) return [];
       return (result.diagnostics || []).map(item => ({ from: Math.min(item.start, before.length), to: Math.min(item.start + item.length, before.length), severity: item.severity, message: item.message }));
     } catch { return []; }
   }, { delay: 900 })];
@@ -67,6 +72,8 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
   const [rename, setRename] = useState(false);
   const [name, setName] = useState('');
   const [notice, setNotice] = useState('');
+  const [caps, setCaps] = useState<string[]>(capNotices);
+  useEffect(() => { capListeners.add(setCaps); return () => { capListeners.delete(setCaps); }; }, []);
   const [completionSetup, setCompletionSetup] = useState<{ model: string; sizeGB: number; command: string } | null>(null);
   const [installing, setInstalling] = useState(false);
   const installModel = async () => {
@@ -179,6 +186,7 @@ export function SemanticEditorSupport({ viewRef, root, filePath, buffers, onNavi
       <label><input type="checkbox" checked={preferences.aiSuggestions === true} onChange={event => { updatePreference({ ...preferences, aiSuggestions: event.target.checked }); if (!event.target.checked) { suggestionRequest.current++; viewRef.current?.dispatch({ effects: setGhostSuggestion.of(null) }); } }} />Local AI suggestions (requires a supported installed completion model; no download)</label>
       <p>JavaScript and TypeScript use local project language analysis. Other languages support highlighting and text editing; they need a separate language service for semantic tools.</p>
     </div>}
+    {caps.map(item => <div key={item} role="status" data-testid="cap-notice" style={{ padding: '4px 8px', borderLeft: '3px solid #c90' }}>⚠ {item}</div>)}
     {notice && <div role="status" style={{ padding: 8 }}>{notice}</div>}
     {completionSetup && preferences.aiSuggestions && <div role="alert" data-testid="completion-setup" style={{ padding: 8, borderLeft: '3px solid #c90' }}>
       Tab completion needs the small local model <code>{completionSetup.model}</code> (~{completionSetup.sizeGB} GB). Install it here (requires Online) or run <code>{completionSetup.command}</code>.{' '}
