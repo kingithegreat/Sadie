@@ -17,6 +17,7 @@ import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
 import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
+import { registerIdeSettingsIpc } from './ide-settings-ipc';
 import { registerWorkspaceProjectToolsIpc } from './workspace-project-tools-ipc';
 import { registerWorkspaceLspIpc } from './lsp/lsp-ipc';
 import { disposeWorkspaceLanguageServices } from './workspace-language';
@@ -366,6 +367,8 @@ app.whenReady().then(async () => {
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
   registerWorkspaceLanguageIpc();
+  // User-level IDE settings.json / keybindings.json.
+  registerIdeSettingsIpc();
   // Project-owned Prettier/ESLint in a main-process worker, allowed projects only.
   registerWorkspaceProjectToolsIpc();
   // Generic language-server bridge (pyright first) for allowed projects.

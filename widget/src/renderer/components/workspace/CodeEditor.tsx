@@ -28,6 +28,7 @@ import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
 import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
 import { ghostCompletionExtension, setGhostSuggestion } from './GhostCompletion';
+import { getIdeSettingsSnapshot, subscribeIdeSettings } from './ideSettingsStore';
 import { forceLinting } from '@codemirror/lint';
 import { projectLintExtension, formatWithProjectPrettier } from './projectTools';
 
@@ -49,6 +50,8 @@ import { projectLintExtension, formatWithProjectPrettier } from './projectTools'
 
 /** The app's own light/dark choice (App.tsx sets data-theme on <html>). */
 function appIsLight(): boolean {
+  const chosen = getIdeSettingsSnapshot()?.settings['editor.theme'];
+  if (chosen === 'light' || chosen === 'dark') return chosen === 'light';
   return document.documentElement.getAttribute('data-theme') === 'light';
 }
 
@@ -437,7 +440,10 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) });
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    // settings.json changes apply live: theme and editor preferences.
+    const offSettings = subscribeIdeSettings(() => { view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) }); setPreferences(readEditorPreferences()); });
     return () => {
+      offSettings();
       // Layout cleanup runs before React removes the host. Detached elements
       // can report zero scroll offsets even when their view was scrolled.
       if (session) {

@@ -5,23 +5,12 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { stripJsonComments } from '../shared/ide-settings';
 
 export const IDE_SETTINGS_MAX_BYTES = 256 * 1024;
 export function ideUserSettingsPath(): string { return path.join(app.getPath('userData'), 'settings.json'); }
 
-/** Strip // and /* *\/ comments and trailing commas, leaving string contents intact. */
-export function stripJsonComments(text: string): string {
-  let out = '', inString = false, quote = '';
-  for (let index = 0; index < text.length; index++) {
-    const character = text[index], next = text[index + 1];
-    if (inString) { out += character; if (character === '\\') { out += next ?? ''; index++; } else if (character === quote) inString = false; continue; }
-    if (character === '"') { inString = true; quote = character; out += character; continue; }
-    if (character === '/' && next === '/') { while (index < text.length && text[index] !== '\n') index++; out += '\n'; continue; }
-    if (character === '/' && next === '*') { index += 2; while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) { if (text[index] === '\n') out += '\n'; index++; } index++; continue; }
-    out += character;
-  }
-  return out.replace(/,(\s*[}\]])/g, '$1');
-}
+export { stripJsonComments };
 
 let cache: { file: string; mtimeMs: number; size: number; value: Record<string, unknown> } | undefined;
 /** Parsed raw object (unvalidated). Callers validate the keys they consume. */
