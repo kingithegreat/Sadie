@@ -188,4 +188,51 @@ describe('research prefers n8n, and survives without it', () => {
     const res = await generateResearch(job);
     expect(res.via).not.toMatch(/n8n/);
   });
+
+  it('scales the brief by format: long jobs get scaffolding, short jobs stay tight', async () => {
+    const seenPrompts: Array<{ system: string; prompt: string }> = [];
+    post.mockImplementation(async (url: string, body: any) => {
+      if (String(url).includes('/webhook/')) return { status: 404, data: '' };
+      seenPrompts.push({ system: body?.system ?? '', prompt: body?.prompt ?? '' });
+      return { data: { response: 'Model-only research.' } };
+    });
+
+    const shortJob = createJob({ title: 'One-Minute Bible: Jonah', format: 'short' });
+    await generateResearch(shortJob);
+    const shortSystem = seenPrompts.map((p) => p.system).join('\n');
+    // No-workflow fallback for shorts asks for MORE than the old 4-8 points:
+    // it is the whole research stage, not a taster for it.
+    expect(shortSystem).toMatch(/8-12 short factual points/);
+    expect(shortSystem).not.toMatch(/Why it matters/);
+
+    seenPrompts.length = 0;
+    const longJob = createJob({ title: 'The Bible Explained', format: 'long' });
+    await generateResearch(longJob);
+    const longSystem = seenPrompts.map((p) => p.system).join('\n');
+    expect(longSystem).toMatch(/Why it matters/);
+    // The no-workflow fallback is the whole research stage, so it asks for more
+    // material than the summariser path — not the same 4-8 points.
+    expect(longSystem).toMatch(/12-18 short factual points/);
+  });
+
+  it('long jobs keep their scaffolding when n8n answers', async () => {
+    const seenSystems: string[] = [];
+    post.mockImplementation(async (url: string, body: any) => {
+      if (String(url).includes('/webhook/homebot/media-research')) {
+        return {
+          status: 200,
+          data: {
+            text: 'Jonah is a book of the Hebrew Bible, four chapters long.',
+            sources: [{ title: 'Book of Jonah', url: 'https://example.org/jonah' }],
+          },
+        };
+      }
+      seenSystems.push(String(body?.system ?? ''));
+      return { data: { response: 'A summary drawn from the source material.' } };
+    });
+
+    const longJob = createJob({ title: 'The Bible Explained', format: 'long' });
+    await generateResearch(longJob);
+    expect(seenSystems.join('\n')).toMatch(/Why it matters/);
+  });
 });

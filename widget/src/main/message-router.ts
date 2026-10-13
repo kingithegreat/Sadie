@@ -1240,6 +1240,22 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
     return { calls: [{ name: 'show_notification', arguments: { title: 'HomeBot', body } }] };
   }
 
+  // ── Topic-flavoured NEWS guard ──────────────────────────────────────────
+  // Topic words ("latest in AI", "what's new in artificial intelligence")
+  // route to get_news with a tech source (handled in the NEWS block below) —
+  // but that block only fires when the message contains a NEWS trigger word
+  // ("news", "headlines", "latest news", ...). A message like "the latest
+  // in AI" or "what is new in artificial intelligence" has NO trigger word,
+  // so without this it falls through every intent and lands on the LLM with
+  // no tools — exactly the session that produced BBC headlines for an AI
+  // question. This catches the topic-first phrasing and points it at the
+  // same get_news call the NEWS block would have made.
+  if (/\b(ai|artificial\s+intelligence|machine\s+learning|llm|chatgpt|openai|anthropic|gemini|gpt|Muse)\b/i.test(m) &&
+      /\b(latest|new|update|updates|trending|developments|breakthrough)\b/i.test(m) &&
+      !isConversational) {
+    return { calls: [{ name: 'get_news', arguments: { source: 'techcrunch', limit: 15, topic_filter: 'AI', _originalQuery: userMessage } }] };
+  }
+
   // NEWS intents
   if (/\b(news|headlines|top\s*stories?|latest\s*news|what'?s\s+happening|what'?s\s+new)\b/i.test(m) &&
       !/\b(document|doc|file|pdf)\b/i.test(m)) {
@@ -1253,6 +1269,12 @@ export async function preProcessIntent(userMessage: string, conversationId?: str
       [/\bespn\b/i, 'espn'],
       [/\bsports?\s+news\b/i, 'espn'],
       [/\btech\s+news\b/i, 'techcrunch'],
+      // Topic-flavoured asks ("AI news", "latest in AI") carry no source name,
+      // so without this they fell through to the 'bbc' default — a wrong-feed
+      // answer to a tech question. Point tech topics at the tech feed and hand
+      // the topic to the existing topic_filter extraction below, so the filter
+      // does the narrowing instead of the whole default feed.
+      [/\b(ai|artificial\s+intelligence|machine\s+learning|llm|chatgpt|openai|anthropic|gemini|gpt|Muse)\b/i, 'techcrunch'],
     ];
     let source = 'bbc';
     for (const [re, s] of sourceKeywords) { if (re.test(m)) { source = s; break; } }

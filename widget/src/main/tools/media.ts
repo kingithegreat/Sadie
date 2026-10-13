@@ -168,6 +168,47 @@ function findJob(idOrTitle: string): MediaJob | undefined {
 }
 
 /**
+ * What happens after this tool, expressed as data — not as a hint sentence.
+ *
+ * Measured driving the pipeline from chat: a model that had just created a job
+ * wrote ABOUT writing the script rather than calling the tool that writes it.
+ * A "Next: ..." sentence in the result text is advisory; it competes with the
+ * rest of the conversation for the model's attention and loses. A structured
+ * `next` directive names the exact tool and the exact job id, so the follow-up
+ * call needs no inference at all.
+ *
+ * Only stages with exactly one valid next tool carry a directive. Approval and
+ * human-decision stages deliberately carry none — a directive there would be a
+ * lie, and a model that follows directives would act on it.
+ */
+export interface MediaNextStep {
+  tool: string;
+  job: string;
+}
+
+/** The single tool that advances this job, or null where only a person may move it. */
+export function nextToolFor(job: MediaJob): MediaNextStep | null {
+  if (job.reviewSource && job.state === 'needs_revision') return null;
+  switch (job.state) {
+    case 'idea':
+    case 'researching':
+      return { tool: 'media_write_script', job: job.id };
+    case 'script_draft':
+    case 'script_qa':
+      return { tool: 'media_narrate', job: job.id };
+    case 'media_production':
+      return { tool: 'media_render', job: job.id };
+    case 'render_qa':
+    case 'awaiting_approval':
+    case 'needs_revision':
+    case 'approved':
+    case 'scheduled':
+    default:
+      return null;
+  }
+}
+
+/**
  * The step after this one, named as the tool that performs it.
  *
  * Refusals already steer a model — "run media_write_script first" is enough to
@@ -208,6 +249,30 @@ function nextStepFor(job: MediaJob): string {
 function withNextStep(lines: string[], job: MediaJob): string {
   const next = nextStepFor(job);
   return (next ? [...lines, '', next] : lines).join('\n');
+}
+
+/**
+ * Attach the machine-readable next-step directive to a tool result.
+ *
+ * The result text carries the human hint (kept: people read transcripts, and
+ * the existing tests pin it). The `next` field carries the same step as data
+ * for the model: the tool result reaches it as JSON, so a structured directive
+ * survives where a "Next: ..." sentence gets skimmed. Stages with no valid
+ * next tool leave the result untouched — see nextToolFor.
+ */
+function withNextTool<T extends { success: boolean; result?: any }>(res: T, job: MediaJob): T {
+  const next = nextToolFor(job);
+  if (!next || !res.success) return res;
+  const result = res.result;
+  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+    return { ...res, result: { ...result, next } };
+  }
+  return { ...res, result: { text: typeof result === 'string' ? result : result, next } };
+}
+
+/** Shape the next-step directive asserts against in tests. */
+export function __nextToolForTests(job: MediaJob): MediaNextStep | null {
+  return nextToolFor(job);
 }
 
 /**
@@ -377,7 +442,10 @@ const createMediaJobHandler: ToolHandler = async (args) => {
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
-    return ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job));
+    return withNextTool(
+      ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job)),
+      job,
+    );
   } catch (e: any) {
     return err(`media_create_job failed: ${errText(e)}`);
   }
@@ -428,7 +496,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
       publishingEnabled,
     });
     upsert(moved);
-    return ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved));
+    return withNextTool(ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved)), moved);
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
     return err(errText(e));
@@ -464,9 +532,9 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
       by: 'human', humanDecision: true, note: args.note ? String(args.note) : undefined,
     });
     upsert(moved);
-    return ok(revise
+    return withNextTool(ok(revise
       ? withNextStep([`Sent "${moved.title}" back for revision.`], moved)
-      : `Rejected "${moved.title}".`);
+      : `Rejected "${moved.title}".`), moved);
   } catch (e: any) {
     return err(errText(e));
   }
@@ -560,12 +628,12 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Wrote a script for "${updated.title}" using ${script.via} (~${seconds}s spoken).`,
       problems.length ? `Worth checking:\n- ${problems.join('\n- ')}` : 'No problems found.',
       '',
       script.text,
-    ], updated));
+    ], updated)), updated);
   } catch (e: any) {
     return err(`Could not write the script: ${errText(e)}`);
   }
@@ -677,13 +745,13 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     // Report the MEASURED duration, not the word-count estimate — the estimate
     // was only ever a stand-in until real audio existed. Name the engine: a
     // Kokoro request answered by Edge is a fact the user needs, not trivia.
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB, engine: ${audio.engine}.`,
       audio.engine === 'edge' && args.engine === 'kokoro'
         ? 'Requested Kokoro but it could not render — Edge was used instead (see the job record).'
         : `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ].filter(Boolean) as string[], updated));
+    ].filter(Boolean) as string[], updated)), updated);
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -1233,11 +1301,11 @@ async function renderMediaJobAttempt(
       ? 'encoded with NVIDIA NVENC'
       : rendered.videoEncoder === 'libx264' ? 'encoded with the CPU' : '';
     const notes = [visualNote, musicNote, encoderNote, rendered.warning, describeQa(qa)].filter(Boolean).join(', ');
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
       `video: ${finalPath}`,
       'Watch it before approving; nothing publishes on its own.',
-    ], updated));
+    ], updated)), updated);
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
   }

@@ -7,6 +7,8 @@ import CodeEditor, { type CodeEditorSession } from './CodeEditor';
 import type { WorkspaceEntry } from '../../../shared/types';
 import type { WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
 import { stageWorkspaceDraftEdits } from './workspace-draft-edits';
+import { getIdeSettingsSnapshot, loadIdeSettings } from './ideSettingsStore';
+import { chordMatches, parseChord, type KeyChord } from '../../../shared/ide-settings';
 
 const TerminalPanel = lazy(() => import('../TerminalPanel'));
 // Lazy: the browser panel is off by default, and its first render triggers an
@@ -17,6 +19,7 @@ const WorkspaceAssistantPanel = lazy(() => import('./WorkspaceAssistantPanel'));
 const SourceControlPanel = lazy(() => import('./SourceControlPanel'));
 const SearchPanel = lazy(() => import('./SearchPanel'));
 const ProblemsPanel = lazy(() => import('./ProblemsPanel'));
+const SettingsJsonDialog = lazy(() => import('./SettingsJsonDialog'));
 const WorkspaceNavigator = lazy(() => import('./WorkspaceNavigator'));
 const DebuggerPanel = lazy(() => import('./DebuggerPanel'));
 const WorkspaceTestsPanel = lazy(() => import('./WorkspaceTestsPanel'));
@@ -143,6 +146,8 @@ export default function WorkspaceShell({
   filesRef.current = files;
   const savingPaths = useRef(new Set<string>());
   const [navigation, setNavigation] = useState<'files' | 'commands' | 'symbols' | null>(null);
+  const [settingsJson, setSettingsJson] = useState<'settings' | 'keybindings' | null>(null);
+  const runIdeCommandRef = useRef<(command: string) => void>(() => {});
   const [selection, setSelection] = useState<{ path: string; text: string; from?: number; to?: number } | null>(null);
   const [terminalOutput, setTerminalOutput] = useState('');
   const [splitPath, setSplitPath] = useState<string | null>(null);
@@ -463,10 +468,31 @@ export default function WorkspaceShell({
     return () => off?.();
   }, [open, api]);
 
+  // User settings.json / keybindings.json (validated in main).
+  useEffect(() => { if (open) void loadIdeSettings(); }, [open]);
+  // keybindings.json: user additions run their command; removed defaults are
+  // marked so the default handler below skips them. Unchanged defaults keep
+  // their original handlers (e.g. Ctrl+S inside the editor still formats on save).
+  useEffect(() => {
+    if (!open) return;
+    const handle = (e: KeyboardEvent) => {
+      const user = getIdeSettingsSnapshot()?.keybindings || [];
+      if (!user.length) return;
+      const added = [...user].reverse().find(item => !item.remove && chordMatches(parseChord(item.key) as KeyChord, e));
+      if (added) { e.preventDefault(); e.stopPropagation(); runIdeCommandRef.current(added.command); return; }
+      if (user.some(item => item.remove && chordMatches(parseChord(item.key) as KeyChord, e))) (e as KeyboardEvent & { homebotUnbound?: boolean }).homebotUnbound = true;
+    };
+    window.addEventListener('keydown', handle, true);
+    return () => window.removeEventListener('keydown', handle, true);
+  }, [open]);
+
   // Ctrl+S works from anywhere in the workspace, not just inside the textarea.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      // A default the user removed in keybindings.json (marked by the capture handler below).
+      if ((e as KeyboardEvent & { homebotUnbound?: boolean }).homebotUnbound) return;
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') { e.preventDefault(); setSettingsJson('settings'); }
       if (!e.defaultPrevented && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void save(); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); setNavigation(e.shiftKey ? 'commands' : 'files'); }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') { e.preventDefault(); setNavigation('symbols'); }
@@ -524,8 +550,17 @@ export default function WorkspaceShell({
     { id: 'debug', label: 'Debug a JavaScript program', run: () => setSideView('debug') },
     { id: 'tests', label: 'Discover and run project tests', run: () => setSideView('tests') },
     { id: 'hidden', label: 'Toggle hidden project files', run: () => setShowHidden(t => !t) },
+    { id: 'open-settings-json', label: 'Open Settings (JSON)', run: () => setSettingsJson('settings') },
+    { id: 'open-keybindings-json', label: 'Open Keyboard Shortcuts (JSON)', run: () => setSettingsJson('keybindings') },
     { id: 'refresh', label: 'Refresh project and reconcile open files', run: async () => { await syncFiles(); setRefreshToken(t => t + 1); } },
   ];
+  runIdeCommandRef.current = (command: string) => {
+    const byPalette: Record<string, string> = { 'workbench.action.files.save': 'save', 'workbench.action.terminal.toggleTerminal': 'terminal', 'workbench.action.findInFiles': 'search', 'workbench.view.scm': 'source-control', 'workbench.action.problems': 'problems', 'workbench.action.openSettingsJson': 'open-settings-json', 'workbench.action.openGlobalKeybindingsFile': 'open-keybindings-json', 'homebot.assistant.toggle': 'assistant' };
+    if (command === 'workbench.action.quickOpen') setNavigation('files');
+    else if (command === 'workbench.action.showCommands') setNavigation('commands');
+    else if (command === 'workbench.action.gotoSymbol') setNavigation('symbols');
+    else void commands.find(item => item.id === byPalette[command])?.run();
+  };
   const renderEditor = (file: OpenFile, secondary = false) => <div data-workspace-editor={file.path} style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
     <CodeEditor key={file.path} session={secondary ? (splitSessions.current[file.path] ||= { current: null }) : file.editorSession}
       root={root} filePath={file.path} buffers={files.map(f => ({ path: f.path, content: f.content }))}
@@ -550,6 +585,7 @@ export default function WorkspaceShell({
   return createPortal((
     <div className="workspace-shell" role="region" aria-label="Workspace">
       {confirmDialog}
+      {settingsJson && <Suspense fallback={null}><SettingsJsonDialog initial={settingsJson} onClose={() => setSettingsJson(null)} /></Suspense>}
       {navigation && root && <Suspense fallback={<div role="status">Loading project navigation…</div>}><WorkspaceNavigator root={root} activePath={activePath ?? undefined} content={active?.content} buffers={files.map(f => ({ path: f.path, content: f.content }))} onOpen={async (path, line) => { await openFile(path, line); setNavigationFocus(path); }} commands={commands} mode={navigation} onClose={() => setNavigation(null)} /></Suspense>}
       {fileDialog && <div className="confirm-destructive-overlay" style={{ position: 'fixed', inset: 0, zIndex: 1300 }}>
         <form className="confirm-destructive" role="dialog" aria-modal="true" aria-label="File action" onSubmit={e => { e.preventDefault(); void submitFileDialog(); }}>
