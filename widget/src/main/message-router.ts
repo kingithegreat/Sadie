@@ -1724,7 +1724,10 @@ export async function processIncomingRequest(request: HomeBotRequestWithImages |
       : { ...request, message: enhancedMessage };
 
     const hasAttachedDocs = 'documents' in request && request.documents && request.documents.length > 0;
-    const decision = decisionOverride ?? (hasAttachedDocs ? { type: 'llm' as const, reason: 'Document content already attached' } : await analyzeAndRouteMessage(enhancedMessage));
+    // An image sent with no text is a vision request, not a routing error.
+    const imageOnly = !enhancedMessage?.trim() && 'images' in request && !!(request as HomeBotRequestWithImages).images?.length;
+    const decision = decisionOverride ?? (hasAttachedDocs ? { type: 'llm' as const, reason: 'Document content already attached' }
+      : imageOnly ? { type: 'llm' as const } : await analyzeAndRouteMessage(enhancedMessage));
     // diagnostic log for tests
     try { console.log('[ROUTER DIAG] decision=', JSON.stringify(decision)); } catch (e) { safeCatch(e); }
 
