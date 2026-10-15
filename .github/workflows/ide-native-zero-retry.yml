@@ -1,0 +1,122 @@
+name: IDE native zero retry
+
+# Supplemental Windows fixture proof, not a substitute for required full CI,
+# three-OS E2E, actual normal-profile delivery or provider acceptance.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ide-native-zero-retry-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  native-windows-zero-retry:
+    if: startsWith(github.head_ref, 'claude/ide-')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact PR source head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            widget/package-lock.json
+
+      - name: Retain source request even if install or build fails
+        shell: pwsh
+        env:
+          EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          $proof = Join-Path $env:GITHUB_WORKSPACE 'artifacts/ide-native-zero-retry'
+          New-Item -ItemType Directory -Force -Path $proof | Out-Null
+          [ordered]@{ expectedHead = $env:EXPECTED_PR_HEAD; phase = 'not-run'; scope = 'supplemental-native-E2E-fixtures'; at = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $proof 'request.json')
+
+      - name: Runner contract controls
+        run: node --test scripts/__tests__/run-ide-native-zero-retry.test.cjs scripts/__tests__/ide-native-crash-diagnostics.test.cjs
+
+      - name: Install root and widget from committed locks
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location widget
+          try { npm ci --ignore-scripts; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          finally { Pop-Location }
+
+      - name: Managed helper build contracts
+        run: node --test widget/scripts/__tests__/prepare-windows-job.test.cjs scripts/__tests__/ide-local-crash-reporter.test.cjs
+
+      - name: Actual pending Windows Job Stop before any bootstrap attachment
+        working-directory: widget
+        env:
+          HOMEBOT_LIVE_TASK_TREE: '1'
+        run: npx jest --config=jest.config.ts --runInBand --no-coverage --runTestsByPath src/main/__tests__/workspace-windows-job.real.test.ts --json --outputFile=../artifacts/ide-native-zero-retry/pending-job-jest.json
+
+      - name: Build SQLite against Node in both fresh dependency trees
+        shell: pwsh
+        run: |
+          npm rebuild better-sqlite3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location widget
+          try { npm rebuild better-sqlite3; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+          finally { Pop-Location }
+
+      - name: Fetch exact pinned Electron
+        working-directory: widget
+        run: node node_modules/electron/install.js
+
+      - name: Rebuild SQLite against pinned Electron in both trees
+        shell: pwsh
+        run: |
+          node widget/node_modules/@electron/rebuild/lib/cli.js --force --version 42.11.11 --only better-sqlite3 --module-dir .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Push-Location widget
+          try {
+            node node_modules/@electron/rebuild/lib/cli.js --force --version 42.11.11 --only better-sqlite3 --module-dir .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+
+      - name: Compile this exact source head
+        id: native_compile
+        working-directory: widget
+        run: npm run build
+
+      - name: Four actual native acceptance cases without retries
+        timeout-minutes: 7
+        env:
+          EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/run-ide-native-zero-retry.cjs --expected-head "$env:EXPECTED_PR_HEAD"
+
+      - name: Independent terminal late-descendant case without retries
+        if: always() && steps.native_compile.outcome == 'success'
+        timeout-minutes: 7
+        env:
+          EXPECTED_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/run-ide-native-zero-retry.cjs --terminal-tree --expected-head "$env:EXPECTED_PR_HEAD"
+
+      # Keep the first actual helper admission ahead of pure framing/host
+      # controls, so a new control stage is not a cold-start warmup.
+      - name: Managed framing parser and pure controls
+        if: always() && steps.native_compile.outcome == 'success'
+        run: node --test --test-concurrency=1 widget/scripts/__tests__/windows-job-managed-framing.test.cjs widget/scripts/__tests__/windows-job-task-attachment.test.cjs widget/scripts/__tests__/windows-job-host.test.cjs
+
+      - name: Upload all gate proof and failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ide-native-zero-retry-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
+          path: artifacts/ide-native-zero-retry/
+          if-no-files-found: warn
+          retention-days: 14

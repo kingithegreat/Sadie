@@ -18,6 +18,7 @@ export default function PrivacySettingsTab() {
     confirmDestructive,
     localSettings,
     setLocalSettings,
+    setSaveError,
     uncensoredMode,
     permissions,
     setPermissions,
@@ -258,10 +259,15 @@ export default function PrivacySettingsTab() {
         <TelemetryConsentModal
           open={showTelemetryModal}
           onAccept={async () => {
-            // Persist immediately so telemetry consent is logged
-            const updated = await (window as any).electron.saveSettings({ ...localSettings, telemetryEnabled: true });
-            setLocalSettings({ ...localSettings, telemetryEnabled: true, telemetryConsentTimestamp: updated.telemetryConsentTimestamp });
-            setShowTelemetryModal(false);
+            try {
+              // Persist immediately so telemetry consent is logged.
+              const updated = await (window as any).electron.saveSettings({ ...localSettings, telemetryEnabled: true });
+              setLocalSettings({ ...localSettings, telemetryEnabled: true, telemetryConsentTimestamp: updated.telemetryConsentTimestamp });
+              setSaveError(null);
+              setShowTelemetryModal(false);
+            } catch (error: any) {
+              setSaveError(`Could not save telemetry consent: ${error?.message || 'Please try again.'} Your previous settings are still active.`);
+            }
           }}
           onDecline={() => {
             setShowTelemetryModal(false);
@@ -595,7 +601,8 @@ export default function PrivacySettingsTab() {
       <div className="settings-section sp-backup-section">
         <h3 className="section-title">Backup & Restore</h3>
         <p className="sp-backup-desc">
-          Export all settings, conversations, and preferences as a single backup file, or restore from one.
+          Export settings, conversations, and preferences as a single backup file, or restore from one.
+          API keys and private integration credentials are excluded. On another PC, add your keys again in Settings.
         </p>
         <div className="sp-backup-btns">
           <button

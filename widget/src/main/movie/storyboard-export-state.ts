@@ -46,7 +46,8 @@ export async function storyboardSourceRevision(
           ? { transition: shot.transition, transitionSec: shot.transitionSec ?? null } : {}),
         // A title card changes the picture, so it changes identity — but only
         // when there is one, so exports made before cards existed stay current.
-        ...(shot.textCard ? { textCard: shot.textCard } : {}) });
+        ...(shot.textCard ? { textCard: shot.textCard } : {}),
+        ...(shot.plainBackgroundSha256 ? { plainBackgroundSha256: shot.plainBackgroundSha256 } : {}) });
     }
     inputs.push({ sceneId: scene.sceneId, shots });
   }

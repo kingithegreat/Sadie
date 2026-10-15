@@ -3,7 +3,7 @@ import type { UpgradePrompt } from '../../shared/types';
 
 /**
  * Shown whenever a Pro-gated IPC call resolves to a GateBlockedResponse.
- * Reuses the existing `hb-modal-*` styling used by SettingsModal.
+ * Reuses the shared `hb-modal-*` styling.
  */
 export function UpgradeModal({
   prompt,

@@ -2,9 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { ConversationStore, QuizProgress, StoredConversation, Settings } from '../../shared/types';
 import '../styles/dashboard-panel.css';
 import CapabilityReport from './CapabilityReport';
+import { isAppMode, type AppMode } from '../../shared/modes';
 
 interface DashboardPanelProps {
-  onModeChange: (mode: string) => void;
+  onModeChange: (mode: AppMode) => void;
+  onOpenSettings?: () => void;
+  onStartChat?: () => void;
   onNewConversation: () => void;
 }
 
@@ -62,11 +65,25 @@ function formatRelativeDate(dateStr: string): string {
   }
 }
 
-const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConversation }) => {
+const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConversation, onOpenSettings, onStartChat }) => {
   const [data, setData] = useState<DashboardData>(DEFAULT_DATA);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+
+  const handleCapabilityNavigate = useCallback((destination: string) => {
+    setNavigationError(null);
+    if (destination === 'settings') {
+      if (onOpenSettings) onOpenSettings();
+      else setNavigationError('Settings could not be opened. Use the Settings button at the top of the window.');
+      return;
+    }
+    const mode = destination === 'studio' ? 'media' : destination;
+    if (isAppMode(mode)) onModeChange(mode);
+    else setNavigationError('That workspace is not available. Choose another task or open Settings.');
+  }, [onModeChange, onOpenSettings]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -192,120 +209,30 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
     };
   }, [fetchData]);
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className="dashboard-container">
-        <div className="dashboard-loading">
-          <div className="dashboard-spinner" />
-          <p className="dashboard-loading-text">Loading dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="dashboard-container">
-        <div className="dashboard-error">
-          <p className="dashboard-error-text">{error}</p>
-          <button className="dashboard-retry-btn" onClick={fetchData}>
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const topicEntries = Object.entries(data.topicScores);
 
   return (
     <div className="dashboard-container">
-      {/* Header */}
       <div className="dashboard-header">
-        <h1 className="dashboard-title">Welcome Back</h1>
-        <p className="dashboard-subtitle">Your HomeBot assistant at a glance</p>
+        <h1 className="dashboard-title">What would you like to do?</h1>
+        <p className="dashboard-subtitle">Describe what you need in your own words.</p>
       </div>
 
-      {/* Model Status */}
-      <div className="dashboard-model-status">
-        <div className="dashboard-model-info">
-          <span className="dashboard-model-label">Active Model</span>
-          <span className="dashboard-model-name">{data.activeModel}</span>
-          {data.ollamaModelsCount > 0 && (
-            <span className="dashboard-models-count">
-              {data.ollamaModelsCount} model{data.ollamaModelsCount !== 1 ? 's' : ''} installed
-            </span>
-          )}
-        </div>
-        <span className={`dashboard-ollama-badge ${data.ollamaStatus}`}>
-          <span className="dashboard-ollama-dot" />
-          Ollama {data.ollamaStatus === 'online' ? 'Online' : data.ollamaStatus === 'checking' ? 'Checking...' : 'Offline'}
-        </span>
-      </div>
+      <section className="dashboard-start" aria-label="Start a task">
+        <button
+          type="button"
+          className="dashboard-action-btn dashboard-start-button"
+          onClick={() => onStartChat ? onStartChat() : onModeChange('chat')}
+        >
+          Start with chat
+        </button>
+        <p>Ask a question, draft a message or plan an idea. You can edit your request before sending.</p>
+      </section>
 
-      {/* Stat Cards */}
-      <div className="dashboard-stats-grid">
-        <div className="dashboard-stat-card">
-          <span className="dashboard-stat-value">{data.totalConversations}</span>
-          <span className="dashboard-stat-label">Conversations</span>
-        </div>
-        <div className="dashboard-stat-card">
-          <span className="dashboard-stat-value">{data.totalMessages}</span>
-          <span className="dashboard-stat-label">Messages</span>
-        </div>
-        <div className="dashboard-stat-card">
-          <span className="dashboard-stat-value">{data.quizStreak}</span>
-          <span className="dashboard-stat-label">Quiz Streak</span>
-        </div>
-        <div className="dashboard-stat-card">
-          <span className="dashboard-stat-value">{data.quizBestStreak}</span>
-          <span className="dashboard-stat-label">Best Streak</span>
-        </div>
-      </div>
+      {navigationError && <p className="dashboard-error-text" role="alert">{navigationError}</p>}
 
-      {/* CRM at a glance */}
-      {data.crm && (
-        <div data-testid="dashboard-crm-section">
-          <h2 className="dashboard-section-title">CRM</h2>
-          {data.crm.isEmpty ? (
-            <div className="dashboard-crm-empty">
-              No CRM data yet — ask HomeBot to add a company or a deal and it will show up here.
-            </div>
-          ) : (
-            <div className="dashboard-stats-grid dashboard-crm-grid">
-              <div className="dashboard-stat-card">
-                <span className="dashboard-stat-value">{data.crm.pipelineValueFormatted}</span>
-                <span className="dashboard-stat-label">
-                  Open Pipeline ({data.crm.openDealCount} deal{data.crm.openDealCount !== 1 ? 's' : ''})
-                </span>
-              </div>
-              <div className={`dashboard-stat-card ${data.crm.staleDealCount > 0 ? 'dashboard-stat-warn' : ''}`}>
-                <span className="dashboard-stat-value">{data.crm.staleDealCount}</span>
-                <span className="dashboard-stat-label">Stale Deals</span>
-              </div>
-              <div className={`dashboard-stat-card ${data.crm.tasksOverdueCount > 0 ? 'dashboard-stat-warn' : ''}`}>
-                <span className="dashboard-stat-value">
-                  {data.crm.tasksDueTodayCount}
-                  {data.crm.tasksOverdueCount > 0 ? ` (+${data.crm.tasksOverdueCount} overdue)` : ''}
-                </span>
-                <span className="dashboard-stat-label">Tasks Due Today</span>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* What's working — above Quick Actions on purpose. Offering someone a
-          "Make a video" button while ffmpeg is missing, or "Search the web"
-          while no search source is set up, is how the app came to fail quietly
-          in the first place. */}
-      <CapabilityReport onNavigate={onModeChange} />
-
-      {/* Quick Actions */}
-      <div>
-        <h2 className="dashboard-section-title">Quick Actions</h2>
+      <details className="dashboard-details">
+        <summary>Explore workspaces</summary>
         <div className="dashboard-actions-row">
           <button
             className="dashboard-action-btn"
@@ -353,59 +280,147 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ onModeChange, onNewConv
             <span className="dashboard-action-label">Connect Services</span>
           </button>
         </div>
-      </div>
+      </details>
 
-      {/* Recent Conversations */}
-      <div className="dashboard-recent-section">
-        <h2 className="dashboard-section-title">Recent Conversations</h2>
-        {data.recentConversations.length > 0 ? (
-          <div className="dashboard-recent-list">
-            {data.recentConversations.map((conv) => (
-              <div key={conv.id} className="dashboard-recent-item">
-                <span className="dashboard-recent-icon">💬</span>
-                <span className="dashboard-recent-title">{conv.title}</span>
-                <span className="dashboard-recent-date">
-                  {formatRelativeDate(conv.updatedAt)}
-                </span>
-              </div>
-            ))}
+      <details className="dashboard-details" onToggle={event => setSetupOpen(event.currentTarget.open)}>
+        <summary>Check setup and available features</summary>
+        {setupOpen && <CapabilityReport onNavigate={handleCapabilityNavigate} />}
+      </details>
+
+      <details className="dashboard-details">
+        <summary>Your activity</summary>
+        {loading ? (
+          <p role="status">Loading your activity?</p>
+        ) : error ? (
+          <div className="dashboard-error">
+            <p className="dashboard-error-text" role="alert">Could not load your activity. You can still start a task above.</p>
+            <button type="button" className="dashboard-retry-btn" onClick={fetchData}>Try again</button>
           </div>
         ) : (
-          <div className="dashboard-recent-empty">
-            No conversations yet. Start chatting to see them here.
-          </div>
-        )}
-      </div>
-
-      {/* Topic Scores Breakdown */}
-      <div className="dashboard-topics-section">
-        <h2 className="dashboard-section-title">Quiz Topic Scores</h2>
-        {topicEntries.length > 0 ? (
-          <div className="dashboard-topic-list">
-            {topicEntries.map(([topic, scores]) => {
-              const pct = scores.total > 0 ? Math.round((scores.correct / scores.total) * 100) : 0;
-              return (
-                <div key={topic} className="dashboard-topic-row">
-                  <span className="dashboard-topic-name">{topic}</span>
-                  <div className="dashboard-topic-bar-track">
-                    <div
-                      className="dashboard-topic-bar-fill"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="dashboard-topic-score">
-                    {scores.correct}/{scores.total} ({pct}%)
+          <>
+            {/* Model Status */}
+            <div className="dashboard-model-status">
+              <div className="dashboard-model-info">
+                <span className="dashboard-model-label">Local chat model</span>
+                <span className="dashboard-model-name">{data.activeModel}</span>
+                {data.ollamaModelsCount > 0 && (
+                  <span className="dashboard-models-count">
+                    {data.ollamaModelsCount} model{data.ollamaModelsCount !== 1 ? 's' : ''} installed
                   </span>
+                )}
+              </div>
+              <span className={`dashboard-ollama-badge ${data.ollamaStatus}`}>
+                <span className="dashboard-ollama-dot" />
+                AI on this PC {data.ollamaStatus === 'online' ? 'Online' : data.ollamaStatus === 'checking' ? 'Checking...' : 'Offline'}
+              </span>
+            </div>
+
+            {/* Stat Cards */}
+            <div className="dashboard-stats-grid">
+              <div className="dashboard-stat-card">
+                <span className="dashboard-stat-value">{data.totalConversations}</span>
+                <span className="dashboard-stat-label">Conversations</span>
+              </div>
+              <div className="dashboard-stat-card">
+                <span className="dashboard-stat-value">{data.totalMessages}</span>
+                <span className="dashboard-stat-label">Messages</span>
+              </div>
+              <div className="dashboard-stat-card">
+                <span className="dashboard-stat-value">{data.quizStreak}</span>
+                <span className="dashboard-stat-label">Quiz Streak</span>
+              </div>
+              <div className="dashboard-stat-card">
+                <span className="dashboard-stat-value">{data.quizBestStreak}</span>
+                <span className="dashboard-stat-label">Best Streak</span>
+              </div>
+            </div>
+
+            {/* CRM at a glance */}
+            {data.crm && (
+              <div data-testid="dashboard-crm-section">
+                <h2 className="dashboard-section-title">CRM</h2>
+                {data.crm.isEmpty ? (
+                  <div className="dashboard-crm-empty">
+                    No CRM data yet — ask HomeBot to add a company or a deal and it will show up here.
+                  </div>
+                ) : (
+                  <div className="dashboard-stats-grid dashboard-crm-grid">
+                    <div className="dashboard-stat-card">
+                      <span className="dashboard-stat-value">{data.crm.pipelineValueFormatted}</span>
+                      <span className="dashboard-stat-label">
+                        Open Pipeline ({data.crm.openDealCount} deal{data.crm.openDealCount !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                    <div className={`dashboard-stat-card ${data.crm.staleDealCount > 0 ? 'dashboard-stat-warn' : ''}`}>
+                      <span className="dashboard-stat-value">{data.crm.staleDealCount}</span>
+                      <span className="dashboard-stat-label">Stale Deals</span>
+                    </div>
+                    <div className={`dashboard-stat-card ${data.crm.tasksOverdueCount > 0 ? 'dashboard-stat-warn' : ''}`}>
+                      <span className="dashboard-stat-value">
+                        {data.crm.tasksDueTodayCount}
+                        {data.crm.tasksOverdueCount > 0 ? ` (+${data.crm.tasksOverdueCount} overdue)` : ''}
+                      </span>
+                      <span className="dashboard-stat-label">Tasks Due Today</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Recent Conversations */}
+            <div className="dashboard-recent-section">
+              <h2 className="dashboard-section-title">Recent Conversations</h2>
+              {data.recentConversations.length > 0 ? (
+                <div className="dashboard-recent-list">
+                  {data.recentConversations.map((conv) => (
+                    <div key={conv.id} className="dashboard-recent-item">
+                      <span className="dashboard-recent-icon">💬</span>
+                      <span className="dashboard-recent-title">{conv.title}</span>
+                      <span className="dashboard-recent-date">
+                        {formatRelativeDate(conv.updatedAt)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="dashboard-topics-empty">
-            No quiz scores yet. Take a quiz to track your progress.
-          </div>
+              ) : (
+                <div className="dashboard-recent-empty">
+                  No conversations yet. Start chatting to see them here.
+                </div>
+              )}
+            </div>
+
+            {/* Topic Scores Breakdown */}
+            <div className="dashboard-topics-section">
+              <h2 className="dashboard-section-title">Quiz Topic Scores</h2>
+              {topicEntries.length > 0 ? (
+                <div className="dashboard-topic-list">
+                  {topicEntries.map(([topic, scores]) => {
+                    const pct = scores.total > 0 ? Math.round((scores.correct / scores.total) * 100) : 0;
+                    return (
+                      <div key={topic} className="dashboard-topic-row">
+                        <span className="dashboard-topic-name">{topic}</span>
+                        <div className="dashboard-topic-bar-track">
+                          <div
+                            className="dashboard-topic-bar-fill"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="dashboard-topic-score">
+                          {scores.correct}/{scores.total} ({pct}%)
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="dashboard-topics-empty">
+                  No quiz scores yet. Take a quiz to track your progress.
+                </div>
+              )}
+            </div>
+          </>
         )}
-      </div>
+      </details>
     </div>
   );
 };

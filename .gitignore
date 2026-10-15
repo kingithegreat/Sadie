@@ -154,3 +154,13 @@ workspace/
 
 # Local movie projects and generated run state are user data, not Core source.
 /movie/
+
+# Build/dev/Jest-prepared managed product asset (immutable source is tracked).
+/widget/native/generated/
+
+# Retained generated managed task-control proof; uploaded by existing CI jobs.
+/artifacts/ide-native-zero-retry/task-attachment-controls-*/
+/artifacts/ide-native-zero-retry/managed-framing-*/
+/artifacts/ide-native-zero-retry/host-protocol-*/
+/artifacts/ide-native-zero-retry/pending-job-observation-plain.json
+/artifacts/ide-native-zero-retry/pending-job-observation-sdk-gate.json

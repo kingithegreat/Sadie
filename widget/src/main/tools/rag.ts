@@ -18,6 +18,8 @@ import axios from 'axios';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { resolveUserPath } from './filesystem';
 import { assertPermission, getSettings } from '../config-manager';
+import { homeDir } from '../user-paths';
+import { isWithinHomeDir } from '../utils/home-boundary';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -345,8 +347,8 @@ export const ragToolHandlers: Record<string, ToolHandler> = {
     } else {
       // File mode — read from filesystem
       const resolved = path.resolve(resolveUserPath(rawPath));
-      const HOME = process.env.HOME ?? process.env.USERPROFILE ?? '';
-      if (HOME && !resolved.toLowerCase().startsWith(HOME.toLowerCase())) {
+      const HOME = path.resolve(homeDir());
+      if (!isWithinHomeDir(resolved, HOME)) {
         return { success: false, error: `Access denied: file must be within your home directory (${HOME})` };
       }
       if (!fs.existsSync(resolved)) {

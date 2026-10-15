@@ -32,13 +32,13 @@ export const CLAUDE_CODE_MODELS: CustomModelInfo[] = [
 ];
 
 /**
- * `default` lets the CLI pick whatever the account is entitled to, which is the
- * safest option when OpenAI rotates model names.
+ * The Codex CLI does not accept a -m/--model flag when used with a ChatGPT
+ * account — any explicit model id returns 400 "not supported when using Codex
+ * with a ChatGPT account". Only omitting -m works, letting the CLI choose the
+ * account's entitled model. So we only expose 'default' (meaning "no -m flag").
  */
 export const CODEX_MODELS: CustomModelInfo[] = [
-  { id: 'default', name: 'Codex default (subscription)', description: 'Whatever your ChatGPT plan provides', provider: 'codex', costHint: 'Included in your ChatGPT plan' },
-  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex (subscription)', description: 'Coding-tuned', provider: 'codex', costHint: 'Included in your ChatGPT plan' },
-  { id: 'gpt-5.1', name: 'GPT-5.1 (subscription)', description: 'General purpose', provider: 'codex', costHint: 'Included in your ChatGPT plan' },
+  { id: 'default', name: 'Codex (subscription)', description: 'Whatever your ChatGPT plan provides', provider: 'codex', costHint: 'Included in your ChatGPT plan' },
 ];
 
 /**

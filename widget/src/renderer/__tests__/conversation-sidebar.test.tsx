@@ -4,7 +4,7 @@
  * Tests for src/renderer/components/ConversationSidebar.tsx
  */
 
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import ConversationSidebar from '../components/ConversationSidebar';
 
 const CONV_A = {
@@ -28,7 +28,7 @@ const defaultProps = {
   currentConversationId: null,
   onSelectConversation: jest.fn(),
   onNewConversation: jest.fn(),
-  onDeleteConversation: jest.fn(),
+  onDeleteConversation: jest.fn().mockResolvedValue({ success: true }),
 };
 
 function setupElectron(convMap: Record<string, any> = {}) {
@@ -158,7 +158,7 @@ describe('ConversationSidebar — delete', () => {
   // conversation and counts what is lost.
   test('asks first, naming the conversation and what goes with it', async () => {
     setupElectron({ c1: CONV_A });
-    const onDeleteConversation = jest.fn();
+    const onDeleteConversation = jest.fn().mockResolvedValue({ success: true });
     await act(async () => {
       render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
     });
@@ -182,7 +182,7 @@ describe('ConversationSidebar — delete', () => {
 
   test('does NOT delete when cancelled', async () => {
     setupElectron({ c1: CONV_A });
-    const onDeleteConversation = jest.fn();
+    const onDeleteConversation = jest.fn().mockResolvedValue({ success: true });
     await act(async () => {
       render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
     });
@@ -194,6 +194,81 @@ describe('ConversationSidebar — delete', () => {
     expect(onDeleteConversation).not.toHaveBeenCalled();
     expect(screen.getByText('Chat about TypeScript')).toBeInTheDocument();
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  test('keeps the real row until the deletion acknowledgment succeeds', async () => {
+    setupElectron({ c1: CONV_A, c2: CONV_B });
+    let acknowledge!: (result: { success: boolean }) => void;
+    const pending = new Promise<{ success: boolean }>(resolve => { acknowledge = resolve; });
+    const onDeleteConversation = jest.fn().mockReturnValue(pending);
+    await act(async () => {
+      render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
+    });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('All 5 messages in it go too.');
+      expect(onDeleteConversation).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+      expect(onDeleteConversation).toHaveBeenCalledTimes(1);
+      expect(onDeleteConversation).toHaveBeenCalledWith('c1');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByText('Chat about TypeScript')).toBeInTheDocument();
+      expect(screen.getByText('Python help')).toBeInTheDocument();
+    } finally {
+      // Drain the callback even when a pre-ack assertion fails.
+      await act(async () => { acknowledge({ success: true }); });
+    }
+    expect(screen.queryByText('Chat about TypeScript')).not.toBeInTheDocument();
+    expect(screen.getByText('Python help')).toBeInTheDocument();
+  });
+
+  test.each([
+    { label: 'a refused acknowledgment', deleteRequest: () => Promise.resolve({ success: false, error: 'The conversation could not be deleted.' }) },
+    { label: 'a thrown callback error', deleteRequest: () => { throw new Error('The conversation could not be deleted.'); } },
+  ])('$label preserves the row and displays the failure', async ({ deleteRequest }) => {
+    setupElectron({ c1: CONV_A });
+    const onDeleteConversation = jest.fn(deleteRequest);
+    const onSelectConversation = jest.fn();
+    const onClose = jest.fn();
+    await act(async () => {
+      render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation}
+        onSelectConversation={onSelectConversation} onClose={onClose} />);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('The conversation could not be deleted.');
+    expect(screen.getByText('Chat about TypeScript')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onDeleteConversation).toHaveBeenCalledTimes(1);
+    expect(onSelectConversation).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test('repeated delete clicks while an acknowledgment is pending make no duplicate request, and a later retry works', async () => {
+    setupElectron({ c1: CONV_A });
+    let acknowledge!: (result: { success: boolean; error?: string }) => void;
+    const pending = new Promise<{ success: boolean; error?: string }>(resolve => { acknowledge = resolve; });
+    const onDeleteConversation = jest.fn().mockReturnValueOnce(pending).mockResolvedValue({ success: true });
+    await act(async () => {
+      render(<ConversationSidebar {...defaultProps} onDeleteConversation={onDeleteConversation} />);
+    });
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByText('Chat about TypeScript')).toBeInTheDocument();
+      expect(onDeleteConversation).toHaveBeenCalledTimes(1);
+    } finally {
+      await act(async () => { acknowledge({ success: false, error: 'Please try again.' }); });
+    }
+    expect(screen.getByRole('alert')).toHaveTextContent('Please try again.');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Chat about TypeScript' }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete it' }));
+    await waitFor(() => expect(screen.queryByText('Chat about TypeScript')).not.toBeInTheDocument());
+    expect(onDeleteConversation).toHaveBeenCalledTimes(2);
   });
 });
 

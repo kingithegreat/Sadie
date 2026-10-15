@@ -1,7 +1,8 @@
 import { BrowserWindow, screen } from 'electron';
 import * as path from 'path';
-import { isDevelopment } from './env';
-import { is } from '@electron-toolkit/utils';
+import { pathToFileURL } from 'url';
+import { isDevelopment, isPackagedBuild } from './env';
+import { getSettings } from './config-manager';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
@@ -47,7 +48,10 @@ export function createMainWindow(): BrowserWindow {
     minimizable: true,
     closable: true,
     movable: true,
-    alwaysOnTop: isWidgetMode,
+    // Widget mode always floats — that is intrinsic to being a desktop widget.
+    // In expanded mode the user's "Always on top" choice applies; before this it
+    // was hard-coded false, so the checkbox in General settings did nothing.
+    alwaysOnTop: isWidgetMode || getSettings().alwaysOnTop,
     frame: false,
     transparent: false,
     // Pre-paint colour so the first frame isn't a white flash; matches --bg-dark.
@@ -73,8 +77,26 @@ export function createMainWindow(): BrowserWindow {
   console.log('[WINDOW] Setting permission handlers...');
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push('[MAIN] [WINDOW] Setting permission handlers'); } catch (e) { safeCatch(e); }
 
-  // Handle permission requests (microphone for speech recognition)
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+  const htmlPath = path.join(__dirname, '../renderer/index.html');
+  const trustedRendererUrl = !isPackagedBuild && process.env['ELECTRON_RENDERER_URL']
+    ? process.env['ELECTRON_RENDERER_URL'] : pathToFileURL(htmlPath).href;
+  const isRendererUrl = (candidate: string | undefined) => {
+    if (!candidate) return false;
+    try {
+      const actual = new URL(candidate);
+      const expected = new URL(trustedRendererUrl);
+      actual.hash = ''; expected.hash = '';
+      return actual.href === expected.href;
+    } catch { return false; }
+  };
+  // Fullscreen belongs to the app's own top-level document, not other content
+  // sharing this session. Keep the existing speech permissions unchanged.
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    if (permission === 'fullscreen') {
+      callback(Boolean(mainWindow && webContents === mainWindow.webContents &&
+        details?.isMainFrame && isRendererUrl(details.requestingUrl) && isRendererUrl(webContents.getURL())));
+      return;
+    }
     const allowedPermissions = ['media', 'microphone', 'audioCapture'];
     if (allowedPermissions.includes(permission)) {
       callback(true);
@@ -85,7 +107,7 @@ export function createMainWindow(): BrowserWindow {
 
   // Prevent the renderer from being navigated away from the app (XSS / open-redirect mitigation)
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const allowed = is.dev && process.env['ELECTRON_RENDERER_URL']
+    const allowed = !isPackagedBuild && process.env['ELECTRON_RENDERER_URL']
       ? url.startsWith(process.env['ELECTRON_RENDERER_URL'])
       : url.startsWith('file://');
     if (!allowed) {
@@ -94,12 +116,11 @@ export function createMainWindow(): BrowserWindow {
     }
   });
 
-  const htmlPath = path.join(__dirname, '../renderer/index.html');
   console.log('[WINDOW] Loading HTML from:', htmlPath);
   try { (global as any).__HOMEBOT_MAIN_LOG_BUFFER?.push(`[MAIN] [WINDOW] Loading HTML from: ${htmlPath}`); } catch (e) { safeCatch(e); }
 
   // Load the renderer — use Vite dev-server in dev mode for HMR, file in production
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+  if (!isPackagedBuild && process.env['ELECTRON_RENDERER_URL']) {
     const devUrl = process.env['ELECTRON_RENDERER_URL'];
     console.log('[WINDOW] Dev mode: loading from Vite dev server:', devUrl);
     mainWindow.loadURL(devUrl);
@@ -256,7 +277,7 @@ export function toggleWidgetMode(): boolean {
     console.log('[WINDOW] Switched to widget mode');
   } else {
     // Switch to expanded/full mode
-    mainWindow.setAlwaysOnTop(false);
+    mainWindow.setAlwaysOnTop(getSettings().alwaysOnTop);
     mainWindow.setSize(EXPANDED_SIZE.width, EXPANDED_SIZE.height, true);
     clampToWorkArea(mainWindow);
     mainWindow.center();

@@ -9,6 +9,7 @@ export type StreamingState =
 
 export type ChatMessage = {
   id: string;
+  replyToId?: string;
   role: Role;
   content: string;
   createdAt: number;
@@ -28,7 +29,7 @@ export type ChatMessage = {
   recoveryHint?: {
     service: 'ollama' | 'n8n' | 'model' | 'unknown';
     userMessage: string;
-    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings' | 'reattach-document';
+    action?: 'start-ollama' | 'pull-model' | 'retry' | 'check-settings' | 'reattach-document' | 'reattach-image';
     actionLabel?: string;
     model?: string;
     /** Set by the main process only when a configured, usable cloud provider

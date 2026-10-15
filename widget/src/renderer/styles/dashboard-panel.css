@@ -33,6 +33,58 @@
   margin: 0;
 }
 
+/* First task stays separate from optional workspace/setup/activity details. */
+.dashboard-start {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  text-align: center;
+}
+
+.dashboard-start p {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.dashboard-start .dashboard-start-button {
+  min-height: 44px;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.dashboard-details {
+  min-width: 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.dashboard-details > summary {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-details > summary:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+
+.dashboard-details[open] > summary {
+  margin-bottom: var(--spacing-md);
+}
+
+.dashboard-details .dashboard-model-status,
+.dashboard-details .dashboard-stats-grid,
+.dashboard-details .dashboard-recent-section {
+  margin-bottom: var(--spacing-md);
+}
+
 /* ── Stat Cards Grid ── */
 .dashboard-stats-grid {
   display: grid;

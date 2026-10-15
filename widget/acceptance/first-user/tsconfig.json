@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2021", "DOM", "DOM.Iterable"]
+  },
+  "include": [
+    "*.ts",
+    "../../src/renderer/global.d.ts"
+  ]
+}

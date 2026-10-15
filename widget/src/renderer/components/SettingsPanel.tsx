@@ -33,7 +33,7 @@ import MediaCapabilitiesSection from './settings/MediaCapabilitiesSection';
 
 interface SettingsPanelProps {
   settings: SharedSettings;
-  onSave: (settings: SharedSettings) => void;
+  onSave: (settings: SharedSettings) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -59,6 +59,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
     handleSave,
     handleCancel,
     hasUnsavedChanges,
+    saving,
+    saveError,
     upgradePrompt,
     setUpgradePrompt,
   } = state;
@@ -73,7 +75,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
 
   return (
     <SettingsProvider value={state}>
-    <div className="settings-overlay" role="presentation" onClick={onClose}>
+    <div className="settings-overlay" role="presentation" onClick={handleCancel}>
       {confirmDialog}
       <div
         ref={panelRef}
@@ -83,7 +85,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         aria-label="Settings"
         onClick={e => e.stopPropagation()}
         onKeyDown={e => {
-          if (e.key === 'Escape') { onClose(); return; }
+          if (e.key === 'Escape') { handleCancel(); return; }
           // Ctrl/Cmd+S saves. The Save bar lives at the bottom of the panel, so
           // anything that pushes it out of view (a window taller than the
           // desktop, an unusual display scale) made settings unsaveable with no
@@ -97,7 +99,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
       >
       <div className="settings-header">
         <h2>Settings</h2>
-        <button className="close-button" onClick={onClose} aria-label="Close settings">
+        <button className="close-button" onClick={handleCancel} disabled={saving} aria-label="Close settings">
           ✕
         </button>
       </div>
@@ -143,13 +145,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({ settings, onSave, onClose
         )}
       </div>{/* end settings-body */}
 
+      {saveError && <p role="alert" className="setting-hint">{saveError}</p>}
       <div className="settings-footer">
-        <button className="button button-cancel" onClick={handleCancel}>
+        <button className="button button-cancel" onClick={handleCancel} disabled={saving}>
           Cancel
         </button>
         <span className="settings-footer-hint">Ctrl+S</span>
-        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave}>
-          {hasUnsavedChanges ? 'Save changes' : 'Save'}
+        <button className={`button button-save${hasUnsavedChanges ? ' has-changes' : ''}`} onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : hasUnsavedChanges ? 'Save changes' : 'Save'}
         </button>
       </div>
       </div>

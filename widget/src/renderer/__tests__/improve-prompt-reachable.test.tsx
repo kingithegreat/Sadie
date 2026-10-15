@@ -127,3 +127,76 @@ describe('a refusal', () => {
     expect((screen.getByTestId('improve-prompt') as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('a delayed rewrite preserves the current request', () => {
+  function delayRewrite() {
+    let resolve!: (value: { success: boolean; improved: string }) => void;
+    improvePrompt = jest.fn(() => new Promise(done => { resolve = done; }));
+    (window as any).electron = { improvePrompt, getSettings: jest.fn().mockResolvedValue({}) };
+    return async () => { await act(async () => { resolve({ success: true, improved: IMPROVED }); }); };
+  }
+
+  test('newer words typed while it runs survive completion', async () => {
+    const finish = delayRewrite();
+    renderBox();
+    const box = await typeDraft();
+    fireEvent.click(screen.getByTestId('improve-prompt'));
+    fireEvent.change(box, { target: { value: 'My newer, more detailed request.' } });
+    await finish();
+    expect(box).toHaveValue('My newer, more detailed request.');
+    expect(screen.getByText(/Your draft changed while the rewrite was running/)).toBeInTheDocument();
+    expect(screen.queryByTestId('improve-undo')).toBeNull();
+  });
+
+  test('changing and then restoring the words still makes the old rewrite obsolete', async () => {
+    const finish = delayRewrite();
+    renderBox();
+    const box = await typeDraft();
+    fireEvent.click(screen.getByTestId('improve-prompt'));
+    fireEvent.change(box, { target: { value: 'Changed request.' } });
+    fireEvent.change(box, { target: { value: DRAFT } });
+    await finish();
+    expect(box).toHaveValue(DRAFT);
+    expect(screen.queryByTestId('improve-undo')).toBeNull();
+  });
+
+  test('adding a real document while it runs keeps the exact wording and attachment', async () => {
+    const finish = delayRewrite();
+    renderBox();
+    const box = await typeDraft();
+    fireEvent.click(screen.getByTestId('improve-prompt'));
+    const document = new File(['My latest notes.'], 'notes.txt', { type: 'text/plain' });
+    fireEvent.change(screen.getByLabelText('Attach documents'), { target: { files: [document] } });
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+    await finish();
+    expect(box).toHaveValue(DRAFT);
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+    expect(screen.queryByTestId('improve-undo')).toBeNull();
+  });
+
+  test('sending while it runs does not resurrect the already-sent request', async () => {
+    const finish = delayRewrite();
+    const onSend = jest.fn();
+    render(<InputBox onSendMessage={onSend} />);
+    const box = await typeDraft();
+    fireEvent.click(screen.getByTestId('improve-prompt'));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledWith(DRAFT, undefined, undefined);
+    await finish();
+    expect(box).toHaveValue('');
+    expect(screen.queryByTestId('improve-undo')).toBeNull();
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  test('editing a completed rewrite removes Undo before it can discard the edits', async () => {
+    mountElectron({ success: true, improved: IMPROVED });
+    renderBox();
+    const box = await typeDraft();
+    await act(async () => { fireEvent.click(screen.getByTestId('improve-prompt')); });
+    expect(screen.getByTestId('improve-undo')).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: `${IMPROVED} Keep it under 100 words.` } });
+    expect(box).toHaveValue(`${IMPROVED} Keep it under 100 words.`);
+    expect(screen.queryByTestId('improve-undo')).toBeNull();
+  });
+});

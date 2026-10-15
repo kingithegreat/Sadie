@@ -19,7 +19,9 @@ export default defineConfig({
     ['html', { outputFolder: process.env.PLAYWRIGHT_HTML_REPORT || 'playwright-report', open: 'never' }],
   ],
   use: {
-    trace: 'on-first-retry',
+    // Keep the failing first attempt even when the retry passes. A retry-only
+    // trace cannot explain the original setup or playback failure.
+    trace: 'retain-on-failure',
     video: 'on-first-retry',
     screenshot: 'only-on-failure'
   }

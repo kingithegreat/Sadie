@@ -26,7 +26,10 @@ describe('stream end and error handling (renderer)', () => {
         endHandler = handlers.onStreamEnd;
         return unsub;
       }),
-      getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      getSettings: jest.fn().mockResolvedValue({ firstRun: false, modelRoutingMode: 'off', alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+      createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'stream-end-fixture', systemPrompt: '' } }),
+      setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => { capturedStreamId = payload.streamId; return Promise.resolve(); }),
       onMessage: jest.fn(() => jest.fn()),
@@ -35,6 +38,7 @@ describe('stream end and error handling (renderer)', () => {
     } as unknown as ElectronAPI;
 
     const { getByLabelText, getByText } = render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // Send a user message, creating an assistant streaming message
     const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;
@@ -80,7 +84,10 @@ describe('stream end and error handling (renderer)', () => {
         errorHandler = handlers.onStreamError;
         return unsub;
       }),
-      getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      getSettings: jest.fn().mockResolvedValue({ firstRun: false, modelRoutingMode: 'off', alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+      createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'stream-error-fixture', systemPrompt: '' } }),
+      setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => { capturedStreamId = payload.streamId; return Promise.resolve(); }),
       onMessage: jest.fn(() => jest.fn()),
@@ -89,6 +96,7 @@ describe('stream end and error handling (renderer)', () => {
     } as unknown as ElectronAPI;
 
     const { getByLabelText, getByText } = render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // Send message to create streaming assistant
     const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;

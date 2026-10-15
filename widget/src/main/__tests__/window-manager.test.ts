@@ -27,12 +27,13 @@ function makeMockWindowInstance() {
       },
       on: jest.fn(),
       openDevTools: jest.fn(),
+      getURL: jest.fn(),
     },
   };
   return inst;
 }
 
-function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rendererUrl?: string } = {}) {
+function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rendererUrl?: string; configAlwaysOnTop?: boolean } = {}) {
   jest.resetModules();
   mockWindowInstance = makeMockWindowInstance();
   MockBrowserWindow = jest.fn().mockImplementation(() => mockWindowInstance);
@@ -40,6 +41,9 @@ function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rende
   jest.doMock('electron', () => ({ BrowserWindow: MockBrowserWindow }));
   jest.doMock('@electron-toolkit/utils', () => ({ is: { dev: overrides.isDev ?? false } }));
   jest.doMock('../env', () => ({ isDevelopment: overrides.isDevelopment ?? false }));
+  jest.doMock('../config-manager', () => ({
+    getSettings: () => ({ alwaysOnTop: overrides.configAlwaysOnTop ?? true }),
+  }));
 
   if (overrides.rendererUrl !== undefined) {
     process.env.ELECTRON_RENDERER_URL = overrides.rendererUrl;
@@ -55,6 +59,7 @@ function loadModule(overrides: { isDev?: boolean; isDevelopment?: boolean; rende
 afterEach(() => {
   jest.clearAllMocks();
   delete process.env.ELECTRON_RENDERER_URL;
+  delete process.env.HOMEBOT_E2E;
 });
 
 // --------------------------------
@@ -107,6 +112,32 @@ describe('createMainWindow — window creation', () => {
     createMainWindow(); // first call
     createMainWindow(); // second call — window already exists and not destroyed
     expect(MockBrowserWindow).toHaveBeenCalledTimes(1);
+  });
+
+  // The General-settings "Always on top" checkbox wrote a setting main never
+  // read, so it did nothing. Creation now honours it in expanded mode.
+  test('honours the alwaysOnTop setting when not in widget mode', () => {
+    process.env.HOMEBOT_E2E = '1'; // expanded mode, not widget mode
+    loadModule({ configAlwaysOnTop: false });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(false);
+  });
+
+  test('a checked alwaysOnTop setting floats the expanded window too', () => {
+    process.env.HOMEBOT_E2E = '1';
+    loadModule({ configAlwaysOnTop: true });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(true);
+  });
+
+  test('widget mode always floats regardless of the setting', () => {
+    delete process.env.HOMEBOT_E2E; // widget mode
+    loadModule({ configAlwaysOnTop: false });
+    createMainWindow();
+    const options = MockBrowserWindow.mock.calls[0][0];
+    expect(options.alwaysOnTop).toBe(true);
   });
 
   test('focuses existing window on second call', () => {
@@ -226,4 +257,43 @@ describe('createMainWindow — permission handler', () => {
       expect(cb).toHaveBeenCalledWith(false);
     }
   );
+
+  test('allows fullscreen for the exact app main frame, including hash navigation', () => {
+    loadModule();
+    createMainWindow();
+    const appUrl = require('url').pathToFileURL(mockWindowInstance.loadFile.mock.calls[0][0]).href;
+    mockWindowInstance.webContents.getURL.mockReturnValue(`${appUrl}#studio`);
+    const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+    const cb = jest.fn();
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: `${appUrl}#studio` });
+    expect(cb).toHaveBeenCalledWith(true);
+  });
+
+  test.each(['foreign contents', 'subframe', 'different file', 'remote URL', 'different loaded URL', 'missing details'])(
+    'denies fullscreen from %s', (kind) => {
+      loadModule();
+      createMainWindow();
+      const appUrl = require('url').pathToFileURL(mockWindowInstance.loadFile.mock.calls[0][0]).href;
+      mockWindowInstance.webContents.getURL.mockReturnValue(kind === 'different loaded URL' ? 'https://example.invalid/' : appUrl);
+      const details = { isMainFrame: kind !== 'subframe', requestingUrl:
+        kind === 'different file' ? appUrl.replace('index.html', 'other.html') : kind === 'remote URL' ? 'https://example.invalid/' : appUrl };
+      const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+      const cb = jest.fn();
+      handler(kind === 'foreign contents' ? { getURL: () => appUrl } : mockWindowInstance.webContents,
+        'fullscreen', cb, kind === 'missing details' ? undefined : details);
+      expect(cb).toHaveBeenCalledWith(false);
+    }
+  );
+
+  test('allows the configured development renderer but not a prefix lookalike', () => {
+    loadModule({ isDev: true, rendererUrl: 'http://localhost:5173/' });
+    createMainWindow();
+    mockWindowInstance.webContents.getURL.mockReturnValue('http://localhost:5173/#studio');
+    const handler = mockWindowInstance.webContents.session.setPermissionRequestHandler.mock.calls[0][0];
+    const cb = jest.fn();
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: 'http://localhost:5173/#studio' });
+    expect(cb).toHaveBeenLastCalledWith(true);
+    handler(mockWindowInstance.webContents, 'fullscreen', cb, { isMainFrame: true, requestingUrl: 'http://localhost:5173.evil.invalid/' });
+    expect(cb).toHaveBeenLastCalledWith(false);
+  });
 });

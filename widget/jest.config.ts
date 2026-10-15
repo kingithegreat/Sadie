@@ -2,6 +2,7 @@ import type { Config } from '@jest/types';
 
 const config: Config.InitialOptions = {
   preset: 'ts-jest',
+  globalSetup: '<rootDir>/scripts/prepare-windows-job-jest.cjs',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.+(ts|tsx|js)'],

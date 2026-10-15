@@ -187,11 +187,6 @@ async function recordUntilSilence(opts: WhisperTranscribeOptions): Promise<Blob 
       if (gate.feed(computeRms(buf), Date.now()) === 'stop') finish();
     }, 100);
 
-    opts.onController?.({
-      stop: finish,
-      cancel: () => { cancelled = true; finish(); },
-    });
-
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
       if (settled) return;
@@ -208,6 +203,13 @@ async function recordUntilSilence(opts: WhisperTranscribeOptions): Promise<Blob 
     };
 
     recorder.start(250);
+    // The controller can be cancelled immediately when microphone permission
+    // arrives after the caller closed. Start and install cleanup handlers first
+    // so that cancellation actually stops the recorder and releases its tracks.
+    opts.onController?.({
+      stop: finish,
+      cancel: () => { cancelled = true; finish(); },
+    });
   });
 }
 

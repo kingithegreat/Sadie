@@ -8,6 +8,7 @@
 
 import { isShotTransition, MAX_TRANSITION_SEC, MIN_TRANSITION_SEC } from '../../shared/transitions';
 import { sanitizeTextCard } from '../../shared/text-card';
+import { plainBackgroundAccepted } from '../../shared/shot-picture-intent';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -34,7 +35,7 @@ import {
 import { assembleStoryboardScenes } from '../movie/storyboard-assembly';
 import { createStoryboardOutputSpec, resolveBurnSubtitles, resolveStudioOutputSpec } from '../../shared/media-output';
 import { resolveCaptionStyle, type CaptionStyle } from '../../shared/caption-style';
-import { readStoryboardExportState, resolveStoryboardExportPath } from '../movie/storyboard-export-state';
+import { readStoryboardExportState, resolveStoryboardExportPath, storyboardFileDigest } from '../movie/storyboard-export-state';
 import { createStudioExportReview } from '../movie/studio-export-review';
 import { getMediaCapabilityRegistry } from '../provider-capability-registry';
 import { generateStoryboardShotClip } from '../movie/storyboard-video-providers';
@@ -551,6 +552,11 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
     };
     fs.writeFileSync(statusFile, JSON.stringify(statusData, null, 2), 'utf-8');
 
+    const generatedPromptFile = path.join(shotDir, 'prompt.json');
+    const generatedPromptData = readProjectMeta(generatedPromptFile);
+    delete generatedPromptData.plainBackgroundSha256;
+    fs.writeFileSync(generatedPromptFile, JSON.stringify(generatedPromptData, null, 2), 'utf-8');
+
     return {
       success: true,
       result: {
@@ -559,6 +565,7 @@ export const mediaGenerateStoryboardFrameHandler: ToolHandler = async (
         shotId,
         provider: res.provider || decision.chosen?.providerId || 'free-router',
         frameImagePath: imgPath,
+        frameImageSha256: imgPath ? await storyboardFileDigest(imgPath) : null,
         frameSize: { width: shape.width, height: shape.height, aspectRatio: shape.aspectRatio },
         message: `Storyboard frame for ${shotId} generated successfully via ${res.provider || decision.chosen?.providerId || 'free-router'}.`
           + ` Drawn ${shape.width}x${shape.height} for ${shape.aspectRatio}.`
@@ -591,6 +598,7 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
   description:
     'Persists edits to a storyboard scene — shot order, framing/lens/movement, duration and narration text — ' +
     'to the real shot files the renderer reads from.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -603,8 +611,13 @@ export const mediaSaveStoryboardDef: ToolDefinition = {
       musicVolume: { type: 'number', description: 'Save background-music gain from 0 to 1.' },
       shots: {
         type: 'array',
-        description: 'Ordered array of shot edits to persist.',
+        description: 'Shot edits to persist, each with its shotId. Shots you leave out stay on the board unchanged; '
+          + 'new shot IDs are added at the end; listing every shot in a new order reorders the scene.',
         items: { type: 'object' },
+      },
+      replaceShotList: {
+        type: 'boolean',
+        description: 'Only when shots is the complete scene: removes any shot left out of it. Omit to keep omitted shots.',
       },
     },
     required: ['projectId', 'shots'],
@@ -621,6 +634,9 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     return { success: false, error: 'Choose a valid storyboard project and scene.' };
   }
   if (!Array.isArray(args.shots)) return { success: false, error: 'Save Board needs an ordered list of shots.' };
+  if (args.replaceShotList !== undefined && typeof args.replaceShotList !== 'boolean') {
+    return { success: false, error: 'replaceShotList must be true or false.' };
+  }
   if (args.burnSubtitles !== undefined && typeof args.burnSubtitles !== 'boolean') {
     return { success: false, error: 'Choose whether captions are on or off.' };
   }
@@ -663,6 +679,7 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
     const projectMeta = fs.existsSync(metaPath) ? JSON.parse(fs.readFileSync(metaPath, 'utf-8')) : {};
     const sceneMeta = fs.existsSync(sceneJsonPath)
       ? JSON.parse(fs.readFileSync(sceneJsonPath, 'utf-8')) : { sceneId };
+    const currentShots = assembleStoryboardScenes(projectDir).find(scene => scene.sceneId === sceneId)?.shots ?? [];
 
     for (const shot of shots) {
       const shotDir = path.join(sceneDir, shot.shotId);
@@ -698,6 +715,14 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
         const card = sanitizeTextCard(shot.textCard);
         if (card) promptData.textCard = card; else delete promptData.textCard;
       }
+      if (shot.plainBackgroundSha256 !== undefined) {
+        const currentPicture = currentShots.find(saved => saved.shotId === shot.shotId)?.frameImageSha256;
+        if (plainBackgroundAccepted(shot.plainBackgroundSha256, currentPicture)) {
+          promptData.plainBackgroundSha256 = currentPicture;
+        } else {
+          delete promptData.plainBackgroundSha256;
+        }
+      }
       fs.writeFileSync(promptPath, JSON.stringify(promptData, null, 2), 'utf-8');
 
       if (shot.narration !== undefined) {
@@ -705,7 +730,14 @@ export const mediaSaveStoryboardHandler: ToolHandler = async (args): Promise<Too
       }
     }
 
-    sceneMeta.shots = shotIds;
+    // A save names the shots it edits. Only an explicit complete-scene save (the
+    // Storyboard Deck, via IPC) may drop shots it leaves out; a partial save from
+    // chat keeps them, so "fix shot_002's narration" cannot empty the board.
+    const boardIds = currentShots.map(saved => saved.shotId);
+    const coversBoard = boardIds.every(id => shotIds.includes(id));
+    sceneMeta.shots = args.replaceShotList === true || coversBoard
+      ? shotIds
+      : [...boardIds, ...shotIds.filter((id: string) => !boardIds.includes(id))];
     fs.writeFileSync(sceneJsonPath, JSON.stringify(sceneMeta, null, 2), 'utf-8');
     if (projectMeta) {
       const stagedMeta = `${metaPath}.saving`;
@@ -732,6 +764,7 @@ export const mediaRenderStoryboardDef: ToolDefinition = {
     'Renders a complete visual storyboard into an MP4 using local FFmpeg and saved output settings. ' +
     'Includes voiceover narration and optional captions; crop framing supports Ken Burns motion, while fit retains the whole image. ' +
     'Does not approve, upload or publish the movie.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {
@@ -1035,6 +1068,11 @@ export async function setStoryboardShotImage(args: {
     const destFile = path.join(imgDir, `frame${ext}`);
     fs.copyFileSync(imagePath, destFile);
 
+    const importedPromptFile = path.join(shotDir, 'prompt.json');
+    const importedPromptData = readProjectMeta(importedPromptFile);
+    delete importedPromptData.plainBackgroundSha256;
+    fs.writeFileSync(importedPromptFile, JSON.stringify(importedPromptData, null, 2), 'utf-8');
+
     const statusFile = path.join(shotDir, 'status.json');
     const prevStatus = readProjectMeta(statusFile);
     const statusData = {
@@ -1054,6 +1092,7 @@ export async function setStoryboardShotImage(args: {
         sceneId,
         shotId,
         frameImagePath: destFile,
+        frameImageSha256: await storyboardFileDigest(destFile),
         provider: 'custom_import',
         message: `Image for ${shotId} imported successfully from ${path.basename(imagePath)}.`,
       },
@@ -1066,6 +1105,7 @@ export async function setStoryboardShotImage(args: {
 export const mediaSetStoryboardImageDef: ToolDefinition = {
   name: 'media_set_storyboard_image',
   description: 'Imports an existing local image file as the rendered keyframe for a storyboard shot.',
+  category: 'media',
   parameters: {
     type: 'object',
     properties: {

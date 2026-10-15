@@ -40,3 +40,37 @@ export const PROVIDER_API_URLS: Record<string, string> = {
 export function defaultApiUrlFor(provider: string | undefined): string {
   return (provider && PROVIDER_API_URLS[provider]) || '';
 }
+
+/**
+ * Providers that are a local CLI signed in to a subscription, not an HTTP
+ * endpoint. `claude-code` and `codex` have no URL — and in `streamCodex` /
+ * `streamClaudeCode` the `apiUrl` field is repurposed as an optional override
+ * for the CLI binary's *path*, so a leftover HTTP URL from the previous
+ * provider is not merely ignored, it is spawned. Observed: switching from
+ * DeepSeek to Codex kept `https://api.deepseek.com/v1`, and the CLI launch
+ * failed with "Codex CLI not found (https://api.deepseek.com/v1)".
+ */
+const CLI_PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'codex']);
+
+/** True when this provider is a local CLI rather than an HTTP endpoint. */
+export function isCliProvider(provider: string | undefined | null): boolean {
+  return !!provider && CLI_PROVIDERS.has(provider);
+}
+
+/**
+ * The `customLLM` fields that must NOT survive a switch between two providers.
+ *
+ * `apiUrl` is the dangerous one: for a CLI provider it means the binary's
+ * location, so an HTTP URL carried over from the previous provider is spawned
+ * as a program. `apiKey` is dropped too — a CLI provider needs none, and a
+ * metered key left in the config is a credential the new provider never asked
+ * for. Both are cleared on every switch TO a CLI provider.
+ */
+export function resetCliOnlyFields<T extends { apiUrl?: string; apiKey?: string }>(
+  config: T,
+  provider: string | undefined | null,
+): T {
+  if (!isCliProvider(provider)) return config;
+  const { apiUrl: _dropUrl, apiKey: _dropKey, ...rest } = config;
+  return { ...rest, apiUrl: '', apiKey: '' } as T;
+}

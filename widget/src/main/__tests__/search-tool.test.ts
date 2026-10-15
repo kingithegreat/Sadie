@@ -4,6 +4,10 @@
 
 const mockExecImpl = jest.fn();
 jest.mock('child_process', () => ({ exec: mockExecImpl }));
+// The IDE authority dependency imports Electron, but these legacy chat search
+// controls run in Node and must never load or launch the real desktop runtime.
+jest.mock('electron', () => ({ app: { getPath: jest.fn() }, dialog: {} }));
+jest.mock('../window-manager', () => ({ getMainWindow: () => null }));
 
 // Mock fs.existsSync so sanitizeSearchRoot doesn't hit disk
 jest.mock('fs', () => ({

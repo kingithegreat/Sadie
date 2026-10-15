@@ -161,7 +161,7 @@ export default function ModelsSettingsTab() {
             }
             placeholder={defaultModels.uncensoredModel}
           />
-          <small className="setting-hint">Used when 🔓 Uncensored Mode is enabled (tools stay disabled).</small>
+          <small className="setting-hint">Used when 🔓 Uncensored Mode is enabled.</small>
         </div>
 
         <div className="setting-group">

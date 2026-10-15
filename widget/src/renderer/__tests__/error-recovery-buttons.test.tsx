@@ -71,6 +71,44 @@ const OLLAMA_DOWN_NO_CLOUD = {
 };
 
 describe('error bubble recovery actions', () => {
+  test('a Settings recovery action opens Settings and never resends the refusal', () => {
+    const onOpenSettings = jest.fn();
+    const onRetry = jest.fn();
+    render(<MessageBubble message={erroredMessage({
+      service: 'unknown', userMessage: 'Check your online AI connection.', action: 'check-settings', actionLabel: 'Settings',
+    })} onCancel={noop} onRetry={onRetry} onOpenSettings={onOpenSettings} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+    expect(onRetry).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledWith('msg-1');
+  });
+
+  test('without a Settings callback no misleading Settings-labelled retry is rendered', () => {
+    const onRetry = jest.fn();
+    render(<MessageBubble message={erroredMessage({
+      service: 'unknown', userMessage: 'Check your online AI connection.', action: 'check-settings', actionLabel: 'Settings',
+    })} onCancel={noop} onRetry={onRetry} />);
+    expect(screen.queryByRole('button', { name: /Settings/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onRetry).toHaveBeenCalledWith('msg-1');
+  });
+
+  test('a model download action keeps a distinct Retry control', () => {
+    render(<MessageBubble message={erroredMessage({
+      service: 'model', userMessage: 'Download the missing model.', action: 'pull-model', actionLabel: 'Pull test-model', model: 'test-model',
+    })} onCancel={noop} onRetry={noop} />);
+    expect(screen.getAllByRole('button', { name: /Pull test-model/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+  });
+
+  test('the streaming Stop action still cancels the current response', () => {
+    const onCancel = jest.fn();
+    render(<MessageBubble message={{ id: 'stream-1', role: 'assistant', content: '', createdAt: Date.now(), streamingState: 'streaming' }} onCancel={onCancel} onRetry={noop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Stop generating' }));
+    expect(onCancel).toHaveBeenCalledWith('stream-1');
+  });
+
   test('offers both Start Ollama and the cloud switch when a provider is ready', () => {
     render(<MessageBubble message={erroredMessage(OLLAMA_DOWN_WITH_CLOUD)} onCancel={noop} onRetry={noop} />);
 

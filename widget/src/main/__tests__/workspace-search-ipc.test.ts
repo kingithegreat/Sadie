@@ -1,3 +1,6 @@
+// Real filesystem fixtures use the repository's explicit I/O budget.
+jest.setTimeout(15_000);
+
 /**
  * workspace-search-ipc — IDE-9.
  *
@@ -13,7 +16,9 @@
  */
 
 const handlers: Record<string, (...args: any[]) => Promise<any>> = {};
+jest.mock('../window-manager', () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: (global as any).__workspaceSearchContents }) }));
 jest.mock('electron', () => ({
+  app: { getPath: () => (global as any).__workspaceSearchProfile },
   ipcMain: {
     handle: (name: string, handler: any) => { handlers[name] = handler; },
     removeHandler: (name: string) => { delete handlers[name]; },
@@ -37,6 +42,9 @@ import * as fs from 'fs';
 import { registerWorkspaceIpc, WORKSPACE_CHANNELS } from '../workspace-ipc';
 
 const TMP = os.tmpdir();
+(global as any).__workspaceSearchContents = { mainFrame: {} };
+(global as any).__workspaceSearchProfile = path.join(TMP, 'search-profile');
+const event = () => ({ sender: (global as any).__workspaceSearchContents, senderFrame: (global as any).__workspaceSearchContents.mainFrame });
 const TEST_DIR = path.join(TMP, `homebot-ws-search-${Date.now()}`);
 const SRC = path.join(TEST_DIR, 'src');
 
@@ -68,10 +76,10 @@ beforeEach(() => {
 });
 
 const search = (opts: Record<string, unknown>) =>
-  handlers[WORKSPACE_CHANNELS.SEARCH]({}, opts);
+  handlers[WORKSPACE_CHANNELS.SEARCH](event(), opts);
 
 const replace = (filePath: string, edits: Array<Record<string, unknown>>) =>
-  handlers[WORKSPACE_CHANNELS.REPLACE]({}, filePath, edits);
+  handlers[WORKSPACE_CHANNELS.REPLACE](event(), filePath, edits);
 
 const readLines = (p: string) => fs.readFileSync(p, 'utf8').split(/\r?\n/);
 
@@ -111,7 +119,7 @@ describe('workspace search', () => {
   test('refuses a directory outside the home folder', async () => {
     const res = await search({ pattern: 'hello', directory: 'C:\\Windows\\System32' });
     expect(res.success).toBe(false);
-    expect(res.error).toContain('home directory');
+    expect(res.error).toMatch(/home|protected/);
   });
 
   test('an empty pattern fails plainly instead of returning everything', async () => {
@@ -181,7 +189,7 @@ describe('workspace replace', () => {
       { line: 1, oldText: 'x', newText: 'y' },
     ]);
     expect(res.success).toBe(false);
-    expect(res.error).toContain('home directory');
+    expect(res.error).toMatch(/home|protected/);
   });
 
   test('refuses a binary file and a missing one', async () => {

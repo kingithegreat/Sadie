@@ -2,10 +2,11 @@ import { test, expect } from '@playwright/test';
 import { launchElectronApp } from './launchElectron';
 import { waitForAppReady } from './helpers/appReady';
 import { dismissFirstRun } from './helpers/firstRun';
-import { closeElectronApp } from './helpers/closeApp';
+import { closeElectronApp, closeRemainingElectronApps } from './helpers/closeApp';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+test.afterEach(async () => { await closeRemainingElectronApps(); });
 
 /**
  * Tooltips, checked in a real browser.
@@ -22,8 +23,8 @@ import * as path from 'path';
 async function open(userDataPrefix: string) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), userDataPrefix));
   const { app, page } = await launchElectronApp({ HOMEBOT_E2E: '1', NODE_ENV: 'test' }, tmp);
-  await waitForAppReady(page);
   await dismissFirstRun(page);
+  await waitForAppReady(page);
   return { app, page };
 }
 

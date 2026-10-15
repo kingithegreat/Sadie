@@ -16,7 +16,8 @@
  * already tracks would be worse than none. The Explorer is right there.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { WorkspaceCheckpointRun, WorkspaceCheckpointRunComparison } from '../../../shared/workspace-ai-types';
 
 interface ChangeRow {
   id: string;
@@ -63,7 +64,7 @@ const baseName = (p: string) => p.split(/[\\/]/).pop() || p;
 const clockTime = (ms: number) =>
   new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-export default function ChangesPanel({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
+export default function ChangesPanel({ root, onOpenFile }: { root?: string; onOpenFile?: (path: string) => void }) {
   const [rows, setRows] = useState<ChangeRow[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<DiffResult | null>(null);
@@ -73,15 +74,30 @@ export default function ChangesPanel({ onOpenFile }: { onOpenFile?: (path: strin
   const [chosen, setChosen] = useState<Record<string, Set<number>>>({});
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [checkpoints, setCheckpoints] = useState<Array<{ id: string; path: string; at: number; tool: string }>>([]);
+  const [comparison, setComparison] = useState<{ id: string; path: string; current: string | null; before: string | null; currentHash: string } | null>(null);
+  const [runs, setRuns] = useState<WorkspaceCheckpointRun[]>([]);
+  const [runComparison, setRunComparison] = useState<WorkspaceCheckpointRunComparison | null>(null);
 
   const api = (window as any).electron;
+  const mounted = useRef(false);
+  const currentRoot = useRef(root);
+  currentRoot.current = root;
+  const refreshSequence = useRef(0);
+  const activeRefresh = useRef<{ root?: string; id: number } | null>(null);
 
   const refresh = useCallback(async () => {
+    if (activeRefresh.current && activeRefresh.current.root === root) return;
+    const id = ++refreshSequence.current;
+    activeRefresh.current = { root, id };
+    const current = () => mounted.current && currentRoot.current === root && refreshSequence.current === id;
     try {
       const res = await api?.changesList?.();
+      if (!current()) return;
       if (res?.success) { setRows(res.changes || []); setError(null); }
       else setError(res?.error || 'Could not read the change log.');
-      const waiting = await api?.workspaceProposals?.();
+      const waiting = await api?.workspaceProposals?.(root);
+      if (!current()) return;
       if (waiting?.success) {
         const list: Proposal[] = waiting.proposals || [];
         setProposals(list);
@@ -96,10 +112,17 @@ export default function ChangesPanel({ onOpenFile }: { onOpenFile?: (path: strin
         });
         setOpenProposal(current => (current && list.some(p => p.id === current) ? current : list[0]?.id ?? null));
       }
+      if (root && api?.workspaceCheckpointList) {
+        const result = await api.workspaceCheckpointList(root);
+        if (!current()) return;
+        if (result?.success) { setCheckpoints(result.checkpoints || []); setRuns(result.runs || []); }
+      }
     } catch (e: any) {
-      setError(e?.message || 'Could not read the change log.');
+      if (current()) setError(e?.message || 'Could not read the change log.');
+    } finally {
+      if (activeRefresh.current?.id === id) activeRefresh.current = null;
     }
-  }, [api]);
+  }, [api, root]);
 
   const toggleHunk = useCallback((proposalId: string, index: number) => {
     setChosen(prev => {
@@ -133,7 +156,11 @@ export default function ChangesPanel({ onOpenFile }: { onOpenFile?: (path: strin
     }
   }, [api, chosen, onOpenFile, refresh]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    mounted.current = true; setRows([]); setProposals([]); setCheckpoints([]); setRuns([]); setComparison(null); setRunComparison(null); setDiff(null); setSelected(null); setNote(null); setError(null);
+    void refresh();
+    return () => { mounted.current = false; ++refreshSequence.current; activeRefresh.current = null; };
+  }, [refresh]);
 
   // Poll while the panel is open: changes arrive from tool calls, not from
   // anything this component does, so there is no event to hang off yet.
@@ -153,9 +180,77 @@ export default function ChangesPanel({ onOpenFile }: { onOpenFile?: (path: strin
     }
   }, [api]);
 
+  const compareCheckpoint = async (id: string) => {
+    try {
+      const result = await api.workspaceCheckpointCompare(root, id);
+      if (!result?.success) throw new Error(result?.error || 'Could not compare this checkpoint.');
+      setComparison({ ...result, id });
+    } catch (error) { setNote((error as Error).message); }
+  };
+  const restoreCheckpoint = async (id: string, overwrite = false) => {
+    setBusy(true);
+    try {
+      const result = await api.workspaceCheckpointRestore(root, id, overwrite && comparison ? { overwrite: true, expectedCurrentHash: comparison.currentHash } : undefined);
+      if (result?.success) {
+        setComparison(null); setNote('Restored this file. Its later version was retained as a recovery checkpoint.');
+        onOpenFile?.(result.path);
+      } else {
+        setNote(result?.error || 'Could not restore this checkpoint.');
+        if (result?.conflict) await compareCheckpoint(id);
+      }
+      await refresh();
+    } catch (error) { setNote((error as Error).message); }
+    finally { setBusy(false); }
+  };
+  const compareRun = async (id: string) => {
+    try {
+      const result = await api.workspaceCheckpointCompareRun(root, id);
+      if (!result?.success) throw new Error(result?.error || 'Could not compare this run.');
+      setRunComparison(result);
+    } catch (error) { setNote((error as Error).message); }
+  };
+  const restoreRun = async (id: string, confirm = false) => {
+    setBusy(true);
+    try {
+      const confirmedHashes = confirm && runComparison?.files ? Object.fromEntries(runComparison.files.map(file => [file.path, file.currentHash])) : undefined;
+      const result = await api.workspaceCheckpointRestoreRun(root, id, confirmedHashes ? { confirmedHashes } : undefined);
+      if (result?.success) { setRunComparison(null); setNote(`Restored ${result.restored?.length || 0} files. Their later versions were retained as a recovery run.`); }
+      else { setNote(result?.error || 'Could not restore this run.'); if (result?.conflict) await compareRun(id); }
+      for (const file of result?.restored || []) onOpenFile?.(file);
+      await refresh();
+    } catch (error) { setNote((error as Error).message); }
+    finally { setBusy(false); }
+  };
+
   return (
     <div className="changes-panel">
       {note && <p className="changes-note" role="status">{note}</p>}
+      {root && <details><summary>Recovery checkpoints ({checkpoints.length})</summary>
+        <p>Only files changed by accepted IDE proposals are restored. Later edits are preserved unless you explicitly choose the version shown below.</p>
+        {runs.map(run => <div key={run.id}>
+          <span>AI run · {clockTime(run.at)} · {run.paths.length} file(s)</span>
+          <button type="button" disabled={busy} onClick={() => void compareRun(run.id)}>Compare entire run</button>
+          <button type="button" disabled={busy} onClick={() => void restoreRun(run.id)}>Restore entire run</button>
+        </div>)}
+        {runComparison && <section aria-label="Run checkpoint comparison">
+          {runComparison.files?.map(file => <details key={file.path}><summary>{file.path}{file.conflict ? ' — later edits' : ''}</summary>
+            <h4>Current version</h4><pre>{file.current ?? '(file is absent)'}</pre><h4>Version to restore</h4><pre>{file.before ?? '(file will be removed)'}</pre>
+          </details>)}
+          <button type="button" disabled={busy} onClick={() => void restoreRun(runComparison.runId!, true)}>Restore the entire run over these displayed versions</button>
+          <button type="button" onClick={() => setRunComparison(null)}>Keep all current versions</button>
+        </section>}
+        {checkpoints.map(checkpoint => <div key={checkpoint.id}>
+          <span>{baseName(checkpoint.path)} · {clockTime(checkpoint.at)} · {checkpoint.tool}</span>
+          <button type="button" disabled={busy} onClick={() => void compareCheckpoint(checkpoint.id)}>Compare checkpoint</button>
+          <button type="button" disabled={busy} onClick={() => void restoreCheckpoint(checkpoint.id)}>Restore checkpoint</button>
+        </div>)}
+        {comparison && <section aria-label="Checkpoint comparison">
+          <p>{comparison.path}</p><h4>Current version</h4><pre>{comparison.current ?? '(file is absent)'}</pre>
+          <h4>Version to restore</h4><pre>{comparison.before ?? '(file will be removed)'}</pre>
+          <button type="button" disabled={busy} onClick={() => void restoreCheckpoint(comparison.id, true)}>Restore this version over the displayed edits</button>
+          <button type="button" onClick={() => setComparison(null)}>Keep current version</button>
+        </section>}
+      </details>}
 
       {proposals.length > 0 && (
         <div className="changes-proposals" aria-label="Proposed changes">

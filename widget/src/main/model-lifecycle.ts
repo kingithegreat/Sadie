@@ -31,6 +31,10 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   'claude-opus-4': 'claude-opus-5',
   'claude-sonnet-4': 'claude-sonnet-5',
   // Google — Gemini 2.0 Flash / Flash-Lite were shut down on 1 June 2026.
+  // Gemini 1.5 Pro / Flash were retired by Google in 2025.
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
+  'gemini-1.5-flash-8b': 'gemini-2.5-flash-lite',
   'gemini-2.0-flash': 'gemini-2.5-flash',
   'gemini-2.0-flash-001': 'gemini-2.5-flash',
   'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite',
@@ -40,6 +44,13 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   // rather than on a pricier tier the user never chose.
   'deepseek-chat': 'deepseek-v4-flash',
   'deepseek-reasoner': 'deepseek-v4-flash',
+  // Codex — the CLI rejects any explicit model id with a ChatGPT account
+  // (400 "not supported when using Codex with a ChatGPT account"), so these
+  // picker entries were removed. Saved settings naming one still work, because
+  // streamCodex no longer passes -m at all; mapping them to 'default' keeps the
+  // header and the reply badge from showing an id the picker no longer offers.
+  'gpt-5.1-codex': 'default',
+  'gpt-5.1': 'default',
 };
 
 export interface ModelMigration {

@@ -101,6 +101,7 @@ describe('Automation Center — handler/IPC gate', () => {
     expect(isAutomationChannel('homebot:get-settings')).toBe(false);
     expect(capabilityForChannel('homebot:automation:image:generate')).toBe('imageGen');
     expect(capabilityForChannel('homebot:scheduler-add')).toBe('automation');
+    expect(capabilityForChannel('homebot:delete-automation')).toBe('automation');
     expect(Object.keys(AUTOMATION_CENTER_CHANNELS).length).toBeGreaterThanOrEqual(5);
   });
 

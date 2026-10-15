@@ -164,6 +164,8 @@ export function toAnthropicTool(tool: ToolDefinition): AnthropicTool {
 
 // Tool execution context - passed to tool handlers
 export interface ToolContext {
+  // Stop prevents queued tools and post-confirmation work from starting.
+  signal?: AbortSignal;
   // Unique ID for this tool execution
   executionId: string;
   // User ID making the request

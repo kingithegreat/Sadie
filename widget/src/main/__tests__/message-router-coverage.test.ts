@@ -87,6 +87,21 @@ describe('clearHistory', () => {
 // ensureHydrated
 // ═══════════════════════════════════════════════════════════════════════════════
 describe('ensureHydrated', () => {
+  test('the first new turn retains saved context before appending, without hydrating twice', () => {
+    const id = 'conv-first-new-turn';
+    mockConversations[id] = { messages: [
+      { role: 'assistant', content: 'Saved context from the previous process', streamingState: 'finished', timestamp: '2024-01-01T00:00:00Z' },
+    ] };
+    mr.clearHistory(id);
+    mr.addToHistory(id, 'user', 'First new turn after restart');
+    expect(mr.handleSlashCommand('/status', id, 'llama3.2:3b')).toContain('Conversation turns:** 2');
+    mr.ensureHydrated(id);
+    mr.addToHistory(id, 'assistant', 'New reply');
+    expect(mr.handleSlashCommand('/status', id, 'llama3.2:3b')).toContain('Conversation turns:** 3');
+    mr.clearHistory(id);
+    delete mockConversations[id];
+  });
+
   test('skips empty / falsy conversationId', () => {
     expect(() => mr.ensureHydrated('')).not.toThrow();
     expect(() => mr.ensureHydrated(undefined as any)).not.toThrow();

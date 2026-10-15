@@ -22,6 +22,7 @@ function describeImage(m: { width?: number; height?: number; model?: string } | 
 import { isGateBlocked } from '../../shared/upgrade';
 import type { UpgradePrompt } from '../../shared/types';
 import UpgradeModal from './UpgradeModal';
+import type { ImageGenerationRoute } from '../../shared/image-generation-route';
 
 interface SDCppStatus {
   ready: boolean;
@@ -36,6 +37,7 @@ const ImageGenerator: React.FC = () => {
   const [style, setStyle] = useState('realistic');
   const [resolution, setResolution] = useState('512x512');
   const [backend, setBackend] = useState('hybrid');
+  const [route, setRoute] = useState<ImageGenerationRoute | null>(null);
   const [loading, setLoading] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   /** Where the durable copy lives on disk — null only if persistence failed. */
@@ -71,6 +73,19 @@ const ImageGenerator: React.FC = () => {
   useEffect(() => {
     (window as any).electron?.sdCppStatus?.().then((s: SDCppStatus) => setSdCppStatus(s));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    setRoute(null);
+    const check = async () => {
+      try {
+        const result = await (window as any).electron?.executeImageGenerate?.({ action: 'status', payload: { backend } });
+        if (active && result?.route) setRoute(result.route);
+      } catch { /* Dispatch still checks current main settings and asks before paid use. */ }
+    };
+    void check();
+    return () => { active = false; };
+  }, [backend]);
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -184,10 +199,23 @@ const ImageGenerator: React.FC = () => {
             <select id="backend" value={backend} onChange={(e) => { setBackend(e.target.value); setSetupInfo(null); }}>
               <option value="hybrid">Best available</option>
               <option value="local">Only on this PC — private</option>
-              <option value="cloud">Online — free, no account</option>
+              <option value="cloud">Online — review provider and cost</option>
             </select>
           </div>
         </div>
+
+        {backend !== 'local' && (
+          <div className="setup-detail" role="status" aria-live="polite">
+            {route ? <>
+              {route.localFirst && <p>Tries engines on this PC first. If they cannot make the image, the online options below may be used.</p>}
+              {!route.onlineAllowed && <p>Online is off. Turn on Online in Settings to use online image providers.</p>}
+              {route.onlineProvider && <p>{route.onlineProvider.label}. {route.onlineProvider.cost} {route.onlineProvider.watermark}</p>}
+              {route.onlineProvider?.paid && <p>If that provider fails, Stable Horde may be tried: a free community service that receives your prompt.</p>}
+              {route.paidFallback && <p>Last fallback: {route.paidFallback.label}. {route.paidFallback.cost}</p>}
+            </> : <p>Provider details could not be checked yet. Online options may be free or paid.</p>}
+            <p>Every paid request requires your confirmation before it is sent, including a different paid fallback.</p>
+          </div>
+        )}
 
         {backend === 'local' && sdCppStatus && !sdCppStatus.ready && (
           <div className="sd-cpp-setup">
@@ -201,7 +229,7 @@ const ImageGenerator: React.FC = () => {
               <span>Making images on this PC needs a one-time setup</span>
               <span className="setup-detail">
                 It is free, but it means downloading two files by hand. You can
-                use “Online — free, no account” instead and start straight away.
+                choose Online instead to review the available provider and any charges.
               </span>
             </div>
             <div className="setup-actions">

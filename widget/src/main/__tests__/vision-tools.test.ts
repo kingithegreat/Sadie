@@ -360,3 +360,54 @@ describe('visionToolDefs shape', () => {
     expect(vd?.parameters?.required).toEqual(expect.arrayContaining(['file_path']));
   });
 });
+
+// ── Cloud route ────────────────────────────────────────────────────────────
+
+describe('vision tools — cloud provider route', () => {
+  const cfgMgr = require('../config-manager');
+  const cloudLLM = require('../custom-llm-client');
+  let genSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    genSpy = jest.spyOn(cloudLLM, 'generateFromCustomLLM');
+  });
+  afterEach(() => {
+    genSpy.mockRestore();
+    (cfgMgr.getSettings as jest.Mock).mockImplementation(() => ({ ollamaUrl: 'http://127.0.0.1:11434', visionModel: 'llava' }));
+  });
+
+  const geminiSettings = () => ({
+    ollamaUrl: 'http://127.0.0.1:11434', visionModel: 'llava', useCustomLLM: true,
+    customLLM: { enabled: true, provider: 'google-gemini', model: 'gemini-2.5-flash', apiUrl: 'https://generativelanguage.googleapis.com/v1beta', apiKey: 'k', name: 'Gemini' },
+  });
+
+  test('uses the active Gemini provider and never calls Ollama', async () => {
+    (cfgMgr.getSettings as jest.Mock).mockImplementation(geminiSettings);
+    mockFs(true, false, Buffer.from('img'));
+    genSpy.mockResolvedValue('A red apple.');
+    const res = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(res.success).toBe(true);
+    expect(res.result.response).toBe('A red apple.');
+    expect(res.result.model).toBe('gemini-2.5-flash');
+    expect(genSpy.mock.calls[0][3].imageData[0]).toEqual({ base64: Buffer.from('img').toString('base64'), mimeType: 'image/png' });
+    expect(http.request).not.toHaveBeenCalled();
+  });
+
+  test('falls back to Ollama when the cloud call fails', async () => {
+    (cfgMgr.getSettings as jest.Mock).mockImplementation(geminiSettings);
+    mockFs(true, false, Buffer.from('img'));
+    genSpy.mockRejectedValue(new Error('quota'));
+    mockOllamaSuccess('local answer');
+    const res = await visionToolHandlers.vision_query({ file_path: IMAGE_PATH, question: 'what?' });
+    expect(res.success).toBe(true);
+    expect(res.result.response).toBe('local answer');
+  });
+
+  test('no cloud provider configured → Ollama only', async () => {
+    mockFs(true, false, Buffer.from('img'));
+    mockOllamaSuccess('local');
+    const res = await visionToolHandlers.vision_describe({ file_path: IMAGE_PATH });
+    expect(res.result.response).toBe('local');
+    expect(genSpy).not.toHaveBeenCalled();
+  });
+});

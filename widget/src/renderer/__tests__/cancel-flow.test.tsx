@@ -12,7 +12,10 @@ describe('cancel flow (renderer)', () => {
       // use subscribeToStream (returns an unsubscribe function)
       subscribeToStream: jest.fn(() => jest.fn()),
       // Other methods used by App
-      getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      getSettings: jest.fn().mockResolvedValue({ firstRun: false, modelRoutingMode: 'off', alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
+      loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+      createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'cancel-flow-fixture', systemPrompt: '' } }),
+      setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn(),
       onMessage: jest.fn(() => jest.fn()),
@@ -33,6 +36,7 @@ describe('cancel flow (renderer)', () => {
     ];
 
     render(<App initialMessages={initialMessages} />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // cancel button should be present for streaming message
     const cancelBtn = await screen.findByRole('button', { name: /stop generating/i });
@@ -64,6 +68,7 @@ describe('cancel flow (renderer)', () => {
 
     // Start with an empty message list and then trigger a send to create subscriptions
     const { getByLabelText, getByText, unmount } = render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // Type a user message and send to create a streaming assistant placeholder and subscriptions
     const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;

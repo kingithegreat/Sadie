@@ -55,7 +55,7 @@ test('Studio default voice preview respects Online off through real IPC', async 
       return observed;
     })).toBe(5);
     await page.locator('button.mode-btn', { hasText: 'Studio' }).click();
-    await page.getByRole('tab', { name: /Director Console/ }).click();
+    await page.getByRole('tab', { name: /Projects/ }).click();
     await expect(page.getByRole('combobox', { name: 'Narration engine', exact: true })).toBeVisible();
     await page.getByRole('button', { name: '▶ Sample', exact: true }).click();
     await expect(page.getByText('Online is off. Choose a voice on this PC after setup, or turn on Online in Settings to use online speech.', { exact: true })).toBeVisible();

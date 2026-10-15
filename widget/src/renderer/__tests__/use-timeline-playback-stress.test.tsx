@@ -10,6 +10,7 @@
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { useCallback, useState } from 'react';
 import { useTimelinePlayback } from '../components/useTimelinePlayback';
+import { acquireStudioPlayback, releaseStudioPlayback } from '../components/studioPlaybackCoordinator';
 
 interface HarnessProps {
   active?: boolean;
@@ -60,6 +61,7 @@ function Harness(props: HarnessProps) {
         onLoadedMetadata={timeline.events.onLoadedMetadata}
         onTimeUpdate={timeline.events.onTimeUpdate}
         onEnded={timeline.events.onEnded}
+        onPlay={timeline.events.onPlay}
         onPause={timeline.events.onPause}
         onError={timeline.events.onError}
       />
@@ -120,6 +122,54 @@ function tick(element: HTMLMediaElement, time: number) {
   element.currentTime = time;
   element.dispatchEvent(new Event('timeupdate', { bubbles: true }));
 }
+
+test('another player stops both the timeline decoder and React playing state', async () => {
+  render(<Harness />);
+  await pressPlay();
+  const owner = {};
+  const otherStop = jest.fn();
+  const before = pauseMock.mock.calls.length;
+  act(() => acquireStudioPlayback(owner, otherStop));
+  expect(pauseMock.mock.calls.length).toBeGreaterThan(before);
+  expect(screen.getByTestId('playing').textContent).toBe('false');
+  await pressPlay();
+  expect(otherStop).toHaveBeenCalledTimes(1);
+  releaseStudioPlayback(owner);
+});
+
+test('unmount relinquishes ownership without pausing the next player', async () => {
+  const view = render(<Harness />);
+  await pressPlay();
+  view.unmount();
+  const owner = {};
+  const otherStop = jest.fn();
+  act(() => acquireStudioPlayback(owner, otherStop));
+  expect(otherStop).not.toHaveBeenCalled();
+  releaseStudioPlayback(owner);
+});
+
+test('an obsolete loop play rejection cannot stop a resumed timeline', async () => {
+  render(<Harness loop inPoint={4} outPoint={8} />);
+  await pressPlay();
+  let rejectLoop!: (reason: Error) => void;
+  playMock.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => { rejectLoop = reject; }));
+  act(() => tick(screen.getByTestId('media') as HTMLMediaElement, 8));
+  expect(rejectLoop).toBeDefined();
+  await pressPlay();
+  await pressPlay();
+  await act(async () => { rejectLoop(new Error('The old loop play was interrupted')); });
+  expect(screen.getByTestId('playing').textContent).toBe('true');
+  expect(screen.getByTestId('errors').textContent).toBe('0');
+});
+
+test('a current loop play rejection still stops and explains the failure', async () => {
+  render(<Harness loop inPoint={4} outPoint={8} />);
+  await pressPlay();
+  playMock.mockRejectedValueOnce(new Error('Decoder failed'));
+  await act(async () => tick(screen.getByTestId('media') as HTMLMediaElement, 8));
+  expect(screen.getByTestId('playing').textContent).toBe('false');
+  expect(screen.getByTestId('errors').textContent).toBe('1');
+});
 
 async function pressPlay() {
   await act(async () => { fireEvent.click(screen.getByTestId('playToggle')); });

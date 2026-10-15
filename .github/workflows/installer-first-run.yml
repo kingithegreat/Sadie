@@ -1,0 +1,49 @@
+name: Installer first-run (Windows)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['widget/**', '.github/workflows/installer-first-run.yml']
+permissions:
+  contents: read
+jobs:
+  installer-first-run:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci --prefix widget
+      - name: Build installer (no publish)
+        run: npm run dist --prefix widget -- --publish never
+      - name: Silent install, launch once, check, uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem widget/dist-electron/*.exe | Where-Object Name -notmatch 'uninstaller' | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          # Find the install folder from the per-user uninstall entry, not a guessed path.
+          $entry = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+            Get-ItemProperty | Where-Object { $_.DisplayName -like 'HomeBot*' } | Select-Object -First 1
+          if (-not $entry) { throw 'No HomeBot uninstall entry after silent install' }
+          $dir = if ($entry.InstallLocation) { $entry.InstallLocation.Trim('"') } else { Split-Path ($entry.UninstallString -replace '^"([^"]+)".*$','$1') }
+          "Installed to $dir"
+          if (-not (Test-Path "$dir\HomeBot.exe")) { Get-ChildItem $dir | Format-Table Name; throw "HomeBot.exe not found in $dir" }
+          $uninstaller = ($entry.UninstallString -replace '^"([^"]+)".*$','$1')
+          Get-Process HomeBot -ErrorAction SilentlyContinue | Stop-Process -Force
+          $p = Start-Process "$dir\HomeBot.exe" -PassThru
+          $deadline = (Get-Date).AddSeconds(90); $ready = $false
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep 3
+            if ($p.HasExited) { throw "HomeBot exited early with code $($p.ExitCode)" }
+            $w = Get-Process HomeBot -ErrorAction SilentlyContinue | Where-Object MainWindowHandle -ne 0
+            if ($w) { $ready = $true; break }
+          }
+          if (-not $ready) { throw 'No HomeBot window within 90s' }
+          Start-Sleep 10
+          if ($p.HasExited) { throw "HomeBot crashed after showing its window (code $($p.ExitCode))" }
+          Get-Process HomeBot -ErrorAction SilentlyContinue | Stop-Process -Force
+          Start-Sleep 3
+          Start-Process $uninstaller -ArgumentList '/S' -Wait
+          Start-Sleep 5
+          if (Test-Path "$dir\HomeBot.exe") { throw 'Uninstall left HomeBot.exe behind' }
+          'First-run check passed.'

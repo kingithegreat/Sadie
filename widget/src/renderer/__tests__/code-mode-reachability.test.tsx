@@ -106,6 +106,7 @@ describe('Track F — Code Mode Reachability', () => {
         );
       });
 
+      fireEvent.click(screen.getByText('Explore workspaces'));
       const codeWorkspaceBtn = screen.getByRole('button', { name: /Code Workspace/i });
       expect(codeWorkspaceBtn).toBeInTheDocument();
 
@@ -130,7 +131,7 @@ describe('Track F — Code Mode Reachability', () => {
         );
       });
 
-      const homeBtn = screen.getByRole('button', { name: /Home/i });
+      const homeBtn = screen.getByRole('button', { name: 'Home' });
       expect(homeBtn).toBeInTheDocument();
 
       fireEvent.click(homeBtn);
@@ -151,7 +152,7 @@ describe('Track F — Code Mode Reachability', () => {
         );
       });
 
-      const homeBtn = screen.getByRole('button', { name: /Home/i });
+      const homeBtn = screen.getByRole('button', { name: 'Home' });
       fireEvent.click(homeBtn);
       expect(onClose).toHaveBeenCalledTimes(1);
     });

@@ -15,6 +15,8 @@ import * as path from 'path';
 import * as os from 'os';
 import { promisify } from 'util';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { currentWorkspace } from '../workspace-context';
+import { findWorkspaceFiles } from '../workspace-find-files';
 
 const execAsync = promisify(exec);
 
@@ -60,7 +62,8 @@ export const searchFilesDef: ToolDefinition = {
   name: 'find_files',
   description:
     'Find files and folders on the local filesystem by name pattern. ' +
-    'Searches within the user home directory by default. ' +
+    'In the IDE, searches only the active project by default, with bounded traversal and no linked folders. ' +
+    'In HomeBot chat, searches within the user home directory by default. ' +
     'Supports wildcard patterns like *.pdf or report*.docx. ' +
     'Uses Everything Search (es.exe) when available for fast results, ' +
     'otherwise falls back to PowerShell recursive search. ' +
@@ -78,8 +81,8 @@ export const searchFilesDef: ToolDefinition = {
       path: {
         type: 'string',
         description:
-          'Directory to search within (default: user home directory). ' +
-          'Must be inside the home directory.',
+          'Directory to search within. In the IDE: active project by default, with relative project paths allowed. ' +
+          'In HomeBot chat: user home directory by default; must be inside home.',
       },
       type: {
         type: 'string',
@@ -99,6 +102,7 @@ export const searchFilesDef: ToolDefinition = {
 // ----- Handler -----
 
 export const searchFilesHandler: ToolHandler = async (args): Promise<ToolResult> => {
+  if (currentWorkspace()) return findWorkspaceFiles(args);
   const query = sanitizePattern(String(args.query ?? ''));
   if (!query) {
     return { success: false, error: 'find_files: query is required' };

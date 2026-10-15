@@ -17,6 +17,38 @@ import * as https from 'https';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { resolveUserPath } from './filesystem';
 import { assertPermission, getSettings } from '../config-manager';
+import { resolveCloudLLM } from '../../shared/cloud-llm';
+import { generateFromCustomLLM, CLOUD_VISION_PROVIDERS } from '../custom-llm-client';
+
+// ── Cloud route ────────────────────────────────────────────────────────────
+
+/**
+ * When the user has an active vision-capable cloud provider (Gemini native,
+ * Google AI Studio, OpenAI, …) the vision tools use it. Previously they only
+ * ever called Ollama, so on a Gemini-only install every tool call failed with
+ * "Is moondream pulled in Ollama?". Returns null when no cloud route applies.
+ */
+async function cloudVision(
+  prompt: string,
+  base64: string,
+  mimeType: string,
+): Promise<{ model: string; response: string } | null> {
+  let cloud: ReturnType<typeof resolveCloudLLM>;
+  try { cloud = resolveCloudLLM(getSettings()); } catch { return null; }
+  if (!cloud.active || !cloud.config || !CLOUD_VISION_PROVIDERS.has(cloud.config.provider)) return null;
+  const response = await generateFromCustomLLM(
+    cloud.config,
+    'You are a careful image analyst. Answer only from what is visible in the image.',
+    prompt,
+    { timeoutMs: 90_000, imageData: [{ base64, mimeType }] },
+  );
+  return { model: cloud.config.model || cloud.config.provider, response: response.trim() || '(no response)' };
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.bmp': 'image/bmp', '.tiff': 'image/tiff', '.tif': 'image/tiff',
+};
 
 // ── Config helpers ─────────────────────────────────────────────────────────
 
@@ -135,6 +167,15 @@ async function analyseImage(rawPath: string, prompt: string): Promise<ToolResult
   const { ollamaUrl, visionModel } = getVisionConfig();
   const base64 = fs.readFileSync(resolved).toString('base64');
 
+  let cloudError: string | undefined;
+  try {
+    const cloud = await cloudVision(prompt, base64, MIME_BY_EXT[path.extname(resolved).toLowerCase()] || 'image/png');
+    if (cloud) return { success: true, result: { file: path.basename(resolved), model: cloud.model, response: cloud.response } };
+  } catch (err: any) {
+    cloudError = err?.message || String(err);
+    console.warn(`[HomeBot] Cloud vision failed (${cloudError}) — trying local Ollama`);
+  }
+
   let response: string;
   try {
     response = await ollamaGenerate(ollamaUrl, {
@@ -146,7 +187,7 @@ async function analyseImage(rawPath: string, prompt: string): Promise<ToolResult
   } catch (err: any) {
     return {
       success: false,
-      error: `Vision model error: ${err.message || String(err)}. Is "${visionModel}" pulled in Ollama?`,
+      error: `${cloudError ? `Cloud vision error: ${cloudError}. ` : ''}Vision model error: ${err.message || String(err)}. Is "${visionModel}" pulled in Ollama?`,
     };
   }
 
@@ -233,6 +274,15 @@ export const lookAtBrowserHandler: ToolHandler = async (args): Promise<ToolResul
   const question = String(args?.question || '').trim()
     || 'Describe what this web page shows. Summarise the main content.';
 
+  let cloudError: string | undefined;
+  try {
+    const cloud = await cloudVision(question, capture.base64, 'image/png');
+    if (cloud) return { success: true, result: { url: capture.url, title: capture.title, model: cloud.model, response: cloud.response } };
+  } catch (err: any) {
+    cloudError = err?.message || String(err);
+    console.warn(`[HomeBot] Cloud vision failed (${cloudError}) — trying local Ollama`);
+  }
+
   const { ollamaUrl, visionModel } = getVisionConfig();
   try {
     const response = await ollamaGenerate(ollamaUrl, {
@@ -253,7 +303,7 @@ export const lookAtBrowserHandler: ToolHandler = async (args): Promise<ToolResul
   } catch (err: any) {
     return {
       success: false,
-      error: `Vision model error: ${err?.message || String(err)}. Is "${visionModel}" pulled in Ollama?`,
+      error: `${cloudError ? `Cloud vision error: ${cloudError}. ` : ''}Vision model error: ${err?.message || String(err)}. Is "${visionModel}" pulled in Ollama?`,
     };
   }
 };

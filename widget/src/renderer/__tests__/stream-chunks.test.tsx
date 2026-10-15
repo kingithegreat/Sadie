@@ -30,6 +30,12 @@ describe('stream chunks (renderer)', () => {
       }),
       getSettings: jest.fn().mockResolvedValue({ alwaysOnTop: true, n8nUrl: 'http://localhost:5678', widgetHotkey: 'Ctrl+Shift+Space' }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
+      loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+      createConversation: jest.fn().mockResolvedValue({ success: true, data: {
+        id: 'stream-chunks-conversation', title: 'Stream chunks test', messages: [],
+        createdAt: '2026-10-07T00:00:00.000Z', updatedAt: '2026-10-07T00:00:00.000Z', messageCount: 0,
+      } }),
+      setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
       sendStreamMessage: jest.fn((payload: any) => {
         capturedStreamId = payload.streamId;
         return Promise.resolve();
@@ -41,6 +47,8 @@ describe('stream chunks (renderer)', () => {
 
     // Render App with no initial messages
     const { getByLabelText, getByText } = render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
+    await waitFor(() => expect((window as any).electron.setActiveConversation).toHaveBeenCalledWith('stream-chunks-conversation'));
 
     // Compose a user message and send to create a streaming assistant message and subscribe
     const textarea = getByLabelText('Message HomeBot') as HTMLTextAreaElement;

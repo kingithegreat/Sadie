@@ -9,11 +9,12 @@ import { MediaStudioPanel } from '../components/MediaStudioPanel';
 import { createStudioOutputSpec } from '../../shared/media-output';
 import { STORYBOARD_FRAME_PROVIDERS, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 
-// jsdom does not implement HTMLMediaElement playback; make play/pause no-ops so
-// the animatic narration audio effect does not log "not implemented" errors.
+// jsdom does not decode media or release native files. Simulate those methods;
+// individual playback tests supply metadata and inspect the actual calls.
 beforeAll(() => {
   (HTMLMediaElement.prototype as any).play = jest.fn(async () => {});
   (HTMLMediaElement.prototype as any).pause = jest.fn();
+  (HTMLMediaElement.prototype as any).load = jest.fn();
 });
 
 /** Real catalog entries with a status per option; default: only This PC is ready. */
@@ -186,6 +187,30 @@ afterEach(() => {
 });
 
 describe('Media Studio Visual Storyboard Deck', () => {
+  test('plain-background choice is reachable, hash-bound, saved and cleared by regeneration', async () => {
+    const mocks = setup();
+    const board = (await mocks.mediaStoryboardGet()).result as any;
+    board.scenes[0].shots[0].frameImageSha256 = 'a'.repeat(64);
+    mocks.mediaStoryboardGenerateFrame.mockResolvedValue({ ok: true, result: {
+      projectId: 'pyramid-builders', shotId: 'shot_001', provider: 'this-pc',
+      frameImagePath: 'C:/fake/replaced.png', frameImageSha256: 'b'.repeat(64),
+    } } as any);
+    render(<MediaStudioPanel navContext={{ workspace: 'storyboard', projectId: 'pyramid-builders' }} />);
+    const choice = await screen.findByRole('checkbox', { name: 'Use a plain background for shot_001' });
+    expect(choice).not.toBeChecked();
+    fireEvent.click(choice);
+    expect(choice).toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    expect(mocks.mediaStoryboardSave).toHaveBeenCalledWith(expect.objectContaining({
+      shots: expect.arrayContaining([expect.objectContaining({ shotId: 'shot_001', plainBackgroundSha256: 'a'.repeat(64) })]),
+    }));
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Regenerate Frame/ })); });
+    expect(screen.getByRole('checkbox', { name: 'Use a plain background for shot_001' })).not.toBeChecked();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Save Board/ })); });
+    expect(mocks.mediaStoryboardSave).toHaveBeenLastCalledWith(expect.objectContaining({
+      shots: expect.arrayContaining([expect.objectContaining({ shotId: 'shot_001', plainBackgroundSha256: null })]),
+    }));
+  });
   test('visible portrait retry renders only portrait and the successful landscape remains selectable for review', async () => {
     const mocks = setup();
     const board: any = (await mocks.mediaStoryboardGet()).result;
@@ -501,7 +526,8 @@ describe('Media Studio Visual Storyboard Deck', () => {
     // Ribbon Tab
     expect(screen.getByRole('tab', { name: /Storyboard/i })).toBeInTheDocument();
     // Hub Card
-    expect(screen.getByText('Visual Storyboard Deck')).toBeInTheDocument();
+    const hub = screen.getByLabelText('Studio Quick Launch');
+    expect(within(hub).getByRole('button', { name: /^Storyboard/ })).toBeInTheDocument();
   });
 
   test('switches to Storyboard Deck workspace on tab click and loads projects', async () => {
@@ -644,7 +670,9 @@ describe('Media Studio Visual Storyboard Deck', () => {
   });
 
   test('opens Animatic Player modal and shows playback HUD and controls', async () => {
-    setup();
+    const ttsSampleVoice = jest.fn().mockResolvedValue({ success: true, path: 'C:/fake/path/narration.mp3', engine: 'edge' });
+    setup({ ttsSampleVoice });
+    (HTMLMediaElement.prototype.play as jest.Mock).mockClear();
     await act(async () => {
       render(<MediaStudioPanel />);
     });
@@ -662,6 +690,13 @@ describe('Media Studio Visual Storyboard Deck', () => {
     // Modal dialog should open
     expect(screen.getByRole('dialog', { name: /Storyboard Animatic Player/i })).toBeInTheDocument();
     expect(screen.getByText(/Animatic Playback: Pyramid Builders/i)).toBeInTheDocument();
+    const narration = screen.getByLabelText('Animatic narration') as HTMLAudioElement;
+    expect(ttsSampleVoice).toHaveBeenCalledWith(undefined, 'The sun rises over the limestone ramps.', undefined);
+    expect(narration).toHaveAttribute('src', expect.stringContaining('narration.mp3'));
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    Object.defineProperty(narration, 'duration', { configurable: true, value: 5 });
+    fireEvent.loadedMetadata(narration);
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: /⏸ Pause/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Close Animatic Player/i })).toBeInTheDocument();
     // A draggable scrubber seeks the whole sequence.
@@ -743,7 +778,7 @@ describe('Media Studio Visual Storyboard Deck', () => {
 
     // Should switch to timeline workspace and show confirmation
     expect(screen.getByText(/Loaded storyboard sequence into CapCut timeline with 2 edit cuts!/i)).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /CapCut Timeline/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Timeline/i })).toHaveAttribute('aria-selected', 'true');
   });
 
   test('renders 1080p broadcast movie on button click and displays completion banner', async () => {

@@ -26,6 +26,10 @@ import {
   saveDraft, undo as historyUndo, type History, type StoryboardDraft,
 } from './storyboard-history';
 import { useTimelinePlayback } from './useTimelinePlayback';
+import { StudioMedia } from './StudioMedia';
+import { StudioMonitor } from './StudioMonitor';
+import './StudioWorkflow.css';
+import { useAnimaticPlayback } from './useAnimaticPlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
 import { CharacterAnchorWorkbench } from './CharacterAnchorWorkbench';
 import { OverlayPortal } from './anchoredOverlay';
@@ -33,6 +37,7 @@ import { canEditMediaOutput, hasExternalMediaRenderer, createStudioOutputSpec, r
 import { StudioOutputSettings } from './StudioOutputSettings';
 import { CaptionStyleSettings } from './CaptionStyleSettings';
 import { StudioExportStatus } from './StudioExportStatus';
+import { SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 import StoryboardVideoModelPicker from './StoryboardVideoModelPicker';
 import { STORYBOARD_FRAME_PROVIDERS, isStoryboardFrameProviderId, type StoryboardFrameProviderId, type StoryboardFrameProviderStatus } from '../../shared/storyboard-frame-providers';
 import { explainCheck, failureSummary } from '../../shared/ancient-pathways-checks';
@@ -108,6 +113,7 @@ function storyboardDraftIdentity(board: { project: Record<string, any>; scenes: 
       durationSec: shot.durationSec, narration: shot.narration, frameImagePath: shot.frameImagePath,
       transition: shot.transition ?? 'cut', transitionSec: shot.transitionSec ?? null,
       textCard: shot.textCard ?? null,
+      plainBackgroundSha256: shot.plainBackgroundSha256 ?? null,
     })) })) });
 }
 
@@ -162,7 +168,25 @@ interface MediaJob {
   history: MediaJobEvent[];
 }
 
+/** Approval/title changes are not a new recording; a generation event is. */
+export function studioPlaybackRevision(job: Pick<MediaJob, 'createdAt' | 'history'>, kind: 'video' | 'audio'): string {
+  const generated = [...(Array.isArray(job.history) ? job.history : [])].reverse().find(event => kind === 'audio'
+    ? event.by === 'narration stage' && event.to === 'media_production'
+    : event.by === 'render stage');
+  return generated?.at || job.createdAt || 'legacy';
+}
+
 const FAILURE: MediaJobState[] = ['blocked', 'failed', 'needs_revision', 'rejected'];
+
+/** Resume only the recorded interrupted stage; main still validates the transition. */
+function recoveryStage(job: MediaJob): MediaJobState | undefined {
+  if (job.reviewSource || (job.state !== 'blocked' && job.state !== 'failed')) return;
+  const interrupted = [...(job.history ?? [])].reverse().find(event => event.to === job.state)?.from;
+  const allowed: MediaJobState[] = job.state === 'blocked'
+    ? ['idea', 'researching', 'script_draft', 'media_production', 'scheduled']
+    : ['researching', 'script_draft', 'script_qa', 'media_production', 'render_qa'];
+  return allowed.find(stage => stage === interrupted);
+}
 
 /** The stage a job moves to when it simply carries on. */
 const NEXT_STAGE: Partial<Record<MediaJobState, MediaJobState>> = {
@@ -218,6 +242,10 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   // Workspace Mode: 'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard' | 'diagnostics'
   const [activeWorkspace, setActiveWorkspace] = useState<'director' | 'timeline' | 'stage' | 'router' | 'ap' | 'storyboard' | 'diagnostics'>('director');
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const newVideoTitle = useRef<HTMLInputElement>(null);
+  const creatingVideo = useRef(false);
+  const createdJobToFocus = useRef<string | null>(null);
+  const jobElements = useRef(new Map<string, HTMLLIElement>());
   const [jobPreviewPaths, setJobPreviewPaths] = useState<Record<string, { path: string; current?: string }>>({});
   const [jobExportInfo, setJobExportInfo] = useState<{ job: MediaJob; state: StudioExportState } | null>(null);
 
@@ -290,6 +318,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [highlightedJobId, setHighlightedJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [pendingRenderCounts, setPendingRenderCounts] = useState<Map<string, number>>(() => new Map());
   /**
    * What the busy job is doing, in the user's words.
    *
@@ -438,6 +467,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         frameImagePath: string | null;
         /** Newest generated clip, when the shot is a video (PROV-4). */
         videoClipPath?: string | null;
+        frameImageSha256?: string | null;
+        plainBackgroundSha256?: string | null;
         /** True when a frame exists but its prompt has changed since it was generated. */
         frameStale?: boolean;
         /** How this shot moves into the next one (MS-2). */
@@ -502,12 +533,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   // Animatic Player State
   const [animaticOpen, setAnimaticOpen] = useState(false);
-  const [animaticPlaying, setAnimaticPlaying] = useState(false);
-  const [animaticIndex, setAnimaticIndex] = useState(0);
-  const [animaticElapsedSec, setAnimaticElapsedSec] = useState(0);
   const [animaticLoop, setAnimaticLoop] = useState(false);
-  const [animaticAudioUrl, setAnimaticAudioUrl] = useState('');
-  const animaticAudioRef = useRef<HTMLAudioElement | null>(null);
   const [storyboardRendering, setStoryboardRendering] = useState(false);
   const [renderedMoviePath, setRenderedMoviePath] = useState<string | null>(null);
   // Voice for the next storyboard export. '' keeps the saved setting.
@@ -839,17 +865,31 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     return fn();
   };
 
-  const run = async (id: string, fn: () => Promise<any>, label = '') => {
-    setBusy(id); setBusyLabel(label); setError(null); setDone(null);
+  const run = async (id: string, fn: () => Promise<any>, label = '', operation?: 'render') => {
+    setBusy(id);
+    if (operation === 'render') setPendingRenderCounts(current => {
+      const next = new Map(current);
+      next.set(id, (next.get(id) ?? 0) + 1);
+      return next;
+    });
+    setBusyLabel(label); setError(null); setDone(null);
     try {
       const res = await fn();
       if (res && res.ok === false) setError(res.error || 'That move was refused.');
       else if (res && res.message) setDone(String(res.message).split('\n')[0]);
       await refresh();
+      return res;
     } catch (e: any) {
       setError(e?.message || 'Something went wrong.');
     } finally {
       setBusy(null); setBusyLabel('');
+      if (operation === 'render') setPendingRenderCounts(current => {
+        const next = new Map(current);
+        const remaining = (next.get(id) ?? 0) - 1;
+        if (remaining > 0) next.set(id, remaining);
+        else next.delete(id);
+        return next;
+      });
     }
   };
 
@@ -866,7 +906,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
           voice: narrateVoice || undefined,
           engine: narrateEngine === 'kokoro' ? 'kokoro' : undefined,
         }
-      : undefined), a.label);
+      : undefined), a.label, a.action === 'render' ? 'render' : undefined);
   };
 
   /** Stages that call a model, the TTS service or ffmpeg — the slow ones. */
@@ -902,9 +942,23 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
 
   const create = async () => {
     const t = title.trim();
-    if (!t) return;
-    await run('new', () => api()?.mediaCreate?.({ title: t, format, outputSpec: { ...newOutputSpec, durationIntent: format } }));
-    setTitle('');
+    if (!t || creatingVideo.current) return;
+    creatingVideo.current = true;
+    try {
+      const result = await run('new', () => {
+        if (!api()?.mediaCreate) throw new Error('Video creation is unavailable. Restart HomeBot and try again.');
+        return api().mediaCreate({ title: t, format,
+          outputSpec: { ...newOutputSpec, durationIntent: format } });
+      }, 'Adding your video');
+      if (result?.ok) {
+        setTitle(current => current.trim() === t ? '' : current);
+        if (result.job?.id) {
+          createdJobToFocus.current = result.job.id;
+          setSelectedJobId(result.job.id);
+          setHighlightedJobId(result.job.id);
+        }
+      }
+    } finally { creatingVideo.current = false; }
   };
 
   const loadFeed = async (overrideUrl?: unknown) => {
@@ -1516,6 +1570,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
         const frameImagePath = res.result.frameImagePath;
         handleUpdateShot(shotId, {
           frameImagePath,
+          frameImageSha256: res.result.frameImageSha256 ?? null,
+          plainBackgroundSha256: null,
           status: 'COMPLETED',
           // The new frame was made from the current prompt.
           frameStale: false,
@@ -1685,7 +1741,8 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
       });
       if (res?.ok) {
         const destPath = (res.result as any)?.frameImagePath || filePath;
-        handleUpdateShot(shotId, { frameImagePath: destPath, status: 'IMAGE_GENERATED' });
+        handleUpdateShot(shotId, { frameImagePath: destPath, frameImageSha256: (res.result as any)?.frameImageSha256 ?? null,
+          plainBackgroundSha256: null, status: 'IMAGE_GENERATED' });
         setFrameVersions(prev => ({ ...prev, [destPath]: Date.now() }));
         setStoryboardMessage(`Image for ${shotId} imported successfully.`);
       } else {
@@ -1713,85 +1770,21 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
     });
   };
 
-  // Animatic Playback Timer
-  useEffect(() => {
-    if (!animaticOpen || !animaticPlaying || !activeStoryboardScene) return;
-    const scene = activeStoryboardScene;
-    const shots = scene?.shots || [];
-    if (shots.length === 0) return;
-
-    const interval = setInterval(() => {
-      setAnimaticElapsedSec(prev => {
-        const curShot = shots[animaticIndex];
-        const maxDur = curShot?.durationSec || 5;
-        const nextSec = prev + 0.1;
-        if (nextSec >= maxDur) {
-          if (animaticIndex < shots.length - 1) {
-            setAnimaticIndex(idx => idx + 1);
-            return 0;
-          } else {
-            if (animaticLoop) {
-              setAnimaticIndex(0);
-              return 0;
-            } else {
-              setAnimaticPlaying(false);
-              return maxDur;
-            }
-          }
-        }
-        return nextSec;
-      });
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, [animaticOpen, animaticPlaying, animaticIndex, animaticLoop, activeStoryboardScene]);
-
-  // Narration for the current animatic shot, synthesised on demand through the
-  // SAME TTS engine that will record it, so the preview sounds like the render.
-  // A shot with no narration stays silent.
-  const loadAnimaticAudio = useCallback(async (shot: any) => {
-    const text = shot?.narration?.trim();
-    if (!text) {
-      setAnimaticAudioUrl('');
-      return;
-    }
-    try {
-      const res = await api()?.ttsSampleVoice?.(
-        undefined,
-        text,
-        narrateEngine === 'kokoro' ? 'kokoro' : undefined,
-      );
-      setAnimaticAudioUrl(res?.success && res.path ? toMediaFileUrl(res.path) : '');
-    } catch {
-      setAnimaticAudioUrl('');
-    }
+  const loadAnimaticAudio = useCallback(async (text: string): Promise<string> => {
+    const result = await api()?.ttsSampleVoice?.(
+      undefined, text, narrateEngine === 'kokoro' ? 'kokoro' : undefined,
+    );
+    if (!result?.success || !result.path) throw new Error(result?.error || 'Narration could not be prepared.');
+    return toMediaFileUrl(result.path);
   }, [narrateEngine]);
-
-  // Load (and later play) the narration for whichever shot the animatic is on.
-  useEffect(() => {
-    if (!animaticOpen) return;
-    void loadAnimaticAudio(activeStoryboardScene?.shots?.[animaticIndex]);
-  }, [animaticOpen, animaticIndex, activeStoryboardScene, loadAnimaticAudio]);
-
-  // Play/pause the narration with the animatic, and start the next shot's
-  // narration as soon as its audio is ready (the URL changing here replays it).
-  useEffect(() => {
-    const el = animaticAudioRef.current;
-    if (!el) return;
-    // jsdom does not implement HTMLMediaElement playback; ignore its errors so
-    // the animatic tests (which run there) stay quiet and the real renderer
-    // still plays.
-    try {
-      if (animaticPlaying && animaticAudioUrl) {
-        void el.play().catch(() => {});
-      } else {
-        el.pause();
-        el.currentTime = 0;
-      }
-    } catch {
-      /* media playback not available in this environment */
-    }
-  }, [animaticPlaying, animaticAudioUrl, animaticIndex]);
+  const animatic = useAnimaticPlayback({
+    active: animaticOpen && activeWorkspace === 'storyboard',
+    sceneKey: `${selectedStoryboardId}:${activeStoryboardScene?.sceneId || ''}`,
+    shots: activeStoryboardScene?.shots || [], loop: animaticLoop,
+    loadAudio: loadAnimaticAudio, onError: setError,
+  });
+  const { index: animaticIndex, elapsed: animaticElapsedSec, playing: animaticPlaying,
+    setPlaying: setAnimaticPlaying } = animatic;
 
   const handleEnhancePrompt = (shotId: string) => {
     if (!activeStoryboard) return;
@@ -2073,7 +2066,7 @@ ${shots.map((s, idx) => `
   const changeNarrateEngine = (engine: '' | 'edge' | 'kokoro') => {
     setNarrateEngine(engine);
     setNarrateVoice(''); // an Edge voice name is meaningless under Kokoro
-    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' }); } catch { /* preference stays session-local */ }
+    try { api()?.saveSettings?.({ narrationEngine: engine === 'kokoro' ? 'kokoro' : 'edge' })?.catch(() => { /* preference stays session-local */ }); } catch { /* preference stays session-local */ }
   };
 
   /** Render a short sample of a voice to a temp file and play it inline.
@@ -2162,6 +2155,15 @@ ${shots.map((s, idx) => `
     }
   }, [highlightedJobId, jobs]);
 
+  useEffect(() => {
+    if (!createdJobToFocus.current) return;
+    const target = jobElements.current.get(createdJobToFocus.current);
+    if (target) {
+      createdJobToFocus.current = null;
+      target.focus({ preventScroll: true });
+    }
+  }, [jobs, highlightedJobId]);
+
   const getJobProgressStep = (j: MediaJob): number => {
     if (['idea', 'researching', 'script_draft', 'script_qa'].includes(j.state)) return 1;
     if (j.state === 'media_production') {
@@ -2177,8 +2179,10 @@ ${shots.map((s, idx) => `
   };
 
   const awaiting = jobs.filter(j => j.state === 'awaiting_approval');
-  const active = jobs.filter(j => j.state !== 'awaiting_approval' && !FAILURE.includes(j.state));
-  const stalled = jobs.filter(j => FAILURE.includes(j.state));
+  const active = jobs.filter(j => j.state !== 'awaiting_approval' && j.state !== 'published' && !FAILURE.includes(j.state));
+  const published = jobs.filter(j => j.state === 'published');
+  const stalled = jobs.filter(j => j.state !== 'rejected' && FAILURE.includes(j.state));
+  const rejected = jobs.filter(j => j.state === 'rejected');
 
   // Play the rendered mix, or narration before a video exists. Never play both.
   const currentSelectedJob = jobs.find(j => j.id === selectedJobId) || jobs[0] || null;
@@ -2219,9 +2223,9 @@ ${shots.map((s, idx) => `
     <StudioExportStatus state={jobExportInfo?.job === job ? jobExportInfo.state : {
       sourceRevision: null, sourceSavedAt: job.updatedAt, latestAttempt: job.latestExportAttempt, outputs: [] }}
       moviePath={jobMoviePath(job) ?? null} unsaved={false} busy={busy === job.id}
-      rendering={busy === job.id || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
+      rendering={(pendingRenderCounts.get(job.id) ?? 0) > 0 || ['preparing', 'rendering', 'validating'].includes(job.latestExportAttempt?.status ?? '')}
       onRetry={(job.perExportReview || job.outputSpec?.variants?.length === 2) && job.state === 'media_production' ? variantId => {
-        void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`);
+        void run(job.id, () => api()?.mediaRun?.(job.id, 'render', { variantId }), `Rendering ${variantId}`, 'render');
       } : undefined}
       onSelect={moviePath => selectJobMovie(job, moviePath)} />
     {(job.perExportReview || job.outputSpec?.variants?.length === 2) && <button className="ms-btn" disabled={!jobs.some(item => item.reviewSource?.type === 'job' && item.reviewSource.id === job.id && item.renderPath === jobMoviePath(job))}
@@ -2238,7 +2242,7 @@ ${shots.map((s, idx) => `
         const moved = await api()?.mediaAdvance?.(job.id, 'media_production');
         if (!moved?.ok) return moved;
         return api()?.mediaRun?.(job.id, 'render');
-      }, 'Retrying export')}>
+      }, 'Retrying export', 'render')}>
         Retry export with saved inputs
       </button>}
   </>;
@@ -2313,7 +2317,7 @@ ${shots.map((s, idx) => `
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -2381,6 +2385,9 @@ ${shots.map((s, idx) => `
       key={j.id}
       className={`ms-job ${highlightedJobId === j.id ? 'ms-job--highlighted' : ''}`}
       data-job-id={j.id}
+      ref={node => { if (node) jobElements.current.set(j.id, node); else jobElements.current.delete(j.id); }}
+      tabIndex={-1}
+      aria-label={j.title}
     >
       <div className="ms-job-main">
         <div className="ms-job-header-row">
@@ -2536,12 +2543,16 @@ ${shots.map((s, idx) => `
                 <strong>Watch the selected movie.</strong> Approval is a separate decision; it does not upload or publish the video.
               </div>
             </div>
-            <video
+            <StudioMedia
+              kind="video"
               className="ms-video"
-              controls
-              preload="metadata"
-              data-testid={`ms-video-${j.id}`}
+              label={`Movie preview: ${j.title}`}
+              testId={`ms-video-${j.id}`}
               src={toMediaFileUrl(moviePath)}
+              active={j.id === currentSelectedJob?.id}
+              onActivate={() => setSelectedJobId(j.id)}
+              reveal={() => revealJobMovie(moviePath)}
+              persistence={{ jobId: j.id, revision: studioPlaybackRevision(j, 'video') }}
             />
             <div style={{ marginTop: 6, display: 'flex', gap: 8 }}>
               <button
@@ -2557,12 +2568,17 @@ ${shots.map((s, idx) => `
         ) : j.narrationPath ? (
           /* Hearing the narration is the only way to judge it before there is
              a picture. file:// works because the renderer loads from disk. */
-          <audio
+          <StudioMedia
+            kind="audio"
             className="ms-audio"
-            controls
+            label={`Narration preview: ${j.title}`}
             preload="none"
-            data-testid={`ms-audio-${j.id}`}
+            testId={`ms-audio-${j.id}`}
             src={toMediaFileUrl(j.narrationPath)}
+            active={j.id === currentSelectedJob?.id}
+            onActivate={() => setSelectedJobId(j.id)}
+            reveal={() => revealJobMovie(j.narrationPath!)}
+            persistence={{ jobId: j.id, revision: studioPlaybackRevision(j, 'audio') }}
           />
         ) : null}
         {j.videoId && (
@@ -2684,6 +2700,15 @@ ${shots.map((s, idx) => `
             >
               {stageAction(j)!.label}
             </button>
+            {stageAction(j)!.action === 'render' && j.latestExportAttempt?.status === 'failed' &&
+              j.latestExportAttempt.errorCode === SCENE_PICTURE_FAILURE && !j.renderInputs?.imagePath &&
+              j.renderInputs?.visuals !== 'plain' && !hasExternalMediaRenderer(j) && (
+              <button type="button" className="ms-btn"
+                title="Make new scene pictures for this video. Any previous movie stays unchanged; current online and payment settings still apply."
+                onClick={() => void run(j.id, () => api()?.mediaRun?.(j.id, 'render', { regenerateScenes: true }), 'Regenerating scene pictures', 'render')}>
+                Regenerate scene pictures
+              </button>
+            )}
             {sdCppPromptFor === j.id && (
               <div className="ms-sdcpp-prompt" role="dialog" aria-label="Choose where images are made">
                 <div className="ms-sdcpp-prompt-text">
@@ -2932,6 +2957,15 @@ ${shots.map((s, idx) => `
           >
             Move to {label(NEXT_STAGE[j.state]!)}
           </button>
+        ) : recoveryStage(j) ? (
+          <button type="button" className="ms-btn ms-btn--primary"
+            onClick={() => run(j.id, () => {
+              const advance = api()?.mediaAdvance;
+              if (!advance) throw new Error('Project recovery is unavailable. Reopen Media Studio and try again.');
+              return advance(j.id, recoveryStage(j)!);
+            }, 'Resuming')}>Resume at {label(recoveryStage(j)!)}</button>
+        ) : j.state === 'blocked' || j.state === 'failed' ? (
+          <span className="ms-job-terminal">The interrupted stage is unavailable. Open movie details and history to inspect the failure before continuing.</span>
         ) : (
           <span className="ms-job-terminal">no further steps</span>
         )}
@@ -3311,7 +3345,9 @@ ${shots.map((s, idx) => `
         {/* Mini Preview Stage */}
         {currentSelectedJob && renderJobExportStatus(currentSelectedJob)}
         <div className="ms-timeline-stage-row">
-          <div className="ms-timeline-monitor">
+          <StudioMonitor playing={timelinePlaying} onPlayingChange={setTimelinePlaying}
+            time={timelineTime} duration={duration} onSeek={seekTimeline} onError={setError}
+            canPlay={timelineCanPlay}>
             <div className="ms-monitor-screen">
               {job?.renderPath ? (
                 <video
@@ -3368,7 +3404,7 @@ ${shots.map((s, idx) => `
                 {formatTimecode(timelineTime)} / {formatTimecode(duration)}
               </div>
             </div>
-          </div>
+          </StudioMonitor>
 
           <div className="ms-timeline-inspector">
             <h4>Inspector · {job ? job.title : 'No Project Selected'}</h4>
@@ -3680,7 +3716,7 @@ ${shots.map((s, idx) => `
                         style={{ width: '100%', marginBottom: 6 }}
                         onClick={() => {
                           const a = stageAction(job)!;
-                          run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label);
+                          run(job.id, () => api()?.mediaRun?.(job.id, a.action), a.label, a.action === 'render' ? 'render' : undefined);
                         }}
                       >
                         ⚡ {stageAction(job)!.label}
@@ -4146,10 +4182,14 @@ ${shots.map((s, idx) => `
             <div className={`ms-viewport-screen ${aspectClass}`} style={{ position: 'relative', overflow: 'hidden' }}>
               {/* Active Image or Video Layer */}
               {job?.renderPath ? (
-                <video
+                <StudioMedia
+                  kind="video"
                   className="ms-viewport-content-video"
+                  label={`Stage video preview: ${job.title}`}
+                  testId="ms-stage-video"
                   src={toMediaFileUrl(jobMoviePath(job)!)}
-                  controls
+                  reveal={() => revealJobMovie(jobMoviePath(job)!)}
+                  persistence={{ jobId: job.id, revision: studioPlaybackRevision(job, 'video') }}
                 />
               ) : (
                 <MultiPlaneStage
@@ -4955,7 +4995,7 @@ ${shots.map((s, idx) => `
         <div className="ms-storyboard-topbar">
           <div className="ms-storyboard-titles">
             <h3>🎨 Visual Storyboard Deck</h3>
-            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; free AI keyframe generation.</p>
+            <p>Shot-by-shot sequence planning, camera framing, prompt crafting &amp; AI keyframe generation with your chosen provider.</p>
           </div>
 
           <div className="ms-storyboard-controls">
@@ -4990,8 +5030,7 @@ ${shots.map((s, idx) => `
                 onChange={e => {
                   setSelectedStoryboardSceneId(e.target.value);
                   setAnimaticPlaying(false);
-                  setAnimaticIndex(0);
-                  setAnimaticElapsedSec(0);
+                  animatic.goTo(0);
                 }}
               >
                 {activeStoryboard.scenes.map((scene, index) => (
@@ -5041,8 +5080,7 @@ ${shots.map((s, idx) => `
               className="ms-btn"
               disabled={!activeStoryboard || shots.length === 0}
               onClick={() => {
-                setAnimaticIndex(0);
-                setAnimaticElapsedSec(0);
+                animatic.goTo(0);
                 setAnimaticPlaying(true);
                 setAnimaticOpen(true);
               }}
@@ -5554,14 +5592,14 @@ ${shots.map((s, idx) => `
                     ✕
                   </button>
                 </div>
-                <video
+                <StudioMedia
+                  kind="video"
                   key={renderedMoviePath}
                   className="ms-video"
-                  controls
-                  preload="metadata"
-                  aria-label="Exported storyboard video"
-                  data-testid="ms-video-storyboard-export"
+                  label="Exported storyboard video"
+                  testId="ms-video-storyboard-export"
                   src={toMediaFileUrl(renderedMoviePath)}
+                  reveal={() => revealJobMovie(renderedMoviePath)}
                   style={{ width: '100%', maxHeight: 360, flexBasis: '100%' }}
                 />
               </div>
@@ -5773,6 +5811,17 @@ ${shots.map((s, idx) => `
                     {/* Shot Controls & Inputs */}
                     <div className="ms-shot-card-body">
                       {/* Framing Pills */}
+                      <label className="ms-shot-pill-label" style={{ display: 'flex', gap: 8, padding: '8px 0', alignItems: 'center' }}>
+                        <input type="checkbox"
+                          aria-label={`Use a plain background for ${shot.shotId}`}
+                          disabled={!shot.frameImageSha256}
+                          checked={!!shot.frameImageSha256 && shot.plainBackgroundSha256 === shot.frameImageSha256}
+                          onChange={e => handleUpdateShot(shot.shotId, {
+                            plainBackgroundSha256: e.target.checked ? shot.frameImageSha256 : null,
+                          })} />
+                        Use a plain background for this shot
+                      </label>
+                      <p className="ms-shot-pill-label">Choose this for an intentional solid-color picture. Replacing the picture clears this choice.</p>
                       <div className="ms-shot-pills-row">
                         <span className="ms-shot-pill-label">Camera Shot Size</span>
                         <div className="ms-shot-pills">
@@ -6028,11 +6077,18 @@ ${shots.map((s, idx) => `
 
               {/* Narration for the current shot, silent when there is none. */}
               <audio
-                ref={animaticAudioRef}
-                src={animaticAudioUrl}
-                preload="auto"
+                key={animatic.audioUrl || 'empty'}
+                {...animatic.events}
+                src={animatic.audioUrl || undefined}
+                aria-label="Animatic narration"
+                preload="metadata"
                 style={{ display: 'none' }}
               />
+              {animatic.loading && <p role="status">Preparing narration...</p>}
+              {animatic.error && <div role="alert">
+                <p>{animatic.error}</p>
+                <button type="button" className="ms-btn" onClick={animatic.retry}>Retry narration</button>
+              </div>}
 
               {/* Progress Scrubber — drag to seek through the whole sequence. */}
               <div className="ms-animatic-progress-bar">
@@ -6043,19 +6099,7 @@ ${shots.map((s, idx) => `
                   max={totalDuration || 1}
                   step={0.1}
                   value={sequenceElapsed}
-                  onChange={(e) => {
-                    const pos = Number(e.target.value);
-                    let acc = 0;
-                    for (let i = 0; i < shots.length; i++) {
-                      const d = Number(shots[i]?.durationSec) || 5;
-                      if (pos < acc + d) {
-                        setAnimaticIndex(i);
-                        setAnimaticElapsedSec(Math.max(0, pos - acc));
-                        break;
-                      }
-                      acc += d;
-                    }
-                  }}
+                  onChange={(e) => animatic.seek(Number(e.target.value))}
                   aria-label="Animatic timeline scrubber"
                 />
               </div>
@@ -6074,10 +6118,7 @@ ${shots.map((s, idx) => `
                     type="button"
                     className="ms-btn"
                     disabled={animaticIndex === 0}
-                    onClick={() => {
-                      setAnimaticIndex(prev => Math.max(0, prev - 1));
-                      setAnimaticElapsedSec(0);
-                    }}
+                    onClick={() => animatic.goTo(animaticIndex - 1)}
                   >
                     ⏮ Prev
                   </button>
@@ -6085,10 +6126,7 @@ ${shots.map((s, idx) => `
                     type="button"
                     className="ms-btn"
                     disabled={animaticIndex === shots.length - 1}
-                    onClick={() => {
-                      setAnimaticIndex(prev => Math.min(shots.length - 1, prev + 1));
-                      setAnimaticElapsedSec(0);
-                    }}
+                    onClick={() => animatic.goTo(animaticIndex + 1)}
                   >
                     Next ⏭
                   </button>
@@ -6114,21 +6152,22 @@ ${shots.map((s, idx) => `
     );
   };
 
+  const nextJob = awaiting[0] ?? stalled[0] ?? active[0];
+  const openStudioWorkspace = (workspace: typeof activeWorkspace) => {
+    setActiveWorkspace(workspace);
+    if (workspace === 'storyboard' && !storyboardProjects && !storyboardLoading) void loadStoryboardProjects();
+    if (workspace === 'router' && !movieProjects && !movieRunning) void loadMovieProjects();
+    if (workspace === 'ap' && !apEpisodes && !apLoading) void openApSection();
+  };
+
   return (
     <div className="media-studio">
       {/* Blender DCC Top Mode Ribbon */}
       <div className="ms-dcc-bar">
         <div className="ms-dcc-header">
           <div className="ms-dcc-branding">
-            <h2>🎬 Media Studio &amp; Movie Engine</h2>
-            <div className="ms-dcc-pill-row">
-              <span className="ms-dcc-chip ms-chip--orange">Showrunner 2D</span>
-              <span className="ms-dcc-chip ms-chip--cyan">Shot Router</span>
-              <span className="ms-dcc-chip ms-chip--purple">NLE CapCut</span>
-              <span className="ms-dcc-chip ms-chip--green">Blender Stage</span>
-              <span className="ms-dcc-chip ms-chip--amber">Storyboard Deck</span>
-              <span className="ms-dcc-chip ms-chip--teal">ComfyUI Nodes</span>
-            </div>
+            <h2>Media Studio</h2>
+            <p className="ms-studio-tagline">Create a story. Shape the video. Review before sharing.</p>
           </div>
         </div>
 
@@ -6141,7 +6180,7 @@ ${shots.map((s, idx) => `
             onClick={() => setActiveWorkspace('director')}
           >
             <span className="ms-tab-icon">🎬</span>
-            <span className="ms-tab-name">Director Console</span>
+            <span className="ms-tab-name">Projects</span>
             <span className="ms-tab-badge">{jobs.length}</span>
           </button>
           <button
@@ -6158,7 +6197,7 @@ ${shots.map((s, idx) => `
           >
             <span className="ms-tab-icon">🎨</span>
             <span className="ms-tab-name">Storyboard</span>
-            <span className="ms-tab-badge">{storyboardProjects ? storyboardProjects.length : 'Deck'}</span>
+            {storyboardProjects && <span className="ms-tab-badge">{storyboardProjects.length}</span>}
           </button>
           <button
             type="button"
@@ -6168,8 +6207,7 @@ ${shots.map((s, idx) => `
             onClick={() => setActiveWorkspace('timeline')}
           >
             <span className="ms-tab-icon">✂️</span>
-            <span className="ms-tab-name">CapCut Timeline</span>
-            <span className="ms-tab-pill">NLE</span>
+            <span className="ms-tab-name">Timeline</span>
           </button>
           <button
             type="button"
@@ -6179,7 +6217,7 @@ ${shots.map((s, idx) => `
             onClick={() => setActiveWorkspace('stage')}
           >
             <span className="ms-tab-icon">🎭</span>
-            <span className="ms-tab-name">Stage Viewport</span>
+            <span className="ms-tab-name">Stage</span>
             <span className="ms-tab-pill">{stageAspectRatio}</span>
           </button>
           <button
@@ -6196,7 +6234,6 @@ ${shots.map((s, idx) => `
           >
             <span className="ms-tab-icon">⚡</span>
             <span className="ms-tab-name">Movie Router</span>
-            <span className="ms-tab-badge">5 Eng</span>
           </button>
           <button
             type="button"
@@ -6212,7 +6249,7 @@ ${shots.map((s, idx) => `
           >
             <span className="ms-tab-icon">🏛️</span>
             <span className="ms-tab-name">Ancient Pathways</span>
-            <span className="ms-tab-badge">{apEpisodes ? apEpisodes.length : '12'}</span>
+            {apEpisodes && <span className="ms-tab-badge">{apEpisodes.length}</span>}
           </button>
           <button
             type="button"
@@ -6252,104 +6289,39 @@ ${shots.map((s, idx) => `
 
       {activeWorkspace === 'director' && (
         <>
-          {/* Studio Quick Launch Hub */}
-          <div className="ms-director-hub" role="region" aria-label="Studio Quick Launch">
-            <div
-              className="ms-hub-card"
-              onClick={() => {
-                setActiveWorkspace('storyboard');
-                if (!storyboardProjects && !storyboardLoading) {
-                  loadStoryboardProjects();
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('storyboard'); }}
-            >
-              <div className="ms-hub-icon">🎨</div>
-              <div className="ms-hub-info">
-                <div className="ms-hub-title">Visual Storyboard Deck</div>
-                <div className="ms-hub-desc">Shot-by-shot sequence planning, camera framing, prompt crafting &amp; frame gen</div>
+          <section className="ms-workflow-overview" aria-label="Your video workflow">
+            <div className="ms-workflow-intro">
+              <span className="ms-workflow-eyebrow">YOUR WORKSPACE</span>
+              <h3>{nextJob ? 'Pick up where you left off' : jobs.length ? 'Ready for your next video' : 'Make your first video'}</h3>
+              <p>{awaiting.length ? 'Your finished previews are ready for a decision.' :
+                stalled.length ? 'A project needs attention before it can continue.' :
+                active.length ? 'Continue a project, or start with a new idea.' :
+                'Start with a title, then work through script, narration and video.'}</p>
+              <div className="ms-workflow-actions">
+                {nextJob && <button type="button" className="ms-btn ms-btn--primary" onClick={() => {
+                  setSelectedJobId(nextJob.id);
+                  const target = jobElements.current.get(nextJob.id);
+                  target?.scrollIntoView({ block: 'start', behavior: 'auto' });
+                  target?.focus({ preventScroll: true });
+                }}>Open next step: {nextJob.title}</button>}
+                <button type="button" className={nextJob ? 'ms-btn' : 'ms-btn ms-btn--primary'} onClick={() => {
+                  newVideoTitle.current?.scrollIntoView({ block: 'center', behavior: 'auto' });
+                  newVideoTitle.current?.focus({ preventScroll: true });
+                }}>Start a new video</button>
               </div>
-              <span className="ms-hub-badge">{storyboardProjects ? `${storyboardProjects.length} Boards` : 'Visual Deck'}</span>
+              <p className="ms-workflow-note">You review the result before approving. Uploading is a separate action.</p>
             </div>
+            <dl className="ms-workflow-counts">
+              <div><dt>Ready to review</dt><dd>{awaiting.length}</dd></div>
+              <div><dt>In progress</dt><dd>{active.length}</dd></div>
+              <div><dt>Needs attention</dt><dd>{stalled.length}</dd></div>
+              <div><dt>Published</dt><dd>{published.length}</dd></div>
+            </dl>
+          </section>
 
-            <div
-              className="ms-hub-card"
-              onClick={() => {
-                setActiveWorkspace('router');
-                if (!movieProjects && !movieRunning) {
-                  loadMovieProjects();
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('router'); }}
-            >
-              <div className="ms-hub-icon">⚡</div>
-              <div className="ms-hub-info">
-                <div className="ms-hub-title">Movie Router</div>
-                <div className="ms-hub-desc">AP 2D, SDXL IP-Adapter, ComfyUI, Local SD 1.5, Pollinations</div>
-              </div>
-              <span className="ms-hub-badge">Per shot</span>
-            </div>
-
-            <div
-              className="ms-hub-card"
-              onClick={() => {
-                setActiveWorkspace('ap');
-                if (!apEpisodes && !apLoading) {
-                  openApSection();
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('ap'); }}
-            >
-              <div className="ms-hub-icon">🏛️</div>
-              <div className="ms-hub-info">
-                <div className="ms-hub-title">Ancient Pathways 2D</div>
-                <div className="ms-hub-desc">12-Episode motion comic series, Leila &amp; Flappy, full voiceacting</div>
-              </div>
-              <span className="ms-hub-badge">{apEpisodes ? apEpisodes.length : '12'} Episodes</span>
-            </div>
-
-            <div
-              className="ms-hub-card"
-              onClick={() => setActiveWorkspace('timeline')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('timeline'); }}
-            >
-              <div className="ms-hub-icon">✂️</div>
-              <div className="ms-hub-info">
-                <div className="ms-hub-title">CapCut Timeline</div>
-                <div className="ms-hub-desc">Multi-track NLE editor, B-roll, subtitles, voiceover &amp; transitions</div>
-              </div>
-              <span className="ms-hub-badge">NLE View</span>
-            </div>
-
-            <div
-              className="ms-hub-card"
-              onClick={() => setActiveWorkspace('stage')}
-              role="button"
-              tabIndex={0}
-              onKeyDown={e => { if (e.key === 'Enter') setActiveWorkspace('stage'); }}
-            >
-              <div className="ms-hub-icon">🎭</div>
-              <div className="ms-hub-info">
-                <div className="ms-hub-title">Stage Viewport</div>
-                <div className="ms-hub-desc">Blender 3D camera staging, safe-area reticles &amp; composition</div>
-              </div>
-              <span className="ms-hub-badge">{stageAspectRatio}</span>
-            </div>
-          </div>
-
-          <header className="ms-header">
-            <h2>Media Studio</h2>
-            <p className="ms-sub">
-              Nothing is published without your approval. Videos waiting on you appear first.
-            </p>
+          <header className="ms-header ms-create-heading">
+            <h3>Start a video</h3>
+            <p className="ms-sub">Give it a working title. You can refine the script and format as you go.</p>
           </header>
 
           {/* The one dependency the app does not ship. Shown before anything fails,
@@ -6388,6 +6360,7 @@ ${shots.map((s, idx) => `
           <div className="ms-new">
             <input
               className="ms-input"
+              ref={newVideoTitle}
               placeholder="Working title, e.g. One-Minute Bible: Jonah"
               value={title}
               onChange={e => setTitle(e.target.value)}
@@ -6407,6 +6380,24 @@ ${shots.map((s, idx) => `
               Add video
             </button>
           </div>
+
+          <details className="ms-tools-disclosure">
+            <summary>Explore Studio tools</summary>
+            <div className="ms-director-hub" role="region" aria-label="Studio Quick Launch">
+              {([
+                ['storyboard', 'Storyboard', 'Plan shots, create frames and preview the sequence.'],
+                ['timeline', 'Timeline', 'Preview a project, adjust timing and export a selected range.'],
+                ['stage', 'Stage', 'Arrange your scene and check the framing.'],
+                ['router', 'Movie Router', 'Choose how the pictures for each shot are made.'],
+                ['ap', 'Ancient Pathways', 'Open the series, episodes and production tools.'],
+              ] as const).map(([workspace, label, description]) => <button type="button" key={workspace}
+                className="ms-hub-card" onClick={() => openStudioWorkspace(workspace)}>
+                <span className="ms-hub-info"><span className="ms-hub-title">{label}</span>
+                  <span className="ms-hub-desc">{description}</span></span>
+                <span aria-hidden="true">→</span>
+              </button>)}
+            </div>
+          </details>
 
           {/* A second source: recap an episode of a podcast. */}
           <StudioOutputSettings label="New video" value={{ ...newOutputSpec, durationIntent: format }} disabled={busy === 'new'}
@@ -6535,12 +6526,12 @@ ${shots.map((s, idx) => `
 
           {/* A rendered voice sample, played inline — hear it before recording. */}
           {samplePath && (
-            <audio
-              className="ms-audio"
-              controls
-              autoPlay
-              src={toMediaFileUrl(samplePath)}
-            />
+            <>
+              <p role="status">Voice sample ready. Press Play to listen.</p>
+              <StudioMedia kind="audio" className="ms-audio" label="Voice sample"
+                testId="ms-voice-sample" src={toMediaFileUrl(samplePath)}
+                reveal={() => revealJobMovie(samplePath)} />
+            </>
           )}
 
           {awaiting.length > 0 && (
@@ -6563,6 +6554,19 @@ ${shots.map((s, idx) => `
               <ul className="ms-list">{stalled.map(j => renderJob(j, false))}</ul>
             </section>
           )}
+          {rejected.length > 0 && (
+            <section className="ms-section" aria-label="Rejected videos">
+              <h3>Rejected ({rejected.length})</h3>
+              <ul className="ms-list">{rejected.map(j => renderJob(j, false))}</ul>
+            </section>
+          )}
+          {published.length > 0 && (
+            <section className="ms-section" aria-label="Published videos">
+              <h3>Published ({published.length})</h3>
+              <ul className="ms-list">{published.map(j => renderJob(j, false))}</ul>
+            </section>
+          )}
+
         </>
       )}
     </div>

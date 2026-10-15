@@ -28,7 +28,7 @@ const defaultProps = {
   currentConversationId: null,
   onSelectConversation: jest.fn(),
   onNewConversation: jest.fn(),
-  onDeleteConversation: jest.fn(),
+  onDeleteConversation: jest.fn().mockResolvedValue({ success: true }),
 };
 
 function setupElectron(convMap: Record<string, any> = {}) {

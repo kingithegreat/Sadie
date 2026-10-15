@@ -1,0 +1,79 @@
+.widget-first-task {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border-color, #ddd);
+  font-size: 13px;
+}
+.widget-first-task button {
+  min-height: 44px;
+  padding: 7px 12px;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 8px;
+  background: var(--bg-secondary, #fff);
+  color: var(--text-primary, #222);
+  cursor: pointer;
+}
+.widget-first-task button:focus-visible {
+  outline: 2px solid var(--accent-color, #5b7350);
+  outline-offset: 2px;
+}
+.widget-first-task span { color: var(--text-secondary, #555); }
+
+@media (max-width: 640px) {
+  /* Reserve a right-hand gutter for the floating voice/capture actions. */
+  .app-container .chat-interface .messages-container,
+  .app-container .chat-interface .suggested-prompts,
+  .app-container .dashboard-container {
+    padding-right: 64px;
+  }
+  .app-container .chat-interface .daily-content {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
+    max-width: 100%;
+  }
+  .app-container .chat-interface .daily-card {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  .app-container .chat-interface .input-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+  .app-container .chat-interface .input-field {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .app-container .chat-interface .char-counter { align-self: center; }
+  .app-container .chat-interface .input-actions {
+    min-width: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .app-container .chat-interface .guidelines-toggle-btn {
+    position: static;
+    display: block;
+    min-height: 32px;
+    margin: 6px 0 0 auto;
+  }
+}
+.unsaved-reply-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.unsaved-reply-notice p { flex: 1 1 240px; margin: 0; }
+.unsaved-reply-notice button { min-height: 44px; white-space: normal; }

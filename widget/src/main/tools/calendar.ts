@@ -15,16 +15,13 @@
  *   delete_calendar_event — remove an event by id (requires confirmation)
  */
 
-import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { promisify } from 'util';
 import axios from 'axios';
 import { getSettings } from '../config-manager';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
 import { homebotWebhookHeaders } from '../webhook-auth';
-
-const execAsync = promisify(exec);
+import { runCalendarPowerShell } from '../calendar-helpers';
 
 // ----- Local JSON fallback store -----
 const LOCAL_CALENDAR_PATH = path.join(
@@ -107,7 +104,7 @@ foreach ($item in $filtered) {
 $results | ConvertTo-Json -Depth 3 -Compress
 `.trim();
 
-  const { stdout } = await execAsync(`powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`, { timeout: 15000 });
+  const { stdout } = await runCalendarPowerShell(script);
   const raw = stdout.trim();
   if (!raw || raw === 'null') return [];
   const parsed = JSON.parse(raw);
@@ -140,7 +137,7 @@ $appt.Save()
 Write-Output $appt.EntryID
 `.trim();
 
-  const { stdout } = await execAsync(`powershell -NoProfile -NonInteractive -Command "${script.replace(/"/g, '\\"')}"`, { timeout: 15000 });
+  const { stdout } = await runCalendarPowerShell(script);
   return stdout.trim() || makeId();
 }
 

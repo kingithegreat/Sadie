@@ -1,0 +1,44 @@
+name: First-user native acceptance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  first-user-native:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            widget/package-lock.json
+      - name: Build and run four isolated production first-user cases
+        run: node widget/acceptance/first-user/first-user-remote-runner.cjs
+      - name: Upload first-user proof, including failure receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-user-native-proof
+          path: ${{ runner.temp }}/first-user-native-proof/
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7
+      - name: Upload reviewed compiled runtime and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-user-native-compiled
+          path: ${{ runner.temp }}/first-user-native-compiled/
+          if-no-files-found: warn
+          include-hidden-files: true
+          retention-days: 7

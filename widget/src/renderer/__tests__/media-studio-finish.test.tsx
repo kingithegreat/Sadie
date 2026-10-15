@@ -128,3 +128,10 @@ test('cancelling the delete leaves the video alone', async () => {
 
   expect(mediaDelete).not.toHaveBeenCalled();
 });
+
+// jsdom has no decoder; these suites inspect UI rather than native playback.
+beforeAll(() => {
+  jest.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+  jest.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {});
+});
+afterAll(() => { jest.restoreAllMocks(); });

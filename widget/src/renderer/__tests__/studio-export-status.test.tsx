@@ -3,6 +3,16 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { StudioExportStatus } from '../components/StudioExportStatus';
 import { createStudioOutputSpec, type StudioExportState } from '../../shared/media-output';
 
+test('shows the saved actionable background paid-image denial in the real export status', () => {
+  const message = 'Paid image generation needs interactive confirmation. Use Image mode to review the provider and approve one image, or choose a provider on this PC. No paid request was sent.';
+  const state: StudioExportState = { sourceRevision: null, sourceSavedAt: null, outputs: [],
+    latestAttempt: { id: 'paid-attempt', status: 'failed', sourceRevision: null, startedAt: '2026-09-27T00:00:00Z', error: message } };
+  const props: any = { state, moviePath: null, unsaved: false, busy: false, onSelect: jest.fn(), onRetry: jest.fn() };
+  render(<StudioExportStatus {...props} />);
+  expect(screen.getByText('Why this attempt did not finish')).toBeInTheDocument();
+  expect(screen.getByText(message)).toBeInTheDocument();
+});
+
 test('portrait failure does not label the selected current landscape as failed and only retries portrait', () => {
   const source = 'a'.repeat(64);
   const state: StudioExportState = {

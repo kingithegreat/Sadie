@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import { isScenePictureFailure, SCENE_PICTURE_FAILURE } from '../../shared/scene-picture-qa';
 import { canEditMediaOutput, hasExternalMediaRenderer, resolveBurnSubtitles, resolveStudioOutputSpec, type StudioRenderedOutput, type StudioExportAttempt } from '../../shared/media-output';
 import { resolveCaptionStyle } from '../../shared/caption-style';
 import { createStudioExportReview } from '../movie/studio-export-review';
@@ -167,6 +168,47 @@ function findJob(idOrTitle: string): MediaJob | undefined {
 }
 
 /**
+ * What happens after this tool, expressed as data — not as a hint sentence.
+ *
+ * Measured driving the pipeline from chat: a model that had just created a job
+ * wrote ABOUT writing the script rather than calling the tool that writes it.
+ * A "Next: ..." sentence in the result text is advisory; it competes with the
+ * rest of the conversation for the model's attention and loses. A structured
+ * `next` directive names the exact tool and the exact job id, so the follow-up
+ * call needs no inference at all.
+ *
+ * Only stages with exactly one valid next tool carry a directive. Approval and
+ * human-decision stages deliberately carry none — a directive there would be a
+ * lie, and a model that follows directives would act on it.
+ */
+export interface MediaNextStep {
+  tool: string;
+  job: string;
+}
+
+/** The single tool that advances this job, or null where only a person may move it. */
+export function nextToolFor(job: MediaJob): MediaNextStep | null {
+  if (job.reviewSource && job.state === 'needs_revision') return null;
+  switch (job.state) {
+    case 'idea':
+    case 'researching':
+      return { tool: 'media_write_script', job: job.id };
+    case 'script_draft':
+    case 'script_qa':
+      return { tool: 'media_narrate', job: job.id };
+    case 'media_production':
+      return { tool: 'media_render', job: job.id };
+    case 'render_qa':
+    case 'awaiting_approval':
+    case 'needs_revision':
+    case 'approved':
+    case 'scheduled':
+    default:
+      return null;
+  }
+}
+
+/**
  * The step after this one, named as the tool that performs it.
  *
  * Refusals already steer a model — "run media_write_script first" is enough to
@@ -207,6 +249,30 @@ function nextStepFor(job: MediaJob): string {
 function withNextStep(lines: string[], job: MediaJob): string {
   const next = nextStepFor(job);
   return (next ? [...lines, '', next] : lines).join('\n');
+}
+
+/**
+ * Attach the machine-readable next-step directive to a tool result.
+ *
+ * The result text carries the human hint (kept: people read transcripts, and
+ * the existing tests pin it). The `next` field carries the same step as data
+ * for the model: the tool result reaches it as JSON, so a structured directive
+ * survives where a "Next: ..." sentence gets skimmed. Stages with no valid
+ * next tool leave the result untouched — see nextToolFor.
+ */
+function withNextTool<T extends { success: boolean; result?: any }>(res: T, job: MediaJob): T {
+  const next = nextToolFor(job);
+  if (!next || !res.success) return res;
+  const result = res.result;
+  if (result !== null && typeof result === 'object' && !Array.isArray(result)) {
+    return { ...res, result: { ...result, next } };
+  }
+  return { ...res, result: { text: typeof result === 'string' ? result : result, next } };
+}
+
+/** Shape the next-step directive asserts against in tests. */
+export function __nextToolForTests(job: MediaJob): MediaNextStep | null {
+  return nextToolFor(job);
 }
 
 /**
@@ -376,7 +442,10 @@ const createMediaJobHandler: ToolHandler = async (args) => {
       brief: args.brief ? String(args.brief) : undefined,
     });
     upsert(job);
-    return ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job));
+    return withNextTool(
+      ok(withNextStep([`Created "${job.title}" (${job.format}) at the idea stage. id: ${job.id}`], job)),
+      job,
+    );
   } catch (e: any) {
     return err(`media_create_job failed: ${errText(e)}`);
   }
@@ -427,7 +496,7 @@ const advanceMediaJobHandler: ToolHandler = async (args) => {
       publishingEnabled,
     });
     upsert(moved);
-    return ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved));
+    return withNextTool(ok(withNextStep([`"${moved.title}" → ${describeProgress(moved)}`], moved)), moved);
   } catch (e: any) {
     // The state machine's messages already name the allowed next states.
     return err(errText(e));
@@ -463,9 +532,9 @@ const rejectMediaJobHandler: ToolHandler = async (args) => {
       by: 'human', humanDecision: true, note: args.note ? String(args.note) : undefined,
     });
     upsert(moved);
-    return ok(revise
+    return withNextTool(ok(revise
       ? withNextStep([`Sent "${moved.title}" back for revision.`], moved)
-      : `Rejected "${moved.title}".`);
+      : `Rejected "${moved.title}".`), moved);
   } catch (e: any) {
     return err(errText(e));
   }
@@ -559,12 +628,12 @@ const writeMediaScriptHandler: ToolHandler = async (args) => {
 
     const problems = checkScript(updated, script.text);
     const seconds = estimateSpokenSeconds(script.text);
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Wrote a script for "${updated.title}" using ${script.via} (~${seconds}s spoken).`,
       problems.length ? `Worth checking:\n- ${problems.join('\n- ')}` : 'No problems found.',
       '',
       script.text,
-    ], updated));
+    ], updated)), updated);
   } catch (e: any) {
     return err(`Could not write the script: ${errText(e)}`);
   }
@@ -676,13 +745,13 @@ const narrateMediaJobHandler: ToolHandler = async (args) => {
     // Report the MEASURED duration, not the word-count estimate — the estimate
     // was only ever a stand-in until real audio existed. Name the engine: a
     // Kokoro request answered by Edge is a fact the user needs, not trivia.
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Recorded narration for "${updated.title}" — ${Math.round(caps.durationSeconds)}s, ${kb} KB, engine: ${audio.engine}.`,
       audio.engine === 'edge' && args.engine === 'kokoro'
         ? 'Requested Kokoro but it could not render — Edge was used instead (see the job record).'
         : `audio:    ${audio.path}`,
       updated.captionsPath ? `captions: ${updated.captionsPath} (${caps.cues.length} cues)` : 'captions: not written',
-    ].filter(Boolean) as string[], updated));
+    ].filter(Boolean) as string[], updated)), updated);
   } catch (e: any) {
     return err(`Could not record the narration: ${errText(e)}`);
   }
@@ -791,6 +860,7 @@ const renderMediaJobDef: ToolDefinition = {
         enum: ['scenes', 'plain'],
         description: "'scenes' (default) generates a picture per scene from the script; 'plain' uses one backdrop",
       },
+      regenerateScenes: { type: 'boolean', description: 'Explicitly regenerate this job\'s scene pictures, bypassing reused inputs and image cache for this render. Existing privacy and payment rules still apply.' },
       style: { type: 'string', description: 'Optional art direction for generated scenes' },
       zoom: { type: 'boolean', description: 'Slow zoom, single-image renders only. Default true.' },
       music: {
@@ -820,9 +890,10 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
   const batchId = randomUUID();
   let attempt: StudioExportAttempt = { id: batchId, status: 'preparing', sourceRevision: null, startedAt: new Date().toISOString() };
   let attempts: StudioExportAttempt[] = [];
-  const record = (status: StudioExportAttempt['status'], error?: string) => {
+  const record = (status: StudioExportAttempt['status'], error?: string, errorCode?: StudioExportAttempt['errorCode']) => {
     attempt.status = status;
     if (error) attempt.error = error;
+    if (errorCode) attempt.errorCode = errorCode;
     if (status === 'succeeded' || status === 'failed') attempt.finishedAt = new Date().toISOString();
     const current = readJobs().find(item => item.id === job.id);
     if (current) upsert({ ...current, latestExportAttempt: { ...attempt },
@@ -857,13 +928,14 @@ const renderMediaJobHandler: ToolHandler = async (args) => {
       variants: results.map((result, i) => ({ variantId: selected[i]!.id, ...result })),
       message: `${results.filter(result => result.success).length} of ${results.length} selected formats exported. Review each saved movie separately; nothing is approved or published automatically.`,
     } };
-  } catch (e) {
+  } catch (e: any) {
     const message = `Could not render the video: ${errText(e)}`;
     try {
-      for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message); }
-      record('failed', message);
+      const sourceCode = isScenePictureFailure(e) ? SCENE_PICTURE_FAILURE : undefined;
+      for (const item of attempts.filter(item => ['preparing', 'rendering', 'validating'].includes(item.status))) { attempt = item; record('failed', message, sourceCode); }
+      record('failed', message, sourceCode);
     } catch { /* Preparing record recovers as interrupted after restart. */ }
-    return err(message);
+    return { ...err(message), ...(typeof e?.code === 'string' ? { code: e.code } : {}) };
   } finally { renderingJobs.delete(job.id); }
 };
 
@@ -977,6 +1049,9 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
     const zoom = args.zoom === undefined ? job.renderInputs?.zoom ?? true : Boolean(args.zoom);
     const style = args.style ? String(args.style) : job.renderInputs?.style;
     const wantScenes = visuals === 'scenes' && !image;
+    if (args.regenerateScenes !== undefined && typeof args.regenerateScenes !== 'boolean') throw new Error('Scene regeneration must be an explicit choice.');
+    const regenerateScenes = args.regenerateScenes === true;
+    if (regenerateScenes && (!wantScenes || hasExternalMediaRenderer(job))) throw new Error('Scene regeneration applies only to HomeBot scene pictures, not a plain background, supplied artwork or external renderer.');
     if (wantScenes && captionsPath) {
       const { groupCues, buildConcatFileContent, timelineFromCues, dimensionsFor } = await import('../media-render');
       const { generateSceneImages, fillMissingImages, seedForVideo, defaultImageCacheDir } = await import('../media-visuals');
@@ -987,7 +1062,7 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
       if (scenes.length) {
         const { w, h } = outputVariant ? { w: outputVariant.width, h: outputVariant.height } : dimensionsFor(shape);
         const imageScale = Math.min(1, 1024 / Math.max(w, h));
-        const reusable = job.renderInputs?.scenePaths.length === scenes.length &&
+        const reusable = !regenerateScenes && job.renderInputs?.scenePaths.length === scenes.length &&
           args.visuals === undefined && args.style === undefined && args.image === undefined &&
           (job.renderInputs?.inputRevision ? job.renderInputs.inputRevision === await mediaJobInputRevision(job)
             : !!job.latestExportAttempt?.sourceRevision && job.latestExportAttempt.sourceRevision === await mediaJobSourceRevision(job));
@@ -1005,11 +1080,15 @@ async function prepareMediaJobInputs(args: Record<string, any>, job: MediaJob, a
           // A re-render after tweaking timing/text regenerates every scene
           // from scratch without this — most prompts didn't change, and each
           // one is a call to a free, unSLA'd, queue-based provider.
-          cacheDir: defaultImageCacheDir(),
+          cacheDir: regenerateScenes ? null : defaultImageCacheDir(),
           fallbackPlates: true,
         });
         const frozenImages = images.map((entry, index) => ({ ...entry,
-          path: entry.path ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+          path: entry.path && fs.existsSync(entry.path) ? snapshotMediaFile(entry.path, snapshotDir, `scene-${index}`) : null }));
+        // Inspect every frozen source, including cached/reused bytes whose original
+        // generation provenance may be absent. Captions cannot supply scene art.
+        const { preflightScenePictures } = await import('../media-scene-source-qa');
+        await preflightScenePictures(ffmpeg, frozenImages);
         const filled = fillMissingImages(frozenImages);
         const made = filled.filter(Boolean).length;
         // Record the slides whether or not the concat file gets built: if every
@@ -1114,6 +1193,8 @@ async function renderMediaJobAttempt(
     let qa: { ok: boolean; failures: string[]; warnings: string[] };
     let measuredDuration: number | null = null;
     try {
+      const { validateCompleteMediaDecode } = await import('../media-complete-decode');
+      await validateCompleteMediaDecode(ffmpeg, rendered.path);
       const facts = await inspectRender(ffmpeg, rendered.path);
       measuredDuration = facts.durationSeconds;
       qa = evaluateRenderQa(facts, {
@@ -1220,11 +1301,11 @@ async function renderMediaJobAttempt(
       ? 'encoded with NVIDIA NVENC'
       : rendered.videoEncoder === 'libx264' ? 'encoded with the CPU' : '';
     const notes = [visualNote, musicNote, encoderNote, rendered.warning, describeQa(qa)].filter(Boolean).join(', ');
-    return ok(withNextStep([
+    return withNextTool(ok(withNextStep([
       `Rendered "${updated.title}" — ${mb} MB, ${job.durationSeconds || '?'}s${notes ? `, ${notes}` : ''}.`,
       `video: ${finalPath}`,
       'Watch it before approving; nothing publishes on its own.',
-    ], updated));
+    ], updated)), updated);
   } catch (e: any) {
     return err(`Could not render the video: ${errText(e)}`);
   }

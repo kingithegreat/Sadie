@@ -37,6 +37,11 @@ jest.mock('electron', () => ({
 }));
 
 const deleteWorkflow = jest.fn();
+let mockTier: 'free' | 'pro' = 'pro';
+jest.mock('../licensing', () => ({
+  ...jest.requireActual('../licensing'),
+  getCurrentTier: () => mockTier,
+}));
 jest.mock('../n8n-api', () => ({
   deleteWorkflow: (...args: any[]) => deleteWorkflow(...args),
   createAndActivateWorkflow: jest.fn(),
@@ -78,11 +83,25 @@ describe('deleting an automation', () => {
   });
 
   beforeEach(() => {
+    mockTier = 'pro';
     deleteWorkflow.mockReset();
     seed([withWorkflow, localOnly]);
   });
 
   const del = (data: any) => handlers['homebot:delete-automation'](null, data);
+
+  it('blocks Free deletion at the registered IPC handler, including force', async () => {
+    mockTier = 'free';
+    const before = fs.readFileSync(AUTOMATIONS, 'utf8');
+
+    for (const data of [{ id: 'auto-2' }, { id: 'auto-1', force: true }]) {
+      const res = await del(data);
+      expect(res.status).toBe('upgrade_required');
+      expect(res.upgrade.capability).toBe('automation');
+    }
+    expect(fs.readFileSync(AUTOMATIONS, 'utf8')).toBe(before);
+    expect(deleteWorkflow).not.toHaveBeenCalled();
+  });
 
   it('removes the n8n workflow the automation deployed', async () => {
     deleteWorkflow.mockResolvedValue(undefined);

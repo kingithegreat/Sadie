@@ -1,10 +1,10 @@
 // Main process for HomeBot - Full implementation
-import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol } from 'electron';
+import { app, BrowserWindow, ipcMain, session, globalShortcut, protocol, dialog } from 'electron';
 
 /** Catch handler for fire-and-forget ops — logs instead of silently swallowing */
 function safeCatch(e: unknown) { console.error('[HomeBot-CATCH]', e); }
 
-import { createMainWindow } from './window-manager';
+import { createMainWindow as createOwnedMainWindow } from './window-manager';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMessageRouter } from './message-router';
 import { initializeTools } from './tools';
@@ -16,6 +16,24 @@ import { startSupervisorService, SupervisorServiceHandle } from './supervisor-se
 import { registerTrustIpc } from './trust-ipc';
 import { registerTerminalIpc } from './terminal-ipc';
 import { registerWorkspaceIpc } from './workspace-ipc';
+import { registerWorkspaceLanguageIpc } from './workspace-language-ipc';
+import { registerIdeSettingsIpc } from './ide-settings-ipc';
+import { registerWorkspaceProjectToolsIpc } from './workspace-project-tools-ipc';
+import { registerWorkspaceLspIpc } from './lsp/lsp-ipc';
+import { disposeWorkspaceLanguageServices } from './workspace-language';
+import { registerWorkspaceAiHandlers } from './workspace-ai-ipc';
+import { registerWorkspaceGitActionIpc } from './workspace-git-action-ipc';
+import { registerWorkspaceDebugIpc } from './workspace-debug-ipc';
+import { registerWorkspaceTestIpc } from './workspace-test-ipc';
+import { stopWorkspaceDebuggers } from './workspace-debug';
+import { stopWorkspaceTestRuns } from './workspace-tests';
+import { currentWorkspace, createWorkspaceBridgeToken } from './workspace-context';
+import { registerWorkspaceTaskIpc } from './workspace-task-ipc';
+import { registerWorkspaceTerminalIpc } from './workspace-terminal-ipc';
+import { workspacePtySessions } from './workspace-terminal-pty';
+import { closeAllWorkspaceTasks } from './workspace-tasks';
+import { stopCalendarHelpers, resumeCalendarHelpers } from './calendar-helpers';
+import { setWorkspaceRuntimeClosing } from './workspace-runtime-admission';
 import { registerProblemReportIpc } from './problem-report-ipc';
 import { registerWhisperIpc } from './speech/whisper-ipc';
 import { startAssistantBridge, stopAssistantBridge, CODING_TOOLS } from './assistant-bridge';
@@ -34,7 +52,7 @@ import { initAutoUpdater, downloadUpdate, installUpdate } from './auto-updater';
 import { logStartupTime } from './utils/perf-logger';
 import { installConsoleGate } from './utils/console-gate';
 import { initLogging, logStartup } from './utils/logger';
-import { shutdownMcpServers } from './mcp-client';
+import { shutdownMcpServers, resumeMcpServersAfterRefusedQuit, restoreMcpServersAfterRefusedQuit } from './mcp-client';
 import { DEFAULT_OLLAMA_URL } from '../shared/constants';
 import axios from 'axios';
 import { spawn } from 'child_process';
@@ -313,8 +331,13 @@ app.whenReady().then(async () => {
     });
   });
 
+  // Use the same resolved URL for startup health, recovery and message routing.
+  // Prefer the E2E/environment override, then saved Settings, then localhost.
+  const settings = getSettings();
+  const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
+
   // Ensure n8n backend is running (auto-starts Docker container if needed)
-  ensureN8nRunning((status) => {
+  ensureN8nRunning(resolvedN8nUrl, (status) => {
     try {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('homebot:n8n-status', { status });
@@ -322,13 +345,7 @@ app.whenReady().then(async () => {
     } catch (e) { safeCatch(e); }
   }).catch((e) => console.error('[MAIN] n8n lifecycle error:', e));
 
-  // Register message router with proper parameters
-  const settings = getSettings();
-  // Allow E2E or env-based override for the n8n URL so tests can route to a
-  // mock upstream without changing user settings on disk. Prefer explicit
-  // process.env.N8N_URL when present (test runner sets this), then saved
-  // settings, then fallback to localhost default.
-  const resolvedN8nUrl = process.env.N8N_URL || settings.n8nUrl || 'http://localhost:5678';
+  // Register message router with proper parameters.
   if (process.env.NODE_ENV !== 'production') console.log('[MAIN] Resolved n8nUrl =', resolvedN8nUrl);
 
   // Phase 0 reliability: continuous service supervision (probe + auto-recover).
@@ -349,6 +366,19 @@ app.whenReady().then(async () => {
   // Explorer + code editor. Shares the home-directory sandbox with the
   // LLM-facing filesystem tools (validatePath), so the two can never diverge.
   registerWorkspaceIpc(() => getSettings()?.projectPath);
+  registerWorkspaceLanguageIpc();
+  // User-level IDE settings.json / keybindings.json.
+  registerIdeSettingsIpc();
+  // Project-owned Prettier/ESLint in a main-process worker, allowed projects only.
+  registerWorkspaceProjectToolsIpc();
+  // Generic language-server bridge (pyright first) for allowed projects.
+  registerWorkspaceLspIpc();
+  registerWorkspaceAiHandlers();
+  registerWorkspaceGitActionIpc();
+  registerWorkspaceDebugIpc();
+  registerWorkspaceTestIpc();
+  registerWorkspaceTaskIpc();
+  registerWorkspaceTerminalIpc();
   // Settings → Report a problem: a local, secret-free text report the tester chooses to share.
   registerProblemReportIpc();
   // Voice input: Whisper runs here, not in the renderer (whose CSP blocks the model download).
@@ -366,7 +396,8 @@ app.whenReady().then(async () => {
     onToolActivity: (info) => {
       try {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('homebot:assistant-tool-activity', info);
+          const workspace = currentWorkspace();
+          mainWindow.webContents.send('homebot:assistant-tool-activity', { ...info, root: workspace?.displayRoot, streamId: workspace?.streamId });
         }
       } catch (e) { safeCatch(e); }
     },
@@ -378,12 +409,12 @@ app.whenReady().then(async () => {
     // them every bridged call is refused for want of a permission grant.
     setAssistantBridgeProvider(() => ({
       url: bridge.url,
-      token: bridge.token,
+      token: createWorkspaceBridgeToken() || bridge.token,
       toolNames: CODING_TOOLS.map(t => `mcp__homebot__${t}`),
       // Deterministic cwd. Otherwise the CLI inherits Electron's, which in a
       // packaged build is the install directory — so project settings and
       // relative paths resolve somewhere the user never chose.
-      cwd: (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
+      cwd: currentWorkspace()?.root || (() => { try { return getSettings().projectPath || undefined; } catch { return undefined; } })(),
     }));
     // Record success where it can actually be read. A bridge that fails leaves
     // the assistant with no HomeBot tools at all, which looks identical to
@@ -633,13 +664,72 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
-  try { stopAssistantBridge(); } catch (e) { safeCatch(e); }
-  try { destroyBrowserPanel(); } catch (e) { safeCatch(e); }
-  globalShortcut.unregisterAll();
-  closeAllServiceWindows();
-  if (supervisorHandle) supervisorHandle.stop();
-  shutdownMcpServers().catch(safeCatch);
+let mcpQuitPending = false;
+let mcpQuitReady = false;
+function preserveMainWindowOnClose(event: Electron.Event): void {
+  if (mcpQuitReady) return;
+  // Keep the owning renderer available if cleanup refuses quit: a replacement
+  // window has a different sender and cannot control this window's terminals.
+  event.preventDefault();
+  app.quit();
+}
+function createMainWindow(): BrowserWindow {
+  const window = createOwnedMainWindow();
+  window.removeListener('close', preserveMainWindowOnClose);
+  window.on('close', preserveMainWindowOnClose);
+  return window;
+}
+app.on('before-quit', event => {
+  if (mcpQuitReady) return;
+  event.preventDefault();
+  if (mcpQuitPending) return;
+  mcpQuitPending = true;
+  setWorkspaceRuntimeClosing(true);
+  // Keep ordinary services available until owned process cleanup is confirmed.
+  // A refused quit must leave the retained renderer able to use HomeBot.
+  let runtimeReady = true;
+  Promise.resolve().then(async () => {
+    const cleanupJobs = [stopWorkspaceDebuggers, stopWorkspaceTestRuns, () => workspacePtySessions.closeAll(), closeAllWorkspaceTasks, stopCalendarHelpers];
+    const results = await Promise.allSettled(cleanupJobs.map(cleanup => Promise.resolve().then(cleanup)));
+    results.forEach(result => {
+      if (result.status === 'rejected') {
+        safeCatch(result.reason);
+        runtimeReady = false;
+      }
+    });
+    if (!runtimeReady) return;
+    // MCP may retain a Windows Job after its protocol client closes. Refusal
+    // must keep the renderer and ordinary services available for another try.
+    try { await shutdownMcpServers(); } catch (error) {
+      runtimeReady = false;
+      safeCatch(error);
+      return;
+    }
+    for (const cleanup of [disposeWorkspaceLanguageServices, stopAssistantBridge, destroyBrowserPanel,
+      () => globalShortcut.unregisterAll(), closeAllServiceWindows, () => supervisorHandle?.stop()]) {
+      try { cleanup(); } catch (error) { safeCatch(error); }
+    }
+  }).catch(error => { runtimeReady = false; safeCatch(error); }).finally(() => {
+    if (!runtimeReady) {
+      resumeMcpServersAfterRefusedQuit();
+      mcpQuitPending = false;
+      setWorkspaceRuntimeClosing(false);
+      resumeCalendarHelpers();
+      void dialog.showMessageBox({ type: 'error', message: 'A running HomeBot program could not be stopped.',
+        detail: 'HomeBot is staying open so the program can be stopped safely. Try closing again, or return to the terminal, tasks, debugger or tests panel.',
+        buttons: ['Try closing again', 'Keep HomeBot open'], defaultId: 1, cancelId: 1,
+      }).then(async result => {
+        if (result.response === 0) app.quit();
+        else {
+          if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createMainWindow();
+          await restoreMcpServersAfterRefusedQuit();
+        }
+      }).catch(safeCatch);
+      return;
+    }
+    mcpQuitReady = true;
+    app.quit();
+  });
 });
 
 app.on('window-all-closed', () => {

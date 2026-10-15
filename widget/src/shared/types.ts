@@ -3,6 +3,15 @@ import type { StudioOutputSpec, StudioMovieResult } from './media-output';
 import type { CaptionStyle } from './caption-style';
 import type { StoryboardFrameProviderId, StoryboardFrameProviderStatus } from './storyboard-frame-providers';
 import type { MediaCapabilityRegistry } from './media-capability-registry';
+import type { WorkspaceDiskSnapshot, WorkspaceFileActionRequest, WorkspaceFileActionResult, WorkspaceProjectResult, WorkspaceRecoveryResult, WorkspaceRecoveryState, WorkspaceSaveOptions } from './workspace-file-types';
+import type { WorkspaceLanguageRequest, WorkspaceLanguageResult } from './workspace-language-types';
+import type { WorkspaceGitActionRequest, WorkspaceGitActionResult } from './workspace-git-action-types';
+import type { WorkspaceDebugRequest, WorkspaceDebugResult } from './workspace-debug-types';
+import type { WorkspaceTestRequest, WorkspaceTestResult } from './workspace-test-types';
+import type { WorkspaceTaskRequest, WorkspaceTaskEvent } from './workspace-task-types';
+import type { WorkspaceTerminalCreateRequest, WorkspaceTerminalEvent, WorkspaceTerminalResult } from './workspace-terminal-types';
+import type { WorkspaceAiRequestScope, WorkspaceAiTurn, WorkspaceAiPlan, WorkspaceAiSessionResult, WorkspaceAiRulesResult, WorkspaceAiMcpStatusResult, WorkspaceCodeSearchResult, WorkspaceCodeCompletionResult, WorkspaceCheckpointRow, WorkspaceCheckpointRestoreOptions, WorkspaceCheckpointRestoreResult, WorkspaceCheckpointCompareResult } from './workspace-ai-types';
+import type { WorkspaceCheckpointRun, WorkspaceCheckpointRunComparison, WorkspaceCheckpointRunRestoreOptions, WorkspaceCheckpointRunRestoreResult, WorkspaceTrustedFoldersResult } from './workspace-ai-types';
 
 export type LicenseTier = 'free' | 'pro';
 
@@ -47,6 +56,8 @@ export interface HomeBotRequest {
   timestamp?: string;
   /** Per-conversation system prompt supplied by the renderer (avoids disk read race) */
   conversationPrompt?: string;
+  /** Untrusted renderer context; main validates and binds it to this request. */
+  workspace?: WorkspaceAiRequestScope;
 }
 
 export interface ImageAttachment {
@@ -96,6 +107,8 @@ export interface HomeBotResponse {
 
 export interface Message {
   id?: string;
+  /** Assistant request owner; preserves Retry when sends overlap or status rows intervene. */
+  replyToId?: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
@@ -155,6 +168,8 @@ export interface AssistantToolActivity {
   tool: string;
   allowed: boolean;
   error?: string;
+  root?: string;
+  streamId?: string;
 }
 
 /** A file or folder in the Explorer tree. */
@@ -170,6 +185,47 @@ export interface WorkspaceEntry {
   path: string;
   isDirectory: boolean;
   size: number;
+}
+
+/** One package.json script offered by the Workspace Tasks view. */
+export interface WorkspacePackageTask {
+  name: string;
+  command: string;
+}
+
+/** A compiler/linter diagnostic whose path was validated by main. */
+export interface WorkspaceProblem {
+  path: string;
+  /** False when a tool reported a missing/out-of-project file. */
+  clickable?: boolean;
+  file: string;
+  line: number;
+  column: number;
+  severity: 'error' | 'warning';
+  source: 'typescript' | 'eslint';
+  code?: string;
+  message: string;
+}
+
+export interface WorkspaceTaskListResult {
+  success: boolean;
+  projectDir?: string;
+  tasks?: WorkspacePackageTask[];
+  error?: string;
+}
+
+export interface WorkspaceTaskRunResult {
+  /** The request completed. A task may still have a non-zero exitCode. */
+  success: boolean;
+  cancelled?: boolean;
+  /** The command ended, but its owned process tree still needs Stop/retry. */
+  cleanupPending?: boolean;
+  timedOut?: boolean;
+  exitCode?: number | null;
+  durationMs?: number;
+  problems?: WorkspaceProblem[];
+  outputExcerpt?: string;
+  error?: string;
 }
 
 /** One streamed chunk of output from an interactive terminal session. */
@@ -223,6 +279,12 @@ export interface Settings {
   alwaysOnTop: boolean;
   n8nUrl: string;
   n8nApiKey?: string;
+  /**
+   * Where the app looks for Ollama. Every local chat, vision and embedding
+   * request goes here, so a user running Ollama on another port or machine needs
+   * to change it — and before this field existed there was no UI to do that.
+   */
+  ollamaUrl?: string;
   // Voice input (speech-to-text)
   voiceEngine?: 'whisper' | 'sapi' | 'webspeech';
   whisperModel?: 'tiny' | 'base' | 'small';
@@ -415,6 +477,10 @@ export interface ColabQueueMutationArgs {
   expectedAttempts?: number;
 }
 
+export interface SubscriptionCliStatus {
+  status: 'ready' | 'missing' | 'signed-out' | 'api-key' | 'unknown';
+}
+
 export interface ElectronAPI {
   sendMessage: (request: HomeBotRequest) => Promise<HomeBotResponse>;
   getSettings: () => Promise<Settings>;
@@ -531,6 +597,7 @@ export interface ElectronAPI {
   
   // Speech recognition (Windows SAPI - offline capable)
   startSpeechRecognition?: () => Promise<{ success: boolean; text: string; error?: string }>;
+  stopSpeechRecognition?: () => Promise<{ success: boolean; error?: string }>;
   whisperTranscribe?: (args: { modelId: string; language?: string; audio: Float32Array }) => Promise<{ success: boolean; text?: string; error?: string }>;
   onWhisperProgress?: (cb: (p: { status: 'downloading'; percent: number }) => void) => () => void;
 
@@ -574,7 +641,7 @@ export interface ElectronAPI {
     Promise<{ ok: boolean; job?: any; error?: string }>;
   mediaAdvance?: (id: string, to: string, note?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
-  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
+  mediaRun?: (id: string, action: 'script' | 'narrate' | 'render' | 'output', opts?: { voice?: string; engine?: 'edge' | 'kokoro'; image?: string; visuals?: string; regenerateScenes?: boolean; burnSubtitles?: boolean; captionStyle?: CaptionStyle; outputSpec?: StudioOutputSpec; variantId?: 'landscape' | 'portrait' | 'square' }) =>
     Promise<{ ok: boolean; message?: string; error?: string }>;
   mediaApprove?: (id: string, note?: string, expectedRenderPath?: string) =>
     Promise<{ ok: boolean; job?: any; error?: string }>;
@@ -903,6 +970,7 @@ export interface ElectronAPI {
   invoke?: (channel: string, ...args: any[]) => Promise<any>;
 
   listCustomLLMModels?: (config: { apiUrl: string; apiKey?: string; provider?: CustomLLMConfig['provider'] }) => Promise<{ success: boolean; models?: CustomModelInfo[]; error?: string }>;
+  checkSubscriptionCli?: (provider: 'codex' | 'claude-code') => Promise<SubscriptionCliStatus>;
   listMediaCapabilities?: (options?: { refresh?: boolean }) => Promise<{ success: boolean; registry?: MediaCapabilityRegistry; error?: string }>;
 
   // Image generation helper
@@ -1024,9 +1092,45 @@ export interface ElectronAPI {
   onTerminalExit?: (callback: (exit: TerminalExitEvent) => void) => () => void;
   // Workspace (Explorer + editor)
   workspaceRoot?: () => Promise<{ success: boolean; path: string }>;
-  workspaceList?: (dirPath: string) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
-  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; error?: string }>;
-  workspaceSave?: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>;
+  workspaceList?: (dirPath: string, options?: { showHidden?: boolean }) => Promise<{ success: boolean; path?: string; entries?: WorkspaceEntry[]; error?: string }>;
+  workspaceRead?: (filePath: string) => Promise<{ success: boolean; path?: string; content?: string; language?: string; version?: string; eol?: 'lf' | 'crlf'; bom?: boolean; error?: string }>;
+  workspaceSave?: (filePath: string, content: string, options?: WorkspaceSaveOptions) => Promise<{ success: boolean; version?: string; eol?: 'lf' | 'crlf'; bom?: boolean; conflict?: boolean; disk?: WorkspaceDiskSnapshot; error?: string }>;
+  workspaceChooseProject?: () => Promise<WorkspaceProjectResult>;
+  workspaceRecentProjects?: (folder?: string) => Promise<{ success: boolean; paths?: string[]; error?: string }>;
+  workspaceFileAction?: (request: WorkspaceFileActionRequest) => Promise<WorkspaceFileActionResult>;
+  workspaceRecoveryLoad?: (root: string) => Promise<WorkspaceRecoveryResult>;
+  workspaceRecoverySave?: (root: string, state: WorkspaceRecoveryState) => Promise<{ success: boolean; error?: string }>;
+  workspaceLanguage?: (request: WorkspaceLanguageRequest) => Promise<WorkspaceLanguageResult>;
+  workspaceIdeSettings?: (request: { action: 'get' | 'read' | 'save'; which?: 'settings' | 'keybindings'; text?: string }) => Promise<any>;
+  workspaceLsp?: (request: import('./workspace-lsp-types').LspRequest) => Promise<import('./workspace-lsp-types').LspResult>;
+  workspaceProjectTools?: (request: import('./workspace-project-tools-types').ProjectToolsRequest) => Promise<import('./workspace-project-tools-types').ProjectToolsResult>;
+  workspaceGitAction?: (request: WorkspaceGitActionRequest) => Promise<WorkspaceGitActionResult>;
+  workspaceDebug?: (request: WorkspaceDebugRequest) => Promise<WorkspaceDebugResult>;
+  workspaceTests?: (request: WorkspaceTestRequest) => Promise<WorkspaceTestResult>;
+  workspaceTerminalProfiles?: () => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalList?: (request: { projectDir: string }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalCreate?: (request: WorkspaceTerminalCreateRequest) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalWrite?: (request: { sessionId: string; data: string }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalResize?: (request: { sessionId: string; cols: number; rows: number }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalInterrupt?: (request: { sessionId: string }) => Promise<WorkspaceTerminalResult>;
+  workspaceTerminalClose?: (request: { sessionId: string }) => Promise<WorkspaceTerminalResult>;
+  onWorkspaceTerminalEvent?: (callback: (event: WorkspaceTerminalEvent) => void) => () => void;
+  workspaceAiSession?: (root: string) => Promise<WorkspaceAiSessionResult>;
+  workspaceAiSaveSession?: (root: string, turns: WorkspaceAiTurn[]) => Promise<{ success: boolean; error?: string }>;
+  workspaceAiPreparePlan?: (root: string, text: string) => Promise<WorkspaceAiPlan>;
+  workspaceAiApprovePlan?: (root: string, id: string) => Promise<WorkspaceAiPlan>;
+  workspaceAiRules?: (root: string) => Promise<WorkspaceAiRulesResult>;
+  workspaceCodeSearch?: (root: string, query: string, semantic?: boolean) => Promise<WorkspaceCodeSearchResult>;
+  workspaceCodeComplete?: (root: string, prefix: string, suffix: string) => Promise<WorkspaceCodeCompletionResult>;
+  workspaceCodeCompleteSetup?: () => Promise<{ success: boolean; installed?: boolean; model?: string; reason?: string; error?: string }>;
+  workspaceCheckpointList?: (root: string) => Promise<{ success: boolean; checkpoints?: WorkspaceCheckpointRow[]; runs?: WorkspaceCheckpointRun[]; error?: string }>;
+  workspaceCheckpointCompare?: (root: string, id: string) => Promise<WorkspaceCheckpointCompareResult>;
+  workspaceCheckpointRestore?: (root: string, id: string, options?: WorkspaceCheckpointRestoreOptions) => Promise<WorkspaceCheckpointRestoreResult>;
+  workspaceCheckpointCompareRun?: (root: string, id: string) => Promise<WorkspaceCheckpointRunComparison>;
+  workspaceCheckpointRestoreRun?: (root: string, id: string, options?: WorkspaceCheckpointRunRestoreOptions) => Promise<WorkspaceCheckpointRunRestoreResult>;
+  workspaceTrustedFolders?: () => Promise<WorkspaceTrustedFoldersResult>;
+  workspaceRevokeFolder?: (root: string) => Promise<WorkspaceTrustedFoldersResult>;
+  workspaceAiMcpStatus?: () => Promise<WorkspaceAiMcpStatusResult>;
   /** IDE-9: search across files, and the line-exact replace. */
   workspaceSearch?: (opts: {
     pattern: string;
@@ -1050,6 +1154,12 @@ export interface ElectronAPI {
     skipped?: Array<{ line: number; reason: string }>;
     error?: string;
   }>;
+  /** IDE-11: package scripts and parsed compiler/linter Problems. */
+  workspaceTaskList?: (args: { projectDir: string }) => Promise<WorkspaceTaskListResult>;
+  workspaceTaskRun?: (args: WorkspaceTaskRequest) => Promise<WorkspaceTaskRunResult>;
+  workspaceTaskStop?: (args: { taskId: string }) => Promise<{ success: boolean; error?: string }>;
+  workspaceTaskStatus?: (args: { projectDir: string }) => Promise<{ success: boolean; task?: WorkspaceTaskEvent | null; error?: string }>;
+  onWorkspaceTaskEvent?: (callback: (event: WorkspaceTaskEvent) => void) => () => void;
   // Source Control panel (main/workspace-git.ts). Paths are repository-relative with forward slashes.
   workspaceGitStatus?: (folder: string) => Promise<{ success: boolean; error?: string; isRepo?: boolean; root?: string; branch?: string;
     staged?: WorkspaceGitChange[]; unstaged?: WorkspaceGitChange[] }>;
@@ -1059,7 +1169,7 @@ export interface ElectronAPI {
   workspaceGitBranches?: (folder: string) => Promise<{ success: boolean; error?: string; current?: string; branches?: string[] }>;
   workspaceGitCheckout?: (folder: string, branch: string) => Promise<{ success: boolean; error?: string }>;
   /** IDE-3: assistant edits waiting for review, and the accept/reject decisions. */
-  workspaceProposals?: () => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
+  workspaceProposals?: (root?: string) => Promise<{ success: boolean; proposals?: Array<{ id: string; path: string; tool: string; at: number; created: boolean;
     stats: { added: number; removed: number; approximate: boolean };
     hunks: Array<{ beforeStart: number; afterStart: number; lines: Array<{ type: 'equal' | 'add' | 'remove'; before: number | null; after: number | null; text: string }> }> }>; error?: string }>;
   workspaceProposalAccept?: (id: string, hunkIndexes: number[]) => Promise<{ success: boolean; path?: string; applied?: number; error?: string }>;
@@ -1203,7 +1313,7 @@ export interface ElectronAPI {
   // Automation Center
   loadAutomations?: () => Promise<{ automations: SavedAutomation[] }>;
   createAutomation?: (data: { name: string; description: string; instructions: string; trigger: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string; deployToN8n?: boolean }) => Promise<{ automation: SavedAutomation; error?: string }>;
-  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean }>;
+  updateAutomation?: (data: { id: string; enabled?: boolean; name?: string; description?: string; instructions?: string; trigger?: string; scheduleMinutes?: number; watchPath?: string; watchPattern?: string; n8nWebhookUrl?: string }) => Promise<{ success: boolean; error?: string }>;
   /**
    * Removes the automation and the n8n workflow it deployed. Without `force`
    * this refuses when the workflow cannot be deleted, keeping the automation so
@@ -1296,6 +1406,7 @@ export interface SavedAutomation {
   /** For trigger="file": optional filename filter like "*.csv". */
   watchPattern?: string;
   n8nWebhookUrl?: string;
+  n8nWorkflowId?: string;
   enabled: boolean;
   lastRun?: string;
   lastResult?: string;

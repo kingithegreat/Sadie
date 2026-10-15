@@ -3,16 +3,34 @@
  *
  * Compares two text strings or two file contents line-by-line.
  * Returns a unified-diff-style result with added/removed lines.
- * No external dependencies — pure TypeScript implementation.
+ * Text comparison is pure TypeScript; IDE file reads verify held objects.
  */
 
-import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { isWithinHomeDir } from '../utils/home-boundary';
 import { ToolDefinition, ToolHandler, ToolResult } from './types';
+import { currentWorkspace, workspaceToolError } from '../workspace-context';
+import { checkedTrustedWorkspacePath } from '../workspace-trust';
+import { readBoundedDiffFiles } from '../bounded-diff-files';
 
 const HOME_DIR = os.homedir();
+export const DIFF_LIMITS = Object.freeze({ bytes: 256 * 1024, lines: 2000, cells: 1_000_000 });
+
+function boundedLineCount(text: string): number {
+  // Check the cheap UTF-16 length first, then exact UTF-8 bytes, before
+  // splitting text or allocating the quadratic LCS table.
+  if (text.length > DIFF_LIMITS.bytes || Buffer.byteLength(text, 'utf8') > DIFF_LIMITS.bytes) {
+    throw new Error(`Diff input exceeds the ${DIFF_LIMITS.bytes}-byte limit. Compare a smaller excerpt.`);
+  }
+  let lines = 1;
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) === 10 && ++lines > DIFF_LIMITS.lines) {
+      throw new Error(`Diff input exceeds the ${DIFF_LIMITS.lines}-line limit. Compare a smaller excerpt.`);
+    }
+  }
+  return lines;
+}
 
 // ============= TOOL DEFINITIONS =============
 
@@ -20,7 +38,8 @@ export const diffTextDef: ToolDefinition = {
   name: 'diff_text',
   description:
     'Compare two text strings and show the differences line by line in unified diff format. ' +
-    'Useful for spotting changes between two versions of text, code, or configs.',
+    'Useful for spotting changes between two versions of text, code, or configs. ' +
+    'Inputs are limited to 256 KiB and 2000 lines each, with a bounded comparison budget; use excerpts for larger changes.',
   category: 'utility',
   parameters: {
     type: 'object',
@@ -47,18 +66,20 @@ export const diffFilesDef: ToolDefinition = {
   name: 'diff_files',
   description:
     'Compare two files and return a unified diff. ' +
-    'Both paths must be inside the user home directory.',
+    'In the IDE, both paths must be inside the active project; relative paths resolve there. ' +
+    'In HomeBot chat, both paths must be inside the user home directory. ' +
+    'Files are limited to 256 KiB and 2000 lines each, with a bounded comparison budget.',
   category: 'utility',
   parameters: {
     type: 'object',
     properties: {
       file_a: {
         type: 'string',
-        description: 'Absolute path to the first (original) file'
+        description: 'First (original) file path; relative to the active project in the IDE, otherwise absolute'
       },
       file_b: {
         type: 'string',
-        description: 'Absolute path to the second (modified) file'
+        description: 'Second (modified) file path; relative to the active project in the IDE, otherwise absolute'
       },
       context_lines: {
         type: 'number',
@@ -164,6 +185,10 @@ function computeDiff(
   labelB: string,
   contextLines: number
 ) {
+  const aCount = boundedLineCount(original), bCount = boundedLineCount(modified);
+  if ((aCount + 1) * (bCount + 1) > DIFF_LIMITS.cells) {
+    throw new Error(`Diff exceeds the ${DIFF_LIMITS.cells}-cell comparison budget. Compare smaller excerpts.`);
+  }
   const aLines = original.split('\n');
   const bLines = modified.split('\n');
   const diffs = diffLines(aLines, bLines);
@@ -188,6 +213,8 @@ function computeDiff(
 
 export const diffTextHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
+    const denied = workspaceToolError('diff_text');
+    if (denied) return { success: false, error: denied };
     const original = String(args.original ?? '');
     const modified = String(args.modified ?? '');
     const contextLines = Math.min(Math.max(0, Number(args.context_lines) || 3), 10);
@@ -201,19 +228,21 @@ export const diffTextHandler: ToolHandler = async (args): Promise<ToolResult> =>
 
 export const diffFilesHandler: ToolHandler = async (args): Promise<ToolResult> => {
   try {
-    const fileA = path.resolve(String(args.file_a || ''));
-    const fileB = path.resolve(String(args.file_b || ''));
+    const denied = workspaceToolError('diff_files');
+    if (denied) return { success: false, error: denied };
+    const workspace = currentWorkspace();
+    // Validate both sides before either read. A mixed in/out-of-project diff
+    // cannot read its first side and then discover the second is forbidden.
+    const fileA = workspace ? checkedTrustedWorkspacePath(workspace.root, args.file_a) : path.resolve(String(args.file_a || ''));
+    const fileB = workspace ? checkedTrustedWorkspacePath(workspace.root, args.file_b) : path.resolve(String(args.file_b || ''));
 
-    for (const p of [fileA, fileB]) {
+    for (const p of workspace ? [] : [fileA, fileB]) {
       if (!isWithinHomeDir(p, HOME_DIR)) {
         return { success: false, error: `File path must be within home directory: ${p}` };
       }
     }
 
-    const [contentA, contentB] = await Promise.all([
-      fs.promises.readFile(fileA, 'utf8'),
-      fs.promises.readFile(fileB, 'utf8')
-    ]);
+    const [contentA, contentB] = await readBoundedDiffFiles([fileA, fileB], DIFF_LIMITS.bytes);
 
     const contextLines = Math.min(Math.max(0, Number(args.context_lines) || 3), 10);
     const result = computeDiff(contentA, contentB, fileA, fileB, contextLines);

@@ -12,6 +12,11 @@ beforeEach(() => {
   registerStudioIpc((_channel, handler) => handler, invokeTool, () => undefined);
 });
 
+test('explicit scene regeneration crosses the real job IPC without inventing payment consent', async () => {
+  await handlers['homebot:media:run']({}, 'draft', 'render', { regenerateScenes: true });
+  expect(invokeTool).toHaveBeenCalledWith({}, 'media_render', { job: 'draft', regenerateScenes: true });
+});
+
 test.each([undefined, false, true])('storyboard IPC preserves the caption choice %s without inventing a default', async burnSubtitles => {
   await handlers['homebot:media:storyboard:render']({}, { projectId: 'film', burnSubtitles });
   expect(invokeTool).toHaveBeenCalledWith({}, 'media_render_storyboard', expect.objectContaining({ projectId: 'film', burnSubtitles }));
@@ -69,6 +74,11 @@ test('only the selected retry format crosses job and storyboard IPC, and partial
   const result = await handlers['homebot:media:storyboard:render']({}, { projectId: 'film', variantId: 'portrait' });
   expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_render_storyboard', expect.objectContaining({ projectId: 'film', variantId: 'portrait' }));
   expect(result).toMatchObject({ ok: false, error: 'Portrait stopped', moviePath: 'C:/landscape.mp4', jobId: 'review-landscape', variants });
+});
+
+test('the Storyboard Deck save is a complete-scene save, so its deleted shots are removed', async () => {
+  await handlers['homebot:media:storyboard:save']({}, { projectId: 'film', shots: [{ shotId: 'shot_001' }] });
+  expect(invokeTool).toHaveBeenLastCalledWith({}, 'media_save_storyboard', expect.objectContaining({ replaceShotList: true }));
 });
 
 test('storyboard music and encoder choices cross save and render IPC without changing types', async () => {

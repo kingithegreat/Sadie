@@ -26,10 +26,17 @@ describe('retry flow (renderer)', () => {
         return jest.fn();
       }),
       getSettings: jest.fn().mockResolvedValue({
+        firstRun: false,
+        modelRoutingMode: 'off',
         alwaysOnTop: true,
         n8nUrl: 'http://localhost:5678',
         widgetHotkey: 'Ctrl+Shift+Space',
       }),
+      loadConversations: jest.fn().mockResolvedValue({ success: true, data: { conversations: [] } }),
+      createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'retry-fixture', systemPrompt: '' } }),
+      setActiveConversation: jest.fn().mockResolvedValue({ success: true }),
+      addMessage: jest.fn().mockResolvedValue({ success: true }),
+      updateMessage: jest.fn().mockResolvedValue({ success: true }),
       saveSettings: jest.fn().mockResolvedValue(undefined),
       sendStreamMessage: jest.fn((payload: any) => {
         capturedStreamId = payload.streamId;
@@ -43,6 +50,7 @@ describe('retry flow (renderer)', () => {
 
   test('clicking Retry on an error message re-sends the preceding user message', async () => {
     render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     // Send a user message
     const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
@@ -81,6 +89,7 @@ describe('retry flow (renderer)', () => {
 
   test('Retry button is NOT shown for non-error states', async () => {
     render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: 'Hello' } });
@@ -101,6 +110,7 @@ describe('retry flow (renderer)', () => {
 
   test('retrying a document-attached turn asks for reattach instead of resending a marker-only request', async () => {
     render(<App />);
+    await waitFor(() => expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true'));
 
     const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
     fireEvent.change(textarea, {
@@ -122,7 +132,7 @@ describe('retry flow (renderer)', () => {
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
 
     await waitFor(() => {
-      expect(screen.getByText('This request included a document attachment. Please reattach the document and send it again.')).toBeInTheDocument();
+      expect(screen.getByText('Reattach the original document and send your request again.')).toBeInTheDocument();
     });
     expect(sendMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: /retry/i })).toBeNull();

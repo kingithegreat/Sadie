@@ -1,8 +1,9 @@
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { debug as logDebug } from '../../shared/logger';
 import MessageList from './MessageList';
-import { InputBox } from './InputBox';
+import { InputBox, type ComposerDraft, type ComposerAttachmentBatch,
+  type ComposerAttachmentScope, type ComposerAttachmentDeliveryResult } from './InputBox';
 import SuggestedPrompts from './SuggestedPrompts';
 import type { ChatMessage } from '../types';
 import type { ImageAttachment as SharedImageAttachment, DocumentAttachment } from '../../shared/types';
@@ -12,6 +13,16 @@ interface ChatInterfaceProps {
   onSendMessage: (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => void;
   onUserCancel?: (messageId: string) => void;
   onRetry?: (messageId: string) => void;
+  onOpenSettings?: () => void;
+  draft?: ComposerDraft;
+  onDraftChange?: (draft: ComposerDraft) => void;
+  draftKey?: string;
+  draftGeneration?: number;
+  pendingAttachmentReads?: number;
+  onAttachmentsReady?: (batch: ComposerAttachmentBatch) => ComposerAttachmentDeliveryResult;
+  onAttachmentReadStart?: (scope: ComposerAttachmentScope) => void;
+  onAttachmentReadEnd?: (scope: ComposerAttachmentScope) => void;
+  onAttachmentReadError?: (message: string) => void;
   onBookmark?: (messageId: string) => void;
   onReact?: (messageId: string, emoji: string) => void;
   onEdit?: (messageId: string, newContent: string) => void;
@@ -22,9 +33,37 @@ interface ChatInterfaceProps {
   onUpdateSystemPrompt?: (prompt: string) => void;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onBookmark, onReact, onEdit, onSendToMediaStudio, systemPrompt, onUpdateSystemPrompt }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, onUserCancel, onRetry, onOpenSettings, draft, onDraftChange, draftKey, draftGeneration, pendingAttachmentReads, onAttachmentsReady, onAttachmentReadStart, onAttachmentReadEnd, onAttachmentReadError, onBookmark, onReact, onEdit, onSendToMediaStudio, systemPrompt, onUpdateSystemPrompt }) => {
   const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const hasGuidelines = !!(systemPrompt && systemPrompt.trim());
+
+  useLayoutEffect(() => {
+    const input = composerRef.current?.closest<HTMLElement>('.input-container');
+    const app = input?.closest<HTMLElement>('.app-container');
+    if (!input || !app) return;
+    const property = '--homebot-composer-clearance';
+    const previous = app.style.getPropertyValue(property);
+    let active = true;
+    const measure = () => {
+      if (!active || !input.isConnected || !app.isConnected) return;
+      const clearance = Math.max(120, Math.ceil(app.getBoundingClientRect().bottom - input.getBoundingClientRect().top) + 12);
+      app.style.setProperty(property, `${clearance}px`);
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(input);
+    observer?.observe(app);
+    window.addEventListener('resize', measure);
+    return () => {
+      active = false;
+      observer?.disconnect();
+      window.removeEventListener('resize', measure);
+      if (previous) app.style.setProperty(property, previous);
+      else app.style.removeProperty(property);
+    };
+  }, []);
 
   const handleSend = (content: string, images?: SharedImageAttachment[] | null, documents?: DocumentAttachment[] | null) => {
     const text = content?.trim?.() ?? '';
@@ -34,14 +73,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
   };
 
   const handleSuggestedSelect = (prompt: string) => {
-    // Send the suggested prompt directly
-    onSendMessage(prompt);
+    setSuggestion(previous => ({ id: (previous?.id ?? 0) + 1, text: prompt }));
+  };
+  const handleReattach = (kind: 'images' | 'documents') => {
+    const label = kind === 'images' ? 'Attach images' : 'Attach documents';
+    composerRef.current?.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)?.click();
   };
   return (
     <div className="chat-interface">
       {/* Scrollable message list */}
       <div className="messages-container">
-        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} onSendToMediaStudio={onSendToMediaStudio} />
+        <MessageList messages={messages} onCancel={onUserCancel ?? (() => {})} onRetry={onRetry ?? (() => {})} onOpenSettings={onOpenSettings} onReattach={handleReattach} onBookmark={onBookmark} onReact={onReact} onEdit={onEdit} onSendToMediaStudio={onSendToMediaStudio} />
       </div>
 
       {/* Suggested prompts when chat is empty */}
@@ -73,13 +115,18 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ messages, onSendMessage, 
             </div>
           </div>
         )}
-        <div className="input-wrapper">
-          <InputBox onSendMessage={handleSend} />
+        <div ref={composerRef} className="input-wrapper">
+          <InputBox onSendMessage={handleSend} draft={draft} onDraftChange={onDraftChange} draftKey={draftKey}
+            draftGeneration={draftGeneration} onAttachmentsReady={onAttachmentsReady}
+            pendingAttachmentReads={pendingAttachmentReads}
+            onAttachmentReadStart={onAttachmentReadStart} onAttachmentReadEnd={onAttachmentReadEnd}
+            onAttachmentReadError={onAttachmentReadError} suggestion={suggestion} />
           <button
             type="button"
             className={`guidelines-toggle-btn ${hasGuidelines ? 'has-content' : ''}`}
             onClick={() => setGuidelinesOpen(!guidelinesOpen)}
             title={guidelinesOpen ? 'Hide guidelines' : 'Set chat guidelines'}
+            aria-label={guidelinesOpen ? 'Hide chat guidelines' : 'Set chat guidelines'}
           >
             {hasGuidelines ? '📝' : '📋'}
           </button>

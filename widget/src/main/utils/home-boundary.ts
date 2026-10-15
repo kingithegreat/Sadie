@@ -16,18 +16,16 @@
  *    shortcut forms stays the caller's job (they differ per surface).
  */
 
-import * as path from 'path';
-
 export function isWithinHomeDir(resolvedPath: string, homeDirPath: string): boolean {
   if (!resolvedPath || !homeDirPath) return false;
   const resolved = resolvedPath.toLowerCase();
   const home = homeDirPath.toLowerCase();
   if (!resolved || !home) return false;
-  if (resolved === home) return true;
-  const primarySep = home.includes('\\') ? '\\' : path.sep;
-  return (
-    resolved.startsWith(home + primarySep) ||
-    resolved.startsWith(home + '/') ||
-    resolved.startsWith(home + '\\')
-  );
+  // A root profile (`D:\`, `\\server\share\`, `/`) keeps its trailing separator
+  // after path.resolve. Compare against the home WITHOUT it, then require a
+  // separator, so `D:\` + child is inside while a same-prefix sibling
+  // (`C:\Users\adenk-other` for `C:\Users\adenk\`) still is not.
+  const base = home.replace(/[\\/]+$/, '');
+  if (resolved === home || (base && resolved === base)) return true;
+  return resolved.startsWith(base + '/') || resolved.startsWith(base + '\\');
 }

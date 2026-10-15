@@ -1,0 +1,4 @@
+{
+  "extends": "../first-user/tsconfig.json",
+  "include": ["*.ts", "../first-user/first-user-native-bootstrap.ts", "../../src/renderer/global.d.ts"]
+}

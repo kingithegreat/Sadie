@@ -1,3 +1,5 @@
+import { SCENE_PICTURE_FAILURE } from './scene-picture-qa';
+
 /** Missing fields on existing projects retain the historical caption behavior. */
 export function resolveBurnSubtitles(value: unknown, fallback = true): boolean {
   if (value === undefined) return fallback;
@@ -59,6 +61,8 @@ export interface StudioExportAttempt {
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  /** Only this known source failure offers scene regeneration. */
+  errorCode?: typeof SCENE_PICTURE_FAILURE;
   exportId?: string;
   sceneId?: string;
   variantId?: StudioOutputVariant['id'];
@@ -105,6 +109,7 @@ export function readStudioExportAttempt(value: unknown): StudioExportAttempt | u
     sourceRevision: typeof saved.sourceRevision === 'string' && /^[a-f0-9]{64}$/.test(saved.sourceRevision) ? saved.sourceRevision : null,
     ...(typeof saved.finishedAt === 'string' ? { finishedAt: saved.finishedAt } : {}),
     ...(typeof saved.error === 'string' ? { error: saved.error.slice(0, 8000) } : {}),
+    ...(saved.errorCode === SCENE_PICTURE_FAILURE ? { errorCode: saved.errorCode } : {}),
     ...(typeof saved.exportId === 'string' ? { exportId: saved.exportId } : {}),
     ...(typeof saved.sceneId === 'string' ? { sceneId: saved.sceneId } : {}),
     ...(typeof saved.batchId === 'string' ? { batchId: saved.batchId } : {}),

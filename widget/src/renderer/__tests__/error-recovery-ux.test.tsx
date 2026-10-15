@@ -32,7 +32,14 @@ function makeElectronMock(overrides: Partial<ElectronAPI> = {}): ElectronAPI {
       alwaysOnTop: true,
       n8nUrl: 'http://localhost:5678',
       widgetHotkey: 'Ctrl+Shift+Space',
+      firstRun: false,
+      chatModel: 'mistral',
+      modelRoutingMode: 'off',
     }),
+    loadConversations: jest.fn().mockResolvedValue({ success: true, data: [] }),
+    createConversation: jest.fn().mockResolvedValue({ success: true, data: { id: 'recovery-fixture', systemPrompt: '' } }),
+    setActiveConversation: jest.fn().mockResolvedValue(undefined),
+    listOllamaModels: jest.fn().mockResolvedValue({ success: true, models: [{ name: 'mistral' }] }),
     saveSettings: jest.fn().mockResolvedValue(undefined),
     sendStreamMessage: jest.fn().mockResolvedValue(undefined),
     onMessage: jest.fn(() => jest.fn()),
@@ -42,6 +49,22 @@ function makeElectronMock(overrides: Partial<ElectronAPI> = {}): ElectronAPI {
     pullModel: jest.fn().mockResolvedValue({ success: true }),
     ...overrides,
   } as unknown as ElectronAPI;
+}
+
+/** Settle the real bootstrap and send continuations before injecting stream errors. */
+async function mountReadyApp() {
+  await act(async () => { render(<App />); });
+  expect(screen.getByTestId('homebot-app-root')).toHaveAttribute('data-hydrated', 'true');
+}
+
+async function sendRecoveryMessage(el: ElectronAPI, text: string) {
+  await act(async () => {
+    fireEvent.change(screen.getByLabelText('Message HomeBot'), { target: { value: text } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  });
+  expect(el.sendStreamMessage).toHaveBeenCalledWith(expect.objectContaining({
+    message: text, conversation_id: 'recovery-fixture', streamId: expect.any(String),
+  }));
 }
 
 /** Send a user message, stream a partial chunk, then fire stream-error with the given hint. */
@@ -62,13 +85,8 @@ async function triggerRecoveryCard(hint: object | null) {
   });
 
   (window as any).electron = el;
-  render(<App />);
-
-  // Send a message
-  const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
-  fireEvent.change(textarea, { target: { value: 'hello' } });
-  fireEvent.click(screen.getByText('Send'));
-  await waitFor(() => expect(el.sendStreamMessage).toHaveBeenCalled());
+  await mountReadyApp();
+  await sendRecoveryMessage(el, 'hello');
 
   // Emit a partial chunk so there is some content
   act(() => { chunkCb?.({ streamId, chunk: 'partial response' }); });
@@ -222,12 +240,8 @@ describe('error recovery UX — inline recovery card', () => {
     });
 
     (window as any).electron = el;
-    render(<App />);
-
-    const textarea = screen.getByLabelText('Message HomeBot') as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'test' } });
-    fireEvent.click(screen.getByText('Send'));
-    await waitFor(() => expect(el.sendStreamMessage).toHaveBeenCalled());
+    await mountReadyApp();
+    await sendRecoveryMessage(el, 'test');
 
     act(() => { chunkCb?.({ streamId, chunk: 'starting...' }); });
     await waitFor(() => expect(screen.getByText('starting...')).toBeInTheDocument());

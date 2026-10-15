@@ -91,7 +91,7 @@ const UncensoredToggle: React.FC<UncensoredToggleProps> = ({ uncensoredMode, onT
     type="button"
     className={`uncensored-toggle ${uncensoredMode ? 'active' : ''}`}
     onClick={onToggle}
-    title={uncensoredMode ? 'Uncensored Mode ON — no system prompt, no tools' : 'Safe Mode - using selected model'}
+    title={uncensoredMode ? 'Uncensored Mode ON — using your uncensored model' : 'Safe Mode - using selected model'}
     aria-pressed={uncensoredMode}
   >
     <span className="toggle-icon">{uncensoredMode ? '🔓' : '🔒'}</span>
