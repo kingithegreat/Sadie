@@ -162,15 +162,11 @@ const GOOGLE_AI_MODELS: CustomModelInfo[] = [
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest — thinking + tools, free tier', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
   // gemini-2.0-flash was shut down on 1 June 2026; saved settings naming it are
   // remapped at load by model-lifecycle.ts.
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: '1M context window', provider: 'google-ai-studio', contextWindow: 1048576, costHint: '~$1.25/1M in' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast', provider: 'google-ai-studio', contextWindow: 1048576, costHint: 'Free tier' },
 ];
 
 // Gemini native API (generateContent endpoint)
 const GOOGLE_GEMINI_NATIVE_MODELS: CustomModelInfo[] = [
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Latest & best free model — thinking + tools', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', description: 'Large context and stronger reasoning', provider: 'google-gemini', contextWindow: 1048576, costHint: '~$1.25/1M in' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', description: 'Fast and cost-efficient', provider: 'google-gemini', contextWindow: 1048576, costHint: 'Free tier' },
 ];
 
 // Hugging Face Inference API — free tier, huge open-source model catalog
@@ -1281,19 +1277,36 @@ async function streamCodex(options: StreamOptions): Promise<void> {
   });
 }
 
-function toGeminiContents(messages: ChatMessage[]): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
-  const out: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+/**
+ * Convert chat messages to Gemini `contents`. Image parts (OpenAI-style
+ * `image_url` data URLs, which is how streamFromCustomLLM packs attachments)
+ * become `inlineData` parts. Before this, every image was silently dropped on
+ * the Gemini Native route and the model answered as if none was attached.
+ */
+export function toGeminiContents(messages: ChatMessage[]): Array<{ role: 'user' | 'model'; parts: GeminiPart[] }> {
+  const out: Array<{ role: 'user' | 'model'; parts: GeminiPart[] }> = [];
   for (const msg of messages) {
     if (msg.role === 'system') continue;
     const role: 'user' | 'model' = msg.role === 'assistant' ? 'model' : 'user';
-    const text = typeof msg.content === 'string'
-      ? msg.content
-      : msg.content
-          .map((part) => (part.type === 'text' ? (part.text || '') : ''))
-          .filter(Boolean)
-          .join('\n');
-    if (!text.trim()) continue;
-    out.push({ role, parts: [{ text }] });
+    const parts: GeminiPart[] = [];
+    if (typeof msg.content === 'string') {
+      if (msg.content.trim()) parts.push({ text: msg.content });
+    } else {
+      const text = msg.content
+        .map((part) => (part.type === 'text' ? (part.text || '') : ''))
+        .filter(Boolean)
+        .join('\n');
+      if (text.trim()) parts.push({ text });
+      for (const part of msg.content) {
+        if (part.type !== 'image_url' || !part.image_url?.url) continue;
+        const match = part.image_url.url.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+      }
+    }
+    if (parts.length === 0) continue;
+    out.push({ role, parts });
   }
   return out;
 }
@@ -1722,6 +1735,13 @@ export async function fetchAvailableCustomModels(config: Partial<CustomLLMConfig
  * Main streaming function that routes to the appropriate provider
  * Now supports tool calling for OpenAI-compatible APIs
  */
+export const DEFAULT_IMAGE_PROMPT = 'Describe this image.';
+
+/** Providers whose route in this client carries image parts to a vision-capable model. */
+export const CLOUD_VISION_PROVIDERS: ReadonlySet<string> = new Set([
+  'google-gemini', 'google-ai-studio', 'openai', 'anthropic', 'openrouter',
+]);
+
 export async function streamFromCustomLLM(
   message: string,
   conversationHistory: ChatMessage[],
@@ -1771,9 +1791,11 @@ export async function streamFromCustomLLM(
 
   // Build the user message — multimodal if images are present
   let userContent: ChatMessage['content'] = message;
-  if (imageData && imageData.length > 0 && message) {
+  if (imageData && imageData.length > 0) {
+    // An image with no typed text is still a request: describe it. Before,
+    // `&& message` here dropped the image entirely on every cloud provider.
     const parts: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: 'text', text: message },
+      { type: 'text', text: (message || '').trim() ? message : DEFAULT_IMAGE_PROMPT },
     ];
     for (const img of imageData) {
       const mime = img.mimeType || 'image/png';
@@ -1941,7 +1963,7 @@ export async function generateFromCustomLLM(
   apiConfig: CustomLLMConfig,
   systemPrompt: string,
   userPrompt: string,
-  opts?: { timeoutMs?: number },
+  opts?: { timeoutMs?: number; imageData?: Array<{ base64: string; mimeType?: string }> },
 ): Promise<string> {
   const timeoutMs = opts?.timeoutMs ?? 120_000;
 
@@ -1973,6 +1995,9 @@ export async function generateFromCustomLLM(
       () => finish(() => resolve(buffer)),
       (err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
       controller.signal,
+      undefined,
+      undefined,
+      opts?.imageData,
     ).catch((err) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))));
   });
 }

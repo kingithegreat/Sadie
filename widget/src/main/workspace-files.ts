@@ -4,7 +4,7 @@ import { checkedAnyTrustedWorkspacePath, checkedTrustedWorkspacePath } from './w
 import { atomicProjectWrite } from './workspace-atomic';
 import type { WorkspaceDiskSnapshot, WorkspaceSaveOptions, WorkspaceSaveResult } from '../shared/workspace-file-types';
 
-const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+import { getIdeCaps, formatBytes } from './ide-caps';
 const versionOf = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex');
 
 /** Check the existing ancestor as well: a junction must not escape the sandbox. */
@@ -15,7 +15,8 @@ export function checkedWorkspacePath(input: string, root?: string): string {
 export function readWorkspaceSnapshot(file: string): WorkspaceDiskSnapshot {
   const stat = fs.statSync(file);
   if (!stat.isFile()) throw new Error('That is a folder, not a file.');
-  if (stat.size > MAX_TEXT_BYTES) throw new Error('File is too large to open (maximum 2 MB).');
+  const limit = getIdeCaps().maxEditableBytes;
+  if (stat.size > limit) throw new Error(`File is too large to open: ${formatBytes(stat.size)} is over the ${formatBytes(limit)} editor cap. Raise "ide.caps.maxEditableBytes" in settings.json (max 10 MB).`);
   const bytes = fs.readFileSync(file);
   if (bytes.subarray(0, 8192).includes(0)) throw new Error('Binary file — cannot open in the editor.');
   const text = bytes.toString('utf8');
@@ -48,7 +49,8 @@ export function saveWorkspaceSnapshot(file: string, content: string, options: Pa
   const bom = options.bom ?? disk.bom;
   const normalized = content.replace(/\r\n/g, '\n');
   const bytes = Buffer.from((bom ? '\uFEFF' : '') + (eol === 'crlf' ? normalized.replace(/\n/g, '\r\n') : normalized), 'utf8');
-  if (bytes.length > MAX_TEXT_BYTES) throw new Error('File is too large to save (maximum 2 MB).');
+  const limit = getIdeCaps().maxEditableBytes;
+  if (bytes.length > limit) throw new Error(`File is too large to save: ${formatBytes(bytes.length)} is over the ${formatBytes(limit)} editor cap. Raise "ide.caps.maxEditableBytes" in settings.json (max 10 MB).`);
   // These operations are synchronous, so another IPC save cannot interleave.
   // Recheck immediately before replacing; no unguarded force-write path exists.
   if (versionOf(fs.readFileSync(file)) !== disk.version) return { success: false, conflict: true, disk: readWorkspaceSnapshot(file), error: 'The file changed again. Review the latest disk version.' };

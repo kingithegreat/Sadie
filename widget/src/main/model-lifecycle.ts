@@ -31,6 +31,10 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   'claude-opus-4': 'claude-opus-5',
   'claude-sonnet-4': 'claude-sonnet-5',
   // Google — Gemini 2.0 Flash / Flash-Lite were shut down on 1 June 2026.
+  // Gemini 1.5 Pro / Flash were retired by Google in 2025.
+  'gemini-1.5-pro': 'gemini-2.5-pro',
+  'gemini-1.5-flash': 'gemini-2.5-flash',
+  'gemini-1.5-flash-8b': 'gemini-2.5-flash-lite',
   'gemini-2.0-flash': 'gemini-2.5-flash',
   'gemini-2.0-flash-001': 'gemini-2.5-flash',
   'gemini-2.0-flash-lite': 'gemini-2.5-flash-lite',

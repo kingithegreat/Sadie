@@ -28,6 +28,9 @@ import { toml } from '@codemirror/legacy-modes/mode/toml';
 import { SemanticEditorSupport, semanticExtensions, readEditorPreferences, type EditorPreferences } from './SemanticEditorSupport';
 import type { WorkspaceLanguageBuffer, WorkspaceLanguageEdit } from '../../../shared/workspace-language-types';
 import { ghostCompletionExtension, setGhostSuggestion } from './GhostCompletion';
+import { getIdeSettingsSnapshot, subscribeIdeSettings } from './ideSettingsStore';
+import { forceLinting } from '@codemirror/lint';
+import { projectLintExtension, formatWithProjectPrettier } from './projectTools';
 
 /**
  * Code editor pane, on CodeMirror 6.
@@ -47,6 +50,8 @@ import { ghostCompletionExtension, setGhostSuggestion } from './GhostCompletion'
 
 /** The app's own light/dark choice (App.tsx sets data-theme on <html>). */
 function appIsLight(): boolean {
+  const chosen = getIdeSettingsSnapshot()?.settings['editor.theme'];
+  if (chosen === 'light' || chosen === 'dark') return chosen === 'light';
   return document.documentElement.getAttribute('data-theme') === 'light';
 }
 
@@ -394,6 +399,7 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       preferencesSlot.current.of(preferenceExtensions(preferences)),
       semanticSlot.current.of(semanticExtensions(() => semanticContext.current)),
       ghostCompletionExtension,
+      projectLintExtension(() => semanticContext.current),
       EditorView.contentAttributes.of({ 'aria-label': 'Code editor' }),
       EditorView.updateListener.of(update => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
@@ -434,7 +440,10 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
       view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) });
     });
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    // settings.json changes apply live: theme and editor preferences.
+    const offSettings = subscribeIdeSettings(() => { view.dispatch({ effects: themeSlot.current.reconfigure(editorTheme(appIsLight())) }); setPreferences(readEditorPreferences()); });
     return () => {
+      offSettings();
       // Layout cleanup runs before React removes the host. Detached elements
       // can report zero scroll offsets even when their view was scrolled.
       if (session) {
@@ -479,6 +488,20 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
     if (!view || readOnly) return;
     setSaveError('');
     const currentPreferences = readEditorPreferences();
+    if (currentPreferences.formatOnSave && root && filePath && (window.electron as any)?.workspaceProjectTools) {
+      // Project Prettier first (allowed projects with prettier installed only).
+      const before = view.state.doc.toString();
+      try {
+        const pretty = await formatWithProjectPrettier(root, filePath, before);
+        if (pretty) {
+          if (pretty.error) { setSaveError(`Project Prettier failed: ${pretty.error} Your draft was kept; fix it or turn off format on save.`); return; }
+          if (viewRef.current !== view || view.state.doc.toString() !== before) { setSaveError('You typed while formatting. Your draft was kept; save again when ready.'); return; }
+          if (pretty.formatted !== undefined && pretty.formatted !== before) view.dispatch({ changes: { from: 0, to: before.length, insert: pretty.formatted }, userEvent: 'input.format' });
+          onSaveRef.current(view.state.doc.toString()); forceLinting(view);
+          return;
+        }
+      } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); return; }
+    }
     if (currentPreferences.formatOnSave && root && filePath && /\.[cm]?[jt]sx?$/i.test(filePath)) {
       const before = view.state.doc.toString();
       try {
@@ -487,9 +510,9 @@ export default function CodeEditor({ value, language, onChange, onSave, readOnly
         if (viewRef.current !== view || view.state.doc.toString() !== before) { setSaveError('You typed while formatting. Your draft was kept; save again when ready.'); return; }
         const changes = result.edits?.[0]?.changes || [];
         view.dispatch({ changes: changes.map((change: { start: number; length: number; text: string }) => ({ from: change.start, to: change.start + change.length, insert: change.text })), userEvent: 'input.format' });
-        onSaveRef.current(view.state.doc.toString());
+        onSaveRef.current(view.state.doc.toString()); forceLinting(view);
       } catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); }
-    } else onSaveRef.current();
+    } else { onSaveRef.current(); forceLinting(view); }
   };
   const saveEditorRef = useRef(saveEditor);
   saveEditorRef.current = saveEditor;

@@ -97,6 +97,71 @@ const RESEARCH_SYSTEM = [
   'specific take that is not the obvious one.',
 ].join('\n');
 
+
+const RESEARCH_SYSTEM_LONG = [
+  'You research a long-form video before it is written.',
+  '',
+  'Rules that matter more than completeness:',
+  '- Never invent a quotation, citation, date, or historical claim. If you are',
+  '  not certain of a detail, write "UNVERIFIED:" in front of it.',
+  '- Prefer what is actually well established over what is interesting.',
+  '- If the topic is a scripture passage, give the reference (book, chapter,',
+  '  verse) rather than reciting wording you are unsure of.',
+  '',
+  'A long video needs scaffolding a short one does not. Return:',
+  '- 10-16 short factual points, grouped under 3-5 subheadings (plain text',
+  '  lines, not markdown headings).',
+  '- Under each subheading, one line starting "Why it matters:" saying what the',
+  '  viewer gains from that section.',
+  '- A final line "Angle:" proposing one specific take that is not the obvious one.',
+].join('\n');
+
+/**
+ * The no-n8n fallback is the whole research stage, not a taster for it — and
+ * when the workflow is down the brief below is all the script will ever see.
+ * So the fallback asks for MORE than the n8n-summarised path, not less: the
+ * summariser trims fetched material down, while the fallback has to generate
+ * the material itself. Measured: a 6-point recall brief produced a ~120-word
+ * generic script; the expanded fallback is what the long-form target needs to
+ * stand on.
+ */
+const RESEARCH_SYSTEM_FALLBACK = [
+  'You research a video before it is written. No fetched sources are available,',
+  'so this brief is the only material the script will be written from — make it',
+  'count.',
+  '',
+  'Rules that matter more than completeness:',
+  '- Never invent a quotation, citation, date, or historical claim. If you are',
+  '  not certain of a detail, write "UNVERIFIED:" in front of it.',
+  '- Prefer what is actually well established over what is interesting.',
+  '- If the topic is a scripture passage, give the reference (book, chapter,',
+  '  verse) rather than reciting wording you are unsure of.',
+  '',
+  'Return: 8-12 short factual points (each with one clause of concrete detail,',
+  'not just a topic name), then a line "Angle:" proposing one specific take',
+  'that is not the obvious one.',
+].join('\n');
+
+const RESEARCH_SYSTEM_FALLBACK_LONG = [
+  'You research a long-form video before it is written. No fetched sources are',
+  'available, so this brief is the only material the script will be written',
+  'from — make it count.',
+  '',
+  'Rules that matter more than completeness:',
+  '- Never invent a quotation, citation, date, or historical claim. If you are',
+  '  not certain of a detail, write "UNVERIFIED:" in front of it.',
+  '- Prefer what is actually well established over what is interesting.',
+  '- If the topic is a scripture passage, give the reference (book, chapter,',
+  '  verse) rather than reciting wording you are unsure of.',
+  '',
+  'A long video needs scaffolding a short one does not. Return:',
+  '- 12-18 short factual points, grouped under 4-6 subheadings (plain text',
+  '  lines, not markdown headings), each point with one clause of concrete detail.',
+  '- Under each subheading, one line starting "Why it matters:" saying what the',
+  '  viewer gains from that section.',
+  '- A final line "Angle:" proposing one specific take that is not the obvious one.',
+].join('\n');
+
 const SCRIPT_SYSTEM = [
   'You write narration for a short video. It is read aloud, so write for the',
   'ear: plain sentences, no headings, no bullet points, no stage directions.',
@@ -167,11 +232,12 @@ async function researchViaN8n(topic: string): Promise<{ text: string; sources: s
  */
 export async function generateResearch(job: MediaJob): Promise<GeneratedText> {
   const topic = [job.title, job.brief].filter(Boolean).join(' — ');
+  const isLong = job.format === 'long';
 
   const fetched = await researchViaN8n(topic);
   if (fetched) {
     const summarised = await generateText(
-      RESEARCH_SYSTEM,
+      isLong ? RESEARCH_SYSTEM_LONG : RESEARCH_SYSTEM,
       [
         `Working title: ${job.title}`,
         job.brief ? `Brief: ${job.brief}` : '',
@@ -191,13 +257,15 @@ export async function generateResearch(job: MediaJob): Promise<GeneratedText> {
     };
   }
 
+  // No workflow: the fallback prompt IS the research stage, so it asks for
+  // more material than the summariser path (which trims fetched text down).
   const prompt = [
     `Working title: ${job.title}`,
     job.brief ? `Brief: ${job.brief}` : '',
     '',
     'Research this for a video.',
   ].filter(Boolean).join('\n');
-  return generateText(RESEARCH_SYSTEM, prompt);
+  return generateText(isLong ? RESEARCH_SYSTEM_FALLBACK_LONG : RESEARCH_SYSTEM_FALLBACK, prompt);
 }
 
 /** Narration script from a research brief. */

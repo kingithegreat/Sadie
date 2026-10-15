@@ -38,6 +38,7 @@ import {
   mediaToolHandlers,
   readJobs,
   __resetMediaJobsForTests,
+  __nextToolForTests,
 } from '../tools/media';
 
 beforeAll(() => { initializeTools(); });
@@ -308,7 +309,11 @@ describe('referring to a job the way a person does', () => {
 describe('every success points at the next step', () => {
   it('tells the caller to write the script after creating a job', async () => {
     const res: any = await call('media_create_job', { title: 'Jonah' });
-    expect(String(res.result)).toContain('media_write_script');
+    // Human hint in the text (people read transcripts) AND the machine
+    // directive in the data (the model reads JSON). Both must survive.
+    expect(String(res.result.text ?? res.result)).toContain('media_write_script');
+    const jobs = readJobs();
+    expect(res.result.next).toEqual({ tool: 'media_write_script', job: jobs[0].id });
   });
 
   it('tells the caller to narrate once the script exists', async () => {
@@ -319,7 +324,28 @@ describe('every success points at the next step', () => {
     require('../tools/media').writeJobs(jobs);
 
     const res: any = await call('media_advance_job', { job: 'Jonah', to: 'script_qa' });
-    expect(String(res.result)).toContain('media_narrate');
+    expect(String(res.result.text ?? res.result)).toContain('media_narrate');
+    expect(res.result.next).toEqual({ tool: 'media_narrate', job: jobs[0].id });
+  });
+
+  it('attaches a machine-readable next-tool directive when the job is created', async () => {
+    const res: any = await call('media_create_job', { title: 'Jonah' });
+    expect(res.success).toBe(true);
+    const jobs = readJobs();
+    expect(res.result).toEqual({
+      text: String(res.result.text ?? res.result),
+      next: { tool: 'media_write_script', job: jobs[0].id },
+    });
+  });
+
+  it('omits the directive where only a person may move the job', () => {
+    const states = ['render_qa', 'awaiting_approval', 'needs_revision', 'approved', 'scheduled', 'published', 'rejected'] as const;
+    for (const state of states) {
+      expect(__nextToolForTests({ id: 'j', title: 'T', state } as any)).toBeNull();
+    }
+    expect(__nextToolForTests({ id: 'j1', title: 'T', state: 'idea' } as any)).toEqual({ tool: 'media_write_script', job: 'j1' });
+    expect(__nextToolForTests({ id: 'j2', title: 'T', state: 'script_draft' } as any)).toEqual({ tool: 'media_narrate', job: 'j2' });
+    expect(__nextToolForTests({ id: 'j3', title: 'T', state: 'media_production' } as any)).toEqual({ tool: 'media_render', job: 'j3' });
   });
 
   it('names a human, not a tool, when the job is waiting on a decision', async () => {
