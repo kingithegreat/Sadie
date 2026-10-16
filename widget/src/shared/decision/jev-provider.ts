@@ -15,14 +15,14 @@ export const JEV_DEFAULT_BASE_URL = 'https://api.typesafe.ai';
 export const JEV_DEFAULT_MODEL = 'jev-latest';
 export const JEV_DEFAULT_TIMEOUT_MS = 5000;
 
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
+export type JevFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface JevProviderOptions {
   /** Overrides TYPESAFE_API_KEY. */
   apiKey?: string;
   /** Environment to read TYPESAFE_API_KEY from (default process.env). */
   env?: Record<string, string | undefined>;
-  fetch?: FetchLike;
+  fetch?: JevFetch;
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
@@ -35,7 +35,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 export class JevDecisionProvider implements DecisionProvider {
   readonly id = 'jev' as const;
   private readonly apiKey: string | undefined;
-  private readonly fetchImpl: FetchLike | undefined;
+  private readonly fetchImpl: JevFetch | undefined;
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly timeoutMs: number;
@@ -44,7 +44,7 @@ export class JevDecisionProvider implements DecisionProvider {
     const env = opts.env ?? (typeof process !== 'undefined' ? process.env : {});
     const key = (opts.apiKey ?? env.TYPESAFE_API_KEY ?? '').trim();
     this.apiKey = key.length > 0 ? key : undefined;
-    this.fetchImpl = opts.fetch ?? (typeof fetch === 'function' ? fetch.bind(globalThis) as FetchLike : undefined);
+    this.fetchImpl = opts.fetch ?? (typeof fetch === 'function' ? fetch.bind(globalThis) as JevFetch : undefined);
     this.baseUrl = (opts.baseUrl ?? JEV_DEFAULT_BASE_URL).replace(/\/+$/, '');
     this.model = opts.model ?? JEV_DEFAULT_MODEL;
     this.timeoutMs = opts.timeoutMs ?? JEV_DEFAULT_TIMEOUT_MS;
