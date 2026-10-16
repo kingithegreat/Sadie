@@ -3,6 +3,7 @@ import { join } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'fs';
 import { logTelemetryConsent } from './utils/logger';
 import { migrateRetiredModel } from './model-lifecycle';
+import { normalizeDecisionProvider } from '../shared/decision/types';
 
 // Keys that contain secrets and should be encrypted at rest
 const SECRET_KEYS: (keyof Settings)[] = [
@@ -210,6 +211,11 @@ export interface Settings {
   // Batch preview (issue #6): stream a "About to run N actions" listing into
   // chat BEFORE a tool batch executes. Off by default — opt-in transparency.
   batchPreviewEnabled?: boolean;
+  // Decision provider (Jev integration plan, Phase 1): 'local' = deterministic
+  // keyword rules (default); 'jev' = TypeSafe System One stub. No key is ever
+  // stored here — the Jev provider reads TYPESAFE_API_KEY and is disabled
+  // without it. Unknown values normalise to 'local' at read time.
+  decision?: { provider: import('../shared/decision/types').DecisionProviderId };
 }
 
 // Exported for the permission-copy drift gate (permission-copy-registry.test.ts):
@@ -226,6 +232,7 @@ export const DEFAULT_SETTINGS: Settings = {
   modelRoutingMode: 'prompt',
   reflectionValidationEnabled: false,
   batchPreviewEnabled: false,
+  decision: { provider: 'local' },
   chatModel: 'qwen2.5:7b',               // best IQ + tool-calling at 7B
   uncensoredModel: 'dolphin-mistral:7b',
   visionModel: 'moondream',            // 1.7 GB — replaces llava (4.7 GB)
@@ -669,6 +676,9 @@ export function getSettings(): Settings {
     // explicit choice made in the Models tab must survive a reload, which the
     // old "anything other than dolphin-mistral:7b" guard silently reverted on
     // every getSettings() call.
+    // Validate decision.provider: a hand-edited or stale value must not select
+    // an unknown provider.
+    merged.decision = { provider: normalizeDecisionProvider((savedSettings as any)?.decision?.provider) };
     if (merged.uncensoredModel === 'dolphin:7b') {
       merged.uncensoredModel = 'dolphin-mistral:7b';
     }

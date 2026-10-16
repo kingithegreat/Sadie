@@ -576,3 +576,24 @@ describe('per-provider API keys', () => {
     expect(loaded.providerApiKeys.cerebras).toBe('csk-stay');
   });
 });
+
+describe('config-manager decision.provider', () => {
+  const temp = join(os.tmpdir(), 'homebot-decision-' + Date.now());
+  beforeAll(() => { process.env.TEST_USERDATA = temp; mkdirSync(temp, { recursive: true }); });
+  afterAll(() => { try { rmSync(temp, { recursive: true, force: true }); } catch (e) {} });
+
+  // Use one module instance throughout: other tests in this file reset the
+  // module registry, so require() here could return a fresh copy.
+  test('defaults to local, persists jev, normalises unknown values', () => {
+    const cm = require('../../main/config-manager');
+    const { getSettings, saveSettings, getSettingsPath, invalidateSettingsCache } = cm;
+    invalidateSettingsCache();
+    expect(getSettings().decision).toEqual({ provider: 'local' });
+    saveSettings({ ...getSettings(), decision: { provider: 'jev' } });
+    invalidateSettingsCache();
+    expect(getSettings().decision).toEqual({ provider: 'jev' });
+    writeFileSync(getSettingsPath(), JSON.stringify({ decision: { provider: 'bogus' } }), 'utf-8');
+    invalidateSettingsCache();
+    expect(getSettings().decision).toEqual({ provider: 'local' });
+  });
+});
