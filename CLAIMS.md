@@ -1206,3 +1206,11 @@ chat-only hardware seed, scoped custom Connect, preserved nested failure and
 merge-source receipts, and ordinary IPC current-user duplicate correction with
 local/custom regression controls. No shared profile/dependency mutations or
 local native/heavy launch. Root retains integration, publication and qualification.
+
+## 2026-10-20 NZ — SHARED-AGENT-SKILLS (Grok Bot, Aden-approved)
+
+Grok Bot owns branch `claude/shared-agent-skills` from main `12b11c3`: docs only.
+Owns: `AGENTS.md` (new top section + Contract section), `CLAUDE.md` (becomes a pointer;
+its rules move verbatim into AGENTS.md "Contract"), `GEMINI.md` (pointer wording only),
+new `PROJECT_INSTRUCTIONS.md`, `SYNC.md`, `agent-skills/**`. Does NOT touch app `skills/`,
+any code, the Ancient Pathways repo/rig (MS-RIG-0), Drive, or paid APIs. One PR.
