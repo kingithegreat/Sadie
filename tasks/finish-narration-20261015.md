@@ -1,34 +1,24 @@
-# FINISH-NARRATION-20261015 — checkpoint, 19 October 2026
+# FINISH-NARRATION-20261015 — closeout, 19 October 2026
 
-Fresh source base: `origin/main` `12b11c385d746ed1908717b314c5415162e1061d`.
-The Drive task assigned this branch name from `acede878`. The old remote branch
-had no unique commits and was 30 commits behind current main; no open PR was
-found through connected GitHub search. Work continues on the same named branch
-from fresh main.
+Source branch `claude/finish-narration-20261015` is based on current main
+`12b11c385d746ed1908717b314c5415162e1061d`. Closeout code head:
+`333e6b6f39da5711afa7d9ea847c328c89de6be2` (PR #496).
 
-## Scope
+## Finding and change
 
-1. Reproduce and correct the nightly Edge speech 403 and narration `voiceLocale`
-   crash on the actual reachable Media Studio path.
-2. Verify the current installer on the corrected source without signing,
-   account setup, paid requests, owner credentials, or publication.
-3. Keep Linux/source checks separate from hosted Windows runtime acceptance.
-   Do not claim fresh speech or an episode until HomeBot produces and plays it.
-
-## Findings and change
-
-- Latest failing nightly run: [39106307387](https://github.com/kingithegreat/Sadie/actions/runs/39106307387), job `117612778475`, tested `df32ef43`. Its Media Studio suite recorded Edge TTS `Unexpected server response: 403` and the real IPC failure `Cannot read properties of undefined (reading 'voiceLocale')`.
-- Current main at `12b11c38` has no later voice fix; `widget` still locked `msedge-tts` 2.0.7. Its Edge initializer attempts the fallback on that same partially initialized library instance.
-- Upstream [merged PR 39](https://github.com/Migushthe2nd/MsEdgeTTS/pull/39) moved synthesis to `api.msedgeservices.com` and changed the subscription-key query parameter. Upstream [metadata hardening](https://github.com/Migushthe2nd/MsEdgeTTS/commit/defebdd7f81aa760340affac21629a6b71bccb8e) fixed the optional `voiceLocale` handling. Version 2.1.0 contains these fixes.
-- Updated the widget dependency and lock to exact `msedge-tts` 2.1.0, retaining the registry integrity value and updating its locked `ws` dependency. Added `msedge-tts-compat.test.ts` to guard both regressions without contacting the speech service.
+- Nightly run [39106307387](https://github.com/kingithegreat/Sadie/actions/runs/39106307387), job `117612778475`, recorded Edge TTS `Unexpected server response: 403` followed by `Cannot read properties of undefined (reading 'voiceLocale')` on the real Media Studio IPC path.
+- The widget pinned `msedge-tts` 2.0.7. Upstream 2.1.0 moves synthesis to the current Edge speech endpoint and hardens optional voice metadata. Updated the dependency to exact 2.1.0 and added `msedge-tts-compat.test.ts` for both regressions.
 
 ## Verification
 
-- New compatibility tests and `narration-engine.test.ts`: 2 suites, 12 tests passed against the actual 2.1.0 npm package in an isolated temporary install. No speech request was sent.
-- Positive control against the existing 2.0.7 package: both new checks fail for the original `voiceLocale` crash and obsolete `speech.platform.bing.com` endpoint. Temporary package files and cache were removed.
-- A full local widget typecheck is not claimed: this isolated worktree has no dependency installation. A temporary path-remapping attempt bypassed package type exports and is excluded from evidence. Exact-head hosted Windows typecheck remains required.
-- Latest main-based installer baseline: run [39203043731](https://github.com/kingithegreat/Sadie/actions/runs/39203043731) succeeded for a PR merge containing current main `12b11c38`; the new dependency change still needs its own run.
+- Focused compatibility and narration-engine tests: 2 suites, 12 tests passed against actual `msedge-tts` 2.1.0. The same regression checks fail against 2.0.7 for the original metadata crash and obsolete endpoint.
+- All six live main-protection contexts passed on PR head `333e6b6f`: `build`, `duplicate-export-guard`, `ESLint (React Hooks)`, `Permissions smoke test`, `widget`, and `e2e-all`. The Windows widget job passed typecheck, unit tests, and overlay E2E; the full three-OS widget E2E matrix passed.
+- Installer-first-run run [39212516946](https://github.com/kingithegreat/Sadie/actions/runs/39212516946) passed on the same head: unsigned build, silent install, launch, check, and uninstall.
+- Real Media Studio run [39214310984](https://github.com/kingithegreat/Sadie/actions/runs/39214310984) passed on the same head. Its Windows logs show Edge TTS initialized with `en-US-AvaNeural`; the real IPC test created `narration.mp3`; the live render produced an 11-second, 0.3 MB video with checks passed. The real-media suites completed 3/3 suites and 69/69 tests. The test used generic fixture text and disposable CI data; no owner credentials, paid services, or private assets were used.
+- A full local widget typecheck was not run in this isolated worktree; exact-head hosted Windows typecheck passed.
 
-## Remaining
+## Review state and remaining series work
 
-Push the reviewed branch as a draft PR, confirm all required Windows checks and a real fresh narration succeed on the exact head, then verify installer readiness on that head. Preserve any provider rejection as a remaining limit; never infer a playable episode from unit tests alone.
+PR [#496](https://github.com/kingithegreat/Sadie/pull/496) remains a draft for owner review, with auto-merge disabled. No installer was published and no code was merged by this task.
+
+The HomeBot code fix and runtime verification are complete. A full Leila/Flappy episode, human listening/art review, Flappy-specific dialogue/flight, and the Leila silent articulation proof are separate content gates in the Drive plan. The next planned media step is the smallest Leila proof after the existing rig owner supplies/verifies the hand-parented prop attachment and accepted source cells; then the full episode follows.

@@ -1207,7 +1207,7 @@ merge-source receipts, and ordinary IPC current-user duplicate correction with
 local/custom regression controls. No shared profile/dependency mutations or
 local native/heavy launch. Root retains integration, publication and qualification.
 
-## FINISH-NARRATION-20261015 — active, Codex
+## FINISH-NARRATION-20261015 — complete, claim released 2026-10-19
 
 Owner: Codex in `.kilo/worktrees/finish-narration-20261015`, branch
 `claude/finish-narration-20261015`, rebased from the Drive-listed `acede878`
@@ -1222,3 +1222,12 @@ source/fixture checks separately from hosted Windows runtime acceptance.
 Root's existing 233 tests, TypeScript and API-doc result on `acede878` do not
 qualify the newer source or these Windows failures. Do not add installer or
 episode claims from source-level checks.
+
+Closed at `333e6b6f39da5711afa7d9ea847c328c89de6be2`, draft PR #496. All six
+live main branch-protection contexts passed; exact-head Windows installer
+first-run passed; and hosted real Media Studio E2E generated Edge speech through
+the real IPC path and rendered audio/video (3 suites, 69 tests passed). Focused
+2.1.0 regression checks pass and the 2.0.7 positive control reproduces both
+original failures. Claim released. Keep PR #496 in draft with auto-merge off
+for owner review; no public release or complete Leila/Flappy episode is claimed.
+See `tasks/finish-narration-20261015.md`.
