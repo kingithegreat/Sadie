@@ -1206,3 +1206,19 @@ chat-only hardware seed, scoped custom Connect, preserved nested failure and
 merge-source receipts, and ordinary IPC current-user duplicate correction with
 local/custom regression controls. No shared profile/dependency mutations or
 local native/heavy launch. Root retains integration, publication and qualification.
+
+## FINISH-NARRATION-20261015 — active, Codex
+
+Owner: Codex in `.kilo/worktrees/finish-narration-20261015`, branch
+`claude/finish-narration-20261015`, rebased from the Drive-listed `acede878`
+task baseline onto fresh `origin/main` `12b11c38`. The canonical Drive queue
+assigns bounded investigation/correction of the nightly Edge speech HTTP 403
+and native narration `voiceLocale` failure, followed by current installer
+readiness verification. Preserve other art/rig/provider/IDE owners. Do not
+use owner credentials, paid calls, private assets, signing, or public release
+publication. Reproduce both voice symptoms before changes; retain their initial
+failure evidence; prove the exact production paths afterward. Record Linux
+source/fixture checks separately from hosted Windows runtime acceptance.
+Root's existing 233 tests, TypeScript and API-doc result on `acede878` do not
+qualify the newer source or these Windows failures. Do not add installer or
+episode claims from source-level checks.
