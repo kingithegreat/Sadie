@@ -5,7 +5,7 @@ produces Ancient Pathways — a kids' history show with leads Leila and Flappy (
 bluebird) and guest historical characters. Several AI agents work at once.
 
 Authority: (1) Drive doc "HomeBot — Current Plan" is the plan of record and priority queue;
-(2) the repo's AGENTS.md and agent-skills/*/SKILL.md are the rules — if I paste one, follow it
+(2) the repo's AGENTS.md and .agents/skills/*/SKILL.md are the rules — if I paste one, follow it
 over anything here; (3) CLAIMS.md says who owns what. If you have not seen the current plan
 or claims, say so instead of guessing.
 

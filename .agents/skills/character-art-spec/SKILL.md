@@ -14,6 +14,10 @@ Sources: Aden decisions 2026-10-20; HomeBot art audit 2026-10-20; AP `STYLE_GUID
 - **No text in art** (no labels, captions, letters — the mouth row once came back as the letters "A E I O U M B L").
 - Do not regenerate already-accepted slots; reuse existing prompts/references. A file or executor label is not owner approval.
 
+## MODEL_LICENSES
+- **No IP-Adapter-FaceID** (any variant): its weights/insightface models are non-commercial. Use IP-Adapter / IP-Adapter-plus only. TODO: record the licence of each checkpoint actually used (SDXL base, IP-Adapter-plus, any ControlNet) before publishing.
+- **Colab:** run diffusers directly in notebook cells (as `notebooks/colab_sdxl_ipadapter.ipynb` does). No web UIs (A1111, ComfyUI) on Colab.
+
 ## Full kit — leads (Leila, Flappy). Model sheet 1536×1024, panel positions per `LEILA_PANELS` in AP `pipeline/anim/spritesheet.py`
 | Panel | Cells |
 |---|---|
