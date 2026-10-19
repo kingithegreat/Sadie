@@ -32,6 +32,9 @@ Notion is reference history only. If Drive is unreachable, say so; never silentl
 ## Skills index (`.agents/skills/<slug>/SKILL.md`, mirrored to `.claude/skills/`)
 | Skill | Use when |
 |---|---|
+| homebot-defect-patterns, stateful-fix-patterns | defects that pass every check; fixes touching saved state/CLIs |
+| multi-agent-verify-content | confirming work landed after squash-merge |
+| feature-decision-closure, tts-engine-evaluation | settling "should we build/switch X" questions |
 | homebot-dev-workflow | building, testing or landing anything in Sadie |
 | claim-and-branch | starting any change in Sadie |
 | pr-handoff-evidence | opening/finishing a PR or handing work over |
