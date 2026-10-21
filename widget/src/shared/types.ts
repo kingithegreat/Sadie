@@ -893,6 +893,24 @@ export interface ElectronAPI {
     framesSkipped?: string;
     error?: string;
   }>;
+  /** Premise → episode script JSON via the owner's OpenAI-compatible provider (main process). Writes nothing. */
+  mediaStoryboardGenerateScript?: (args: { premise: string; shotCount?: number; genre?: string }) => Promise<{
+    ok: boolean;
+    script?: GeneratedEpisodeScript;
+    code?: string;
+    error?: string;
+  }>;
+  /** Save a generated (or pasted) episode script as a new storyboard project. */
+  mediaStoryboardSaveScript?: (args: { script: unknown; premise?: string }) => Promise<{
+    ok: boolean;
+    projectId?: string;
+    title?: string;
+    genre?: string;
+    shots?: Array<Record<string, any>>;
+    totalDurationSec?: number;
+    code?: string;
+    error?: string;
+  }>;
   mediaSeriesSettingsList?: (seriesId: string) => Promise<{
     ok: boolean;
     settings?: any[];
@@ -1409,4 +1427,26 @@ export interface SavedAutomation {
   lastResult?: string;
   lastStatus?: 'success' | 'error';
   createdAt: string;
+}
+
+/** Episode script returned by the Media Studio generator (mirrors main/movie/episode-script-generator). */
+export interface GeneratedEpisodeScript {
+  schemaVersion: number;
+  title: string;
+  logline: string;
+  genre: string;
+  totalDurationSec: number;
+  shots: Array<{
+    shotId: string;
+    order: number;
+    title: string;
+    prompt: string;
+    framing: string;
+    lens: string;
+    movement: string;
+    durationSec: number;
+    narration: string;
+    characters: string[];
+    beatType: string;
+  }>;
 }
