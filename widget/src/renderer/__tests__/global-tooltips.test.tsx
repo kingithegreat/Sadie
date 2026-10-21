@@ -7,7 +7,9 @@ beforeEach(() => jest.useFakeTimers());
 afterEach(() => { jest.runOnlyPendingTimers(); jest.useRealTimers(); });
 
 function setup(ui: React.ReactElement) {
-  return render(<><GlobalTooltips />{ui}</>);
+  const r = render(<><GlobalTooltips />{ui}</>);
+  fireEvent.keyDown(document, { key: 'Tab' }); // keyboard modality
+  return r;
 }
 
 test('shows central help on keyboard focus immediately, wired by aria-describedby', () => {
@@ -75,4 +77,11 @@ test('edge-aware positioning flips below and clamps to the viewport', () => {
   const p = computePosition(rect, 200, 30, 800, 600);
   expect(p.top).toBeGreaterThan(22);
   expect(p.left + 200).toBeLessThanOrEqual(792);
+});
+
+test('programmatic (non-keyboard) focus does not pop a bubble', () => {
+  render(<><GlobalTooltips /><button>+ New Chat</button></>);
+  fireEvent.mouseDown(document.body);
+  fireEvent.focusIn(screen.getByRole('button'));
+  expect(screen.queryByRole('tooltip')).toBeNull();
 });

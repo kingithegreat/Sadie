@@ -153,7 +153,14 @@ export default function GlobalTooltips() {
   }, [hide]);
 
   useEffect(() => {
+    // Focus help is for keyboard users. Programmatic focus (autofocus of the
+    // chat box on launch, focus restored after a dialog) must not pop a bubble.
+    let keyboard = false;
+    const onKeyModality = (e: KeyboardEvent) => { if (!e.metaKey && !e.ctrlKey && !e.altKey) keyboard = true; };
+    const onPointerModality = () => { keyboard = false; };
     const onOver = (e: MouseEvent) => {
+      // Pointer is over a control owned by <Tooltip>: only one bubble at a time.
+      if (e.target instanceof Element && e.target.closest('.tooltip-anchor')) { hide(); return; }
       const el = findControl(e.target);
       if (!el) return;
       if (el === current.current) return;
@@ -167,12 +174,16 @@ export default function GlobalTooltips() {
       hide();
     };
     const onFocusIn = (e: FocusEvent) => {
+      if (!keyboard) return;
       const el = findControl(e.target);
       if (el) show(el, true); else hide();
     };
     const onFocusOut = () => hide();
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && current.current) hide(); };
     const onDown = () => hide();
+    document.addEventListener('keydown', onKeyModality, true);
+    document.addEventListener('pointerdown', onPointerModality, true);
+    document.addEventListener('mousedown', onPointerModality, true);
     document.addEventListener('mouseover', onOver, true);
     document.addEventListener('mouseout', onOut, true);
     document.addEventListener('focusin', onFocusIn, true);
@@ -183,6 +194,9 @@ export default function GlobalTooltips() {
     window.addEventListener('blur', onDown);
     return () => {
       clearTimer();
+      document.removeEventListener('keydown', onKeyModality, true);
+      document.removeEventListener('pointerdown', onPointerModality, true);
+      document.removeEventListener('mousedown', onPointerModality, true);
       document.removeEventListener('mouseover', onOver, true);
       document.removeEventListener('mouseout', onOut, true);
       document.removeEventListener('focusin', onFocusIn, true);
