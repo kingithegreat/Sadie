@@ -157,8 +157,9 @@ describe('config-manager integration tests', () => {
 
   test.each([
     ['anthropic', 'claude-3-5-sonnet-20241022', 'claude-sonnet-5'],
-    ['deepseek', 'deepseek-chat', 'deepseek-v4-flash'],
-    ['deepseek', 'deepseek-reasoner', 'deepseek-v4-flash'],
+    ['deepseek', 'deepseek-chat', 'deepseek-flash'],
+    ['deepseek', 'deepseek-reasoner', 'deepseek-flash'],
+    ['deepseek', 'deepseek-v4-flash', 'deepseek-flash'],
     ['google-ai-studio', 'gemini-2.0-flash', 'gemini-2.5-flash'],
   ])('a saved %s model the provider shut down (%s) loads as %s', (provider, retired, current) => {
     // The picker used to save these; the request is built from what loads.
