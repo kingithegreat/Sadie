@@ -3,7 +3,6 @@
  * Media Studio "Generate episode script" step. The renderer only talks to the
  * preload bridge; these tests stub that bridge (no network, no keys).
  */
-import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MediaStudioEpisodeScript, SAMPLE_EPISODE_PREMISE } from '../components/MediaStudioEpisodeScript';
 
