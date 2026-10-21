@@ -149,11 +149,11 @@ const GROQ_MODELS: CustomModelInfo[] = [
 ];
 
 // DeepSeek — small safe FALLBACK list for when /models discovery is
-// unreachable. The real ids (deepseek-v4-flash / deepseek-v4-pro) are
+// unreachable. The real ids (deepseek-flash / deepseek-v4-pro) are
 // discovered dynamically; these just keep the picker usable offline. No stale
 // version names or pricing hints we can no longer vouch for.
 const DEEPSEEK_MODELS: CustomModelInfo[] = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+  { id: 'deepseek-flash', name: 'DeepSeek Flash', description: 'Fast chat model', provider: 'deepseek' },
   { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
 ];
 
@@ -1404,7 +1404,7 @@ export function autoConfigureCustomLLM(config: CustomLLMConfig): CustomLLMConfig
 // ── DeepSeek dynamic model discovery ────────────────────────────────────────
 //
 // DeepSeek rotates model ids (deepseek-chat / deepseek-reasoner became
-// deepseek-v4-flash / deepseek-v4-pro). Its OpenAI-compatible /models endpoint
+// deepseek-v4-flash, then deepseek-flash / deepseek-v4-pro). Its OpenAI-compatible /models endpoint
 // is the only truthful source of "what can this key actually call"; the static
 // list above is a small safe fallback for when discovery is unreachable.
 

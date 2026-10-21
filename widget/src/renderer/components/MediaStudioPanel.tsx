@@ -28,6 +28,7 @@ import {
 import { useTimelinePlayback } from './useTimelinePlayback';
 import { StudioMedia } from './StudioMedia';
 import { StudioMonitor } from './StudioMonitor';
+import { MediaStudioEpisodeScript } from './MediaStudioEpisodeScript';
 import './StudioWorkflow.css';
 import { useAnimaticPlayback } from './useAnimaticPlayback';
 import { MultiPlaneStage } from './MultiPlaneStage';
@@ -528,6 +529,7 @@ export const MediaStudioPanel: React.FC<MediaStudioPanelProps> = ({ navContext }
   const [directorTitle, setDirectorTitle] = useState('');
   const [directorAutoFrames, setDirectorAutoFrames] = useState(false);
   const [directorBusy, setDirectorBusy] = useState(false);
+  const [episodeScriptOpen, setEpisodeScriptOpen] = useState(false);
 
   // Animatic Player State
   const [animaticOpen, setAnimaticOpen] = useState(false);
@@ -5004,6 +5006,20 @@ ${shots.map((s, idx) => `
 
             <button
               type="button"
+              className={`ms-btn ms-btn--secondary ${episodeScriptOpen ? 'active' : ''}`}
+              onClick={() => {
+                setEpisodeScriptOpen(!episodeScriptOpen);
+                if (isCreatingStoryboard) setIsCreatingStoryboard(false);
+                if (directorOpen) setDirectorOpen(false);
+              }}
+              title="Generate an episode script from a premise with your cloud model, then load it as a storyboard"
+              disabled={storyboardBusy}
+            >
+              {episodeScriptOpen ? '✕ Cancel' : '📝 Episode Script'}
+            </button>
+
+            <button
+              type="button"
               className="ms-btn ms-btn--primary"
               disabled={storyboardBusy || !activeStoryboard}
               onClick={() => handleSaveStoryboard()}
@@ -5399,6 +5415,19 @@ ${shots.map((s, idx) => `
               </button>
             </div>
           </div>
+        )}
+
+        {episodeScriptOpen && (
+          <MediaStudioEpisodeScript
+            disabled={storyboardBusy}
+            onClose={() => setEpisodeScriptOpen(false)}
+            onSaved={async (projectId, script) => {
+              setEpisodeScriptOpen(false);
+              await loadStoryboardProjects();
+              await loadStoryboard(projectId);
+              setStoryboardMessage(`Loaded episode script "${script.title}" as a storyboard with ${script.shots.length} shots.`);
+            }}
+          />
         )}
 
         {/* Notifications & Status */}

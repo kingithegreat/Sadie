@@ -42,8 +42,14 @@ export const RETIRED_MODEL_RENAMES: Record<string, string> = {
   // DeepSeek — both legacy names were discontinued on 24 July 2026. They had
   // pointed at V4 Flash (reasoner = its thinking mode), so they land there
   // rather than on a pricier tier the user never chose.
-  'deepseek-chat': 'deepseek-v4-flash',
-  'deepseek-reasoner': 'deepseek-v4-flash',
+  'deepseek-chat': 'deepseek-flash',
+  'deepseek-reasoner': 'deepseek-flash',
+  // V4 Flash itself was retired when DeepSeek-V4.1-Flash-1017 shipped; the
+  // official model name is now `deepseek-flash`. The legacy ids are still
+  // accepted upstream, but we save the documented one.
+  // https://api-docs.deepseek.com/quick_start/pricing
+  'deepseek-v4-flash': 'deepseek-flash',
+  'deepseek-v4-flash-vision-exp': 'deepseek-flash',
   // Codex — the CLI rejects any explicit model id with a ChatGPT account
   // (400 "not supported when using Codex with a ChatGPT account"), so these
   // picker entries were removed. Saved settings naming one still work, because

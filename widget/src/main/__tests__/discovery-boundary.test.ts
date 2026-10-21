@@ -93,7 +93,7 @@ describe('dynamic discovery — bounded cache', () => {
   test('evicts the oldest entry past the bound', async () => {
     // MAX_DISCOVERY_CACHE_ENTRIES is 10; fill 11 distinct keys.
     (axios.get as jest.Mock).mockImplementation(async () => ({
-      data: { object: 'list', data: [{ id: 'deepseek-v4-flash', owned_by: 'deepseek' }] },
+      data: { object: 'list', data: [{ id: 'deepseek-flash', owned_by: 'deepseek' }] },
     }));
 
     for (let i = 0; i < 11; i++) {
