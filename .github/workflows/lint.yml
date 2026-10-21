@@ -19,6 +19,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # Zero-dependency check: .agents/skills and .claude/skills must stay
+      # byte-identical (PR #497 keeps both on purpose).
+      - name: Agent skills in sync
+        run: node scripts/sync-agent-skills.mjs --check
       # --ignore-scripts: lint needs only the JS eslint toolchain, not the
       # native/electron postinstall — keeps this job fast and flake-free.
       - name: Install widget dependencies
