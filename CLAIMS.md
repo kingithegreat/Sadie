@@ -1,4 +1,4 @@
-# Work Claims
+﻿# Work Claims
 
 ## 2026-10-07 NZ — IDE completion team (Codex root)
 
@@ -666,12 +666,12 @@ Actual corrected artifacts and the original failed output are retained in the
 isolated completion tree; see tasks/studio-saved-formats.md. One selected output
 per export is this checkpoint's scope, not full STUDIO-03 acceptance.
 
-## 2026-09-21 � G-1 closed; REL-1 test build refreshed to main `ca600736`
+## 2026-09-21  G-1 closed; REL-1 test build refreshed to main `ca600736`
 
 G-1 (Release Gate never fires on main after bot squash-merges) is **closed**: its
 done-when was 3 consecutive green main runs, and the gate has three consecutive
 *scheduled* successes, each on `main` with Build + Unit Tests + E2E (smoke)
-green � `35438194068` (2026-09-19), `35506934625` (2026-09-20),
+green  `35438194068` (2026-09-19), `35506934625` (2026-09-20),
 `35600403110` (2026-09-21). Verified per run with
 `gh run view <id> --json jobs,conclusion,event,headBranch` rather than from the
 run list, which cannot by itself distinguish a scheduled main run from a PR run.
@@ -690,10 +690,10 @@ untouched):
   `Allow manual Colab worker` (#403), `See what this installation can use now`
   (#390) and `ms-colab-job-row` appear in the new
   `widget\out\renderer\assets\*.js` (2/1/1 hits) and return **0** in the older
-  preview build `.kilo\worktrees\codex-episode-progress\widget\out` � the same
+  preview build `.kilo\worktrees\codex-episode-progress\widget\out`  the same
   greps that find them also distinguish an old build, so the hits are evidence.
 - Real Electron smoke test passes against the packaged build:
-  `src/renderer/e2e/studio-host.e2e.spec.ts` � 1 passed in 42.6s, exit 0,
+  `src/renderer/e2e/studio-host.e2e.spec.ts`  1 passed in 42.6s, exit 0,
   launched `homebot-main-test\widget\out\main\index.js` in its own temp profile.
 - Launcher `.kilo\launchers\homebot-main-test.ps1` (`-ValidateOnly` reports app,
   electron and profile paths) and the existing Desktop shortcut
@@ -704,7 +704,7 @@ Fresh-profile caveats for whoever tests it: first-run appears with Online off an
 no cloud keys; Storyboard frames need Online or ComfyUI on this PC (otherwise the
 setup state shows, which is correct); offline Kokoro voice needs a one-time
 download; the capability probe can report FFmpeg missing because it ignores
-`HOMEBOT_FFMPEG` (cosmetic � renders work); the build does not auto-update.
+`HOMEBOT_FFMPEG` (cosmetic  renders work); the build does not auto-update.
 
 Not done: no installer was produced and no fresh Windows profile was exercised, so
 REL-1 itself is still open. The live Drive priority queue could not be read or

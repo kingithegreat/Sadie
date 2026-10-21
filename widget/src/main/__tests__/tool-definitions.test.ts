@@ -129,6 +129,7 @@ describe('tool categories', () => {
       { name: 'media_render_storyboard', category: 'media' },
       { name: 'media_breakdown_script', category: 'media' },
       { name: 'media_set_storyboard_image', category: 'media' },
+      { name: 'media_generate_storyboard_clip', category: 'media' },
     ]);
   });
 

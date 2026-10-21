@@ -1439,7 +1439,7 @@ export const imageGenerateDef: ToolDefinition = {
     'Generate an image from a text prompt. ' +
     'Uses your own local engines first (stable-diffusion.cpp, AUTOMATIC1111, ComfyUI) when one is running, ' +
     'then Gemini (gemini-3.1-flash-image) when a Google/Gemini key is saved, then Stable Horde, ' +
-    'and finally OpenAI images (gpt-image-2.5-flare) if an OpenAI API key is configured. Pollinations is not used as an automatic fallback. ' +
+      'and finally OpenAI images (gpt-image-2.5-flare) if an OpenAI API key is configured. Pollinations is not used as an automatic fallback. ' +
     'Online access must be enabled; every paid provider request needs interactive user confirmation. ' +
     'Returns a base64-encoded image.',
   category: 'utility',
