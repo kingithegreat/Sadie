@@ -31,7 +31,7 @@ services:
       # container had the 64-char secret).
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Shared secret used by HomeBot to authenticate webhook requests.
-      # start-homebot.ps1 sets this from the auto-generated webhook-secret file.
+      # start.ps1 -Full sets this from the auto-generated webhook-secret file.
       - HOMEBOT_WEBHOOK_SECRET=${HOMEBOT_WEBHOOK_SECRET:-}
       
     volumes:

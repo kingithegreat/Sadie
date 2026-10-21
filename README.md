@@ -280,7 +280,7 @@ Detailed documentation is available in the `docs/` folder:
 | Document | Description |
 |---|---|
 | [Architecture](docs/architecture.md) | System overview, component details, tool execution flow, safety model |
-| [Setup Guide](docs/setup-guide.md) | Step-by-step installation and first-run instructions |
+| [Developer Build Guide](DEVELOPER_BUILD_GUIDE.md) | Installation, first run, development, build and release (formerly Setup Guide and Release Process) |
 | [API Reference](docs/api-reference.md) | Complete IPC channel reference, tool schemas, permission system |
 | [Custom LLM API](docs/custom-llm-api.md) | Configure OpenAI, Anthropic, OpenRouter, or custom endpoints |
 | [Permissions](docs/permissions.md) | Tool permission model and batch execution behaviour |
@@ -290,7 +290,7 @@ Detailed documentation is available in the `docs/` folder:
 | [Current Status](docs/CURRENT_STATUS.md) | Where the project stands now |
 
 Contributor and process docs at the repo root: [AGENTS.md](AGENTS.md) (agent entry point and contract),
-[DEVELOPER_BUILD_GUIDE.md](DEVELOPER_BUILD_GUIDE.md), [RELEASE_PROCESS.md](RELEASE_PROCESS.md),
+[DEVELOPER_BUILD_GUIDE.md](DEVELOPER_BUILD_GUIDE.md) (setup, build and release),
 [CHANGELOG.md](CHANGELOG.md), [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
 
 ---
