@@ -622,3 +622,83 @@ Other-owner #461's four files and held provider/Code/rig PRs remain untouched.
 There is no app-source edit, build, install, native rebuild, GUI run or owner
 profile change in this lane. Human art/rig/episode, microphone/listening,
 entitled Pro and fresh Windows installation acceptance remain open gates.
+
+## HOMEBOT-CHARACTER-PREVIEW-1 — released, Codex art-guidance chat
+
+Resumed 8 October NZ at Aden's instruction to finish Leila and Flappy. First
+guarded isolated build exited0. Added fixed approved Flappy v2 and corrected
+walking v2 adapters and copied cached voice bytes; verification pending. Existing
+AP production ownership and protected anchors remain unchanged. Storage transfer
+is parked:48/75 pieces qualified,49 uploaded/unverified; all original exports
+and personal files retained. No further storage cleanup/upload is running here.
+
+Owner: this chat, isolated worktree `.kilo/worktrees/character-preview`, branch
+`claude/homebot-character-preview-20261007`, fresh main `ce53a7db`.
+Aden explicitly requested the six-second approved compass-free Leila scene from
+HomeBot. Scope: portable approved character import, shared renderer invocation,
+normal Studio render/save/reopen/playback proof in an isolated project.
+Reuse `character_workflow.py`; no AP production/art/anchor changes or other-owner
+rig/provider PR work. Full build/GUI are held below the unchanged resource gates.
+The claim is also recorded in the canonical Drive plan. Masamune review remains
+pending; this does not infer new artwork or performance acceptance.
+
+Source checkpoint 2026-10-07: latest focused service/UI/gateway run 53 tests in
+three suites passed; widget TypeScript no-emit, scoped lint, generated docs,
+module-boundary scanner and whitespace checks passed. Genuine approved Leila
+import/reopen through the latest service and original Python validator preserved
+all original art/manifest bytes. No GUI or movie render performed. Evidence:
+`.kilo/worktrees/character-preview/tasks/homebot-character-preview-1.md` and local
+art-pack-complete import receipt. Full suites, build, native rendering/playback
+and delivery remain pending below the unchanged 5 GiB disk / 2 GiB RAM gates.
+Ownership retained; no commit/push/PR. Sadie source/dependencies/worktrees must
+be kept; no cleanup was performed.
+
+Later capacity cleanup, authorized by Aden: about 3.3 GB recovered from old
+VS Code extension download archives and npm package cache files only; all
+projects/art/models/dependencies/installed extensions/worktrees preserved.
+Receipt and protected-hash/inventory checks are in the task above. Disk now
+6.530 GiB; RAM 1.733 GiB at 10:10:43 UTC still holds heavy work below 2 GiB.
+No process stop, build, GUI or movie acceptance was performed.
+
+## STORAGE-CLEANUP-20261007 — parked, Codex art-guidance chat
+Aden authorized the reviewed storage cleanup and project-only Drive archives. Scope is old Gradle cache/installer (verified complete), completed AP Desktop export backup with SHA readback, and unused regenerable dependencies in clean merged rel1-final-installer-f2582065 only after link/process checks. Preserve all source, uncommitted work, active/shared donor dependencies, current artwork/voices, accepted copies and personal files. Two large release copies have 16+2 incoming dependency links and must stay. Six Ollama models have existing uses and stay. No Docker/WSL/Claude disk cleanup. Full detail and verified receipts are in the canonical Drive plan and local Storage breakdown artifact. Claim active until backup/deletion checks complete.
+
+
+
+HOMEBOT-CHARACTER-PREVIEW-1 delivery — 8 October 2026: own preview claim released.
+Four approved motions, two saved scene examples and exact cached voice B are
+qualified through normal Studio controls. Final focused57/57, typecheck/scoped
+lint/docs/boundaries/build passed. Native v5 decoded1343 frames/6movies and two
+held OS0 exits; delivered production-mode copy played six projects, rendered
+the paired scene byte-identically, reopened after restart and returned two
+held OS0/launcher0 exits. New shortcut: Desktop/Leila and Flappy Studio Preview.lnk.
+Delivery: C:/Users/adenk/.homebot/leila-flappy-studio-20261008. Receipt/task evidence
+is retained in art-pack-complete/homebot-integration and this worktree task.
+No AP production/art/anchor changes, fresh speech synthesis, full episode,
+distinct new cast/series, installer, hosted CI or merge acceptance is claimed.
+Keep this source/worktree and the shared dependency targets; installed app and
+existing shortcuts/profiles are preserved. Storage backup remains parked48/75
+pieces verified; all original exports and personal files retained.
+
+Local source receipt: b83555ee49cf281fa29b1f4bba7d744724c1a2d2, Codex.
+Own character-preview worktree is clean. No push/PR/merge performed.
+
+## LEILA-SCROLL-HOMEBOT-20261021 — active, Codex art-guidance chat
+Aden accepted movie 402f4092f8daec4e7f834831ec6a1de22a08d3ff0c9921aaba11d5b30cd07cb1 with "good". Bounded data-integration lane: create a portable accepted character package, reuse the unchanged separately delivered b83555ee preview runtime, exercise normal import/render/play/reopen/failure preservation in a new private delivery, and retain the six existing preview projects. No app source edit/build/merge, no AP source/art/anchors, no fresh voice/full episode/publication. Evidence will live in the task visualization folder under leila-scroll-homebot-20261021. Existing modified CLAIMS.md content and other PR owners are preserved.
+
+LEILA-SCROLL-HOMEBOT-20261021 — completed, claim released. Aden accepted exact proof 402f4092 with "good". Data-only package fingerprint8e7b598d validates; all180 RGBA foregrounds equal the approved proof. Reused unchanged separately delivered b83555ee runtime (76 compiled files hash checked), not a current-main build. New Desktop shortcut: Leila Scroll Studio Preview.lnk; separate delivery C:/Users/adenk/.homebot/leila-scroll-studio-20261021. Production-mode normal Studio import/render/play/reopen passed; two actual exports byte-identical e7d508fb, complete6s/1080p/30fps/180-frame/noaudio decode and full playback; deliberately changed copied asset refused replacement and last-good survives restart. Seven projects retained; original six-project preview files hash-unchanged. Two held native OS0 and launcher0 exits. Launcher payload and shortcut target read back. HomeBot adds its dark review background/label; character RGBA remains exact. Actual output contact sheet and Studio screenshot inspected. Evidence: task visualization leila-scroll-homebot-20261021/{delivery-receipt,homebot-verification,package-verification}.json. No app source/build/merge/installer, AP production/art/anchors, fresh voice or complete episode claim. Existing owner edits preserved. Next: complete narrated episode saved-workflow acceptance.
+
+## LEILA-FLAPPY-EPISODE-20261021 — active, Codex art-guidance chat
+Aden explicitly requested a complete narrated episode and saved/reopened/repeated export verification after accepted Leila scroll integration. Own isolated episode project/production adapter, approved package enrolment and native HomeBot saved-job acceptance. Reuse existing app and AP rendering contracts; do not edit other owners' app/rig branches or original art/anchors. Selected voice B is historically Aria; exact prior prosody unrecovered, fresh synthesis must remain labelled accordingly and receive final performance review. Preserve originals/last-good exports. No paid providers, credentials or publication. Evidence: task visualization leila-flappy-episode-20261021.
+
+
+LEILA-FLAPPY-EPISODE-20261021 — technical delivery complete; editing claim released, 2026-10-22
+The River Behind the Pyramids hosts-only Egypt review cut is delivered: 415.7667s,1920x1080,30fps,12473 decoded frames,32 exact new dialogue turns,995 word boundaries. Microsoft speech upload was explicitly authorized for this episode dialogue. Leila is Aria at new natural pace (exact old voice-B prosody not recovered); Flappy is Guy +25%/+15Hz. All speech is cached for local export. Movie SHA256 d7b57a3ad61aae46a0113e1b94165c227f383eae22d1ac42fe34b112640aa6b3. Two distinct real HomeBot Produce Episode exports are byte-identical; verified scene clips were reused and each master was assembled freshly. Complete decode/no black intervals,40 inspected scene samples, -16.4LUFS/-4.4dBFS true peak. Changed copied scroll art refused replacement and preserved last-good; restart/full speed1 playback completed with audio enabled. Seven projects retained, original preview files hash-unchanged, accepted scroll control re-rendered byte-identically. Corrected native controls recorded actual OS0/launcher0. Quality button shows3 technical passes and1 explicitly pending owner review. Visible saved-player normal keyboard controls and screenshot inspected. Desktop shortcut: C:/Users/adenk/Desktop/Leila and Flappy Episode.lnk. Movie: C:/Users/adenk/.homebot/leila-flappy-episode-20261021/Leila and Flappy - Egypt.mp4. Guide: C:/Users/adenk/.codex/visualizations/2026/10/06/01a1124c-44bc-7b31-87eb-86bd13a6cc34/leila-flappy-episode-20261021/README.md. Receipt: C:/Users/adenk/.codex/visualizations/2026/10/06/01a1124c-44bc-7b31-87eb-86bd13a6cc34/leila-flappy-episode-20261021/delivery-receipt.json.
+Scope: separate unchanged b83555ee HomeBot preview (76 compiled hashes) plus isolated episode recipe (108 pinned project files), not installed/current-main/other episodes. Original AP production/art/anchors/voice configuration unchanged. Old HomeBot catalogue title/Imhotep/14-scene metadata and generic revision-unknown export-history labels remain; this project's receipts verify its true source/output, and script editing remains recipe-based. New full performance/artistic watch-and-listen approval is pending. Initial expired lifetime monitor, direct MSIX EPERM, an unexplained clean early player closure, null emulated-viewport assertion and missing hash cmdlet are retained as original failures, not relabelled passes. Actual runtime/alias and .NET launcher validation corrected; shared lessons synced. No push/merge/publication. Next single action: Aden watches/listens to this exact full movie and locks it or specifies a change before another episode.
+
+## LEILA-FLAPPY-VARIETY-20261022 — active, Codex art-guidance chat
+Aden reports functioning episode but unchanged scenery and repetitive poses. Own isolated visual-variety proof: new quarry plate candidate and dialogue-specific holds/gestures using existing accepted rig art/cached speech. Preserve delivered episode/project manifest and original AP source/art/anchors. No app source/build/merge, speech upload or publication. Evidence in task visualization leila-flappy-variety-20261022. Full artistic lock remains pending.
+
+
+LEILA-FLAPPY-VARIETY-20261022 — bounded proof delivered, editing claim released. Feedback is working functionality plus requested scenery/pose changes, not full artistic lock. New isolated52.6s/720p30 proof SHA256 8d238f06c96f7945071fbd92bd3967210099180f849f1a3874b9ce18df297d88 switches moving Nile to new STATIC quarry candidate and finite scroll/explain/present/listening poses; brief speaking wing gesture replaces idle loop. Full decode1578frames/timing passed,105 samples/5sheets inspected; original full movie d7b57a3a unchanged. First25fps quarry and failed concat preserved; corrected30fps final passed. Cached speech/accepted art/AP source/anchors and HomeBot delivery preserved. Evidence: task visualization leila-flappy-variety-20261022/{README.md,proof-receipt.json,review/verification.json}. Drive plan updated with feedback, evidence, next step and limits. Next owner reviews exact proof; then sequential scene art/ambient motion, full per-turn gesture schedule and full HomeBot workflow in sibling delivery. No complete episode replacement, new HomeBot integration, owner approval, app build/merge or publication claimed.
+
