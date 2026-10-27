@@ -44,7 +44,7 @@ NBA_STAGING_DIR/<stem>_final.mp4
 | `scripts/analyzer_server.py` | local (same box as n8n) | One-endpoint HTTP wrapper around `analyze()` — stdlib only, no web framework |
 | `scripts/analyze_clip.py` | anywhere with `GEMINI_API_KEY` | Upload clip to Gemini File API, get back `{duration_sec, script, timestamps}` JSON |
 | `scripts/mux_media.py` | local (ffmpeg required) | Mux narration onto the original clip — video stream copied, never re-encoded |
-| `workflows/nba_media_orchestrator.json` | n8n | Orchestrates all of the above |
+| `examples/workflows/nba_media_orchestrator.json` | n8n | Orchestrates all of the above |
 
 ## Contracts
 
@@ -126,7 +126,7 @@ One-time, all Aden's — this pipeline never provisions accounts or keys:
 3. **Analyzer server** running on the n8n machine:
    `GEMINI_API_KEY=... python scripts/analyzer_server.py`.
 4. **n8n environment**: set `NBA_STAGING_DIR`, `NBA_REPO_DIR` in the n8n
-   process, then import `workflows/nba_media_orchestrator.json`. Node schemas
+   process, then import `examples/workflows/nba_media_orchestrator.json`. Node schemas
    drift between n8n versions — if any node shows a schema warning on import,
    re-pick the value in the editor once. Activate the workflow when green.
 5. **python + ffmpeg** on the PATH of the n8n process.

@@ -2,7 +2,7 @@
 
 > **Status (2026-10-11 NZ): code complete, waiting on Aden's checks.** All
 > planned code work is merged on main and CI is green. What remains is only the
-> owner-only checks in [USER_TESTING_CHECKLIST.md](USER_TESTING_CHECKLIST.md):
+> owner-only checks in [the user-testing checklist](USER_TESTING_PLAN.md#user-testing-checklist-rel-2):
 > fresh install, voice, Pro paid path, PROV-3 live image, IDE-6 speed, Leila art
 > plus the six-second rig proof, Flappy anchor, and one full narrated episode.
 > Known follow-ups that don't block testing: the release workflow's installer

@@ -158,7 +158,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 | ID | Item | Done when | Status |
 |---|---|---|---|
 | REL-1 | **Installer build and fresh-profile acceptance** (MEDIA_STUDIO_PLAN Task 8): install the actual artifact on a fresh Windows profile and run the agreed flows. Skills: `homebot-test-build`, `homebot-live-e2e`. | Recorded run: install → first-run → chat → voice → Storyboard video → "Make the video" → Code mode open/edit/save → automation. Each step pass/fail with evidence. | unblocked 2026-09-21 (G-1 closed); a test build of current main is what Aden runs |
-| REL-2 | **A user-testing checklist for Aden:** what to try, what each external setup needs (Online, keys, ComfyUI, Colab, FFmpeg download), and how to report a problem. | `docs/USER_TESTING_CHECKLIST.md` merged, and every step in it was performed once by an agent on a fresh profile. | blocked by REL-1 |
+| REL-2 | **A user-testing checklist for Aden:** what to try, what each external setup needs (Online, keys, ComfyUI, Colab, FFmpeg download), and how to report a problem. | The [user-testing checklist](#user-testing-checklist-rel-2) below (formerly `docs/USER_TESTING_CHECKLIST.md`) merged, and every step in it was performed once by an agent on a fresh profile. | blocked by REL-1 |
 | REL-3 | **No dead controls anywhere a tester will click:** a reachability sweep (skill `reachability-audit`) across all modes, not just Media Studio. | A sweep report listing each control and its effect; every dead one fixed or removed under its own ID. | swept |
 | REL-3.1 | **Dead IPC channels:** `setAlwaysOnTop` and `licenseValidate` | Removed or wired to UI | merged #388 |
 | REL-3.2 | **Dead Document Tools:** `storeDocument`, `getDocument`, `clearDocuments` | Removed unless Document Manager is planned | merged #393; #389 did not remove the production exports |
@@ -216,3 +216,95 @@ is retained under `.kilo/artifacts/rel34-colab-queue-e2e/`.
 ## Status refresh (2026-09-21)
 
 Spot-verified against origin/main 6b939e52 and live GitHub state on 2026-09-21 (PR state via gh pr view, content via git grep origin/main with positive controls). Confirmed current: G-2 (#387; nightly green 09-18 through 09-21), G-3 (#382, issue #229 closed), MS-1 #352, MS-2 #375, MS-3 #358, MS-4/MS-9 #366, MS-5 #374, MS-6 #379, MS-7 #359, MS-8 #376/#395, MS-10 #373, MS-13 (all listed PRs merged or closed), PROV-1 #398, PROV-2 #362, IDE-1 #360, IDE-2 #364, IDE-3 #378, IDE-5 #381, IDE-9 #397, IDE-10 #361, REL-3.1 #388, REL-3.2/3.5 #393, REL-3.3 #391, REL-3.4 #403, REL-3.6 #402, REL-4 #363. G-1 updated: two consecutive scheduled runs green, third still required. Undetermined/no change needed this pass: PROV-3/4/5 remain open (DALL-E path still present in web.ts, no Veo shot pipeline found on main), IDE-4/6/7/8/11/12/13 remain open (no corresponding content on main; IDE-11 has open draft #408 with red e2e-all), #296 and #368 remain open, MS-11/MS-12/PROV-6 unchanged (need Aden).
+
+---
+
+## User-testing checklist (REL-2)
+
+_Merged from the former `USER_TESTING_CHECKLIST.md` (2026-10-21)._
+
+The code is complete. These are the checks only Aden can do: they need his PC,
+his accounts or keys, his voice, or his visual approval. Agents must not do them
+for him or spend money on his behalf.
+
+How to use it: work through each item and mark **PASS** or **FAIL**. On a FAIL,
+note what you saw (a screenshot helps) and open a GitHub issue titled
+`REL-2: <item> failed`, or tell an agent. HomeBot's diagnostics output and log files are the most useful
+attachments.
+
+Build under test: the Windows installer artifact `homebot-windows-installer` from
+the **Preflight and Build (Release)** workflow run on current `main`.
+
+---
+
+### 1. Fresh install on a clean Windows profile
+
+1. Create a new local Windows user (or use one that has never run HomeBot) and sign in to it.
+2. Download and run `HomeBot-Setup-*.exe`. Accept the SmartScreen prompt if one appears (the test build is unsigned).
+3. Launch HomeBot from the Start menu and go through first-run setup with the defaults.
+4. Send one chat message and get a reply. Open Code, Media Studio and Settings once each.
+5. Quit HomeBot from the tray, then confirm it is no longer running in Task Manager.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 2. Voice: microphone transcription and narration
+
+1. In Settings, allow the microphone. Keep **Online** off for this first part.
+2. Use the mic button and say a full sentence. The words appear correctly in the composer.
+3. Ask HomeBot to read its reply aloud (narration/TTS) and confirm you hear it clearly, with no cut-offs.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 3. Pro paid path
+
+1. On the Free tier, open the Automation Center and confirm Pro features are clearly locked, with an upgrade prompt.
+2. Complete the real purchase/licence flow you intend customers to use (see `docs/SELLING_AND_LICENSING.md`). Use your own production signing key, not the repo's default keypair.
+3. Activate the licence key in HomeBot. Pro unlocks: create, run and delete one automation.
+4. Restart HomeBot and confirm Pro is still active.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 4. PROV-3: one live image with your OpenAI key
+
+1. In Settings → API keys, enter your own OpenAI key. This costs a few cents.
+2. In chat, ask for one image, with free engines unavailable or disabled so the paid step is reached.
+3. Confirm HomeBot shows the paid-generation disclosure and asks you to confirm first.
+4. An image appears, and the reported cost looks plausible (a few cents).
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 5. IDE-6: tab-complete speed
+
+1. With Online on, let HomeBot install the small local coder model it suggests for tab completion, or use one already in Ollama.
+2. Open a project in Code and type in a TypeScript file for a few minutes.
+3. Ghost text appears, Tab accepts it, and it feels fast enough to keep on. Record the p50 latency HomeBot reports.
+4. Remove or stop the model: completion turns off and shows setup guidance.
+
+- [ ] PASS  - [ ] FAIL — p50 latency: ____ ms — notes:
+
+### 6. Leila art approval and the six-second rig proof (MS-RIG-0)
+
+1. Review the approved-candidate Leila artwork and approve it or request changes.
+2. Watch the six-second 1920×1080, 30 fps proof export (captions off). Check: torso still, elbow bends, shoulder and wrist stay attached, expression changes without jumping, prop stays in hand, no duplicate limbs, gaps, clipping or overlap.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 7. Flappy anchor
+
+1. Open Media Studio → Character Anchor Workbench and select **Flappy**.
+2. Check Flappy's hand-placed head box and mouth anchors. Use "suggest" for any missing ones, adjust them if needed and save.
+3. In a short render or preview, Flappy's mouth and head line up on the anchors in every pose.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+### 8. One full narrated episode
+
+1. Only after items 6 and 7 pass: make one complete Ancient Pathways episode with narration in Media Studio.
+2. Watch it end to end. The narration is in sync and audible, the visuals are correct, there are no frozen or black frames, and the captions (if on) match.
+3. Confirm the finished file is in the Finished folder and plays in a normal video player.
+
+- [ ] PASS  - [ ] FAIL — notes:
+
+---
+
+When all eight items pass, REL-1 and REL-2 can be closed in the REL table above.

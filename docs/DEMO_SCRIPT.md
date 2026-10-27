@@ -1,14 +1,84 @@
 # HomeBot Demo Script (~10 minutes)
 
-## Pre-Demo Setup (do 15 min before)
+## Pre-Demo Warm-Up (15-20 min before)
 
-1. Close all other apps to free RAM/VRAM
-2. Open terminal, run: `ollama list` (verify qwen2.5:7b, nomic-embed-text visible)
-3. Run: `docker ps` (verify homebot-n8n is running)
-4. Stop Docker Ollama if it's blocking native: `docker stop homebot-ollama`
-5. Launch HomeBot: `cd widget && npx electron-vite dev`
-6. Wait for "Hello! I'm HomeBot" greeting
-7. Have a backup URL ready (e.g. https://en.wikipedia.org/wiki/Artificial_intelligence)
+_Merged from the former `DEMO_DAY_CHECKLIST.md` (2026-10-21)._
+
+### 1. System Check
+
+- [ ] Close Spotify, Discord, browser tabs, anything eating RAM/VRAM
+- [ ] Plug in charger (Ollama + Electron are power-hungry)
+- [ ] Check available RAM: need 8+ GB free
+- [ ] Set display to single monitor or mirror (avoid fumbling with projector)
+
+### 2. Ollama Models
+
+```powershell
+# Verify Ollama is running and has models
+ollama list
+```
+
+Expected output should show:
+- `qwen2.5:7b` (main chat model)
+- `nomic-embed-text` (RAG embeddings)
+- `qwen2.5-coder:7b` (optional, for MoA)
+
+If models are missing:
+```powershell
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
+
+**Pre-warm the model** (loads it into VRAM so first chat is instant):
+```powershell
+curl http://localhost:11434/api/generate -d "{\"model\":\"qwen2.5:7b\",\"prompt\":\"hello\",\"stream\":false}"
+```
+
+### 3. Docker / n8n
+
+```powershell
+# Check containers
+docker ps
+
+# If homebot-n8n is not running:
+docker start homebot-n8n
+
+# IMPORTANT: Stop Docker Ollama (it conflicts with native Ollama on port 11434)
+docker stop homebot-ollama
+```
+
+Verify n8n is accessible: open http://localhost:5678 in browser.
+
+### 4. Launch HomeBot
+
+```powershell
+cd widget
+npx electron-vite dev
+```
+
+Wait for the window to appear with "Hello! I'm HomeBot" greeting.
+
+### 5. Quick Feature Verification (5 min)
+
+Run through each tab quickly:
+
+- [ ] **Chat**: Type "hi" — get a response (confirms Ollama connection)
+- [ ] **Web**: Fetch any URL — see preview (confirms fetch_page_content works)
+- [ ] **Automations**: Check existing automations show up (confirms n8n connection)
+- [ ] **Image**: Check the tab loads (don't generate yet — save for demo)
+- [ ] **Documents**: Check the tab loads, drag a test file
+- [ ] **Quiz**: Check the tab loads
+- [ ] **Media Studio**: Check the tab loads, verify episode showcase, and check movie engine project discovery
+- [ ] **Voice**: Check microphone icon appears
+- [ ] **Settings**: Verify qwen2.5:7b is selected as chat model
+
+### 6. Prep Materials
+
+- [ ] Have a PDF or DOCX file on Desktop for document viewer demo
+- [ ] Have the Wikipedia AI article URL bookmarked: `https://en.wikipedia.org/wiki/Artificial_intelligence`
+- [ ] Have n8n dashboard tab open: `http://localhost:5678`
+- [ ] Have this script open on a second device or printed
+- [ ] Have a backup URL ready (e.g. https://en.wikipedia.org/wiki/Artificial_intelligence)
 
 ---
 
@@ -141,7 +211,7 @@
 ## Closing (30 sec)
 
 - Show the Settings panel briefly (model selector, cloud API config, themes)
-- Mention: "1,932 automated tests, 122 test suites, 85+ tool handlers"
+- Mention the current figures from [Numbers to Remember](#numbers-to-remember) (re-verify against the codebase before quoting)
 - Show light/dark theme toggle
 - "HomeBot: privacy-first, offline-capable, genuinely agentic"
 
@@ -155,5 +225,23 @@
 | n8n not running | `docker start homebot-n8n` |
 | No models showing | `ollama pull qwen2.5:7b` |
 | App won't start | `cd widget && npm run build && npx electron-vite dev` |
-| Image gen fails | Backend auto-fallback handles this; if all fail, skip this act |
+| Image gen fails | Backend auto-fallback handles this; if all fail, skip this act or show the code in web.ts explaining the 5-backend fallback |
 | Voice not working | Skip to quiz mode; mention local Whisper transcription |
+| Chat is very slow | Switch to a smaller model in Settings (gemma4:e4b) |
+| n8n is down | Demo the automation without deploy (local fallback runs instead) |
+| Port 11434 conflict | `docker stop homebot-ollama` then `ollama serve` |
+
+## Numbers to Remember
+
+Product facts verified from the codebase — useful when a prospect asks:
+
+| Metric | Value |
+|--------|-------|
+| Tool handlers | 137 across 35 modules |
+| Security layers | 11 |
+| Cloud providers | 10 |
+| Image gen backends | 5 |
+| Movie gen providers | 5 (Local Parallax, Colab SDXL IP-Adapter, Local SD 1.5, Pollinations, Imagen 3) |
+| Application modes | 11 |
+| Automated tests | ~3,700+ across 250+ suites |
+| Ollama models used | qwen2.5:7b, qwen2.5-coder:7b, nomic-embed-text |

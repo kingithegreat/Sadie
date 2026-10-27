@@ -1231,3 +1231,18 @@ the real IPC path and rendered audio/video (3 suites, 69 tests passed). Focused
 original failures. Claim released. Keep PR #496 in draft with auto-merge off
 for owner review; no public release or complete Leila/Flappy episode is claimed.
 See `tasks/finish-narration-20261015.md`.
+
+## 2026-10-20 NZ — SHARED-AGENT-SKILLS (Grok Bot, Aden-approved)
+
+Grok Bot owns branch `claude/shared-agent-skills` from main `12b11c3`: docs only.
+Owns: `AGENTS.md` (new top section + Contract section), `CLAUDE.md` (becomes a pointer;
+its rules move verbatim into AGENTS.md "Contract"), `GEMINI.md` (pointer wording only),
+new `PROJECT_INSTRUCTIONS.md`, `SYNC.md`, `agent-skills/**`. Does NOT touch app `skills/`,
+any code, the Ancient Pathways repo/rig (MS-RIG-0), Drive, or paid APIs. One PR.
+
+## FINISH-AUDIT-20261028 — Codex
+
+Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
+No second narration implementation; review and retest the existing pinned fix.
+No paid providers, owner configuration, AP assets or release publication.
+Existing draft/owner-review hold remains in place.

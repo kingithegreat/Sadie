@@ -206,7 +206,6 @@ HomeBot/
 │   │   ├── preload/              # Context bridge (sandbox-safe IPC)
 │   │   └── shared/               # Types, constants, and utilities
 │   ├── electron.vite.config.ts   # electron-vite build configuration
-│   ├── electron-builder.yml      # Installer packaging configuration
 │   ├── jest.config.ts            # Jest test configuration
 │   ├── playwright.config.ts      # Playwright E2E configuration
 │   └── package.json
@@ -222,6 +221,9 @@ HomeBot/
 ├── schemas/                      # JSON schemas for tool validation
 ├── docs/                         # Developer and API documentation
 ├── memory/                       # Local memory and RAG index storage
+├── src/, tests/                  # Root tool-registry module and its jest suites
+├── .agents/skills/, .claude/skills/  # Shared agent skills (kept in sync by scripts/sync-agent-skills.mjs)
+├── electron-builder.yml          # Installer packaging configuration
 ├── docker-compose.yml            # n8n container configuration
 └── README.md
 ```
@@ -259,6 +261,16 @@ npm run e2e
 
 Test coverage reports are generated in `widget/coverage/`.
 
+Repo-wide checks (run from the repo root):
+
+```bash
+npm ci && npm test                          # root tool-registry jest suites
+npm run docs:check                          # docs drift check
+node scripts/sync-agent-skills.mjs --check  # .agents/skills and .claude/skills in sync
+npm run lint --prefix widget                # widget ESLint
+(cd widget && npx tsc --noEmit)             # widget typecheck
+```
+
 ---
 
 ## Documentation
@@ -268,13 +280,18 @@ Detailed documentation is available in the `docs/` folder:
 | Document | Description |
 |---|---|
 | [Architecture](docs/architecture.md) | System overview, component details, tool execution flow, safety model |
-| [Setup Guide](docs/setup-guide.md) | Step-by-step installation and first-run instructions |
+| [Developer Build Guide](DEVELOPER_BUILD_GUIDE.md) | Installation, first run, development, build and release (formerly Setup Guide and Release Process) |
 | [API Reference](docs/api-reference.md) | Complete IPC channel reference, tool schemas, permission system |
 | [Custom LLM API](docs/custom-llm-api.md) | Configure OpenAI, Anthropic, OpenRouter, or custom endpoints |
 | [Permissions](docs/permissions.md) | Tool permission model and batch execution behaviour |
 | [PowerShell Scripts](docs/powershell-scripts.md) | FileOps, SystemInfo, SafetyValidation, ArchiveOps reference |
 | [n8n Integration](docs/n8n-integration.md) | Workflow integration and PowerShell script wiring |
 | [Sports Report](docs/sports-report.md) | NBA tool usage, permissions, and ESPN integration |
+| [Current Status](docs/CURRENT_STATUS.md) | Where the project stands now |
+
+Contributor and process docs at the repo root: [AGENTS.md](AGENTS.md) (agent entry point and contract),
+[DEVELOPER_BUILD_GUIDE.md](DEVELOPER_BUILD_GUIDE.md) (setup, build and release),
+[CHANGELOG.md](CHANGELOG.md), [SECURITY-AUDIT.md](SECURITY-AUDIT.md).
 
 ---
 
