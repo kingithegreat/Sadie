@@ -1207,6 +1207,31 @@ merge-source receipts, and ordinary IPC current-user duplicate correction with
 local/custom regression controls. No shared profile/dependency mutations or
 local native/heavy launch. Root retains integration, publication and qualification.
 
+## FINISH-NARRATION-20261015 — complete, claim released 2026-10-19
+
+Owner: Codex in `.kilo/worktrees/finish-narration-20261015`, branch
+`claude/finish-narration-20261015`, rebased from the Drive-listed `acede878`
+task baseline onto fresh `origin/main` `12b11c38`. The canonical Drive queue
+assigns bounded investigation/correction of the nightly Edge speech HTTP 403
+and native narration `voiceLocale` failure, followed by current installer
+readiness verification. Preserve other art/rig/provider/IDE owners. Do not
+use owner credentials, paid calls, private assets, signing, or public release
+publication. Reproduce both voice symptoms before changes; retain their initial
+failure evidence; prove the exact production paths afterward. Record Linux
+source/fixture checks separately from hosted Windows runtime acceptance.
+Root's existing 233 tests, TypeScript and API-doc result on `acede878` do not
+qualify the newer source or these Windows failures. Do not add installer or
+episode claims from source-level checks.
+
+Closed at `333e6b6f39da5711afa7d9ea847c328c89de6be2`, draft PR #496. All six
+live main branch-protection contexts passed; exact-head Windows installer
+first-run passed; and hosted real Media Studio E2E generated Edge speech through
+the real IPC path and rendered audio/video (3 suites, 69 tests passed). Focused
+2.1.0 regression checks pass and the 2.0.7 positive control reproduces both
+original failures. Claim released. Keep PR #496 in draft with auto-merge off
+for owner review; no public release or complete Leila/Flappy episode is claimed.
+See `tasks/finish-narration-20261015.md`.
+
 ## 2026-10-20 NZ — SHARED-AGENT-SKILLS (Grok Bot, Aden-approved)
 
 Grok Bot owns branch `claude/shared-agent-skills` from main `12b11c3`: docs only.
@@ -1214,3 +1239,19 @@ Owns: `AGENTS.md` (new top section + Contract section), `CLAUDE.md` (becomes a p
 its rules move verbatim into AGENTS.md "Contract"), `GEMINI.md` (pointer wording only),
 new `PROJECT_INSTRUCTIONS.md`, `SYNC.md`, `agent-skills/**`. Does NOT touch app `skills/`,
 any code, the Ancient Pathways repo/rig (MS-RIG-0), Drive, or paid APIs. One PR.
+
+## FINISH-AUDIT-20261028 — Codex
+
+Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
+No second narration implementation; review and retest the existing pinned fix.
+No paid providers, owner configuration, AP assets or release publication.
+Existing draft/owner-review hold remains in place.
+
+### FINISH-AUDIT-20261028 — runner compatibility claim
+
+Codex owns only the Ubuntu browser runner pins in
+`.github/workflows/playwright-e2e.yml` and `widget-e2e-ci.yaml`, plus this
+claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
+CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
+Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
+retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
