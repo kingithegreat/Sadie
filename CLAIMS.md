@@ -1246,3 +1246,12 @@ Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
 No second narration implementation; review and retest the existing pinned fix.
 No paid providers, owner configuration, AP assets or release publication.
 Existing draft/owner-review hold remains in place.
+
+### FINISH-AUDIT-20261028 — runner compatibility claim
+
+Codex owns only the Ubuntu browser runner pins in
+`.github/workflows/playwright-e2e.yml` and `widget-e2e-ci.yaml`, plus this
+claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
+CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
+Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
+retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
