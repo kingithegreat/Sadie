@@ -1,5 +1,20 @@
 # Work Claims
 
+## FINISH-PLAN-20261031 — active, Codex
+
+This chat owns the completion audit and bounded animatic-start regression in
+`.kilo/worktrees/finish-plan-20261031`, from remote-confirmed main `058f88c7`.
+Inspect and preserve the prior three-agent worktrees; no edits to their files.
+The current-source playback/Storyboard unit run passed 68/68; dependency donor
+versions are older, so no current runtime or real voice acceptance is inferred.
+The reported native failure is not reproduced here. Do not adopt the prior
+silent-clock bypass: narration loading must not advance shots. Current work is
+the complete 51-ID finish inventory plus eight core cases, and retaining the
+source-pinned private installer from the existing hosted smoke workflow.
+No production app code changes. Hosted packaging and readback remain pending.
+Existing #500/#501/#413 and art/episode/AP owners retain their scopes.
+No paid requests, credentials, owner profiles, signing or public release.
+
 ## 2026-10-07 NZ — IDE completion team (Codex root)
 
 Current follow-up: root integrated unchanged FD observer into fixed source-pinned core DLL, preserving5000ms/exact-helper-close/authority;155actual related cases/freshDLL/26managed wrappers/17substituted native APIs/fullTypeScript/scopedlint pass. Explicit17I/O suite defaults retain assertions/larger caps;206widget+3Docs cases pass. Matrix installs only usedChromium and explicitly prepares pinnedElectron before UI cases with bounded installer/validation, preserving whole-job/test/shutdown/retry limits. Original79cb push FDfailure/Linux2 pretest install failure/Windows1 lazy Electron download timeout+automatic retry/five review findings remain retained. Source editing released to root. Fresh hosted wholeCI/native/exactreview, qualified merge and fresh-main normal-profile delivery are unfinished; no final shortcut.

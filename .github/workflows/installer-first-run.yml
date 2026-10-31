@@ -16,6 +16,33 @@ jobs:
       - run: npm ci --prefix widget
       - name: Build installer (no publish)
         run: npm run dist --prefix widget -- --publish never
+      - name: Retain the exact private installer and its source identity
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem -LiteralPath widget/dist-electron -Filter '*.exe' -File | Where-Object Name -notmatch 'uninstaller')
+          if ($setups.Count -ne 1) { throw "Expected one installer, found $($setups.Count)" }
+          New-Item -ItemType Directory -Path private-installer -ErrorAction Stop | Out-Null
+          Copy-Item -LiteralPath $setups[0].FullName -Destination private-installer -ErrorAction Stop
+          $sourceCommit = git rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the checked-out source' }
+          $lock = Get-Content -LiteralPath widget/package-lock.json -Raw | ConvertFrom-Json
+          $receipt = [ordered]@{
+            sourceCommit = $sourceCommit
+            workflowHead = '${{ github.sha }}'
+            runId = '${{ github.run_id }}'
+            runAttempt = '${{ github.run_attempt }}'
+            installer = [ordered]@{
+              name = $setups[0].Name
+              bytes = $setups[0].Length
+              sha256 = (Get-FileHash -LiteralPath $setups[0].FullName -Algorithm SHA256).Hash
+            }
+            widgetLockSha256 = (Get-FileHash -LiteralPath widget/package-lock.json -Algorithm SHA256).Hash
+            electron = $lock.packages.'node_modules/electron'.version
+            nodePty = $lock.packages.'node_modules/node-pty'.version
+            speech = $lock.packages.'node_modules/msedge-tts'.version
+            scope = 'Unsigned private candidate; install/window/uninstall smoke only. Full workflows and owner acceptance remain separate.'
+          }
+          $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath private-installer/receipt.json -Encoding utf8
       - name: Silent install, launch once, check, uninstall
         shell: pwsh
         run: |
@@ -47,3 +74,17 @@ jobs:
           Start-Sleep 5
           if (Test-Path "$dir\HomeBot.exe") { throw 'Uninstall left HomeBot.exe behind' }
           'First-run check passed.'
+      - name: Verify the retained installer is unchanged after the smoke test
+        shell: pwsh
+        run: |
+          $receipt = Get-Content -LiteralPath private-installer/receipt.json -Raw | ConvertFrom-Json
+          $file = Get-Item -LiteralPath (Join-Path private-installer $receipt.installer.name)
+          if ($file.Length -ne $receipt.installer.bytes -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $receipt.installer.sha256) {
+            throw 'Retained installer changed after packaging'
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: private-windows-installer-${{ github.sha }}-${{ github.run_id }}
+          path: private-installer/
+          if-no-files-found: error
+          retention-days: 14
