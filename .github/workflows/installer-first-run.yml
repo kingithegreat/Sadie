@@ -19,13 +19,16 @@ jobs:
       - name: Retain the exact private installer and its source identity
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $setups = @(Get-ChildItem -LiteralPath widget/dist-electron -Filter '*.exe' -File | Where-Object Name -notmatch 'uninstaller')
           if ($setups.Count -ne 1) { throw "Expected one installer, found $($setups.Count)" }
           New-Item -ItemType Directory -Path private-installer -ErrorAction Stop | Out-Null
           Copy-Item -LiteralPath $setups[0].FullName -Destination private-installer -ErrorAction Stop
           $sourceCommit = git rev-parse HEAD
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the checked-out source' }
-          $lock = Get-Content -LiteralPath widget/package-lock.json -Raw | ConvertFrom-Json
+          $lockedJson = node -e "const p=require('./widget/package-lock.json').packages; console.log(JSON.stringify({electron:p['node_modules/electron'].version,nodePty:p['node_modules/node-pty'].version,speech:p['node_modules/msedge-tts'].version}))"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the locked dependency versions' }
+          $locked = $lockedJson | ConvertFrom-Json
           $receipt = [ordered]@{
             sourceCommit = $sourceCommit
             workflowHead = '${{ github.sha }}'
@@ -37,9 +40,9 @@ jobs:
               sha256 = (Get-FileHash -LiteralPath $setups[0].FullName -Algorithm SHA256).Hash
             }
             widgetLockSha256 = (Get-FileHash -LiteralPath widget/package-lock.json -Algorithm SHA256).Hash
-            electron = $lock.packages.'node_modules/electron'.version
-            nodePty = $lock.packages.'node_modules/node-pty'.version
-            speech = $lock.packages.'node_modules/msedge-tts'.version
+            electron = $locked.electron
+            nodePty = $locked.nodePty
+            speech = $locked.speech
             scope = 'Unsigned private candidate; install/window/uninstall smoke only. Full workflows and owner acceptance remain separate.'
           }
           $receipt | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath private-installer/receipt.json -Encoding utf8
@@ -77,6 +80,7 @@ jobs:
       - name: Verify the retained installer is unchanged after the smoke test
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $receipt = Get-Content -LiteralPath private-installer/receipt.json -Raw | ConvertFrom-Json
           $file = Get-Item -LiteralPath (Join-Path private-installer $receipt.installer.name)
           if ($file.Length -ne $receipt.installer.bytes -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $receipt.installer.sha256) {

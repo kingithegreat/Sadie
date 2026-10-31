@@ -1,6 +1,6 @@
 # Work Claims
 
-## FINISH-PLAN-20261031 — active, Codex
+## FINISH-PLAN-20261031 — local work complete, publication awaiting approval
 
 This chat owns the completion audit and bounded animatic-start regression in
 `.kilo/worktrees/finish-plan-20261031`, from remote-confirmed main `058f88c7`.
@@ -11,7 +11,13 @@ The reported native failure is not reproduced here. Do not adopt the prior
 silent-clock bypass: narration loading must not advance shots. Current work is
 the complete 51-ID finish inventory plus eight core cases, and retaining the
 source-pinned private installer from the existing hosted smoke workflow.
-No production app code changes. Hosted packaging and readback remain pending.
+No production app code changes. The staging/receipt script passed with an owned
+fixture; altered retained bytes and ambiguous installer selection were refused.
+YAML/PowerShell parse, docs drift, 51-ID coverage and whitespace checks passed.
+Automatic approval review rejected external push/PR/workflow/upload without
+explicit destination and source/artifact egress approval. No remote mutation
+occurred. The local editing claim is released; retain this branch for approved
+publication. Hosted packaging and readback remain pending.
 Existing #500/#501/#413 and art/episode/AP owners retain their scopes.
 No paid requests, credentials, owner profiles, signing or public release.
 
