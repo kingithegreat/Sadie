@@ -30,6 +30,8 @@ export interface AssembledShot {
   narration: string;
   status: string;
   frameImagePath: string | null;
+  /** Newest generated clip in the shot's video/ folder, when the shot is a video (PROV-4). */
+  videoClipPath: string | null;
   frameImageSha256?: string | null;
   plainBackgroundSha256?: string | null;
   /** True when a frame exists but was generated from a prompt that has since changed. */
@@ -108,6 +110,19 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       }
     }
 
+    // A video shot keeps its clip in video/. Newest write wins for the same
+    // reason the frame image does: retries keep earlier attempts on disk.
+    let videoClipPath: string | null = null;
+    const vidDir = path.join(shotPath, 'video');
+    if (fs.existsSync(vidDir)) {
+      const newest = fs.readdirSync(vidDir)
+        .filter((f) => f.endsWith('.mp4') || f.endsWith('.webm'))
+        .map((f) => ({ f, mtime: fs.statSync(path.join(vidDir, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime || a.f.localeCompare(b.f))[0];
+      if (newest) {
+        videoClipPath = path.join(vidDir, newest.f);
+      }
+    }
     let frameImageSha256: string | null = null;
     if (frameImagePath) {
       try { frameImageSha256 = createHash('sha256').update(fs.readFileSync(frameImagePath)).digest('hex'); } catch { /* Export gives the actionable read error. */ }
@@ -132,6 +147,7 @@ export function assembleScene(projectDir: string, sceneId: string): AssembledSce
       narration,
       status: statusData.status || ShotStatus.PLANNED,
       frameImagePath,
+      videoClipPath,
       frameImageSha256,
       plainBackgroundSha256: plainBackgroundAccepted(promptData.plainBackgroundSha256, frameImageSha256)
         ? frameImageSha256 : null,
