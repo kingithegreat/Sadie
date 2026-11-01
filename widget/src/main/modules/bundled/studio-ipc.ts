@@ -891,6 +891,47 @@ export function registerStudioIpc(
     }
   });
 
+  // ── Generate episode script (premise → owner's OpenAI-compatible provider) ──
+  // Main process only: the API key is read here and never sent to the renderer.
+  // Generating writes nothing; save-script persists through the same director
+  // save path as Auto-Direct, so Media Studio loads it like any storyboard.
+  ipcMain.handle('homebot:media:storyboard:generate-script', async (_ev, args: { premise?: string; shotCount?: number; genre?: string }) => {
+    try {
+      assertEnabled();
+      const { generateEpisodeScript } = await import('../../movie/episode-script-generator');
+      const { getSettings } = await import('../../config-manager');
+      const { resolveCloudLLM } = await import('../../../shared/cloud-llm');
+      const { assertProviderOnlineAccess } = await import('../../utils/provider-network-policy');
+      const config = resolveCloudLLM(getSettings() as any).config ?? undefined;
+      const script = await generateEpisodeScript(
+        { premise: String(args?.premise ?? ''), shotCount: args?.shotCount, genre: args?.genre },
+        { config, assertOnline: assertProviderOnlineAccess },
+      );
+      return { ok: true, script };
+    } catch (err: any) {
+      return { ok: false, code: err?.code, error: err?.message || 'Could not generate an episode script.' };
+    }
+  });
+
+  ipcMain.handle('homebot:media:storyboard:save-script', async (_ev, args: { script?: unknown; premise?: string }) => {
+    try {
+      assertEnabled();
+      const { parseEpisodeScriptPayload } = await import('../../movie/episode-script-generator');
+      const { directScriptToStoryboard } = await import('../../movie/script-director');
+      const script = parseEpisodeScriptPayload(args?.script);
+      const res = await directScriptToStoryboard({
+        script: String(args?.premise || script.logline || script.title),
+        title: script.title,
+        notes: script.logline,
+        directed: script,
+      });
+      if (!res.ok) return { ok: false, error: res.error };
+      return { ok: true, projectId: res.projectId, title: res.title, genre: res.genre, shots: res.shots, totalDurationSec: res.totalDurationSec };
+    } catch (err: any) {
+      return { ok: false, code: err?.code, error: err?.message || 'Could not save the episode script as a storyboard.' };
+    }
+  });
+
   // ── Series Settings Catalog & Multi-Plane IPC Handlers ───────────────────────
   ipcMain.handle('homebot:media:series-settings:list', async (_ev, seriesId: string) => {
     try {

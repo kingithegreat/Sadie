@@ -450,7 +450,7 @@ describe('ModelSelector — custom LLM', () => {
     expect(sent).toEqual(expect.arrayContaining([
       { id: 'claude-sonnet-5', isCloud: true, provider: 'anthropic' },
       { id: 'claude-haiku-4-5', isCloud: true, provider: 'anthropic' },
-      { id: 'deepseek-v4-flash', isCloud: true, provider: 'deepseek' },
+      { id: 'deepseek-flash', isCloud: true, provider: 'deepseek' },
       { id: 'gemini-2.5-flash', isCloud: true, provider: 'google-ai-studio' },
     ]));
   });
