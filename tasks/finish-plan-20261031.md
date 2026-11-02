@@ -52,3 +52,16 @@ provider/Pro/microphone and creative acceptance remain open as the plan records.
 
 The Drive master was updated and read back with the new checklist summary,
 corrected dependency findings and publication boundary.
+
+## Approved continuation — 3 November 2026 NZDT
+
+Aden explicitly approved the requested branch push, draft PR and hosted Windows
+private installer upload. The earlier rejection is historical, not a current
+permission blocker. Retain draft and auto-merge-off until separately qualified.
+Fresh exact workflow controls passed unchanged-byte acceptance, tamper refusal
+and multiple-installer refusal before staging. All three PowerShell blocks parse;
+the original smoke script remains exact. Receipt:
+`.kilo/installer-review-20261103-7bc10096/verification.json`.
+Fresh remote main remains `058f88c7`. Live branch protection again reports all six
+recorded contexts with strict mode enabled. Hosted and installed acceptance,
+human microphone/voice/Pro and creative decisions remain open.

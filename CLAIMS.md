@@ -1,6 +1,16 @@
 # Work Claims
 
-## FINISH-PLAN-20261031 — local work complete, publication awaiting approval
+## FINISH-PLAN-20261031 — approved private installer qualification
+
+3 November 2026 NZDT: Aden explicitly approved pushing this prepared branch
+to kingithegreat/Sadie, opening a draft PR and running the Windows workflow
+to retain a private test installer. Codex resumes this bounded integration lane.
+Keep the PR draft and auto-merge off. Hosted/installed acceptance is pending;
+no public release, signing, paid requests or owner-profile replacement is authorized.
+Fresh local exact-script controls accepted unchanged fixture bytes and rejected
+tampering and multiple installers before staging. All three PowerShell blocks
+parse, and the original install/window/uninstall script is unchanged.
+The historical approval rejection below is superseded by this explicit approval.
 
 This chat owns the completion audit and bounded animatic-start regression in
 `.kilo/worktrees/finish-plan-20261031`, from remote-confirmed main `058f88c7`.
