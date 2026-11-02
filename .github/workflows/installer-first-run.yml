@@ -1,6 +1,11 @@
 name: Installer first-run (Windows)
 on:
   workflow_dispatch:
+    inputs:
+      allow_public_artifact:
+        description: 'Upload a downloadable test installer from this public repository (requires explicit owner approval)'
+        type: boolean
+        default: false
   pull_request:
     paths: ['widget/**', '.github/workflows/installer-first-run.yml']
 permissions:
@@ -87,8 +92,9 @@ jobs:
             throw 'Retained installer changed after packaging'
           }
       - uses: actions/upload-artifact@v4
+        if: ${{ success() && (github.event.repository.private == true || (github.event_name == 'workflow_dispatch' && inputs.allow_public_artifact == true)) }}
         with:
-          name: private-windows-installer-${{ github.sha }}-${{ github.run_id }}
+          name: test-windows-installer-${{ github.sha }}-${{ github.run_id }}
           path: private-installer/
           if-no-files-found: error
           retention-days: 14

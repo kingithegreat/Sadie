@@ -2,6 +2,13 @@
 
 ## FINISH-PLAN-20261031 — approved private installer qualification
 
+Privacy correction, 3 November: repository visibility is PUBLIC. Initial installer
+runs 41544227449 and 41544133153 were stopped during dependency installation,
+before installer generation/upload. Public Actions artifacts cannot be called
+private. Upload now requires a private repository or a manual-dispatch opt-in
+that remains false until Aden explicitly approves downloadable public artifacts.
+Private local build versus downloadable GitHub candidate is awaiting his choice.
+
 3 November 2026 NZDT: Aden explicitly approved pushing this prepared branch
 to kingithegreat/Sadie, opening a draft PR and running the Windows workflow
 to retain a private test installer. Codex resumes this bounded integration lane.

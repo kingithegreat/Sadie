@@ -65,3 +65,15 @@ the original smoke script remains exact. Receipt:
 Fresh remote main remains `058f88c7`. Live branch protection again reports all six
 recorded contexts with strict mode enabled. Hosted and installed acceptance,
 human microphone/voice/Pro and creative decisions remain open.
+
+### Artifact-access correction
+
+GitHub visibility readback is PUBLIC. The first dispatched and PR installer jobs
+(41544227449 / 41544133153) were canceled while installing dependencies, before
+build or upload. Their results must not be relabelled packaging acceptance.
+Actions artifacts on this repository cannot meet a private-download promise.
+The workflow now gates upload on private visibility or an explicit manual
+`allow_public_artifact` input, default false. PR events in a public repository
+cannot enable that input. Aden has been asked to choose local-only delivery or
+explicitly permit a downloadable GitHub test installer. No public upload is
+authorized by the earlier private-installer approval.
