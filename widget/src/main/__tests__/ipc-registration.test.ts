@@ -2,6 +2,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+jest.setTimeout(15_000);
+
 const mockUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-ipc-registration-'));
 const mockEnsureWebFetchWorkflow = jest.fn<Promise<void>, []>(() => Promise.resolve());
 const mockGetMediaCapabilityRegistry = jest.fn();
@@ -89,6 +91,61 @@ describe('IPC registration', () => {
   it('registers homebot:get-env handler', () => {
     registerIpcHandlers();
     expect(handles['homebot:get-env']).toBeDefined();
+  });
+
+  it.each(['edge', 'kokoro'] as const)('keeps concurrent %s voice samples intact with a fixed output filename', async (engine) => {
+    const voice = require('../tools/voice');
+    const tempRoot = fs.mkdtempSync(path.join(mockUserData, 'voice-samples-'));
+    const tmpdir = jest.spyOn(require('os'), 'tmpdir').mockReturnValue(tempRoot);
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(123456789);
+    // Match msedge-tts 2.x: it ignores the requested basename and writes
+    // audio.mp3 in its directory. No speech service or model is contacted.
+    const render = jest.spyOn(voice, 'renderNarrationToFile').mockImplementation(async (...args: unknown[]) => {
+      const [text, requested] = args as [string, string];
+      const file = path.join(path.dirname(requested), 'audio.mp3');
+      fs.writeFileSync(file, text);
+      return { path: file, bytes: Buffer.byteLength(text), engine };
+    });
+    try {
+      registerIpcHandlers();
+      const sample = handles['homebot:tts-sample-voice'];
+      const [first, second] = await Promise.all([
+        sample({}, 'voice-one', 'First shot narration.', engine),
+        sample({}, 'voice-two', 'Second shot narration.', engine),
+      ]);
+      expect(first.success).toBe(true);
+      expect(second.success).toBe(true);
+      expect(fs.readFileSync(first.path, 'utf8')).toBe('First shot narration.');
+      expect(fs.readFileSync(second.path, 'utf8')).toBe('Second shot narration.');
+      expect(first.path).not.toBe(second.path);
+      expect(render.mock.calls.map(call => call[2])).toEqual([
+        { voice: 'voice-one', engine },
+        { voice: 'voice-two', engine },
+      ]);
+    } finally {
+      render.mockRestore(); clock.mockRestore(); tmpdir.mockRestore();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('removes a failed sample output and reports the original speech error', async () => {
+    const voice = require('../tools/voice');
+    const tempRoot = fs.mkdtempSync(path.join(mockUserData, 'failed-voice-sample-'));
+    const tmpdir = jest.spyOn(require('os'), 'tmpdir').mockReturnValue(tempRoot);
+    const render = jest.spyOn(voice, 'renderNarrationToFile').mockImplementation(async (...args: unknown[]) => {
+      const requested = args[1] as string;
+      fs.writeFileSync(path.join(path.dirname(requested), 'audio.mp3'), 'partial');
+      throw new Error('Online is off. Choose a voice on this PC.');
+    });
+    try {
+      registerIpcHandlers();
+      await expect(handles['homebot:tts-sample-voice']({}, undefined, 'Private narration.', 'edge'))
+        .resolves.toEqual({ success: false, error: 'Online is off. Choose a voice on this PC.' });
+      expect(fs.readdirSync(tempRoot)).toEqual([]);
+    } finally {
+      render.mockRestore(); tmpdir.mockRestore();
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 
   it('registers reachable local dictation start and cancellation handlers', () => {
