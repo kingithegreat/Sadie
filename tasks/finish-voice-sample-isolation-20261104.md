@@ -39,7 +39,30 @@ filesystem operations; renderer unit tests and compilation. No live provider.
 - API docs in sync (290 preload methods, 258 R→M, 38 M→R); all 14 mirrored
   skill files match; whitespace check passed.
 
-Full widget result: pending at this receipt checkpoint.
+Full widget run on Linux/Node 24: 460 suites passed, 6 failed, 19 skipped;
+6,131 tests passed, 18 failed, 78 skipped (485 suites total). All five relevant
+speech/IPC/renderer suites passed with the final changes: 105 tests, including
+13 IPC registration tests. This is not a green full-app qualification.
+
+Unchanged-main comparison of the six failing suites: 115 passed / 15 failed
+in four suites; every baseline failure also failed in the full changed run.
+They cover Windows-only setup, Windows absolute paths on Linux, unavailable
+network-interface enumeration and URL-opening behavior in this host. Three
+additional full-run timeouts (URL opening, shell rejection and feed retrieval)
+passed on the changed-source isolated recheck. That recheck had 92 passing
+and 3 failing tests; URL/exec outcomes remain environment-sensitive, and are
+not silently counted as fixed or green. No unrelated test was weakened.
+Local detailed JSON/logs: `widget/.kilo/verification/widget-jest.json`,
+`widget/.kilo/verification/timeout-recheck.json` and the unchanged-main
+`homebot/widget/.kilo/verification/main-baseline.json` (private scratch paths).
+The tracked result summary is this receipt; these generated logs are not
+repository source or user-profile data.
+
+GitHub draft PR #503 initially published the source at `46f72e2457448b6b0dbc65d97884addd4e155b30`.
+`git ls-remote` confirmed that head and the fetched tree matched the local
+committed source exactly. Draft=true and auto_merge=null were read back.
+This receipt follow-up triggers normal existing CI on the final head; hosted
+Windows/current-head required contexts remain pending, with no merge claim.
 
 ## Boundaries and remaining acceptance
 

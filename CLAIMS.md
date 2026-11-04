@@ -1269,3 +1269,15 @@ contract, provider call, profile replacement, installer upload or merge.
 First reproduce whether successive Edge samples overwrite the same
 `audio.mp3` despite distinct requested filenames; then isolate each request
 without changing privacy, narration-clock or engine behavior.
+
+
+### FINISH-VOICE-SAMPLE-ISOLATION-20261104 — editing complete
+
+Draft PR #503 contains the reproduced sample-overwrite repair. Final focused
+speech/IPC/playback scopes pass 105 tests; root 233 tests, widget TypeScript,
+lint/build, docs/skill sync and whitespace checks pass. Full Linux widget run:
+6,131 passed / 18 failed / 78 skipped; six failing suites retain explicit
+baseline/environment limits in `tasks/finish-voice-sample-isolation-20261104.md`.
+Source editing is released for review; hosted current-head Windows verification
+and installed acceptance remain pending. Keep draft/auto-merge-off and retain
+all Windows installer/art/episode owners. No whole-app completion claim.
