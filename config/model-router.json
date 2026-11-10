@@ -1,0 +1,64 @@
+{
+  "$comment": "OpenRouter model-router config. Tier model IDs and fallbacks live here, not in code. Prices are USD per 1M tokens (OpenRouter list prices, 10 Nov 2026) and are used only to estimate cost when a response carries no usage.cost. See src/model-router/README.md.",
+  "baseUrl": "https://openrouter.ai/api/v1",
+  "monthlyCapUsd": 35,
+  "live": false,
+  "ledgerPath": null,
+  "cacheControlPrefixes": [
+    "anthropic/",
+    "qwen/"
+  ],
+  "cacheTtl": null,
+  "requireParameters": true,
+  "chat": {
+    "defaultTier": "cheap",
+    "maxTier": "mid"
+  },
+  "tiers": {
+    "cheap": {
+      "model": "qwen/qwen3.7-flash",
+      "fallbacks": [
+        "deepseek/deepseek-v4.1-flash"
+      ],
+      "maxTokens": 4096,
+      "maxPrice": {
+        "prompt": 0.1,
+        "completion": 0.7
+      },
+      "pricing": {
+        "prompt": 0.03,
+        "completion": 0.13
+      }
+    },
+    "mid": {
+      "model": "anthropic/claude-sonnet-5.5",
+      "fallbacks": [
+        "openai/gpt-6.1-terra"
+      ],
+      "maxTokens": 8192,
+      "maxPrice": {
+        "prompt": 2,
+        "completion": 10
+      },
+      "pricing": {
+        "prompt": 2,
+        "completion": 10
+      }
+    },
+    "top": {
+      "model": "anthropic/claude-opus-5.5",
+      "fallbacks": [
+        "openai/gpt-6.1-sol"
+      ],
+      "maxTokens": 16384,
+      "maxPrice": {
+        "prompt": 4,
+        "completion": 20
+      },
+      "pricing": {
+        "prompt": 4,
+        "completion": 20
+      }
+    }
+  }
+}
