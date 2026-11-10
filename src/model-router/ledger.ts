@@ -10,14 +10,14 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Tier } from './pick-tier';
+import type { RouterTier } from './pick-tier';
 
 export interface LedgerEntry {
   at: string;
   /** UTC month, YYYY-MM. OpenRouter key limits also reset at midnight UTC. */
   month: string;
   source: string;
-  tier: Tier;
+  tier: RouterTier;
   model: string;
   sessionId: string;
   promptTokens: number;

@@ -397,6 +397,8 @@ export interface Settings {
   projectPath?: string;
   // Mixture of Agents (MoA) settings
   moaEnabled?: boolean;
+  /** Route chat through the OpenRouter model router (src/model-router). Off by default. */
+  modelRouterEnabled?: boolean;
   moaProposers?: string[];
   moaAggregator?: string;
   // Default location for weather queries
@@ -940,7 +942,7 @@ export interface ElectronAPI {
   restartApp?: () => Promise<void>;
   
   // Confirmation for dangerous operations
-  onConfirmationRequest?: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => () => void;
+  onConfirmationRequest?: (cb: (data: { confirmationId: string; message: string; streamId: string; title?: string; confirmLabel?: string; rejectLabel?: string }) => void) => () => void;
   sendConfirmationResponse?: (confirmationId: string, confirmed: boolean) => void;
   // Permission escalation flow
   onPermissionRequest?: (cb: (data: { requestId: string; missingPermissions: string[]; reason: string; streamId?: string; timeoutMs?: number }) => void) => () => void;

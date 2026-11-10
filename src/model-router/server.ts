@@ -13,7 +13,7 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { RouterRequestError, type ModelRouter, type RouterMessage } from './client';
 import { SpendCapExceededError } from './ledger';
-import { TIER_ORDER, type Tier } from './pick-tier';
+import { TIER_ORDER, type RouterTier } from './pick-tier';
 
 function send(res: http.ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
@@ -25,10 +25,10 @@ function errorBody(message: string, code: string) {
   return { error: { message, type: code, code } };
 }
 
-function forcedTier(model: unknown): Tier | undefined {
+function forcedTier(model: unknown): RouterTier | undefined {
   if (typeof model !== 'string') return undefined;
   const name = model.replace(/^router\//, '');
-  return (TIER_ORDER as readonly string[]).includes(name) ? (name as Tier) : undefined;
+  return (TIER_ORDER as readonly string[]).includes(name) ? (name as RouterTier) : undefined;
 }
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024;

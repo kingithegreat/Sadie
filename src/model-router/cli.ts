@@ -15,10 +15,10 @@
 import * as fs from 'node:fs';
 import type * as http from 'node:http';
 import { createRouter } from './chat-route';
-import { RouterRequestError, formatRouteBadge, formatUsd, type FetchLike } from './client';
+import { RouterRequestError, formatRouteBadge, formatUsd, type RouterFetch } from './client';
 import { RouterConfigError, type Env } from './config';
 import { SpendCapExceededError } from './ledger';
-import { pickTier, tierSignals, TIER_ORDER, type Tier } from './pick-tier';
+import { pickTier, tierSignals, TIER_ORDER, type RouterTier } from './pick-tier';
 import { startRouterServer } from './server';
 import { applyVibeProposal, formatVibePreview, proposeVibeChange } from './vibe-code';
 
@@ -26,7 +26,7 @@ export interface CliIO {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   env?: Env;
-  fetch?: FetchLike;
+  fetch?: RouterFetch;
   homeDir?: string;
   now?: () => Date;
   /** Receives the server handle for `serve` (tests close it). */
@@ -121,7 +121,7 @@ export async function main(argv: string[], io: CliIO): Promise<number> {
           files: num(flags, 'files'),
           diffLines: num(flags, 'diff'),
           failed: flags.failed === true,
-          tier: tierFlag as Tier | undefined,
+          tier: tierFlag as RouterTier | undefined,
           sessionId: str(flags, 'session'),
           source: 'coder',
         });

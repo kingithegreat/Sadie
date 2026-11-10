@@ -51,13 +51,13 @@ export function extractUnifiedDiff(text: string): string | null {
   return body.endsWith('\n') ? body : body + '\n';
 }
 
-export interface DiffStats {
+export interface VibeDiffStats {
   files: string[];
   added: number;
   removed: number;
 }
 
-export function diffStats(diff: string): DiffStats {
+export function diffStats(diff: string): VibeDiffStats {
   const files = new Set<string>();
   let added = 0;
   let removed = 0;
@@ -135,7 +135,7 @@ export interface VibeProposal {
   baseCommit: string;
   baseBranch: string;
   diff: string;
-  stats: DiffStats;
+  stats: VibeDiffStats;
   route: RouteResult;
   createdAt: Date;
 }
@@ -187,7 +187,8 @@ export async function proposeVibeChange(options: { router: ModelRouter; repoRoot
     task,
     messages: buildVibeMessages(task, context),
     files: Math.max(1, context.snippets.length),
-    diffLines: -1,
+    // Upper bound for the diff: the size of the named files. No named file -> unknown -> mid.
+    diffLines: context.snippets.length ? context.snippets.reduce((n, s) => n + s.text.split('\n').length, 0) : -1,
     sessionId: options.sessionId ?? stableSessionId(`vibe:${repoRoot}:${task}`),
     source: 'vibe-code',
     mockContent: '```diff\n' + mockVibeDiff(task) + '```',
@@ -253,6 +254,7 @@ export function formatVibePreview(proposal: VibeProposal): string {
   const { stats } = proposal;
   return [
     `**Vibe-code proposal** for \`${proposal.task.slice(0, 120)}\``,
+    `Repo: \`${proposal.repoRoot}\` at \`${proposal.baseBranch}\` (${proposal.baseCommit.slice(0, 8)})`,
     '',
     formatRouteBadge(proposal.route),
     '',

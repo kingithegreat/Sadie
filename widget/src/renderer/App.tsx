@@ -600,7 +600,10 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
       setPendingConfirmationData({
         confirmationId: data.confirmationId,
         message: data.message,
-        streamId: data.streamId
+        streamId: data.streamId,
+        title: data.title,
+        confirmLabel: data.confirmLabel,
+        rejectLabel: data.rejectLabel,
       });
       setAwaitingConfirmation(true);
     });
@@ -2413,6 +2416,9 @@ const App: React.FC<AppProps> = ({ initialMessages }) => {
           warnings={pendingConfirmationData.warnings || []}
           onConfirm={handleConfirmAction}
           onReject={handleRejectAction}
+          {...(pendingConfirmationData.title ? { title: pendingConfirmationData.title } : {})}
+          {...(pendingConfirmationData.confirmLabel ? { confirmLabel: pendingConfirmationData.confirmLabel } : {})}
+          {...(pendingConfirmationData.rejectLabel ? { rejectLabel: pendingConfirmationData.rejectLabel } : {})}
         />
       )}
 

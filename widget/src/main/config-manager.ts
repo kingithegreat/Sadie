@@ -179,6 +179,8 @@ export interface Settings {
   calendarIcsUrl?: string;
   // Mixture-of-Agents settings
   moaEnabled?: boolean;
+  // Route chat through the OpenRouter model router (src/model-router). Off by default.
+  modelRouterEnabled?: boolean;
   moaProposers?: string[];
   moaAggregator?: string;
   // Notification settings

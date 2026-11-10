@@ -19,18 +19,22 @@ export function git(cwd: string, args: string[], options: GitOptions = {}): Prom
     const child = spawn('git', args, {
       cwd,
       env: { ...process.env, ...options.env, GIT_TERMINAL_PROMPT: '0' },
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', d => { stdout += d.toString(); });
-    child.stderr.on('data', d => { stderr += d.toString(); });
+    child.stdout!.on('data', d => { stdout += d.toString(); });
+    child.stderr!.on('data', d => { stderr += d.toString(); });
     child.on('error', reject);
     child.on('close', code => {
       if (code === 0) resolve(stdout);
       else reject(new GitError(args, code, stderr));
     });
-    child.stdin.end(options.input ?? '');
+    if (child.stdin) {
+      // git may exit before reading all of stdin (e.g. a failed --check); that is reported via the exit code.
+      child.stdin.on('error', () => undefined);
+      child.stdin.end(options.input);
+    }
   });
 }

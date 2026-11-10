@@ -16,7 +16,7 @@
 import { createHash } from 'node:crypto';
 import { decideLive, type Env, type RouterConfig } from './config';
 import { SpendLedger } from './ledger';
-import { escalateTier, pickTier, type Tier } from './pick-tier';
+import { escalateTier, pickTier, type RouterTier } from './pick-tier';
 
 export interface FetchResponseLike {
   ok: boolean;
@@ -24,7 +24,7 @@ export interface FetchResponseLike {
   text(): Promise<string>;
 }
 
-export type FetchLike = (
+export type RouterFetch = (
   url: string,
   init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
 ) => Promise<FetchResponseLike>;
@@ -50,7 +50,7 @@ export interface OpenRouterChatBody {
 const PASSTHROUGH_KEYS = ['temperature', 'top_p', 'stop', 'tools', 'tool_choice', 'response_format', 'seed'] as const;
 
 export interface AttemptRecord {
-  tier: Tier;
+  tier: RouterTier;
   models: string[];
   ok: boolean;
   status?: number;
@@ -65,7 +65,7 @@ export interface RouteRequest {
   diffLines?: number;
   failed?: boolean;
   /** Skip pickTier and start at this tier. */
-  tier?: Tier;
+  tier?: RouterTier;
   sessionId?: string;
   /** Who is spending: coder, chat, endpoint, vibe-code. Recorded in the ledger. */
   source?: string;
@@ -79,7 +79,7 @@ export interface RouteResult {
   dryRun: boolean;
   /** Human-readable reason for dry run vs live. */
   mode: string;
-  tier: Tier;
+  tier: RouterTier;
   /** The model that answered (live) or the primary that would have (dry run). */
   model: string;
   content: string;
@@ -113,7 +113,7 @@ export function usesCacheControl(config: RouterConfig, model: string): boolean {
 
 export function buildChatRequest(
   config: RouterConfig,
-  tier: Tier,
+  tier: RouterTier,
   messages: RouterMessage[],
   sessionId: string,
   extra: Record<string, unknown> = {},
@@ -142,7 +142,7 @@ export function estimateTokens(messages: RouterMessage[]): number {
   return Math.ceil(chars / 4);
 }
 
-export function estimateCostUsd(config: RouterConfig, tier: Tier, promptTokens: number, completionTokens: number): number {
+export function estimateCostUsd(config: RouterConfig, tier: RouterTier, promptTokens: number, completionTokens: number): number {
   const t = config.tiers[tier];
   const p = t.pricing ?? t.maxPrice;
   return (promptTokens * p.prompt + completionTokens * p.completion) / 1_000_000;
@@ -160,7 +160,7 @@ function messageText(messages: RouterMessage[]): string {
 export interface ModelRouterOptions {
   config: RouterConfig;
   ledger?: SpendLedger;
-  fetch?: FetchLike;
+  fetch?: RouterFetch;
   env?: Env;
   now?: () => Date;
 }
@@ -168,7 +168,7 @@ export interface ModelRouterOptions {
 export class ModelRouter {
   readonly config: RouterConfig;
   readonly ledger: SpendLedger;
-  private readonly fetchImpl?: FetchLike;
+  private readonly fetchImpl?: RouterFetch;
   private readonly env: Env;
 
   constructor(options: ModelRouterOptions) {
@@ -185,7 +185,7 @@ export class ModelRouter {
   async complete(req: RouteRequest): Promise<RouteResult> {
     const messages: RouterMessage[] = req.messages?.length ? req.messages : [{ role: 'user', content: req.task ?? '' }];
     const taskText = req.task ?? messageText(messages.filter(m => m.role === 'user'));
-    const startTier: Tier = req.tier ?? pickTier(taskText, req.files ?? -1, req.diffLines ?? -1, req.failed ?? false);
+    const startTier: RouterTier = req.tier ?? pickTier(taskText, req.files ?? -1, req.diffLines ?? -1, req.failed ?? false);
     const sessionId = req.sessionId ?? stableSessionId(taskText);
     const source = req.source ?? 'coder';
     const decision = this.mode();
@@ -217,11 +217,11 @@ export class ModelRouter {
       };
     }
 
-    const fetchImpl = this.fetchImpl ?? ((globalThis as unknown as { fetch?: FetchLike }).fetch);
+    const fetchImpl = this.fetchImpl ?? ((globalThis as unknown as { fetch?: RouterFetch }).fetch);
     if (!fetchImpl) throw new RouterRequestError('No fetch implementation available for a live call', []);
     const apiKey = (this.env.OPENROUTER_API_KEY || '').trim();
     const attempts: AttemptRecord[] = [];
-    const triedTiers = new Set<Tier>();
+    const triedTiers = new Set<RouterTier>();
     let tier = startTier;
 
     for (;;) {

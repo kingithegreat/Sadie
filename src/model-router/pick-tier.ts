@@ -7,9 +7,9 @@
  * the previous attempt failed.
  */
 
-export type Tier = 'cheap' | 'mid' | 'top';
+export type RouterTier = 'cheap' | 'mid' | 'top';
 
-export const TIER_ORDER: readonly Tier[] = ['cheap', 'mid', 'top'];
+export const TIER_ORDER: readonly RouterTier[] = ['cheap', 'mid', 'top'];
 
 /** Words that mark a task as small and mechanical. */
 const CHEAP_KEYWORDS: readonly RegExp[] = [
@@ -87,12 +87,12 @@ export function tierSignals(task: string, files: number, diffLines: number): Tie
   return { cheapKeyword, cheapBlocked, hard, reasons };
 }
 
-export function escalateTier(tier: Tier): Tier {
+export function escalateTier(tier: RouterTier): RouterTier {
   const i = TIER_ORDER.indexOf(tier);
   return TIER_ORDER[Math.min(i + 1, TIER_ORDER.length - 1)];
 }
 
-export function clampTier(tier: Tier, min: Tier, max: Tier): Tier {
+export function clampTier(tier: RouterTier, min: RouterTier, max: RouterTier): RouterTier {
   const i = TIER_ORDER.indexOf(tier);
   const lo = TIER_ORDER.indexOf(min);
   const hi = TIER_ORDER.indexOf(max);
@@ -108,11 +108,11 @@ export function clampTier(tier: Tier, min: Tier, max: Tier): Tier {
  * - mid: everything else, including an unclear or empty task.
  * - failed: the base tier is escalated by exactly one (cheap -> mid -> top).
  */
-export function pickTier(task: string, files: number, diffLines: number, failed = false): Tier {
+export function pickTier(task: string, files: number, diffLines: number, failed = false): RouterTier {
   const s = tierSignals(task, files, diffLines);
   const fileCount = knownCount(files);
   const diffCount = knownCount(diffLines);
-  let base: Tier;
+  let base: RouterTier;
   if (s.hard) base = 'top';
   else if (
     s.cheapKeyword && !s.cheapBlocked
@@ -124,8 +124,8 @@ export function pickTier(task: string, files: number, diffLines: number, failed 
 }
 
 export interface ChatTierPolicy {
-  defaultTier: Tier;
-  maxTier: Tier;
+  defaultTier: RouterTier;
+  maxTier: RouterTier;
 }
 
 /**
@@ -134,9 +134,9 @@ export interface ChatTierPolicy {
  * configured chat maximum (mid by default). Failure escalation happens in the
  * router, one tier at a time, exactly like coder calls.
  */
-export function pickChatTier(message: string, policy: ChatTierPolicy, failed = false): Tier {
+export function pickChatTier(message: string, policy: ChatTierPolicy, failed = false): RouterTier {
   const s = tierSignals(message, 0, 0);
-  let base: Tier = policy.defaultTier;
+  let base: RouterTier = policy.defaultTier;
   if (s.hard) base = 'top';
   else if (s.cheapKeyword && !s.cheapBlocked) base = 'cheap';
   base = clampTier(base, 'cheap', policy.maxTier);

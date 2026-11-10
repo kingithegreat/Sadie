@@ -8,12 +8,12 @@
  */
 
 import { loadRouterConfig, type Env, type LoadConfigOptions } from './config';
-import { ModelRouter, formatRouteBadge, stableSessionId, type FetchLike, type RouteResult, type RouterMessage } from './client';
+import { ModelRouter, formatRouteBadge, stableSessionId, type RouterFetch, type RouteResult, type RouterMessage } from './client';
 import { SpendLedger } from './ledger';
 import { pickChatTier } from './pick-tier';
 
 export interface CreateRouterOptions extends LoadConfigOptions {
-  fetch?: FetchLike;
+  fetch?: RouterFetch;
   now?: () => Date;
 }
 

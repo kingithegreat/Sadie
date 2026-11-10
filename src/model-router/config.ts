@@ -16,7 +16,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { TIER_ORDER, type Tier, type ChatTierPolicy } from './pick-tier';
+import { TIER_ORDER, type RouterTier, type ChatTierPolicy } from './pick-tier';
 
 export interface PricePerMillion {
   prompt: number;
@@ -42,7 +42,7 @@ export interface RouterConfig {
   cacheTtl: '5m' | '1h' | null;
   requireParameters: boolean;
   chat: ChatTierPolicy;
-  tiers: Record<Tier, TierConfig>;
+  tiers: Record<RouterTier, TierConfig>;
   /** Where the config came from, for messages. */
   source: string;
 }
@@ -71,7 +71,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isTier(value: unknown): value is Tier {
+function isTier(value: unknown): value is RouterTier {
   return typeof value === 'string' && (TIER_ORDER as readonly string[]).includes(value);
 }
 
@@ -99,7 +99,7 @@ export function parseRouterConfig(raw: unknown, source: string, homeDir?: string
   if (!isObject(raw)) throw new RouterConfigError(`Router config ${source} must be a JSON object`);
   if (!isObject(raw.tiers)) throw new RouterConfigError(`Router config ${source} is missing "tiers"`);
   const tiersRaw = raw.tiers;
-  const tiers = {} as Record<Tier, TierConfig>;
+  const tiers = {} as Record<RouterTier, TierConfig>;
   for (const tier of TIER_ORDER) {
     const t = tiersRaw[tier];
     if (!isObject(t)) throw new RouterConfigError(`Router config ${source} is missing tiers.${tier}`);
