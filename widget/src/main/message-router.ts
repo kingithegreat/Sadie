@@ -13,6 +13,7 @@ import { HOMEBOT_SYSTEM_PROMPT, HOMEBOT_SYSTEM_PROMPT_COMPACT } from '../shared/
 import { getSkillCatalogue, matchSkills } from './skills';
 import { initializeTools, getFocusedOllamaTools, getFocusedToolDefinitions, getSmallModelTools, executeToolBatch, previewBatch, ToolCall, ToolContext } from './tools';
 import { formatBatchPreviewForChat } from '../../../src/trust/batch';
+import { isModelRouterChatEnabled, routeChatThroughModelRouter, runVibeCodeChatTurn, vibeCodeTaskFor } from './model-router-chat';
 import { evaluateToolResults } from './reflection-validator';
 import { documentToolHandlers } from './tools/documents';
 import { isE2E, isPackagedBuild } from './env';
@@ -2048,18 +2049,24 @@ export function requestConfirmationFrom(
   sender: Electron.WebContents,
   message: string,
   streamId?: string,
+  display?: { title?: string; confirmLabel?: string; rejectLabel?: string; timeoutMs?: number },
 ): Promise<boolean> {
   const confirmationId = `confirm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   return new Promise<boolean>((resolve) => {
     const timeout = setTimeout(() => {
       pendingConfirmations.delete(confirmationId);
       resolve(false);
-    }, 60000);
+    }, display?.timeoutMs ?? 60000);
     pendingConfirmations.set(confirmationId, {
       resolve: (confirmed: boolean) => { clearTimeout(timeout); resolve(confirmed); },
     });
     try {
-      sender.send('homebot:confirmation-request', { confirmationId, message, streamId });
+      sender.send('homebot:confirmation-request', {
+        confirmationId, message, streamId,
+        ...(display?.title ? { title: display.title } : {}),
+        ...(display?.confirmLabel ? { confirmLabel: display.confirmLabel } : {}),
+        ...(display?.rejectLabel ? { rejectLabel: display.rejectLabel } : {}),
+      });
     } catch {
       clearTimeout(timeout);
       pendingConfirmations.delete(confirmationId);
@@ -2229,6 +2236,37 @@ export async function streamFromLLM(
   // raw settings.customLLM may lack. Before this, the renderer hydrated for
   // display but the router didn't: Settings showed Gemini configured while
   // every chat silently ran on local qwen.
+  // OpenRouter model router (opt-in: settings.modelRouterEnabled or
+  // HOMEBOT_MODEL_ROUTER=1). Tiered routing with the spend ledger and monthly
+  // cap shared with the coder CLI. Dry run unless live mode AND
+  // OPENROUTER_API_KEY are both set. When off, nothing below changes.
+  // Image, document and inline-draft turns keep the existing provider path.
+  if (isModelRouterChatEnabled(settings) && currentWorkspace()?.mode !== 'inline-draft' && !images?.length && !hasDocuments) {
+    const routerController = new AbortController();
+    let routerSettled = false;
+    const routerHistory = getProviderHistory(conversationId, message, options?.currentUserInHistory)
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    routeChatThroughModelRouter({
+      message,
+      conversationId,
+      systemPrompt: getSystemPromptForModel('openrouter-model-router', cloudGuidelines),
+      history: routerHistory,
+      signal: routerController.signal,
+    }).then(turn => {
+      if (routerSettled || routerController.signal.aborted) return;
+      onMeta?.({ model: turn.route.model });
+      onChunk(turn.display);
+      routerSettled = true;
+      onEnd();
+    }).catch(err => {
+      if (routerSettled || routerController.signal.aborted) return;
+      routerSettled = true;
+      onError(err);
+    });
+    return { cancel: () => { routerController.abort(); if (!routerSettled) { routerSettled = true; onEnd(); } } };
+  }
+
   const cloudResolution = resolveCloudLLM(settings);
   if (cloudResolution.intended && cloudResolution.config) {
     const hydratedCloud = cloudResolution.config;
@@ -3423,6 +3461,37 @@ export function registerMessageRouter(_mainWindow: BrowserWindow, n8nUrl: string
           const slashHandled = handleSlashCommand(trimmedMsg, convId, activeModel);
           if (slashHandled) {
             safeSend(event.sender, 'homebot:stream-chunk', { chunk: slashHandled, streamId });
+            safeSend(event.sender, 'homebot:stream-end', { streamId });
+            activeStreams.delete(streamId);
+            return;
+          }
+        }
+
+        // ── VIBE CODE — /code <task>, or a detected coding request when the
+        // model router is on and a project is set explicitly. The diff is
+        // previewed in chat; nothing is written unless the user approves, and
+        // approval commits only to a new homebot/vibe-* branch (no push).
+        {
+          const vibeSettings = getSettings();
+          const vibeTask = vibeCodeTaskFor(trimmedMsg, {
+            routerEnabled: isModelRouterChatEnabled(vibeSettings),
+            explicitProject: !!currentWorkspace() || !!vibeSettings.projectPath,
+          });
+          if (vibeTask !== null) {
+            await runVibeCodeChatTurn({
+              task: vibeTask,
+              repoRoot: getProjectPath(),
+              io: {
+                send: (chunk) => safeSend(event.sender, 'homebot:stream-chunk', { chunk, streamId }),
+                confirm: (summary) => requestConfirmationFrom(event.sender, summary, streamId, {
+                  title: 'Apply vibe-code diff?',
+                  confirmLabel: 'Approve',
+                  rejectLabel: 'Reject',
+                  // Time to read the diff; an unanswered prompt still counts as Reject.
+                  timeoutMs: 10 * 60_000,
+                }),
+              },
+            }).catch((e: any) => safeSend(event.sender, 'homebot:stream-chunk', { chunk: `⚠️ Vibe-code failed: ${e?.message || String(e)}. Nothing was written.`, streamId }));
             safeSend(event.sender, 'homebot:stream-end', { streamId });
             activeStreams.delete(streamId);
             return;

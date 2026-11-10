@@ -271,7 +271,7 @@ const electronAPI: ElectronAPI = {
   },
 
   // Confirmation request/response for dangerous operations
-  onConfirmationRequest: (cb: (data: { confirmationId: string; message: string; streamId: string }) => void) => {
+  onConfirmationRequest: (cb: (data: { confirmationId: string; message: string; streamId: string; title?: string; confirmLabel?: string; rejectLabel?: string }) => void) => {
     const listener = (_ev: IpcRendererEvent, data: any) => cb(data);
     ipcRenderer.on(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);
     return () => ipcRenderer.removeListener(ALLOWED_CHANNELS.CONFIRMATION_REQUEST, listener);

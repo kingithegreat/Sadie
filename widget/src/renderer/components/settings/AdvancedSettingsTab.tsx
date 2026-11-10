@@ -199,6 +199,23 @@ export default function AdvancedSettingsTab() {
           <label className="setting-label">
             <input
               type="checkbox"
+              checked={localSettings.modelRouterEnabled || false}
+              onChange={(e) =>
+                setLocalSettings({
+                  ...localSettings,
+                  modelRouterEnabled: e.target.checked
+                })
+              }
+            />
+            <span>Route chat through the OpenRouter model router</span>
+          </label>
+          <small className="setting-hint">
+            Picks a cheap, mid or top OpenRouter model per message and shows the model and cost under each reply. Shares one monthly spend cap with the coder CLI. Dry run (no requests, mock costs) until live mode and OPENROUTER_API_KEY are both set. See src/model-router/README.md.
+          </small>
+
+          <label className="setting-label">
+            <input
+              type="checkbox"
               checked={localSettings.moaEnabled || false}
               onChange={(e) =>
                 setLocalSettings({
