@@ -81,7 +81,7 @@ export const CURATED_METERED_MODELS: Record<string, CustomModelInfo[]> = {
     { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5', description: 'Fastest and most affordable', provider: 'anthropic' },
   ],
   deepseek: [
-    { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', description: 'Fast chat model', provider: 'deepseek' },
+    { id: 'deepseek-flash', name: 'DeepSeek Flash', description: 'Fast chat model', provider: 'deepseek' },
     { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: 'Stronger reasoning', provider: 'deepseek' },
   ],
   'google-ai-studio': [

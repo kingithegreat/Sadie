@@ -1028,7 +1028,7 @@ artwork retain their existing behavior.
 > IPC lists resolve literal channels and constant bindings without executing code.
 > Dynamically computed registration names require runtime inspection.
 
-**Preload methods (290)** — `window.electron`
+**Preload methods (292)** — `window.electron`
 
 ```
 addFeed                             addMessage                          browserAttach                       browserBack
@@ -1061,52 +1061,52 @@ mediaMovieRun                       mediaParseFeed                      mediaRej
 mediaSaveMusicConfig                mediaSeriesSettingsDelete           mediaSeriesSettingsGet              mediaSeriesSettingsList
 mediaSeriesSettingsSave             mediaSeriesSettingsSegment          mediaSpliceVideo                    mediaStoryboardBreakdown
 mediaStoryboardConfirmPaidFrames    mediaStoryboardCreate               mediaStoryboardFrameProviders       mediaStoryboardGenerateFrame
-mediaStoryboardGet                  mediaStoryboardList                 mediaStoryboardRender               mediaStoryboardSave
-mediaStoryboardSetFrameProvider     mediaStoryboardSetShotImage         mediaStoryboardSetVideoModel        mediaTrimClip
-minimizeWindow                      moduleList                          moduleSetEnabled                    onAssistantToolActivity
-onBatchSummary                      onBrowserState                      onConfigRecovered                   onConfirmationRequest
-onConversationCompacted             onHardwareProfileApplied            onHideWindow                        onMediaAncientPathwaysProgress
-onMediaFfmpegProgress               onMessage                           onModelFallback                     onModulesChanged
-onNavigate                          onOllamaDownloadProgress            onOllamaStatus                      onPermissionRequest
-onProactiveBriefing                 onPullModelProgress                 onReminderFired                     onSdCppSetupProgress
-onShowWindow                        onStreamChunk                       onStreamEnd                         onStreamError
-onSupervisorStatus                  onTerminalExit                      onTerminalOutput                    onTitleUpdated
-onUpdateAvailable                   onUpdateDownloaded                  onUpdateProgress                    onWhisperProgress
-onWidgetModeChanged                 onWorkspaceTaskEvent                onWorkspaceTerminalEvent            openExternalUrl
-openFile                            parseDocument                       pullModel                           pullModelStream
-ragClear                            ragIndex                            ragList                             readConsentLog
-readDebugLogs                       readPermissionAudit                 readTelemetryEvents                 removeFeed
-removeHideWindowListener            removeShowWindowListener            resetPermissions                    resolveActiveModel
-restartApp                          runAutomation                       runDiagnostics                      saveConversation
-saveQuizProgress                    saveSettings                        schedulerAdd                        schedulerList
-schedulerRemove                     schedulerToggle                     sdCppAutoSetup                      sdCppSetup
-sdCppStatus                         searchConversations                 sendConfirmationResponse            sendMessage
-sendPermissionResponse              sendStreamMessage                   setActiveConversation               setUncensoredMode
-showInFolder                        showProblemReport                   skillsList                          skillsOpenFolder
-startOllama                         startSpeechRecognition              stopSpeechRecognition               subscribeToStream
-terminalClose                       terminalCreate                      terminalKill                        terminalRun
-testN8nConnection                   toggleWidgetMode                    ttsListVoices                       ttsSampleVoice
-ttsSpeak                            ttsStop                             unhideFeed                          updateAutomation
-updateMessage                       whisperTranscribe                   workspaceAiApprovePlan              workspaceAiMcpStatus
-workspaceAiPreparePlan              workspaceAiRules                    workspaceAiSaveSession              workspaceAiSession
-workspaceCheckpointCompare          workspaceCheckpointCompareRun       workspaceCheckpointList             workspaceCheckpointRestore
-workspaceCheckpointRestoreRun       workspaceChooseProject              workspaceCodeComplete               workspaceCodeCompleteSetup
-workspaceCodeSearch                 workspaceDebug                      workspaceFileAction                 workspaceGitAction
-workspaceGitBranches                workspaceGitCheckout                workspaceGitCommit                  workspaceGitStage
-workspaceGitStatus                  workspaceGitUnstage                 workspaceIdeSettings                workspaceLanguage
-workspaceList                       workspaceLsp                        workspaceProjectTools               workspaceProposalAccept
-workspaceProposalReject             workspaceProposals                  workspaceRead                       workspaceRecentProjects
-workspaceRecoveryLoad               workspaceRecoverySave               workspaceReplace                    workspaceRevokeFolder
-workspaceRoot                       workspaceSave                       workspaceSearch                     workspaceTaskList
-workspaceTaskRun                    workspaceTaskStatus                 workspaceTaskStop                   workspaceTerminalClose
-workspaceTerminalCreate             workspaceTerminalInterrupt          workspaceTerminalList               workspaceTerminalProfiles
-workspaceTerminalResize             workspaceTerminalWrite              workspaceTests                      workspaceTrustedFolders
-writeClipboard                      writeDocument                       youtubeCancel                       youtubeConnect
-youtubeConnectUpload                youtubeConnectionStatus             youtubeImportCredentials            youtubeRefresh
-youtubeRemove                       youtubeUpload
+mediaStoryboardGenerateScript       mediaStoryboardGet                  mediaStoryboardList                 mediaStoryboardRender
+mediaStoryboardSave                 mediaStoryboardSaveScript           mediaStoryboardSetFrameProvider     mediaStoryboardSetShotImage
+mediaStoryboardSetVideoModel        mediaTrimClip                       minimizeWindow                      moduleList
+moduleSetEnabled                    onAssistantToolActivity             onBatchSummary                      onBrowserState
+onConfigRecovered                   onConfirmationRequest               onConversationCompacted             onHardwareProfileApplied
+onHideWindow                        onMediaAncientPathwaysProgress      onMediaFfmpegProgress               onMessage
+onModelFallback                     onModulesChanged                    onNavigate                          onOllamaDownloadProgress
+onOllamaStatus                      onPermissionRequest                 onProactiveBriefing                 onPullModelProgress
+onReminderFired                     onSdCppSetupProgress                onShowWindow                        onStreamChunk
+onStreamEnd                         onStreamError                       onSupervisorStatus                  onTerminalExit
+onTerminalOutput                    onTitleUpdated                      onUpdateAvailable                   onUpdateDownloaded
+onUpdateProgress                    onWhisperProgress                   onWidgetModeChanged                 onWorkspaceTaskEvent
+onWorkspaceTerminalEvent            openExternalUrl                     openFile                            parseDocument
+pullModel                           pullModelStream                     ragClear                            ragIndex
+ragList                             readConsentLog                      readDebugLogs                       readPermissionAudit
+readTelemetryEvents                 removeFeed                          removeHideWindowListener            removeShowWindowListener
+resetPermissions                    resolveActiveModel                  restartApp                          runAutomation
+runDiagnostics                      saveConversation                    saveQuizProgress                    saveSettings
+schedulerAdd                        schedulerList                       schedulerRemove                     schedulerToggle
+sdCppAutoSetup                      sdCppSetup                          sdCppStatus                         searchConversations
+sendConfirmationResponse            sendMessage                         sendPermissionResponse              sendStreamMessage
+setActiveConversation               setUncensoredMode                   showInFolder                        showProblemReport
+skillsList                          skillsOpenFolder                    startOllama                         startSpeechRecognition
+stopSpeechRecognition               subscribeToStream                   terminalClose                       terminalCreate
+terminalKill                        terminalRun                         testN8nConnection                   toggleWidgetMode
+ttsListVoices                       ttsSampleVoice                      ttsSpeak                            ttsStop
+unhideFeed                          updateAutomation                    updateMessage                       whisperTranscribe
+workspaceAiApprovePlan              workspaceAiMcpStatus                workspaceAiPreparePlan              workspaceAiRules
+workspaceAiSaveSession              workspaceAiSession                  workspaceCheckpointCompare          workspaceCheckpointCompareRun
+workspaceCheckpointList             workspaceCheckpointRestore          workspaceCheckpointRestoreRun       workspaceChooseProject
+workspaceCodeComplete               workspaceCodeCompleteSetup          workspaceCodeSearch                 workspaceDebug
+workspaceFileAction                 workspaceGitAction                  workspaceGitBranches                workspaceGitCheckout
+workspaceGitCommit                  workspaceGitStage                   workspaceGitStatus                  workspaceGitUnstage
+workspaceIdeSettings                workspaceLanguage                   workspaceList                       workspaceLsp
+workspaceProjectTools               workspaceProposalAccept             workspaceProposalReject             workspaceProposals
+workspaceRead                       workspaceRecentProjects             workspaceRecoveryLoad               workspaceRecoverySave
+workspaceReplace                    workspaceRevokeFolder               workspaceRoot                       workspaceSave
+workspaceSearch                     workspaceTaskList                   workspaceTaskRun                    workspaceTaskStatus
+workspaceTaskStop                   workspaceTerminalClose              workspaceTerminalCreate             workspaceTerminalInterrupt
+workspaceTerminalList               workspaceTerminalProfiles           workspaceTerminalResize             workspaceTerminalWrite
+workspaceTests                      workspaceTrustedFolders             writeClipboard                      writeDocument
+youtubeCancel                       youtubeConnect                      youtubeConnectUpload                youtubeConnectionStatus
+youtubeImportCredentials            youtubeRefresh                      youtubeRemove                       youtubeUpload
 ```
 
-**IPC channels, renderer → main (258)**
+**IPC channels, renderer → main (260)**
 
 ```
 homebot:__e2e_get_router_logs                   homebot:__e2e_invoke_tool_batch
@@ -1171,8 +1171,9 @@ homebot:media:series-settings:save              homebot:media:series-settings:se
 homebot:media:splice-video                      homebot:media:storyboard:breakdown
 homebot:media:storyboard:confirm-paid-frames    homebot:media:storyboard:create
 homebot:media:storyboard:frame-providers        homebot:media:storyboard:generate-frame
-homebot:media:storyboard:get                    homebot:media:storyboard:list
-homebot:media:storyboard:render                 homebot:media:storyboard:save
+homebot:media:storyboard:generate-script        homebot:media:storyboard:get
+homebot:media:storyboard:list                   homebot:media:storyboard:render
+homebot:media:storyboard:save                   homebot:media:storyboard:save-script
 homebot:media:storyboard:set-frame-provider     homebot:media:storyboard:set-shot-image
 homebot:media:storyboard:set-video-model        homebot:media:trim-clip
 homebot:media:youtube:cancel                    homebot:media:youtube:connect
