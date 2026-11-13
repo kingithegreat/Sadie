@@ -1255,3 +1255,29 @@ claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
 CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
 Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
 retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
+
+
+## FINISH-VOICE-SAMPLE-ISOLATION-20261104 — Codex
+
+Owns the bounded voice-sample/animatic output-collision investigation in
+`widget/src/main/ipc-handlers.ts`, its IPC regression tests, and a task receipt,
+on fresh-main branch `claude/finish-voice-sample-isolation-20261104` in the
+isolated cloud worktree `homebot-finish`. Current Drive and all four open PRs
+were read first. Existing local Windows installer owner and draft #502,
+#500/#501/#413, AP/rig/art/episode owners retain their scopes. No new IPC
+contract, provider call, profile replacement, installer upload or merge.
+First reproduce whether successive Edge samples overwrite the same
+`audio.mp3` despite distinct requested filenames; then isolate each request
+without changing privacy, narration-clock or engine behavior.
+
+
+### FINISH-VOICE-SAMPLE-ISOLATION-20261104 — editing complete
+
+Draft PR #503 contains the reproduced sample-overwrite repair. Final focused
+speech/IPC/playback scopes pass 105 tests; root 233 tests, widget TypeScript,
+lint/build, docs/skill sync and whitespace checks pass. Full Linux widget run:
+6,131 passed / 18 failed / 78 skipped; six failing suites retain explicit
+baseline/environment limits in `tasks/finish-voice-sample-isolation-20261104.md`.
+Source editing is released for review; hosted current-head Windows verification
+and installed acceptance remain pending. Keep draft/auto-merge-off and retain
+all Windows installer/art/episode owners. No whole-app completion claim.
