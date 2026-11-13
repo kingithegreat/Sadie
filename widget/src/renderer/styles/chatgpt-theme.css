@@ -14756,3 +14756,24 @@ a.ms-btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 
 
+
+/* ── Global tooltips + hover states ───────────────────────────────────────
+   GlobalTooltips (tooltips/GlobalTooltips.tsx) reuses .tooltip-bubble. Help
+   sentences are longer than a label, so cap the width and let them wrap.
+   The hover/focus states below use :where() so they carry zero specificity:
+   any control that already styles its own :hover keeps it. */
+.hb-global-tooltip { max-width: 300px; }
+:where(button, [role="button"], [role="tab"], select, summary):where(:not(:disabled)) {
+  transition: filter 120ms ease, box-shadow 120ms ease;
+}
+:where(button, [role="button"], [role="tab"], select, summary):where(:not(:disabled)):hover {
+  filter: brightness(1.12);
+  cursor: pointer;
+}
+:where(button, [role="button"], [role="tab"], a[href], input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent-color, #7c8cff);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(button, [role="button"], [role="tab"], select, summary) { transition: none; }
+}
