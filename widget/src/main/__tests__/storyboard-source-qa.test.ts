@@ -9,7 +9,7 @@ const digest = 'a'.repeat(64);
 const detailed = Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256));
 const scene = (ack?: string): AssembledScene[] => [{ sceneId: 'scene_02', shots: [
   { shotId: 'shot_001', order: 1, prompt: 'Scene', framing: 'wide', lens: '35mm', movement: 'static',
-    durationSec: 2, narration: 'Speech', status: 'IMAGE_GENERATED', frameImagePath: 'picture.png', frameStale: false,
+    durationSec: 2, narration: 'Speech', status: 'IMAGE_GENERATED', frameImagePath: 'picture.png', videoClipPath: null, frameStale: false,
     plainBackgroundSha256: ack },
 ] }];
 
