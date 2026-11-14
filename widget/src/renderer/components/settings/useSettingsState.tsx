@@ -68,6 +68,7 @@ export interface Settings {
   permissionPromptTimeoutMs?: number;
   messageDensity?: 'compact' | 'comfortable' | 'spacious';
   moaEnabled?: boolean;
+  modelRouterEnabled?: boolean;
   moaProposers?: string[];
   moaAggregator?: string;
   hardwareProfile?: '4gb' | '8gb' | '16gb+';
@@ -163,6 +164,7 @@ export function useSettingsState({ settings, onSave, onClose }: UseSettingsState
       notificationDuration: source.notificationDuration ?? 8000,
       messageDensity: source.messageDensity || 'comfortable',
       moaEnabled: source.moaEnabled ?? false,
+      modelRouterEnabled: source.modelRouterEnabled ?? false,
       moaProposers: source.moaProposers ?? [],
       moaAggregator: source.moaAggregator ?? '',
       defaultLocation: source.defaultLocation || '',
