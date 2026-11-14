@@ -9,7 +9,8 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    # Keep the browser job on a runner supported by the pinned Playwright.
+    runs-on: ubuntu-24.04
     # Advisory, non-blocking. This runs the FULL Playwright suite in a single
     # process (workers:1, ~7 min) against docker services — that sequential load
     # induces non-deterministic timeouts (a different test flakes each run; all
