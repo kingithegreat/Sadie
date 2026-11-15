@@ -1,3 +1,6 @@
+# LEGACY, NOT USED. `npm run dist` and CI run electron-builder from widget/
+# without --config, so the real packaging config is the "build" field in
+# widget/package.json. This file is kept only until Aden decides to delete it.
 appId: com.homebot.app
 productName: HomeBot
 directories:
