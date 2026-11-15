@@ -178,6 +178,7 @@ Cursor's headline capabilities are Agent, Plan Mode, Tab completion, inline edit
 - **PROV-2:** Codex CLI signed in with your ChatGPT account on this PC, for the live check.
 - **PROV-3 / PROV-4:** one paid live request each with your OpenAI and Google keys (images cost cents; Veo is charged per second of video).
 - **PROV-6:** whether you want Claude-drawn vector illustrations at all.
+- **#500 DeepSeek live check:** #500 merged on 15 Nov 2026 before this check. Make one live DeepSeek call with your own key and run the episode-script generator once, following `docs/verify/episode-script-generator.md`. Until then, DeepSeek model IDs and Generate episode script are merged but not verified live.
 
 ### REL-3.4 acceptance limits
 
@@ -218,6 +219,22 @@ is retained under `.kilo/artifacts/rel34-colab-queue-e2e/`.
 Spot-verified against origin/main 6b939e52 and live GitHub state on 2026-09-21 (PR state via gh pr view, content via git grep origin/main with positive controls). Confirmed current: G-2 (#387; nightly green 09-18 through 09-21), G-3 (#382, issue #229 closed), MS-1 #352, MS-2 #375, MS-3 #358, MS-4/MS-9 #366, MS-5 #374, MS-6 #379, MS-7 #359, MS-8 #376/#395, MS-10 #373, MS-13 (all listed PRs merged or closed), PROV-1 #398, PROV-2 #362, IDE-1 #360, IDE-2 #364, IDE-3 #378, IDE-5 #381, IDE-9 #397, IDE-10 #361, REL-3.1 #388, REL-3.2/3.5 #393, REL-3.3 #391, REL-3.4 #403, REL-3.6 #402, REL-4 #363. G-1 updated: two consecutive scheduled runs green, third still required. Undetermined/no change needed this pass: PROV-3/4/5 remain open (DALL-E path still present in web.ts, no Veo shot pipeline found on main), IDE-4/6/7/8/11/12/13 remain open (no corresponding content on main; IDE-11 has open draft #408 with red e2e-all), #296 and #368 remain open, MS-11/MS-12/PROV-6 unchanged (need Aden).
 
 ---
+
+## Status refresh (2026-11-15)
+
+Merged on 15 Nov 2026 NZDT on Aden's instruction "merge and make this app complete". Each PR was updated to main and had all six required contexts green before its squash merge. Merged does not mean accepted: the owner checks in the last column stay open.
+
+| PR | What | Status | Still open |
+|---|---|---|---|
+| #500 | DeepSeek current model IDs (`deepseek-flash`, `deepseek-v4-pro`; retired IDs migrate on load) and Media Studio "Generate episode script" | merged #500 (`3ae3ef69`) | **needs Aden:** first live DeepSeek call on his own key, per `docs/verify/episode-script-generator.md` |
+| #501 | App-wide accessible hover and focus tooltips | merged #501 (`cff07333`) | Aden's hands-on look |
+| #502 | Source-pinned Windows installer retention with guarded artifact access (local-only, no public artifact) | merged #502 (`8b795162`) | REL-1 fresh-profile installed acceptance (checklist step 1) |
+| #503 | Voice samples and animatic narration written to separate files | merged #503 (`fa58a1f6`) | installed-build listening check (checklist step 2) |
+| #505 | `CLAIMS.md` refresh | merged #505 (`62c4afb7`) | none |
+| #506 | Date-separators test clock pinned so it can't straddle midnight | merged #506 (`4832911`) | none |
+| #507 | `widget/package.json` `build` is the only packaging config; root `electron-builder.yml` is legacy | merged #507 (`09014aa`) | none |
+
+#413 (PROV-4 Veo clips, paid) stays parked and was not touched. Local-only commits `f5829a0` and `66a6807b` are still not on GitHub and need Aden's public-source approval.
 
 ## User-testing checklist (REL-2)
 
