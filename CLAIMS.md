@@ -1292,17 +1292,18 @@ Main is `5dc9f506` (#504, OpenRouter model router, dry run by default, merged
 trap still applies (a push to `claude/**` or `feat/**` without an open draft PR
 opens a non-draft PR and arms squash auto-merge).
 
-**Open PRs**
+**PRs from this refresh** (state column updated by MERGE-RUN-20261115 below)
 
 | PR | Branch | State | Hold / owner |
 |---|---|---|---|
-| #500 DeepSeek current model IDs + Media Studio "Generate episode script" | `claude/pkg-b-deepseek-episode-script` | Draft, auto-merge off, main merged in 15 Nov | Commit Cat. Waiting on Aden: his first live DeepSeek call on his own key (verify guide), then review. |
-| #501 App-wide accessible hover and focus tooltips | `feat/app-wide-tooltips` | Draft, auto-merge off, main merged in 15 Nov | Waiting on Aden's review. |
-| #502 Source-pinned Windows installer retention | `claude/finish-plan-20261031` | Draft, auto-merge off, main merged in 15 Nov | Codex finishing owner (FINISH-PLAN-20261031 above). Installer stays local-only per Aden's 3 Nov choice; no public artifact. |
-| #503 Voice-sample / animatic output isolation | `claude/finish-voice-sample-isolation-20261104` | Draft, auto-merge off, main merged in 15 Nov | Codex (FINISH-VOICE-SAMPLE-ISOLATION-20261104 above). Hosted Windows and installed acceptance pending. |
+| #500 DeepSeek current model IDs + Media Studio "Generate episode script" | `claude/pkg-b-deepseek-episode-script` | **Merged 15 Nov 2026 22:59 NZDT** as `3ae3ef69` | Merged on Aden's "merge and make this app complete". **Still owed:** Aden's first live DeepSeek call on his own key (`docs/verify/episode-script-generator.md`); it was not done before merge. |
+| #501 App-wide accessible hover and focus tooltips | `feat/app-wide-tooltips` | **Merged 15 Nov 2026 22:46 NZDT** as `cff07333` | Released. Aden's hands-on look at the tooltips is still welcome but no longer a merge gate. |
+| #502 Source-pinned Windows installer retention | `claude/finish-plan-20261031` | **Merged 15 Nov 2026 22:33 NZDT** as `8b795162` | Released. Installer stays local-only per Aden's 3 Nov choice; no public artifact. Fresh-profile installed acceptance (REL-1) still open. |
+| #503 Voice-sample / animatic output isolation | `claude/finish-voice-sample-isolation-20261104` | **Merged 15 Nov 2026 22:19 NZDT** as `fa58a1f6` | Released. Installed-build listening acceptance still open. |
 | #413 PROV-4 shots as Veo 3.1 clips | `claude/prov4-veo-shot-clips` | Not draft, 5 commits behind main. Squash auto-merge was armed 19 Oct and **disabled by Aden 15 Nov 2026 13:22 NZDT** | Parked; uses paid Veo. Do not push or update its branch: a push to `claude/**` re-runs `auto-merge.yml`, which re-arms auto-merge on a non-draft PR. Aden decides keep or close; converting it to draft first makes it safe to update. |
-| #505 This refresh | `claude/claims-refresh-2026-11` | Draft | Commit Cat, docs only. |
-| #506 Pin the clock in the date-separators test | `commit-cat/fix-date-separators-clock` | Draft, current with main, all checks green | Commit Cat, test-only fix (the test could fail when run across midnight). Branch prefix is not watched by `auto-merge.yml`. |
+| #505 This refresh | `claude/claims-refresh-2026-11` | **Merged 15 Nov 2026 22:04 NZDT** as `62c4afb7` | Released. |
+| #506 Pin the clock in the date-separators test | `commit-cat/fix-date-separators-clock` | **Merged 15 Nov 2026 21:24 NZDT** as `4832911` | Released. |
+| #507 widget/package.json is the only packaging config | `loop-lead/packaging-config-docs` | **Merged 15 Nov 2026 21:49 NZDT** as `09014aa` | Released. Root `electron-builder.yml` is legacy and never read. |
 
 **Merged since the last claims update, with no row above**
 
@@ -1380,3 +1381,25 @@ baseline/environment limits in `tasks/finish-voice-sample-isolation-20261104.md`
 Source editing is released for review; hosted current-head Windows verification
 and installed acceptance remain pending. Keep draft/auto-merge-off and retain
 all Windows installer/art/episode owners. No whole-app completion claim.
+
+## MERGE-RUN-20261115 — Loop Lead (Grok Bot), docs only
+
+Aden asked on 15 Nov 2026 to "merge and make this app complete". Loop Lead
+squash-merged, in order, each updated to main with all six required contexts
+green on the merged head: #506 (`4832911`), #507 (`09014aa`), #505
+(`62c4afb7`), #503 (`fa58a1f6`), #502 (`8b795162`), #501 (`cff07333`), #500
+(`3ae3ef69`). The table in CLAIMS-REFRESH-20261115 above now records those
+merges. All of the claims those PRs held are released.
+
+- **Owed by Aden:** #500 merged before his live DeepSeek check. The first live
+  call on his own key (`docs/verify/episode-script-generator.md`) is still
+  required before DeepSeek or the episode-script generator is called verified.
+- **`[skip actions]`:** the squash messages of #503 and #500 kept that line, so
+  push-triggered workflows did not run on `fa58a1f6` or `3ae3ef69`. This docs
+  PR's own merge re-runs them on the final tree. Scheduled nightlies are
+  unaffected.
+- **Not touched:** #413 (parked, paid Veo), local-only commits `f5829a0` and
+  `66a6807b`, releases, deploys, and paid APIs.
+
+This branch (`loop-lead/docs-merge-run-20261115`) touches only `CLAIMS.md` and
+`docs/USER_TESTING_PLAN.md`. Released on merge.
