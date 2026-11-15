@@ -21,7 +21,7 @@ import {
 const modelsPayload = () => ({
   object: 'list',
   data: [
-    { id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek' },
+    { id: 'deepseek-flash', object: 'model', owned_by: 'deepseek' },
     { id: 'deepseek-v4-pro', object: 'model', owned_by: 'deepseek' },
   ],
 });
@@ -40,8 +40,8 @@ describe('discoverDeepseekModels', () => {
   test('preserves exact ids and does not invent display names', async () => {
     (axios.get as jest.Mock).mockResolvedValue({ data: modelsPayload() });
     const models = await discoverDeepseekModels('sk-call-2');
-    expect(models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
-    expect(models[0].name).toBe('deepseek-v4-flash'); // the id, not a marketing name
+    expect(models.map(m => m.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
+    expect(models[0].name).toBe('deepseek-flash'); // the id, not a marketing name
     expect(models[0].description).toBe('deepseek');
   });
 
@@ -50,8 +50,8 @@ describe('discoverDeepseekModels', () => {
       data: {
         object: 'list',
         data: [
-          { id: 'deepseek-v4-flash' },
-          { id: 'deepseek-v4-flash' },
+          { id: 'deepseek-flash' },
+          { id: 'deepseek-flash' },
           { id: '   ' },
           { id: 123 },
           {},
@@ -60,7 +60,7 @@ describe('discoverDeepseekModels', () => {
       },
     });
     const models = await discoverDeepseekModels('sk-call-3');
-    expect(models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
+    expect(models.map(m => m.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
   });
 
   test('a future model id appears without any catalog change', async () => {
@@ -114,7 +114,7 @@ describe('resolveDeepseekModels', () => {
 
   test('a different key does not reuse another credential cached catalog', async () => {
     (axios.get as jest.Mock)
-      .mockResolvedValueOnce({ data: { object: 'list', data: [{ id: 'deepseek-v4-flash', owned_by: 'deepseek' }] } })
+      .mockResolvedValueOnce({ data: { object: 'list', data: [{ id: 'deepseek-flash', owned_by: 'deepseek' }] } })
       .mockResolvedValueOnce({ data: { object: 'list', data: [{ id: 'deepseek-v4-pro', owned_by: 'deepseek' }] } });
     const a = await resolveDeepseekModels('sk-key-a');
     const b = await resolveDeepseekModels('sk-key-b');
@@ -127,7 +127,7 @@ describe('resolveDeepseekModels', () => {
     (axios.get as jest.Mock).mockRejectedValue(new Error('offline'));
     const res = await resolveDeepseekModels('sk-transient');
     expect(res.source).toBe('fallback');
-    expect(res.models.some(m => m.id === 'deepseek-v4-flash')).toBe(true);
+    expect(res.models.some(m => m.id === 'deepseek-flash')).toBe(true);
   });
 
   test('auth failure is re-thrown, not concealed behind the fallback', async () => {
@@ -179,7 +179,7 @@ describe('saved-key resolution through the list-models handler path', () => {
     const [url, opts] = (axios.get as jest.Mock).mock.calls[0];
     expect(url).toBe('https://api.deepseek.com/models');
     expect(opts.headers.Authorization).toBe('Bearer sk-vault-key');
-    expect(result.models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
+    expect(result.models.map(m => m.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
   });
 
   test('deepseek key is read from providerApiKeys, not customLLM.apiKey', () => {

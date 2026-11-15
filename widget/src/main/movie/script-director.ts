@@ -59,6 +59,12 @@ export interface ScriptBreakdownOptions {
   /** The Storyboard frame provider to save on the new project (see storyboard-frame-providers). */
   frameProvider?: string;
   freeOnly?: boolean;
+  /**
+   * An already-directed shot list (e.g. from the episode script generator).
+   * When set, it is saved as-is instead of being derived from `script` by the
+   * keyword director; `script` is then only used for notes.
+   */
+  directed?: { title: string; genre: string; shots: DirectedShot[]; totalDurationSec: number };
 }
 
 export interface ScriptBreakdownResult {
@@ -450,8 +456,11 @@ export async function directScriptToStoryboard(options: ScriptBreakdownOptions):
   if (!options.script || !options.script.trim()) {
     return { ok: false, error: 'A script, synopsis, or scene description is required.' };
   }
+  if (options.directed && (!Array.isArray(options.directed.shots) || options.directed.shots.length === 0)) {
+    return { ok: false, error: 'The directed script has no shots.' };
+  }
 
-  const { title, genre, shots, totalDurationSec } = directScript(options);
+  const { title, genre, shots, totalDurationSec } = options.directed ?? directScript(options);
 
   const baseSlug = options.projectId || title.toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-');
   const projectId = `${baseSlug.slice(0, 32)}-${Date.now().toString(36).slice(-4)}`;

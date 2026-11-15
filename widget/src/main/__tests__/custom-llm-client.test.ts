@@ -227,7 +227,7 @@ describe('fetchAvailableCustomModels', () => {
     const models = await fetchAvailableCustomModels({ apiUrl: 'https://api.deepseek.com/v1', provider: 'deepseek' as any });
     expect(models.length).toBeGreaterThan(0);
     expect(models.every(m => m.provider === 'deepseek')).toBe(true);
-    expect(models.some(m => m.id === 'deepseek-v4-flash')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-flash')).toBe(true);
     expect(models.some(m => m.id === 'deepseek-v4-pro')).toBe(true);
   });
 
@@ -362,7 +362,7 @@ describe('fetchAvailableCustomModels – DeepSeek discovery', () => {
       data: {
         object: 'list',
         data: [
-          { id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek' },
+          { id: 'deepseek-flash', object: 'model', owned_by: 'deepseek' },
           { id: 'deepseek-v4-pro', object: 'model', owned_by: 'deepseek' },
         ],
       },
@@ -375,9 +375,9 @@ describe('fetchAvailableCustomModels – DeepSeek discovery', () => {
     });
 
     expect(axios.get).toHaveBeenCalledTimes(1);
-    expect(models.map(m => m.id)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
+    expect(models.map(m => m.id)).toEqual(['deepseek-flash', 'deepseek-v4-pro']);
     expect(models.every(m => m.provider === 'deepseek')).toBe(true);
-    expect(models[0].name).toBe('deepseek-v4-flash');
+    expect(models[0].name).toBe('deepseek-flash');
   });
 
   test('falls back to the static list when discovery fails', async () => {
@@ -389,13 +389,13 @@ describe('fetchAvailableCustomModels – DeepSeek discovery', () => {
       apiKey: 'sk-ds-2',
     });
 
-    expect(models.some(m => m.id === 'deepseek-v4-flash')).toBe(true);
+    expect(models.some(m => m.id === 'deepseek-flash')).toBe(true);
     expect(models.every(m => m.provider === 'deepseek')).toBe(true);
   });
 
   test('caches discovery so a repeat fetch does not re-hit the network', async () => {
     (axios.get as jest.Mock).mockResolvedValue({
-      data: { object: 'list', data: [{ id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek' }] },
+      data: { object: 'list', data: [{ id: 'deepseek-flash', object: 'model', owned_by: 'deepseek' }] },
     });
     const config = {
       apiUrl: 'https://api.deepseek.com/v1',

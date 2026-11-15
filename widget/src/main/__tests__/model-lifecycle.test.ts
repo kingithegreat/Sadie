@@ -79,8 +79,14 @@ describe('migrateRetiredModel', () => {
     expect(migrateRetiredModel('gemini-2.0-flash-lite')).toEqual({ model: 'gemini-2.5-flash-lite', renamedFrom: 'gemini-2.0-flash-lite' });
     // DeepSeek discontinued both legacy names on 24 July 2026; they had been
     // pointing at V4 Flash, so that is where they land — never a pricier tier.
-    expect(migrateRetiredModel('deepseek-chat')).toEqual({ model: 'deepseek-v4-flash', renamedFrom: 'deepseek-chat' });
-    expect(migrateRetiredModel('deepseek-reasoner')).toEqual({ model: 'deepseek-v4-flash', renamedFrom: 'deepseek-reasoner' });
+    expect(migrateRetiredModel('deepseek-chat')).toEqual({ model: 'deepseek-flash', renamedFrom: 'deepseek-chat' });
+    expect(migrateRetiredModel('deepseek-reasoner')).toEqual({ model: 'deepseek-flash', renamedFrom: 'deepseek-reasoner' });
+    // V4 Flash was retired in favour of `deepseek-flash` (V4.1-Flash-1017).
+    expect(migrateRetiredModel('deepseek-v4-flash')).toEqual({ model: 'deepseek-flash', renamedFrom: 'deepseek-v4-flash' });
+    expect(migrateRetiredModel('deepseek-v4-flash-vision-exp')).toEqual({ model: 'deepseek-flash', renamedFrom: 'deepseek-v4-flash-vision-exp' });
+    // The current ids pass through untouched (idempotent).
+    expect(migrateRetiredModel('deepseek-flash')).toEqual({ model: 'deepseek-flash' });
+    expect(migrateRetiredModel('deepseek-v4-pro')).toEqual({ model: 'deepseek-v4-pro' });
   });
 
   test('strips a dated snapshot suffix before renaming', () => {
@@ -157,6 +163,7 @@ describe('model picker fallback list (shared/subscription-models.ts)', () => {
       'gemini-2.0-flash',           // Google shut down 1 Jun 2026
       'deepseek-chat',              // DeepSeek discontinued 24 Jul 2026
       'deepseek-reasoner',          // DeepSeek discontinued 24 Jul 2026
+      'deepseek-v4-flash',          // superseded by deepseek-flash (V4.1-Flash-1017)
     ]) {
       expect(ids).not.toContain(dead);
     }

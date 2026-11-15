@@ -26,8 +26,10 @@ HomeBot supports bringing your own LLM API from 11 named providers or any custom
 - **Mixtral 8x7B** — 32K context, strong reasoning
 
 ### DeepSeek
-- **DeepSeek V3** (`deepseek-chat`) — GPT-4 class quality (~$0.27/1M)
-- **DeepSeek R1** (`deepseek-reasoner`) — reasoning model, rivals o1 (~$0.55/1M)
+- **DeepSeek Flash** (`deepseek-flash`) — fast default chat model (served by DeepSeek-V4.1-Flash-1017; thinking and non-thinking modes)
+- **DeepSeek V4 Pro** (`deepseek-v4-pro`) — stronger reasoning tier
+
+`deepseek-chat`, `deepseek-reasoner` and `deepseek-v4-flash` are retired. A saved setting naming one of them is migrated to `deepseek-flash` when settings load. Source: [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing).
 
 ### Google AI Studio
 - **Gemini 2.0 Flash** — fast and smart (Free tier)

@@ -1029,6 +1029,10 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('homebot:media:storyboard:render', args),
   mediaStoryboardBreakdown: async (args: { script: string; genre?: string; shotCount?: number; title?: string; projectId?: string; autoGenerateFrames?: boolean; frameProvider?: StoryboardFrameProviderId }) =>
     ipcRenderer.invoke('homebot:media:storyboard:breakdown', args),
+  mediaStoryboardGenerateScript: async (args: { premise: string; shotCount?: number; genre?: string }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:generate-script', args),
+  mediaStoryboardSaveScript: async (args: { script: unknown; premise?: string }) =>
+    ipcRenderer.invoke('homebot:media:storyboard:save-script', args),
   mediaSeriesSettingsList: async (seriesId: string) =>
     ipcRenderer.invoke('homebot:media:series-settings:list', seriesId),
   mediaSeriesSettingsGet: async (seriesId: string, settingId: string) =>
