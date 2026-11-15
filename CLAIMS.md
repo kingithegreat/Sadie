@@ -1240,22 +1240,6 @@ its rules move verbatim into AGENTS.md "Contract"), `GEMINI.md` (pointer wording
 new `PROJECT_INSTRUCTIONS.md`, `SYNC.md`, `agent-skills/**`. Does NOT touch app `skills/`,
 any code, the Ancient Pathways repo/rig (MS-RIG-0), Drive, or paid APIs. One PR.
 
-## FINISH-AUDIT-20261028 — Codex
-
-Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
-No second narration implementation; review and retest the existing pinned fix.
-No paid providers, owner configuration, AP assets or release publication.
-Existing draft/owner-review hold remains in place.
-
-### FINISH-AUDIT-20261028 — runner compatibility claim
-
-Codex owns only the Ubuntu browser runner pins in
-`.github/workflows/playwright-e2e.yml` and `widget-e2e-ci.yaml`, plus this
-claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
-CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
-Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
-retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
-
 ## CLAIMS-REFRESH-20261115 — Commit Cat (Grok Bot), docs only
 
 Commit Cat owns branch `claude/claims-refresh-2026-11` from main `5dc9f506`: a
@@ -1278,8 +1262,9 @@ opens a non-draft PR and arms squash auto-merge).
 | #501 App-wide accessible hover and focus tooltips | `feat/app-wide-tooltips` | Draft, auto-merge off, main merged in 15 Nov | Waiting on Aden's review. |
 | #502 Source-pinned Windows installer retention | `claude/finish-plan-20261031` | Draft, auto-merge off, main merged in 15 Nov | Codex finishing owner (FINISH-PLAN-20261031 above). Installer stays local-only per Aden's 3 Nov choice; no public artifact. |
 | #503 Voice-sample / animatic output isolation | `claude/finish-voice-sample-isolation-20261104` | Draft, auto-merge off, main merged in 15 Nov | Codex (FINISH-VOICE-SAMPLE-ISOLATION-20261104 above). Hosted Windows and installed acceptance pending. |
-| #413 PROV-4 shots as Veo 3.1 clips | `claude/prov4-veo-shot-clips` | **Not draft, squash auto-merge armed since 19 Oct**, behind main | Parked; uses paid Veo. Do not push or update its branch: once current with main and green, it would merge itself. Aden decides keep or close, and should disarm auto-merge or convert it to draft first. |
+| #413 PROV-4 shots as Veo 3.1 clips | `claude/prov4-veo-shot-clips` | Not draft, 5 commits behind main. Squash auto-merge was armed 19 Oct and **disabled by Aden 15 Nov 2026 13:22 NZDT** | Parked; uses paid Veo. Do not push or update its branch: a push to `claude/**` re-runs `auto-merge.yml`, which re-arms auto-merge on a non-draft PR. Aden decides keep or close; converting it to draft first makes it safe to update. |
 | #505 This refresh | `claude/claims-refresh-2026-11` | Draft | Commit Cat, docs only. |
+| #506 Pin the clock in the date-separators test | `commit-cat/fix-date-separators-clock` | Draft, current with main, all checks green | Commit Cat, test-only fix (the test could fail when run across midnight). Branch prefix is not watched by `auto-merge.yml`. |
 
 **Merged since the last claims update, with no row above**
 
@@ -1309,5 +1294,25 @@ live use needs Aden's key and `MODEL_ROUTER_LIVE=1`).
   `claude/homebot-improvements-20261108`): not on GitHub. Publishing needs
   Aden's explicit approval because the repository is public.
 
+Placement: this section sits above FINISH-AUDIT-20261028 rather than at the
+tail, so it merges cleanly in any order with #503, which appends its own
+section at the tail.
+
 Anyone starting new work: claim a fresh section at the tail, and check
 `gh pr list --state open` first.
+
+## FINISH-AUDIT-20261028 — Codex
+
+Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
+No second narration implementation; review and retest the existing pinned fix.
+No paid providers, owner configuration, AP assets or release publication.
+Existing draft/owner-review hold remains in place.
+
+### FINISH-AUDIT-20261028 — runner compatibility claim
+
+Codex owns only the Ubuntu browser runner pins in
+`.github/workflows/playwright-e2e.yml` and `widget-e2e-ci.yaml`, plus this
+claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
+CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
+Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
+retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
