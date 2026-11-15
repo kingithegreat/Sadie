@@ -223,7 +223,7 @@ HomeBot/
 ├── memory/                       # Local memory and RAG index storage
 ├── src/, tests/                  # Root tool-registry module and its jest suites
 ├── .agents/skills/, .claude/skills/  # Shared agent skills (kept in sync by scripts/sync-agent-skills.mjs)
-├── electron-builder.yml          # Installer packaging configuration
+├── electron-builder.yml          # Legacy, unused; packaging config is the "build" field in widget/package.json
 ├── docker-compose.yml            # n8n container configuration
 └── README.md
 ```

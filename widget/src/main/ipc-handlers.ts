@@ -1530,8 +1530,13 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
   ipcMain.handle('homebot:tts-sample-voice', async (_event, voice: string, sampleText?: string, engine?: string) => {
     const { renderNarrationToFile } = await import('./tools/voice');
     const text = (sampleText || 'Hi, this is how I sound. I can narrate your video from start to finish.').slice(0, 300);
-    const file = path.join(os.tmpdir(), `homebot-voice-sample-${Date.now()}.mp3`);
+    let sampleDir: string | undefined;
     try {
+      // Edge TTS writes a fixed audio.mp3 inside the requested directory.
+      // A distinct basename in the shared temp directory still overwrites
+      // earlier samples (including the animatic's preceding shot).
+      sampleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'homebot-voice-sample-'));
+      const file = path.join(sampleDir, 'sample.mp3');
       // The sample must come from the SAME engine that will record the video —
       // approving a voice by ear only means something if it is this voice,
       // rendered by this engine.
@@ -1541,6 +1546,9 @@ export function registerIpcHandlers(mainWindow?: BrowserWindow): void {
       });
       return { success: true, path: rendered.path, engine: rendered.engine };
     } catch (err: any) {
+      if (sampleDir) {
+        try { fs.rmSync(sampleDir, { recursive: true, force: true }); } catch { /* preserve the narration error */ }
+      }
       return { success: false, error: err?.message || String(err) };
     }
   });

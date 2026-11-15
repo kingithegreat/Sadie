@@ -251,7 +251,7 @@ HomeBot/
 ├── schemas/                    # JSON schemas for tool validation
 ├── docs/                       # Documentation
 ├── memory/                     # Local memory and RAG index
-├── electron-builder.yml        # Root electron-builder config (repo root, not widget/)
+├── electron-builder.yml        # Legacy; not read by `npm run dist` or CI (see Build Configuration)
 ├── docker-compose.yml          # n8n container configuration
 └── start.bat, start.ps1        # Windows launchers (start.ps1 -Full runs dependency checks)
 ```
@@ -649,7 +649,7 @@ This runs `npm run build:release` and then `electron-builder` from `widget/`, wh
 
 #### Build Configuration
 
-- **`widget/package.json` `build` field** — Installer settings used by `npm run dist` (app name, icon, NSIS config, extra resources, asar unpack). A root `electron-builder.yml` also exists; keep it in step if you change packaging.
+- **`widget/package.json` `build` field** — Installer settings used by `npm run dist` (app name, icon, NSIS config, extra resources, asar unpack). This is the only packaging config in use: `npm run dist` and both hosted workflows (`installer-first-run.yml`, `preflight-and-build-release.yml`, via `npm run dist --prefix widget`) run `electron-builder` from `widget/` without `--config`. The root `electron-builder.yml` is a legacy copy last changed in June 2026; it is not read and lacks `beforePack`, `asarUnpack` and the x64 arch. Change packaging in `widget/package.json`.
 - **`widget/electron.vite.config.ts`** — Build settings (entry points, aliases, plugins)
 
 ---
