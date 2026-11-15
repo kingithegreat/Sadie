@@ -1255,3 +1255,10 @@ claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
 CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
 Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
 retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
+
+## CLAIMS-REFRESH-20261115 — Commit Cat (Grok Bot), docs only
+
+Commit Cat owns branch `claude/claims-refresh-2026-11` from main `5dc9f506`: a
+docs-only refresh of `CLAIMS.md` so its live rows match GitHub as of
+15 Nov 2026 NZDT. Touches only `CLAIMS.md`. No code, no other owner's files,
+no Ancient Pathways repo/rig (MS-RIG-0), no Drive edits, no paid APIs.
