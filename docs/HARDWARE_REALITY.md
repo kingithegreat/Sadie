@@ -4,7 +4,8 @@ Measured 2026-09-05. Two planning documents have now been written against an
 Apple Silicon Mac — the Drive improvement plan ("consumer hardware, e.g. M3
 Mac") and the Antigravity Execution Plan V1 (Metal/MPS, MLX, `f5-tts-mlx`,
 "macOS swap thrashing"). Neither platform exists here, and
-`electron-builder.yml` has a `win:`-only NSIS target.
+the packaging config (the `build` field in `widget/package.json`) has a
+`win:`-only NSIS target.
 
 This file is the ground truth. Check it before writing another phase.
 

@@ -1,5 +1,43 @@
 # Work Claims
 
+## FINISH-PLAN-20261031 — approved private installer qualification
+
+Privacy correction, 3 November: repository visibility is PUBLIC. Initial installer
+runs 41544227449 and 41544133153 were stopped during dependency installation,
+before installer generation/upload. Public Actions artifacts cannot be called
+private. Upload now requires a private repository or a manual-dispatch opt-in
+that remains false until Aden explicitly approves downloadable public artifacts.
+Private local build versus downloadable GitHub candidate is awaiting his choice.
+
+3 November 2026 NZDT: Aden explicitly approved pushing this prepared branch
+to kingithegreat/Sadie, opening a draft PR and running the Windows workflow
+to retain a private test installer. Codex resumes this bounded integration lane.
+Keep the PR draft and auto-merge off. Hosted/installed acceptance is pending;
+no public release, signing, paid requests or owner-profile replacement is authorized.
+Fresh local exact-script controls accepted unchanged fixture bytes and rejected
+tampering and multiple installers before staging. All three PowerShell blocks
+parse, and the original install/window/uninstall script is unchanged.
+The historical approval rejection below is superseded by this explicit approval.
+
+This chat owns the completion audit and bounded animatic-start regression in
+`.kilo/worktrees/finish-plan-20261031`, from remote-confirmed main `058f88c7`.
+Inspect and preserve the prior three-agent worktrees; no edits to their files.
+The current-source playback/Storyboard unit run passed 68/68; dependency donor
+versions are older, so no current runtime or real voice acceptance is inferred.
+The reported native failure is not reproduced here. Do not adopt the prior
+silent-clock bypass: narration loading must not advance shots. Current work is
+the complete 51-ID finish inventory plus eight core cases, and retaining the
+source-pinned private installer from the existing hosted smoke workflow.
+No production app code changes. The staging/receipt script passed with an owned
+fixture; altered retained bytes and ambiguous installer selection were refused.
+YAML/PowerShell parse, docs drift, 51-ID coverage and whitespace checks passed.
+Automatic approval review rejected external push/PR/workflow/upload without
+explicit destination and source/artifact egress approval. No remote mutation
+occurred. The local editing claim is released; retain this branch for approved
+publication. Hosted packaging and readback remain pending.
+Existing #500/#501/#413 and art/episode/AP owners retain their scopes.
+No paid requests, credentials, owner profiles, signing or public release.
+
 ## 2026-10-07 NZ — IDE completion team (Codex root)
 
 Current follow-up: root integrated unchanged FD observer into fixed source-pinned core DLL, preserving5000ms/exact-helper-close/authority;155actual related cases/freshDLL/26managed wrappers/17substituted native APIs/fullTypeScript/scopedlint pass. Explicit17I/O suite defaults retain assertions/larger caps;206widget+3Docs cases pass. Matrix installs only usedChromium and explicitly prepares pinnedElectron before UI cases with bounded installer/validation, preserving whole-job/test/shutdown/retry limits. Original79cb push FDfailure/Linux2 pretest install failure/Windows1 lazy Electron download timeout+automatic retry/five review findings remain retained. Source editing released to root. Fresh hosted wholeCI/native/exactreview, qualified merge and fresh-main normal-profile delivery are unfinished; no final shortcut.
@@ -458,11 +496,11 @@ DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates
 | ~~IDE quick win 4 — IDE-6 tab completion reliability~~ | claude/ide6-tab-complete | **MERGED as #490 at `95d64d41` (2026-10-11) — claim released** | Pins qwen2.5-coder:1.5b-base (FIM base, ~1 GB) as the default; other installed qwen2.5-coder 0.5b/1.5b under 1.2 GB still accepted; never a large model. Fixes the reliability bug (keep_alive 0 + 800 ms meant every call cold-loaded and timed out): keep_alive 10m, 8 s cold / 1.5 s warm budget. Missing model -> clear install prompt (Install button needs Online and pulls only the pinned model; Copy command; Not now). Every request logs latency; p50/p95 in memory and shown in the status. Mocked-Ollama tests only; nothing downloaded in CI. p50 on Aden's PC still to be recorded. |
 | ~~IDE quick win 1 — live project Prettier/ESLint~~ | claude/ide-live-prettier-eslint | **MERGED as #485 at `56319807` (2026-10-11) — claim released** | Uses the project's own installed prettier/eslint (resolved inside the project's node_modules; nothing if absent). Runs only after a per-folder native-dialog allow, in a main-process worker thread with heap cap and 15 s kill timeout, never in the renderer. Format on save (existing setting) prefers project Prettier, falls back to built-in TS format. ESLint diagnostics live (750 ms debounce + on save) in the editor and Problems panel. Files: new workspace-project-tools*, projectTools.ts; small edits to CodeEditor/SemanticEditorSupport/ProblemsPanel/preload/index/types. No overlap with #481. |
 | ~~Settings truthfulness — ollamaUrl control, alwaysOnTop honored, uncensoredModel no longer reverted | claude/settings-truthfulness | **MERGED as PR #483 (2026-10-10) — claim released** | Whole-app reachability audit found three controls that lie. (1) `ollamaUrl` is read by ~14 production sites (all local chat routing, vision, RAG embeddings, health checks) but had **no UI anywhere** — a user with Ollama on another port/machine saw permanent "Ollama offline" and could not use any local model. Added a field to AdvancedSettingsTab beside SearXNG, plus the missing field in the two renderer `Settings` types. (2) `alwaysOnTop`: the General-tab checkbox saved a value main never read (`window-manager` used only `isWidgetMode`); now honored at window creation and at the expanded-mode toggle — widget mode still always floats, which is intrinsic to being a widget. (3) `uncensoredModel`: a guard forced it back to `dolphin-mistral:7b` on every `getSettings()` load, silently reverting whatever the Models-tab input saved; narrowed it to migrate only the legacy bad `dolphin:7b` tag. Deliberately NOT changed: `reflectionValidationEnabled` (read, never set) is left to Aden per the 2026-09-16 audit note; the feed CRUD and debug-log IPC gaps are separate items. Verification: rebased onto `bed95b3`; `tsc --noEmit` clean, eslint 0 errors (14 pre-existing warnings), 72/72 in `window-manager` + `config-manager`, root 233/233, `docs:check` in sync (286 methods). Full widget suite has 10 red suites, **all red on clean `origin/main` too** — verified by running the identical subset on both trees: `media-studio-storyboard` passes on both, and its full-suite failure was a 5000 ms timeout under 11-worker load, not this change. |
-| Stale gpt-image model references corrected (2 files) | claude/fix-stale-gpt-image-comments | Pushed (2026-10-10) — awaiting PR | `image_generate`'s description and the registry comment still said `gpt-image-2.5` where `OPENAI_IMAGE_MODEL` is `gpt-image-2.5-flare` (PR #412). Reduced from an earlier 4-file sweep after verifying on `origin/main` that the CLAIMS PROV-3 retirement and the USER_TESTING_PLAN PROV-3/Sora 2 updates had **already landed** in `8b5e535` — the sweep's doc half was redundant and was dropped rather than rebased. |
-| IDE-11 — package scripts and clickable Problems | claude/ide11-problems-diagnose-fix | Diagnose/fix draft off main — Commit Cat 2026-09-24 | Supersedes dirty #408 claim for active work (branch `codex/ide11-problems-tasks` left open/untouched; no force-push). Replays IDE-11 Tasks/Problems surface onto current main: trusted package-script IPC, clickable Problems, raw-project diagnostic click paths (`9b5d86e` fix). Documented prior macOS failure: Actions job https://github.com/kingithegreat/Sadie/actions/runs/35544094688/job/106166830314 — diagnostic visible, editor tab not opened; `ENOTEMPTY` on temp HOME cleanup. E2E finally-block now best-effort `rmSync` so cleanup noise cannot mask the acceptance assertion. No IDE-12+ expansion. Worktree: `/workspace/worktrees/ide11-diagnose` on HomeBot box.
-| Optional n8n workflow status in System check | claude/n8n-optional-diagnostics-20260929 | Ready for integration (2026-09-29, Codex; held draft PR) | Advanced Settings now shows already-probed calendar/chat/media workflow status and optional setup guidance, without importing workflows or handling credentials. Focused renderer regression failed before and passed after (3/3), widget typecheck clean, lint 0 errors (7 existing warnings). Live n8n deployment and owner Google account setup remain unverified. Serial integration queue owns merge. |
+| ~~Stale gpt-image model references corrected (2 files)~~ | claude/fix-stale-gpt-image-comments | **MERGED as #484 (2026-10-15) — claim released** (refresh 2026-11-15) | `image_generate`'s description and the registry comment still said `gpt-image-2.5` where `OPENAI_IMAGE_MODEL` is `gpt-image-2.5-flare` (PR #412). Reduced from an earlier 4-file sweep after verifying on `origin/main` that the CLAIMS PROV-3 retirement and the USER_TESTING_PLAN PROV-3/Sora 2 updates had **already landed** in `8b5e535` — the sweep's doc half was redundant and was dropped rather than rebased. |
+| ~~IDE-11 — package scripts and clickable Problems~~ | claude/ide11-problems-diagnose-fix | **MERGED as #416 (2026-10-01 NZ); #408 closed unmerged — claim released** (refresh 2026-11-15) | Supersedes dirty #408 claim for active work (branch `codex/ide11-problems-tasks` left open/untouched; no force-push). Replays IDE-11 Tasks/Problems surface onto current main: trusted package-script IPC, clickable Problems, raw-project diagnostic click paths (`9b5d86e` fix). Documented prior macOS failure: Actions job https://github.com/kingithegreat/Sadie/actions/runs/35544094688/job/106166830314 — diagnostic visible, editor tab not opened; `ENOTEMPTY` on temp HOME cleanup. E2E finally-block now best-effort `rmSync` so cleanup noise cannot mask the acceptance assertion. No IDE-12+ expansion. Worktree: `/workspace/worktrees/ide11-diagnose` on HomeBot box.
+| ~~Optional n8n workflow status in System check~~ | claude/n8n-optional-diagnostics-20260929 | **MERGED as #442 (2026-09-29) — claim released** (refresh 2026-11-15) | Advanced Settings now shows already-probed calendar/chat/media workflow status and optional setup guidance, without importing workflows or handling credentials. Focused renderer regression failed before and passed after (3/3), widget typecheck clean, lint 0 errors (7 existing warnings). Live n8n deployment and owner Google account setup remain unverified. Serial integration queue owns merge. |
 | n8n webhook auth warning truth | claude/n8n-warning-truth-20260929 | **MERGED as #441 (2026-09-29) — claim released** | Fresh-module negative test reproduced the false `SKIP validation` warning with no container env while the embedded guard still rejected missing auth. Removed only the stale warning and corrected module comment. 26/26 focused guard/header tests, widget typecheck/build, lint 0 errors, docs check pass. No live n8n, keys, or overlap with #439 configured health probes. |
-| Kaggle host variant of the R1a cell worker (SDXL + IP-Adapter, one cell at a time) — **owner go given 2026-09-27 ("add kaggle")**: an approved alternate host; Colab stays the lane of record on the plan page until Aden changes it | claude/kaggle-cell-worker-variant | Owner-approved 2026-09-27 — merging via PR #431 | Aden asked "can we use kaggle?"; the answer was yes with one trade-off, so this stages it without switching the lane. Same locked recipe as `notebooks/colab_sdxl_ipadapter.ipynb` (SDXL fp16 + IP-Adapter-plus on a T4-class 16 GB GPU; ControlNet only on per-cell identity drift, per AP `docs/RIG_PLAN.md`), hosted on Kaggle's free T4×2 (~30 GPU-hrs/week, ~9–12 h sessions). Kaggle has **no native Drive mount**, so the reference is an attached notebook input and the output is downloaded by hand — zero credentials anywhere, bots never run it. A host variant, **not** a second generator. The four Colab pre-flight footguns are designed out: it *refuses* to generate without the reference (Colab only warns and continues, silently losing identity), refuses a prompt without the #FF00FF ground, no ticket sweep, explicit resolution; plus an in-session border-magenta check mirroring AP's documented "no magenta border" failure. No live generation was performed; nothing was API-triggered. |
+| Kaggle host variant of the R1a cell worker (SDXL + IP-Adapter, one cell at a time) — **owner go given 2026-09-27 ("add kaggle")**: an approved alternate host; Colab stays the lane of record on the plan page until Aden changes it | claude/kaggle-cell-worker-variant | **MERGED as #431 (2026-09-28) — claim released** (refresh 2026-11-15) | Aden asked "can we use kaggle?"; the answer was yes with one trade-off, so this stages it without switching the lane. Same locked recipe as `notebooks/colab_sdxl_ipadapter.ipynb` (SDXL fp16 + IP-Adapter-plus on a T4-class 16 GB GPU; ControlNet only on per-cell identity drift, per AP `docs/RIG_PLAN.md`), hosted on Kaggle's free T4×2 (~30 GPU-hrs/week, ~9–12 h sessions). Kaggle has **no native Drive mount**, so the reference is an attached notebook input and the output is downloaded by hand — zero credentials anywhere, bots never run it. A host variant, **not** a second generator. The four Colab pre-flight footguns are designed out: it *refuses* to generate without the reference (Colab only warns and continues, silently losing identity), refuses a prompt without the #FF00FF ground, no ticket sweep, explicit resolution; plus an in-session border-magenta check mirroring AP's documented "no magenta border" failure. No live generation was performed; nothing was API-triggered. |
 | ~~G-3 remainder — widget full-suite nondeterminism (issue #229), the leaks the deferred-delete fix did not cover~~ | claude/g-3-suite-nondeterminism | **MERGED as #423 (2026-09-27, squash `1f6fbc7b`)** — claim released | Claimed from `docs/USER_TESTING_PLAN.md` G-3, whose row still reads `open` with "#229's other candidates (IPC/config singletons) unaddressed"; #382 fixed one leak (a deferred delete call bound at confirm time) and retired its own row. The queue's rule is gates before other results, and the whole MS table turned out to be stale — MS-1..MS-10, MS-6 (#379), MS-7 (#359) and PROV-1 are all merged — so a green, trustworthy suite is the precondition for the remaining Media Studio verification. Named victim is a media suite: `media-visuals.test.ts` timing tests failed under the full run while passing alone (2026-09-17). Done-when is the row's own: the polluting state is found and isolated, and two consecutive full widget runs on Windows produce identical results. Verification on this Windows box, real `npx jest`, no mocks. No Media Studio feature code in this PR. Worktree: `.kilo/worktrees/claude-g3-suite-state`. Evidence: the mechanism is that every suite resolved settings through `app.getPath('userData')`, mocked to a run-wide shared `os.tmpdir()`, so all files shared one `config\user-settings.json`; a two-file probe proved it (file B read file A's marker) and passes after the fix. Fix is harness-only (`setupTests.ts` per-file temp root + a `test-isolation.test.ts` guard; A/B verified by disabling the patch — guard fails without it, passes with it). Full suite post-fix: 347/347 suites, 4,668 tests green; `tsc --noEmit` 0; eslint 0 errors / 7 pre-existing warnings. First attempt (a `HOMEBOT_USER_SETTINGS_DIR` override in `config-manager.ts`) was abandoned: it outranked suites' own `TEST_USERDATA` choice and failed 4 `config-manager` tests — the full A/B trail is in the PR description. Landed content verified post-merge on main `1f6fbc7b`: 0-line diff vs tested head `6a4950fd` on both code files, guard test present, and both doc rows landed — the plan's "verify merge and landed content" requirement is met. |
 | ~~G-1 close-out + REL-1 test build of current main (docs + build, no product code)~~ | claude/g1-close-rel1-build | **MERGED as #410 (2026-09-21)** � claim released | Two parts, one PR each. (1) Docs-only: G-1's done-when is met — three consecutive *scheduled* Release Gate runs on `main`, all green: `35438194068` (2026-09-19), `35506934625` (2026-09-20), `35600403110` (2026-09-21). Each verified individually with `gh run view <id> --json jobs,conclusion,event,headBranch`, so `event=schedule`, `headBranch=main`, and Build/Unit Tests/E2E (smoke) all `success` — not inferred from the run list. REL-1's row moves from "blocked by G-1" to unblocked. (2) Build: current `origin/main` built into the separate test worktree `.kilo/worktrees/homebot-main-test` (never Aden's `HomeBot - Updated Preview` chain), artifact grepped against an older build as a control, then a real Electron smoke test. Build products and launcher are local artifacts, not part of the PR. Merged as #410 (squash `8cd799ea`); `git diff 02f5f4ce origin/main` is 0 lines, so the landed content matches the tested head. All six required contexts plus all nine E2E shards green. |
 | ~~PR #372 integration — Media Player stress/unit coverage~~ | codex/pr372-player-tests | **Merged #406 at `79aff736` — claim released** | Tested head `21da3cd` passed all six required checks and all nine E2E shards; root verified zero landed-content diff and identical tree `e4be59dd`. Builder and independent root focused runs each passed **42/42**. Loop replay, replaced-source cleanup, changed bounds and volume extremes have behavioral assertions; mutation checks failed when replay/cleanup was removed. CI passed 340 suites / 4,626 tests (31 skipped) and 14 real Electron overlay tests. These are simulated decoder/DOM cleanup tests, not real encoded playback or Windows OS-handle-release proof. Original #372 is closed as superseded, not merged, with branch/worktree preserved. |
@@ -1240,6 +1278,67 @@ its rules move verbatim into AGENTS.md "Contract"), `GEMINI.md` (pointer wording
 new `PROJECT_INSTRUCTIONS.md`, `SYNC.md`, `agent-skills/**`. Does NOT touch app `skills/`,
 any code, the Ancient Pathways repo/rig (MS-RIG-0), Drive, or paid APIs. One PR.
 
+## CLAIMS-REFRESH-20261115 — Commit Cat (Grok Bot), docs only
+
+Commit Cat owns branch `claude/claims-refresh-2026-11` from main `5dc9f506`: a
+docs-only refresh of `CLAIMS.md` so its live rows match GitHub as of
+15 Nov 2026 NZDT. Touches only `CLAIMS.md`. No code, no other owner's files,
+no Ancient Pathways repo/rig (MS-RIG-0), no Drive edits, no paid APIs.
+
+### Current state — 15 Nov 2026 NZDT (from live GitHub reads)
+
+Main is `5dc9f506` (#504, OpenRouter model router, dry run by default, merged
+10 Nov 2026 NZDT). Required checks are strict up-to-date; the `auto-merge.yml`
+trap still applies (a push to `claude/**` or `feat/**` without an open draft PR
+opens a non-draft PR and arms squash auto-merge).
+
+**Open PRs**
+
+| PR | Branch | State | Hold / owner |
+|---|---|---|---|
+| #500 DeepSeek current model IDs + Media Studio "Generate episode script" | `claude/pkg-b-deepseek-episode-script` | Draft, auto-merge off, main merged in 15 Nov | Commit Cat. Waiting on Aden: his first live DeepSeek call on his own key (verify guide), then review. |
+| #501 App-wide accessible hover and focus tooltips | `feat/app-wide-tooltips` | Draft, auto-merge off, main merged in 15 Nov | Waiting on Aden's review. |
+| #502 Source-pinned Windows installer retention | `claude/finish-plan-20261031` | Draft, auto-merge off, main merged in 15 Nov | Codex finishing owner (FINISH-PLAN-20261031 above). Installer stays local-only per Aden's 3 Nov choice; no public artifact. |
+| #503 Voice-sample / animatic output isolation | `claude/finish-voice-sample-isolation-20261104` | Draft, auto-merge off, main merged in 15 Nov | Codex (FINISH-VOICE-SAMPLE-ISOLATION-20261104 above). Hosted Windows and installed acceptance pending. |
+| #413 PROV-4 shots as Veo 3.1 clips | `claude/prov4-veo-shot-clips` | Not draft, 5 commits behind main. Squash auto-merge was armed 19 Oct and **disabled by Aden 15 Nov 2026 13:22 NZDT** | Parked; uses paid Veo. Do not push or update its branch: a push to `claude/**` re-runs `auto-merge.yml`, which re-arms auto-merge on a non-draft PR. Aden decides keep or close; converting it to draft first makes it safe to update. |
+| #505 This refresh | `claude/claims-refresh-2026-11` | Draft | Commit Cat, docs only. |
+| #506 Pin the clock in the date-separators test | `commit-cat/fix-date-separators-clock` | Draft, current with main, all checks green | Commit Cat, test-only fix (the test could fail when run across midnight). Branch prefix is not watched by `auto-merge.yml`. |
+
+**Merged since the last claims update, with no row above**
+
+#494 (vision scanner on Gemini), #495 (DecisionProvider + Jev stub, Jev Phase 1),
+#496 (Edge narration fix), #497 (AGENTS.md single entry + shared agent skills),
+#498 (repo cleanup 1: skills-sync CI check, README), #499 (repo cleanup 2:
+launchers, overlapping docs), #504 (OpenRouter model router, dry run by default;
+live use needs Aden's key and `MODEL_ROUTER_LIVE=1`).
+
+**Claims above that are resolved**
+
+- SHARED-AGENT-SKILLS (2026-10-20): merged as #497. Released.
+- FINISH-NARRATION-20261015 and both FINISH-AUDIT-20261028 claims: #496 merged
+  27 Oct 2026 (UTC). Released.
+- Settings truthfulness (#483), stale gpt-image references (#484), IDE-11
+  (#416; #408 closed), optional n8n status (#442), Kaggle host variant (#431):
+  merged. Released (rows marked in the table above).
+
+**Stale: no open PR and no recent branch activity**
+
+- HB-M2 narration online consent (`claude/studio-speech-privacy`, 2026-09-09,
+  listed twice): no remote branch or open PR. Owner should confirm or release.
+- 2026-10-07 IDE completion team, CHAT completion integration and the other
+  2026-10-07/08 sections: no open PR. Their own text says merge/delivery were
+  unfinished; treat as historical unless the owner re-claims.
+- Local-only work recorded on Drive (`claude/finish-homebot-20261105`,
+  `claude/homebot-improvements-20261108`): not on GitHub. Publishing needs
+  Aden's explicit approval because the repository is public.
+
+Placement: this section sits above FINISH-AUDIT-20261028 rather than at the
+tail, so it merges cleanly in any order with #503, which appends its own
+section at the tail.
+
+Anyone starting new work: claim a fresh section at the tail, and check
+`gh pr list --state open` first.
+
 ## FINISH-AUDIT-20261028 — Codex
 
 Reconcile PR #496 with current main 2d56b8e, preserving both claim histories.
@@ -1255,3 +1354,29 @@ claim and `tasks/finish-audit-20261028.md`, within existing PR #496. Fresh
 CI proves ubuntu-latest is now 26.04 and pinned Playwright refuses to install
 Chromium there. Use supported Ubuntu 24.04; retain all nine shards, tests,
 retries, timeouts and e2e-all. No alternate narration fix or other-owner edits.
+
+
+## FINISH-VOICE-SAMPLE-ISOLATION-20261104 — Codex
+
+Owns the bounded voice-sample/animatic output-collision investigation in
+`widget/src/main/ipc-handlers.ts`, its IPC regression tests, and a task receipt,
+on fresh-main branch `claude/finish-voice-sample-isolation-20261104` in the
+isolated cloud worktree `homebot-finish`. Current Drive and all four open PRs
+were read first. Existing local Windows installer owner and draft #502,
+#500/#501/#413, AP/rig/art/episode owners retain their scopes. No new IPC
+contract, provider call, profile replacement, installer upload or merge.
+First reproduce whether successive Edge samples overwrite the same
+`audio.mp3` despite distinct requested filenames; then isolate each request
+without changing privacy, narration-clock or engine behavior.
+
+
+### FINISH-VOICE-SAMPLE-ISOLATION-20261104 — editing complete
+
+Draft PR #503 contains the reproduced sample-overwrite repair. Final focused
+speech/IPC/playback scopes pass 105 tests; root 233 tests, widget TypeScript,
+lint/build, docs/skill sync and whitespace checks pass. Full Linux widget run:
+6,131 passed / 18 failed / 78 skipped; six failing suites retain explicit
+baseline/environment limits in `tasks/finish-voice-sample-isolation-20261104.md`.
+Source editing is released for review; hosted current-head Windows verification
+and installed acceptance remain pending. Keep draft/auto-merge-off and retain
+all Windows installer/art/episode owners. No whole-app completion claim.
