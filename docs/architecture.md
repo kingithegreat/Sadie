@@ -465,7 +465,7 @@ widget/
     preload/     <-- Context bridge (TypeScript)
     shared/      <-- Types shared between main and renderer
   electron.vite.config.ts    <-- Build configuration
-  electron-builder.yml       <-- Packager configuration
+  package.json               <-- "build" field is the packager (electron-builder) configuration
 ```
 
 | Command | Purpose |

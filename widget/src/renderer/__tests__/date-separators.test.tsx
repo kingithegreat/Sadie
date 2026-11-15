@@ -4,14 +4,24 @@ import { render } from '@testing-library/react';
 import MessageList from '../components/MessageList';
 import type { ChatMessage } from '../types';
 
+// Pin the wall clock to local mid-day so "Today"/"Yesterday" grouping cannot
+// straddle midnight. Without this, the "one separator per day group" case fails
+// whenever the suite runs in the first minute after local midnight (CI runs in
+// UTC, so just after 00:00 UTC), because now - 60s falls on the previous day.
+const FIXED_NOW = new Date(2026, 5, 15, 12, 0, 0); // 15 Jun 2026, 12:00 local time
+
 beforeEach(() => {
+  jest.useFakeTimers({ now: FIXED_NOW, advanceTimers: true });
   (window as any).electron = {
     writeClipboard: jest.fn(),
     ttsSpeak: jest.fn().mockResolvedValue(undefined),
     ttsStop: jest.fn().mockResolvedValue(undefined),
   };
 });
-afterEach(() => { delete (window as any).electron; });
+afterEach(() => {
+  delete (window as any).electron;
+  jest.useRealTimers();
+});
 
 const noop = () => {};
 
