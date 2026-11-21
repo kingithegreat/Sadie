@@ -135,6 +135,17 @@ full-episode A/V acceptance remain open. Existing September proof/episode files
 predate these assets. Review packet (kept outside this repository):
 `C:/Users/adenk/.homebot/finish-media-review-20261002/review.html`.
 
+Approval record (added 21 Nov 2026 NZDT, docs only): on 7 Oct 2026 NZDT Aden
+gave a written PASS ALL in the Loop Lead (Chief Keef) chat on the 15 non-Cell-1
+R1a source cells: 5 `turnaround` (front, three_quarter_front, side,
+three_quarter_back, back), 5 `pose_a` (idle, walking, running, jumping, waving)
+and 5 `pose_b` (pointing, thinking, happy, sitting, reading). Cell 1
+(`body_mechanics/standing_confident`) was already locked. All 16 accepted
+R1a source cells are therefore owner-approved. The 4 derived crops
+(`expression_a/neutral`, `head_turn/front`, `head_turn/three_quarter_left`,
+`head_turn/left`) are not covered by that pass and remain PENDING Aden review.
+Source: Loop Lead chat record; inventory by Anchor Hawk against AP `a3288d3`.
+
 Previously verified scheduled checkpoint (2026-10-02 NZ): main Release Gate
 and Nightly Media checks were green on
 `12b243e5`; nightly logs show three suites and 69 actual tests passed. These
