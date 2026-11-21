@@ -26,6 +26,11 @@ jobs:
       - name: Install deps
         # npm ci has no built-in retry; registry timeouts have failed this
         # REQUIRED check twice on their own. Three attempts, 15s apart.
+        # CPU-only Ubuntu runners have no CUDA GPU; skip downloading Linux
+        # CUDA/NuGet EP binaries (v1.21.0 GPU tgz returns 404; CPU ONNX stays bundled).
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: |
           cd widget
           for i in 1 2 3; do
