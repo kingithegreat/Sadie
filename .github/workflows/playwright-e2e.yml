@@ -49,6 +49,11 @@ jobs:
           echo "n8n wait complete (tests use HOMEBOT_E2E mock mode)"
 
       - name: Install widget dependencies
+        # CPU-only Ubuntu runners have no CUDA GPU; skip downloading Linux
+        # CUDA/NuGet EP binaries (v1.21.0 GPU tgz returns 404; CPU ONNX stays bundled).
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: npm ci --prefix widget
 
       - name: Fix Electron sandbox permissions

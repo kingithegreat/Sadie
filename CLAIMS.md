@@ -1403,3 +1403,18 @@ merges. All of the claims those PRs held are released.
 
 This branch (`loop-lead/docs-merge-run-20261115`) touches only `CLAIMS.md` and
 `docs/USER_TESTING_PLAN.md`. Released on merge.
+
+## CI-ONNXRUNTIME-CUDA-SKIP-20261121 — Antigravity
+
+Branch `claude/fix-linux-ci-onnxruntime-cuda-skip` off fresh `origin/main`
+(`a07cad33`). Scope: add `ONNXRUNTIME_NODE_INSTALL: skip` and
+`ONNXRUNTIME_NODE_INSTALL_CUDA: skip` to the `Install deps` / `Install widget
+dependencies` steps in `.github/workflows/permissions-smoke.yml`,
+`.github/workflows/widget-e2e-ci.yaml`, and `.github/workflows/playwright-e2e.yml`.
+On 21 Nov 2026, all Linux `npm ci` jobs on PR #509 failed because
+`kokoro-js/node_modules/onnxruntime-node` v1.21.0 attempted to download
+`onnxruntime-linux-x64-gpu-1.21.0.tgz` (404 Not Found) and top-level
+`onnxruntime-node` timed out contacting NuGet on CPU-only Ubuntu 24.04 runners.
+CPU ONNX Runtime binaries remain bundled; all nine E2E shards, required contexts,
+tests, retries and timeouts are unchanged. No product code, lockfiles, paid
+providers, or owner-profile changes. Released on merge.
