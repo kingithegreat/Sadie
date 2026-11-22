@@ -38,7 +38,7 @@ It combines:
 |---|---|
 | **Media Studio — partial** | Review UI and FFmpeg composition modules exist; reliable rendered-media completion and QA remain in Task 3 |
 | **Movie Production Engine — partial** | Five adapter modules and a project runner exist; provider availability, privacy, output and reference-image contracts require Task 2 verification |
-| **Clip Narration — blocked path identified** | `media_narrate_clip` reaches Python/TTS/FFmpeg; the audited analyzer invocation omits its required video argument (Task 3) |
+| **Clip Narration — source fixed, owner run pending** | `media_narrate_clip` reaches Python/TTS/FFmpeg and passes the clip to `scripts/analyze_clip.py` as `<video> -o <out>` (fixed in #272; an argv contract test now guards it). A live run still needs the owner's Google AI Studio key |
 | **Ancient Pathways — partial integration** | Episode showcase, doctor and production bridge to the separate Python project; consistent-character rendering and art enrollment remain Task 5 |
 | **Web Search** | Multi-engine cascade (Tavily, Serper, DuckDuckGo, Google, Brave) with automatic content fetching and SSRF protection |
 | **File Manager** | Safe read, write, list, move, delete, and search with path validation and directory whitelisting |
