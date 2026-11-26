@@ -1405,6 +1405,29 @@ merges. All of the claims those PRs held are released.
 This branch (`loop-lead/docs-merge-run-20261115`) touches only `CLAIMS.md` and
 `docs/USER_TESTING_PLAN.md`. Released on merge.
 
+## LEILA-R1A-PASS-ALL-20261121 — Drive Druid (Grok Bot), docs only
+
+Approval record, not a code claim. On 7 Oct 2026 NZDT Aden gave a written
+PASS ALL in the Loop Lead (Chief Keef) chat on the 15 non-Cell-1 Leila R1a
+source cells in AP `workspace/branding/characters/leila_r1a/`:
+
+- `turnaround/`: front, three_quarter_front, side, three_quarter_back, back
+- `pose_a/`: idle, walking, running, jumping, waving
+- `pose_b/`: pointing, thinking, happy, sitting, reading
+
+Cell 1 (`body_mechanics/standing_confident`) was already locked, so all 16
+accepted R1a source cells are now owner-approved.
+
+- **Still PENDING Aden review:** the 4 derived crops `expression_a/neutral`,
+  `head_turn/front`, `head_turn/three_quarter_left` and `head_turn/left`. The
+  pass does not cover them.
+- **Not changed:** the 22 missing slots, MS-RIG-0 (six-second rig proof),
+  the Ancient Pathways repo, and full-episode A/V acceptance.
+
+Source: Loop Lead chat record; inventory by Anchor Hawk against AP `a3288d3`.
+Branch `docs-druid/leila-r1a-pass-all-20261121` touches only `CLAIMS.md` and
+`docs/FINISHING_HANDOVER.md`. Released on merge.
+
 ## CI-ONNXRUNTIME-CUDA-SKIP-20261121 — Antigravity
 
 Branch `claude/fix-linux-ci-onnxruntime-cuda-skip` off fresh `origin/main`
