@@ -490,6 +490,7 @@ DOC-ALIGN — merged as PR #404 at `59a8f75`; claim released. All required gates
 
 | Feature | Branch | Status | Notes |
 |---|---|---|---|---|
+| Narrate-clip argv contract test + stale README row (Grand Master Plan wk 1–2 "fix media_narrate_clip") | loop-lead/narrate-clip-contract-20261123 | **Open PR, waiting on Aden — Loop Lead, 23 Nov 2026 NZDT** | Investigation found the video-argument bug already fixed on main (#272, 2026-09-10); README still called it blocked. Test/docs only: asserts the analyzer argv is `<script> <video> -o <out>`, checks `scripts/analyze_clip.py` CLI/JSON fields match, and corrects the README row. No runtime code, AP rig, paid calls or Gemini requests. |
 | ~~IDE quick win 3 — settings.json + keybindings.json~~ | claude/ide-settings-keybindings | **MERGED as #489 at `c16c558f` (2026-10-11) — claim released** | User-level <userData>/settings.json (editor.tabSize/fontSize/formatOnSave/aiSuggestions/theme, ide.caps) and keybindings.json (VS Code shape, '-command' removes a default), JSONC, validated in main with line/column and per-entry messages. 'Open Settings (JSON)' / 'Open Keyboard Shortcuts (JSON)' palette commands + Ctrl+, open a JSON editor dialog; save applies live. Stacked on claude/ide-cap-warnings (#488). New shared/ide-settings.ts, ide-settings-ipc.ts, SettingsJsonDialog/ideSettingsStore; edits WorkspaceShell/CodeEditor/SemanticEditorSupport. |
 | ~~IDE quick win 5 — LSP bridge + Python (pyright)~~ | claude/ide-lsp-python | **MERGED as #492 at `31e5eec7` (2026-10-11) — claim released** | Reusable server-agnostic LSP bridge: main-process JSON-RPC/stdio connection + registry (config entries; pyright enabled, gopls/rust-analyzer listed disabled until verified) + manager (didOpen/didChange full sync, completion, hover, definition, publishDiagnostics, crash restart limit). Renderer lsp/lspExtension.ts gives CodeMirror completion/hover/lint/go-to-definition. Pyright resolved from project node_modules, HomeBot's own userData install, or PATH; runs only in projects allowed via the project-tools grant; Install via npm (into userData, --ignore-scripts, needs Online). Stacked on #485. Verified locally against real Pyright 1.1.x. |
 | ~~IDE quick win 2 — visible cap warnings + configurable caps~~ | claude/ide-cap-warnings | **MERGED as #488 at `1bbe006c` (2026-10-11) — claim released** | File finder, Quick Open, TS language service and editor open/save now say exactly what a cap skipped (file count, size, depth, time) in a visible notice. Caps read from user settings.json "ide.caps" (maxFiles 100–20000, maxFileBytes 64KB–10MB, maxDepth 2–64, findTimeoutMs 250–10000, maxEditableBytes 64KB–10MB); out-of-range values are clamped. New ide-caps.ts / ide-user-settings.ts; edits to workspace-language/find-files/files/ipc, WorkspaceNavigator, SemanticEditorSupport. |
@@ -1426,3 +1427,18 @@ accepted R1a source cells are now owner-approved.
 Source: Loop Lead chat record; inventory by Anchor Hawk against AP `a3288d3`.
 Branch `docs-druid/leila-r1a-pass-all-20261121` touches only `CLAIMS.md` and
 `docs/FINISHING_HANDOVER.md`. Released on merge.
+
+## CI-ONNXRUNTIME-CUDA-SKIP-20261121 — Antigravity
+
+Branch `claude/fix-linux-ci-onnxruntime-cuda-skip` off fresh `origin/main`
+(`a07cad33`). Scope: add `ONNXRUNTIME_NODE_INSTALL: skip` and
+`ONNXRUNTIME_NODE_INSTALL_CUDA: skip` to the `Install deps` / `Install widget
+dependencies` steps in `.github/workflows/permissions-smoke.yml`,
+`.github/workflows/widget-e2e-ci.yaml`, and `.github/workflows/playwright-e2e.yml`.
+On 21 Nov 2026, all Linux `npm ci` jobs on PR #509 failed because
+`kokoro-js/node_modules/onnxruntime-node` v1.21.0 attempted to download
+`onnxruntime-linux-x64-gpu-1.21.0.tgz` (404 Not Found) and top-level
+`onnxruntime-node` timed out contacting NuGet on CPU-only Ubuntu 24.04 runners.
+CPU ONNX Runtime binaries remain bundled; all nine E2E shards, required contexts,
+tests, retries and timeouts are unchanged. No product code, lockfiles, paid
+providers, or owner-profile changes. Released on merge.

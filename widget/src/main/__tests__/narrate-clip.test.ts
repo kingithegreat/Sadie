@@ -160,11 +160,47 @@ describe('media_narrate_clip handler — happy path (all I/O mocked)', () => {
     const analyzeCall = mockExecFile.mock.calls.find((c: any[]) => c[1].includes('-o'));
     expect((analyzeCall[2] as any).env.GEMINI_API_KEY).toBe('test-key');
 
+    // Argv contract with scripts/analyze_clip.py: <script> <video> -o <out>.
+    // Regression guard for the #272 bug, where the video path was dropped and
+    // the analyzer received its own script path as the clip.
+    const argv: string[] = analyzeCall[1];
+    expect(argv).toHaveLength(4);
+    expect(path.basename(argv[0])).toBe('analyze_clip.py');
+    expect(argv[1]).toBe(clip);
+    expect(argv[2]).toBe('-o');
+    expect(argv[3]).toMatch(/homebot-narrate-\d+\.json$/);
+    expect(argv.join(' ')).not.toContain('test-key');
+
     // Mux args copied video verbatim.
     const muxCall = mockExecFile.mock.calls.find((c: any[]) => !c[1].includes('-o'));
     expect(muxCall[0]).toBe('/fake/ffmpeg');
     expect(muxCall[1]).toContain('-c:v');
     expect(muxCall[1][muxCall[1].indexOf('-c:v') + 1]).toBe('copy');
     fs.unlinkSync(clip);
+  });
+});
+
+describe('scripts/analyze_clip.py contract (the analyzer this tool spawns)', () => {
+  // Reads the real repository script so a CLI change on either side fails here
+  // instead of silently breaking clip narration at runtime.
+  const script = fs.readFileSync(path.resolve(__dirname, '../../../../scripts/analyze_clip.py'), 'utf8');
+
+  it('takes the clip as its first positional argument and -o/--out for the JSON file', () => {
+    expect(script).toMatch(/add_argument\(\s*["']video["']/);
+    expect(script).toMatch(/add_argument\(\s*["']-o["']\s*,\s*["']--out["']/);
+    // No other positional arguments that buildAnalyzerArgs would have to fill.
+    const positionals = [...script.matchAll(/add_argument\(\s*["']([^-"'][^"']*)["']/g)].map(m => m[1]);
+    expect(positionals).toEqual(['video']);
+    expect(buildAnalyzerArgs('clip.mp4', 'out.json')).toEqual(['clip.mp4', '-o', 'out.json']);
+  });
+
+  it('writes the duration_sec and script fields parseAnalyzerOutput reads', () => {
+    expect(script).toContain('"duration_sec"');
+    expect(script).toContain('"script"');
+    expect(script).toMatch(/json\.dumps\(data/);
+  });
+
+  it('reads the Gemini key from the environment, matching how the tool passes it', () => {
+    expect(script).toContain('GEMINI_API_KEY');
   });
 });

@@ -73,6 +73,12 @@ jobs:
             ${{ matrix.os }}-node-
       - name: Install widget dependencies
         timeout-minutes: 10
+        # CPU-only runners have no CUDA GPU; skip downloading Linux CUDA/NuGet
+        # EP binaries (v1.21.0 GPU tgz returns 404 and NuGet intermittently times out;
+        # CPU ONNX Runtime stays bundled).
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+          ONNXRUNTIME_NODE_INSTALL_CUDA: skip
         run: npm ci --prefix widget
       # Electron 42 has no npm install hook. Resolving a missing binary inside
       # the first UI case otherwise invokes an unbounded synchronous installer.
